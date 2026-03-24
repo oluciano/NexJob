@@ -9,7 +9,7 @@ builder.Services.AddNexJob(opt =>
 {
     opt.Workers = 10;
     opt.PollingInterval = TimeSpan.FromMilliseconds(200); // fast polling for demo
-    opt.MaxAttempts = 5;
+    opt.MaxAttempts = 1; // fail fast for demo (dead-letters immediately)
 });
 
 builder.Services.AddTransient<SendEmailJob>();
@@ -58,6 +58,30 @@ app.MapDelete("/jobs/cleanup/recurring", async (IScheduler scheduler) =>
 {
     await scheduler.RemoveRecurringAsync("nightly-cleanup");
     return Results.NoContent();
+});
+
+app.MapPost("/jobs/seed/recurring", async (IScheduler scheduler) =>
+{
+    await scheduler.RecurringAsync<CleanupJob, CleanupRequest>(
+        "hourly-cleanup", new CleanupRequest("cache", 1), "0 * * * *");
+    await scheduler.RecurringAsync<CleanupJob, CleanupRequest>(
+        "weekly-archive", new CleanupRequest("archive", 90), "0 3 * * 0");
+    await scheduler.RecurringAsync<GenerateReportJob, ReportRequest>(
+        "daily-report", new ReportRequest("daily",
+            DateOnly.FromDateTime(DateTime.Today.AddDays(-1)),
+            DateOnly.FromDateTime(DateTime.Today)), "0 6 * * *");
+    await scheduler.RecurringAsync<SendEmailJob, EmailPayload>(
+        "weekly-newsletter", new EmailPayload("newsletter@nexjob.dev", "Weekly digest", ""), "0 9 * * 1");
+    return Results.Ok(new { registered = 4 });
+});
+
+app.MapPost("/jobs/seed/failed", async (IScheduler scheduler) =>
+{
+    // Enqueue flakey jobs with failTimes > MaxAttempts so they dead-letter fast
+    for (var i = 1; i <= 5; i++)
+        await scheduler.EnqueueAsync<FlakeyJob, FlakeyRequest>(
+            new FlakeyRequest($"dead-letter-{i}", FailTimes: 99));
+    return Results.Accepted(null, new { enqueued = 5, note = "will fail after max attempts" });
 });
 
 // ── Chain (continuation) ──────────────────────────────────────────────────────
