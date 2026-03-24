@@ -1,0 +1,64 @@
+name: New storage provider
+description: Propose or track a new storage adapter
+labels: ["storage-provider", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template to propose a new storage provider or to volunteer to implement one.
+        Read [CONTRIBUTING.md](../../CONTRIBUTING.md) before starting — storage providers must
+        implement the full `IStorageProvider` contract and pass `StorageProviderTestsBase`.
+
+  - type: input
+    id: database
+    attributes:
+      label: Database / engine
+      placeholder: "e.g. MySQL 8, DynamoDB, SQLite"
+    validations:
+      required: true
+
+  - type: input
+    id: package
+    attributes:
+      label: Proposed NuGet package name
+      placeholder: "e.g. NexJob.MySql"
+    validations:
+      required: true
+
+  - type: input
+    id: driver
+    attributes:
+      label: .NET driver / client library
+      placeholder: "e.g. MySqlConnector 2.x"
+    validations:
+      required: true
+
+  - type: textarea
+    id: atomicity
+    attributes:
+      label: Atomic dequeue strategy
+      description: |
+        How will you prevent two workers from picking the same job?
+        e.g. SELECT FOR UPDATE SKIP LOCKED, Lua script, findOneAndUpdate, etc.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Implementation checklist
+      options:
+        - label: Implements all `IStorageProvider` methods including dashboard methods
+        - label: Passes `StorageProviderTestsBase` contract tests
+        - label: Has `AddNexJob{Name}` DI extension method
+        - label: Auto-creates schema on first run
+        - label: Atomic dequeue (no double-processing)
+        - label: README updated with install and usage snippet
+
+  - type: checkboxes
+    id: availability
+    attributes:
+      label: Are you willing to implement this?
+      options:
+        - label: "Yes, I plan to open a PR"
+        - label: "No, I'm just proposing — happy for someone else to pick it up"
