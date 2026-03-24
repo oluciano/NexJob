@@ -78,10 +78,12 @@ NexJob was built to solve all of that. MIT license, end to end. Every storage ad
 # Core (includes in-memory provider for dev/tests)
 dotnet add package NexJob
 
-# Pick your storage
+# Pick your storage — all free, all open-source
 dotnet add package NexJob.Postgres
 dotnet add package NexJob.SqlServer
 dotnet add package NexJob.Redis
+dotnet add package NexJob.MongoDB
+dotnet add package NexJob.Oracle
 
 # Optional dashboard
 dotnet add package NexJob.Dashboard
@@ -187,7 +189,7 @@ public class ChargeCardJob : IJob<ChargeInput> { ... }
 public class BulkEmailJob : IJob<EmailInput> { ... }
 ```
 
-Both `ChargeCardJob` and any other job with `resource: "stripe"` share the same concurrency slot — globally, across all server instances.
+Both `ChargeCardJob` and any other job sharing `resource: "stripe"` use the same concurrency slot — globally, across all server instances.
 
 ---
 
@@ -279,7 +281,7 @@ public class IdempotentWebhookJob : IJob<WebhookInput> { ... }
 
 ## Storage providers
 
-All open-source. No license walls.
+All open-source. No license walls. Ever.
 
 | Package | Storage | Notes |
 |---|---|---|
@@ -287,6 +289,8 @@ All open-source. No license walls.
 | `NexJob.Postgres` | PostgreSQL 14+ | `SELECT FOR UPDATE SKIP LOCKED` |
 | `NexJob.SqlServer` | SQL Server 2019+ | Atomic dequeue guaranteed |
 | `NexJob.Redis` | Redis 7+ | Lua scripts for atomicity |
+| `NexJob.MongoDB` | MongoDB 6+ | Change streams + atomic findAndModify |
+| `NexJob.Oracle` | Oracle 19c+ | `SKIP LOCKED` + autonomous transactions |
 
 Bring your own? Implement `IStorageProvider` — one interface, ten methods.
 
@@ -297,16 +301,28 @@ Bring your own? Implement `IStorageProvider` — one interface, ten methods.
 ```csharp
 builder.Services.AddNexJob(opt =>
 {
+    // Storage — pick one
     opt.UsePostgres(connectionString);
+    opt.UseSqlServer(connectionString);
+    opt.UseRedis(connectionString);
+    opt.UseMongoDB(connectionString, databaseName: "nexjob");
+    opt.UseOracle(connectionString);
+    opt.UseInMemory();                                       // dev/tests
 
+    // Workers & queues
     opt.Workers = 10;
     opt.Queues = ["critical", "default", "low"];
     opt.DefaultQueue = "default";
+
+    // Timing
     opt.PollingInterval = TimeSpan.FromSeconds(5);
     opt.HeartbeatInterval = TimeSpan.FromSeconds(30);
     opt.HeartbeatTimeout = TimeSpan.FromMinutes(5);
+
+    // Retries
     opt.DefaultRetryAttempts = 5;
 
+    // Observability
     opt.UseOpenTelemetry();
 });
 ```
@@ -320,7 +336,7 @@ v0.1  ◆ Core interfaces · in-memory provider · fire-and-forget     ← here
 v0.2  ○ PostgreSQL provider · delayed jobs · recurring (cron)
 v0.3  ○ Priority queues · resource throttling · continuations
 v0.4  ○ Dashboard (Blazor SSR) · real-time streaming
-v0.5  ○ SQL Server · Redis providers
+v0.5  ○ SQL Server · Redis · MongoDB · Oracle providers
 v0.6  ○ OpenTelemetry · payload versioning
 v1.0  ○ Stable API · production-ready
 ```
