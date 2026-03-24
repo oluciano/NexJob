@@ -6,6 +6,12 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>NexJob.MongoDB.Tests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\NexJob\NexJob.csproj" />
     <PackageReference Include="MongoDB.Driver" Version="2.30.0" />
   </ItemGroup>
