@@ -1,4 +1,5 @@
 using NexJob;
+using NexJob.Dashboard;
 using NexJob.Sample.WebApi.Jobs;
 using NexJob.Storage;
 
@@ -179,6 +180,8 @@ app.MapGet("/jobs/due-recurring", async (IStorageProvider storage) =>
         r.LastExecutedAt
     }));
 });
+
+app.UseNexJobDashboard("/jobs");
 
 app.Run();
 

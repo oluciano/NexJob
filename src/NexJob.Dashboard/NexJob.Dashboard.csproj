@@ -1,13 +1,14 @@
-<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk.Razor">
 
   <PropertyGroup>
     <PackageId>NexJob.Dashboard</PackageId>
     <Description>Blazor SSR dashboard middleware for NexJob.</Description>
+    <AddRazorSupportForMvc>true</AddRazorSupportForMvc>
   </PropertyGroup>
 
   <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <ProjectReference Include="..\NexJob\NexJob.csproj" />
-    <PackageReference Include="Microsoft.AspNetCore.Components.Web" Version="8.0.12" />
   </ItemGroup>
 
 </Project>

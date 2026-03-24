@@ -97,6 +97,13 @@ public interface IStorageProvider
     Task DeleteRecurringJobAsync(string recurringJobId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Returns all registered recurring job definitions, regardless of their next execution time.
+    /// Used by the dashboard to display the full list of recurring jobs.
+    /// </summary>
+    /// <param name="cancellationToken">Token to cancel the operation.</param>
+    Task<IReadOnlyList<RecurringJobRecord>> GetRecurringJobsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Finds all jobs in <see cref="JobStatus.Processing"/> state whose heartbeat has
     /// not been refreshed within <paramref name="heartbeatTimeout"/>, and re-enqueues
     /// them for execution by a healthy worker.
@@ -116,4 +123,42 @@ public interface IStorageProvider
     /// <param name="parentJobId">The identifier of the successfully completed parent job.</param>
     /// <param name="cancellationToken">Token to cancel the operation.</param>
     Task EnqueueContinuationsAsync(JobId parentJobId, CancellationToken cancellationToken = default);
+
+    // ── Dashboard support ─────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Returns an aggregated metrics snapshot used by the dashboard overview page.
+    /// </summary>
+    Task<JobMetrics> GetMetricsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Returns a paginated, filtered list of job records.
+    /// </summary>
+    /// <param name="filter">Status, search text, and queue filters.</param>
+    /// <param name="page">1-based page number.</param>
+    /// <param name="pageSize">Maximum number of records per page.</param>
+    /// <param name="cancellationToken">Token to cancel the operation.</param>
+    Task<PagedResult<JobRecord>> GetJobsAsync(JobFilter filter, int page, int pageSize, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Returns a single job record by its identifier, or <see langword="null"/> if not found.
+    /// </summary>
+    Task<JobRecord?> GetJobByIdAsync(JobId id, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Permanently removes a job record. Used by the dashboard Delete action.
+    /// </summary>
+    Task DeleteJobAsync(JobId id, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Re-enqueues a failed (dead-letter) job so it will be retried.
+    /// Resets <see cref="JobRecord.Attempts"/> to 0 and sets status to
+    /// <see cref="JobStatus.Enqueued"/>. Used by the dashboard Requeue action.
+    /// </summary>
+    Task RequeueJobAsync(JobId id, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Returns per-queue metrics (enqueued + processing counts) for all active queues.
+    /// </summary>
+    Task<IReadOnlyList<QueueMetrics>> GetQueueMetricsAsync(CancellationToken cancellationToken = default);
 }

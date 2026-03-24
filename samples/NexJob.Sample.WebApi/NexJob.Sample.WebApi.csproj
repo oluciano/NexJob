@@ -7,6 +7,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\NexJob\NexJob.csproj" />
+    <ProjectReference Include="..\..\src\NexJob.Dashboard\NexJob.Dashboard.csproj" />
   </ItemGroup>
 
 </Project>

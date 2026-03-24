@@ -6,8 +6,15 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>NexJob.Postgres.Tests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\NexJob\NexJob.csproj" />
     <PackageReference Include="Npgsql" Version="8.0.5" />
+    <PackageReference Include="Dapper" Version="2.1.35" />
   </ItemGroup>
 
 </Project>

@@ -188,6 +188,14 @@ public sealed class MongoStorageProvider : IStorageProvider
         await _recurringJobs.DeleteOneAsync(filter, cancellationToken);
     }
 
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<RecurringJobRecord>> GetRecurringJobsAsync(CancellationToken cancellationToken = default)
+    {
+        var docs = await _recurringJobs.Find(Builders<RecurringJobDocument>.Filter.Empty)
+            .ToListAsync(cancellationToken);
+        return docs.Select(d => d.ToRecord()).ToList();
+    }
+
     // ── Orphan requeue ────────────────────────────────────────────────────────
 
     /// <inheritdoc/>
@@ -222,6 +230,143 @@ public sealed class MongoStorageProvider : IStorageProvider
             .Set(d => d.Status, JobStatus.Enqueued);
 
         await _jobs.UpdateManyAsync(filter, update, cancellationToken: cancellationToken);
+    }
+
+    // ── Dashboard support ─────────────────────────────────────────────────────
+
+    /// <inheritdoc/>
+    public async Task<JobMetrics> GetMetricsAsync(CancellationToken cancellationToken = default)
+    {
+        var now      = DateTimeOffset.UtcNow;
+        var cutoff24 = now.AddHours(-24);
+
+        var statusCounts = await _jobs.Aggregate()
+            .Group(d => d.Status, g => new { Status = g.Key, Count = g.Count() })
+            .ToListAsync(cancellationToken);
+
+        var byStatus = statusCounts.ToDictionary(x => x.Status, x => x.Count);
+
+        var completed = await _jobs.Find(
+                Builders<JobDocument>.Filter.And(
+                    Builders<JobDocument>.Filter.In(d => d.Status, new[] { JobStatus.Succeeded, JobStatus.Failed }),
+                    Builders<JobDocument>.Filter.Gte(d => d.CompletedAt, cutoff24)))
+            .Project(d => new { d.CompletedAt })
+            .ToListAsync(cancellationToken);
+
+        var throughput = completed
+            .Where(d => d.CompletedAt.HasValue)
+            .GroupBy(d => new DateTimeOffset(
+                d.CompletedAt!.Value.Year, d.CompletedAt.Value.Month, d.CompletedAt.Value.Day,
+                d.CompletedAt.Value.Hour, 0, 0, TimeSpan.Zero))
+            .Select(g => new HourlyThroughput { Hour = g.Key, Count = g.Count() })
+            .OrderBy(h => h.Hour)
+            .ToList();
+
+        var recentFailures = (await _jobs
+            .Find(Builders<JobDocument>.Filter.Eq(d => d.Status, JobStatus.Failed))
+            .Sort(Builders<JobDocument>.Sort.Descending(d => d.CompletedAt))
+            .Limit(10)
+            .ToListAsync(cancellationToken))
+            .Select(d => d.ToRecord())
+            .ToList();
+
+        var recurringCount = (int)await _recurringJobs.CountDocumentsAsync(
+            FilterDefinition<RecurringJobDocument>.Empty, cancellationToken: cancellationToken);
+
+        return new JobMetrics
+        {
+            Enqueued         = byStatus.GetValueOrDefault(JobStatus.Enqueued),
+            Processing       = byStatus.GetValueOrDefault(JobStatus.Processing),
+            Succeeded        = byStatus.GetValueOrDefault(JobStatus.Succeeded),
+            Failed           = byStatus.GetValueOrDefault(JobStatus.Failed),
+            Scheduled        = byStatus.GetValueOrDefault(JobStatus.Scheduled),
+            Recurring        = recurringCount,
+            HourlyThroughput = throughput,
+            RecentFailures   = recentFailures,
+        };
+    }
+
+    /// <inheritdoc/>
+    public async Task<PagedResult<JobRecord>> GetJobsAsync(
+        JobFilter filter, int page, int pageSize, CancellationToken cancellationToken = default)
+    {
+        var fb = Builders<JobDocument>.Filter;
+        var filterDef = fb.Empty;
+
+        if (filter.Status.HasValue)
+            filterDef &= fb.Eq(d => d.Status, filter.Status.Value);
+
+        if (!string.IsNullOrWhiteSpace(filter.Queue))
+            filterDef &= fb.Eq(d => d.Queue, filter.Queue);
+
+        if (!string.IsNullOrWhiteSpace(filter.Search))
+        {
+            var term = filter.Search.Trim();
+            filterDef &= fb.Or(
+                fb.Regex(d => d.JobType, new BsonRegularExpression(term, "i")),
+                fb.Regex(d => d.Id, new BsonRegularExpression(term, "i")));
+        }
+
+        var total = (int)await _jobs.CountDocumentsAsync(filterDef, cancellationToken: cancellationToken);
+
+        var docs = await _jobs.Find(filterDef)
+            .Sort(Builders<JobDocument>.Sort.Descending(d => d.CreatedAt))
+            .Skip((page - 1) * pageSize)
+            .Limit(pageSize)
+            .ToListAsync(cancellationToken);
+
+        return new PagedResult<JobRecord>
+        {
+            Items      = docs.Select(d => d.ToRecord()).ToList(),
+            TotalCount = total,
+            Page       = page,
+            PageSize   = pageSize,
+        };
+    }
+
+    /// <inheritdoc/>
+    public async Task<JobRecord?> GetJobByIdAsync(JobId id, CancellationToken cancellationToken = default)
+    {
+        var doc = await _jobs.Find(ById(id)).FirstOrDefaultAsync(cancellationToken);
+        return doc?.ToRecord();
+    }
+
+    /// <inheritdoc/>
+    public async Task DeleteJobAsync(JobId id, CancellationToken cancellationToken = default) =>
+        await _jobs.DeleteOneAsync(ById(id), cancellationToken);
+
+    /// <inheritdoc/>
+    public async Task RequeueJobAsync(JobId id, CancellationToken cancellationToken = default)
+    {
+        var update = Builders<JobDocument>.Update
+            .Set(d => d.Status, JobStatus.Enqueued)
+            .Set(d => d.Attempts, 0)
+            .Unset(d => d.RetryAt)
+            .Unset(d => d.CompletedAt)
+            .Unset(d => d.LastErrorMessage)
+            .Unset(d => d.LastErrorStackTrace);
+
+        await _jobs.UpdateOneAsync(ById(id), update, cancellationToken: cancellationToken);
+    }
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<QueueMetrics>> GetQueueMetricsAsync(CancellationToken cancellationToken = default)
+    {
+        var pipeline = _jobs.Aggregate()
+            .Match(Builders<JobDocument>.Filter.In(d => d.Status,
+                new[] { JobStatus.Enqueued, JobStatus.Processing }))
+            .Group(d => d.Queue, g => new
+            {
+                Queue      = g.Key,
+                Enqueued   = g.Sum(x => x.Status == JobStatus.Enqueued   ? 1 : 0),
+                Processing = g.Sum(x => x.Status == JobStatus.Processing ? 1 : 0),
+            });
+
+        var results = await pipeline.ToListAsync(cancellationToken);
+        return results
+            .Select(r => new QueueMetrics { Queue = r.Queue, Enqueued = r.Enqueued, Processing = r.Processing })
+            .OrderBy(q => q.Queue)
+            .ToList();
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────

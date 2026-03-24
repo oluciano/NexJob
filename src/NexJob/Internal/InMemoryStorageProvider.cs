@@ -205,6 +205,13 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
     }
 
     /// <inheritdoc/>
+    public Task<IReadOnlyList<RecurringJobRecord>> GetRecurringJobsAsync(CancellationToken cancellationToken = default)
+    {
+        IReadOnlyList<RecurringJobRecord> all = _recurringJobs.Values.ToList();
+        return Task.FromResult(all);
+    }
+
+    /// <inheritdoc/>
     public Task RequeueOrphanedJobsAsync(TimeSpan heartbeatTimeout, CancellationToken cancellationToken = default)
     {
         var cutoff = DateTimeOffset.UtcNow - heartbeatTimeout;
@@ -254,6 +261,130 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
         }
 
         return Task.CompletedTask;
+    }
+
+    // ─── Dashboard support ────────────────────────────────────────────────────
+
+    /// <inheritdoc/>
+    public Task<JobMetrics> GetMetricsAsync(CancellationToken cancellationToken = default)
+    {
+        var now      = DateTimeOffset.UtcNow;
+        var cutoff24 = now.AddHours(-24);
+        var jobs     = _jobs.Values.ToList();
+
+        // Per-hour throughput for the last 24 hours
+        var throughput = jobs
+            .Where(j => j.CompletedAt.HasValue && j.CompletedAt.Value >= cutoff24)
+            .GroupBy(j => new DateTimeOffset(
+                j.CompletedAt!.Value.Year, j.CompletedAt.Value.Month, j.CompletedAt.Value.Day,
+                j.CompletedAt.Value.Hour, 0, 0, TimeSpan.Zero))
+            .Select(g => new HourlyThroughput { Hour = g.Key, Count = g.Count() })
+            .OrderBy(h => h.Hour)
+            .ToList();
+
+        var recentFailures = jobs
+            .Where(j => j.Status == JobStatus.Failed)
+            .OrderByDescending(j => j.CompletedAt)
+            .Take(10)
+            .ToList();
+
+        var metrics = new JobMetrics
+        {
+            Enqueued        = jobs.Count(j => j.Status == JobStatus.Enqueued),
+            Processing      = jobs.Count(j => j.Status == JobStatus.Processing),
+            Succeeded       = jobs.Count(j => j.Status == JobStatus.Succeeded),
+            Failed          = jobs.Count(j => j.Status == JobStatus.Failed),
+            Scheduled       = jobs.Count(j => j.Status == JobStatus.Scheduled),
+            Recurring       = _recurringJobs.Count,
+            HourlyThroughput = throughput,
+            RecentFailures  = recentFailures,
+        };
+
+        return Task.FromResult(metrics);
+    }
+
+    /// <inheritdoc/>
+    public Task<PagedResult<JobRecord>> GetJobsAsync(
+        JobFilter filter, int page, int pageSize, CancellationToken cancellationToken = default)
+    {
+        var query = _jobs.Values.AsEnumerable();
+
+        if (filter.Status.HasValue)
+            query = query.Where(j => j.Status == filter.Status.Value);
+
+        if (!string.IsNullOrWhiteSpace(filter.Queue))
+            query = query.Where(j => j.Queue.Equals(filter.Queue, StringComparison.OrdinalIgnoreCase));
+
+        if (!string.IsNullOrWhiteSpace(filter.Search))
+        {
+            var term = filter.Search.Trim();
+            query = query.Where(j =>
+                j.JobType.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                j.Id.Value.ToString().Contains(term, StringComparison.OrdinalIgnoreCase));
+        }
+
+        var ordered = query.OrderByDescending(j => j.CreatedAt).ToList();
+        var total   = ordered.Count;
+        var items   = ordered.Skip((page - 1) * pageSize).Take(pageSize).ToList();
+
+        return Task.FromResult(new PagedResult<JobRecord>
+        {
+            Items      = items,
+            TotalCount = total,
+            Page       = page,
+            PageSize   = pageSize,
+        });
+    }
+
+    /// <inheritdoc/>
+    public Task<JobRecord?> GetJobByIdAsync(JobId id, CancellationToken cancellationToken = default)
+    {
+        _jobs.TryGetValue(id.Value, out var job);
+        return Task.FromResult(job);
+    }
+
+    /// <inheritdoc/>
+    public Task DeleteJobAsync(JobId id, CancellationToken cancellationToken = default)
+    {
+        _jobs.TryRemove(id.Value, out _);
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc/>
+    public Task RequeueJobAsync(JobId id, CancellationToken cancellationToken = default)
+    {
+        if (!_jobs.TryGetValue(id.Value, out var job))
+            return Task.CompletedTask;
+
+        lock (job)
+        {
+            job.Status   = JobStatus.Enqueued;
+            job.Attempts = 0;
+            job.RetryAt  = null;
+            job.CompletedAt = null;
+            job.LastErrorMessage = null;
+            job.LastErrorStackTrace = null;
+            WriteToChannel(job);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc/>
+    public Task<IReadOnlyList<QueueMetrics>> GetQueueMetricsAsync(CancellationToken cancellationToken = default)
+    {
+        IReadOnlyList<QueueMetrics> result = _jobs.Values
+            .GroupBy(j => j.Queue)
+            .Select(g => new QueueMetrics
+            {
+                Queue      = g.Key,
+                Enqueued   = g.Count(j => j.Status == JobStatus.Enqueued),
+                Processing = g.Count(j => j.Status == JobStatus.Processing),
+            })
+            .OrderBy(q => q.Queue)
+            .ToList();
+
+        return Task.FromResult(result);
     }
 
     // ─── private helpers ─────────────────────────────────────────────────────
