@@ -49,9 +49,10 @@ Every .NET developer has used Hangfire. And every .NET developer has hit the sam
 - `async/await` is bolted on — Hangfire serializes `Task`, it doesn't await it.
 - The dashboard looks like it was designed in 2014. Because it was.
 - There's no concept of priority queues, resource throttling, or payload versioning.
+- You can't change workers or pause a queue without restarting the server.
 - The license is LGPL for the core and paid for anything production-worthy.
 
-NexJob was built to solve all of that. MIT license, end to end. Every storage adapter open-source. Native `async/await` from the ground up. OpenTelemetry built in, not bolted on. A dashboard you'd actually want to show someone.
+NexJob was built to solve all of that. MIT license, end to end. Every storage adapter open-source. Native `async/await` from the ground up. OpenTelemetry built in, not bolted on. Configuration that lives in your `appsettings.json`. A dashboard where you can pause queues, adjust workers, and change schedules — live, without restarting anything.
 
 ---
 
@@ -66,6 +67,9 @@ NexJob was built to solve all of that. MIT license, end to end. Every storage ad
 | OpenTelemetry built-in | ✅ | ❌ |
 | Payload versioning | ✅ | ❌ |
 | Idempotency keys | ✅ | ❌ |
+| `appsettings.json` support | ✅ | ❌ |
+| Execution windows per queue | ✅ | ❌ |
+| Live config without restart | ✅ | ❌ |
 | All storage adapters free | ✅ | ❌ |
 | In-memory for testing | ✅ | ✅ |
 | Cron / recurring jobs | ✅ | ✅ |
@@ -120,10 +124,20 @@ public class SendInvoiceJob : IJob<SendInvoiceInput>
 ### 2 — Register
 
 ```csharp
+// Option A — from appsettings.json (recommended)
+builder.Services.AddNexJob(builder.Configuration);
+
+// Option B — fluent configuration
 builder.Services.AddNexJob(opt =>
 {
     opt.UsePostgres(connectionString);
     opt.Workers = 10;
+});
+
+// Option C — both (appsettings as base, code as override)
+builder.Services.AddNexJob(builder.Configuration, opt =>
+{
+    opt.UsePostgres(connectionString);
 });
 ```
 
@@ -165,6 +179,130 @@ Open `/jobs` and see every queue, every job state, every retry — live.
 
 ---
 
+## Configuration via appsettings.json
+
+Every NexJob setting can be configured in `appsettings.json`. No code changes needed to tune behavior across environments.
+
+```json
+{
+  "NexJob": {
+    "Workers": 10,
+    "DefaultQueue": "default",
+    "DefaultRetryAttempts": 5,
+    "PollingInterval": "00:00:05",
+    "HeartbeatInterval": "00:00:30",
+    "HeartbeatTimeout": "00:05:00",
+    "Queues": [
+      { "Name": "critical", "Workers": 3 },
+      { "Name": "default", "Workers": 5 },
+      {
+        "Name": "reports",
+        "Workers": 2,
+        "ExecutionWindow": {
+          "StartTime": "22:00",
+          "EndTime": "06:00",
+          "TimeZone": "America/Sao_Paulo"
+        }
+      },
+      { "Name": "low", "Workers": 1 }
+    ],
+    "Dashboard": {
+      "Path": "/jobs",
+      "Title": "MyApp Jobs",
+      "RequireAuth": false,
+      "PollIntervalSeconds": 3
+    }
+  }
+}
+```
+
+Use different files per environment with no code changes:
+
+```json
+// appsettings.Development.json
+{
+  "NexJob": {
+    "Workers": 2,
+    "PollingInterval": "00:00:01"
+  }
+}
+```
+
+```json
+// appsettings.Production.json
+{
+  "NexJob": {
+    "Workers": 20,
+    "PollingInterval": "00:00:05"
+  }
+}
+```
+
+---
+
+## Execution Windows
+
+Restrict queues to specific time windows — without touching a single cron expression.
+
+```json
+{
+  "NexJob": {
+    "Queues": [
+      {
+        "Name": "reports",
+        "ExecutionWindow": {
+          "StartTime": "22:00",
+          "EndTime": "06:00",
+          "TimeZone": "America/Sao_Paulo"
+        }
+      }
+    ]
+  }
+}
+```
+
+The `reports` queue will only process jobs between 10 PM and 6 AM São Paulo time. Jobs enqueued during the day wait silently — no changes to the job code, no cron hacks.
+
+Windows that cross midnight work naturally: `22:00 → 06:00` means jobs run after 10 PM **or** before 6 AM.
+
+---
+
+## Live configuration via Dashboard
+
+Change NexJob behavior at runtime — no restarts, no redeployments.
+
+Open `/jobs/settings` in the dashboard to:
+
+- **Adjust workers** — drag a slider from 1 to 50, applied instantly
+- **Pause a queue** — toggle any queue on/off without touching the code
+- **Pause all recurring jobs** — one click to freeze all cron-based jobs
+- **Change polling interval** — tune the polling speed live
+- **View effective config** — see the merged result of appsettings + runtime overrides
+- **Reset to appsettings** — clear all runtime overrides in one click
+
+```
+┌─────────────────────────────────────────────┐
+│ Settings                                    │
+├─────────────────────────────────────────────┤
+│ Workers          ●━━━━━━━━━━━━━━━━━  10     │
+│                                             │
+│ Queues                                      │
+│  critical   [●] active    3 workers         │
+│  default    [●] active    5 workers         │
+│  reports    [○] paused    window: 22–06     │
+│  low        [●] active    1 worker          │
+│                                             │
+│ Recurring Jobs   [●] running                │
+│ Polling Interval ●━━━━━━━  5s               │
+│                                             │
+│              [Reset to appsettings]         │
+└─────────────────────────────────────────────┘
+```
+
+Runtime changes survive configuration reloads but reset on application restart. For persistent runtime config, use a storage-backed `IRuntimeSettingsStore`.
+
+---
+
 ## Priority queues
 
 Jobs with `Critical` priority jump the queue. No workarounds, no separate deployments.
@@ -198,7 +336,7 @@ Both `ChargeCardJob` and any other job sharing `resource: "stripe"` use the same
 NexJob emits OpenTelemetry spans for every job — enqueue, execute, retry, fail. Zero configuration if you already have OTEL wired up.
 
 ```csharp
-builder.Services.AddNexJob(opt =>
+builder.Services.AddNexJob(builder.Configuration, opt =>
 {
     opt.UsePostgres(connectionString);
     opt.UseOpenTelemetry();
@@ -299,7 +437,7 @@ Bring your own? Implement `IStorageProvider` — one interface, ten methods.
 ## Configuration reference
 
 ```csharp
-builder.Services.AddNexJob(opt =>
+builder.Services.AddNexJob(builder.Configuration, opt =>
 {
     // Storage — pick one
     opt.UsePostgres(connectionString);
@@ -309,17 +447,17 @@ builder.Services.AddNexJob(opt =>
     opt.UseOracle(connectionString);
     opt.UseInMemory();                                       // dev/tests
 
-    // Workers & queues
+    // Workers & queues (override appsettings)
     opt.Workers = 10;
     opt.Queues = ["critical", "default", "low"];
     opt.DefaultQueue = "default";
 
-    // Timing
+    // Timing (override appsettings)
     opt.PollingInterval = TimeSpan.FromSeconds(5);
     opt.HeartbeatInterval = TimeSpan.FromSeconds(30);
     opt.HeartbeatTimeout = TimeSpan.FromMinutes(5);
 
-    // Retries
+    // Retries (override appsettings)
     opt.DefaultRetryAttempts = 5;
 
     // Observability
@@ -332,13 +470,13 @@ builder.Services.AddNexJob(opt =>
 ## Roadmap
 
 ```
-v0.1  ◆ Core interfaces · in-memory provider · fire-and-forget     ← here
-v0.2  ○ PostgreSQL provider · delayed jobs · recurring (cron)
-v0.3  ○ Priority queues · resource throttling · continuations
-v0.4  ○ Dashboard (Blazor SSR) · real-time streaming
+v0.1  ◆ Core interfaces · in-memory provider · fire-and-forget · 55 tests passing
+v0.2  ◆ appsettings.json support · execution windows · live config via dashboard
+v0.3  ○ PostgreSQL provider · delayed jobs · recurring (cron)
+v0.4  ○ Dashboard (Blazor SSR) · real-time streaming · live settings UI
 v0.5  ○ SQL Server · Redis · MongoDB · Oracle providers
-v0.6  ○ OpenTelemetry · payload versioning
-v1.0  ○ Stable API · production-ready
+v0.6  ○ OpenTelemetry · payload versioning · IJobMigration
+v1.0  ○ Stable API · production-ready · published to NuGet
 ```
 
 ---
