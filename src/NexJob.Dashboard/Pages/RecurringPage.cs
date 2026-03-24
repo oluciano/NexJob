@@ -31,29 +31,45 @@ internal sealed class RecurringPage : IComponent
                 ? Helpers.FormatCountdown(r.NextExecution.Value - now)
                 : "<span style=\"color:var(--text-muted)\">—</span>";
 
-            var deleteForm =
-                $"<form method=\"post\" action=\"{PathPrefix}/recurring/{Uri.EscapeDataString(r.RecurringJobId)}/delete\" style=\"display:inline\">" +
-                "<button type=\"submit\" class=\"btn btn-danger btn-sm\">Delete</button></form>";
+            var lastRun = r.LastExecutedAt.HasValue
+                ? $"<span title=\"{r.LastExecutedAt.Value:yyyy-MM-dd HH:mm:ss UTC}\">{r.LastExecutedAt.Value:MM/dd HH:mm}</span>"
+                : "—";
 
             return $"<tr>" +
+                   $"<td style=\"width:36px\"><input type=\"checkbox\" name=\"ids\" value=\"{System.Web.HttpUtility.HtmlAttributeEncode(r.RecurringJobId)}\" /></td>" +
                    $"<td>{System.Web.HttpUtility.HtmlEncode(r.RecurringJobId)}</td>" +
-                   $"<td>{Helpers.ShortType(r.JobType)}</td>" +
-                   $"<td><code>{System.Web.HttpUtility.HtmlEncode(r.Cron)}</code></td>" +
+                   $"<td><code style=\"color:var(--warning)\">{System.Web.HttpUtility.HtmlEncode(r.Cron)}</code></td>" +
                    $"<td>{System.Web.HttpUtility.HtmlEncode(r.Queue)}</td>" +
-                   $"<td>{r.LastExecutedAt?.ToString("MM/dd HH:mm") ?? "—"}</td>" +
+                   $"<td>{Helpers.ShortType(r.JobType)}</td>" +
+                   $"<td>{lastRun}</td>" +
                    $"<td>{countdown}</td>" +
-                   $"<td>{deleteForm}</td>" +
                    $"</tr>";
         }));
 
+        var table =
+            $"<form method=\"post\" action=\"{PathPrefix}/recurring/bulk\" id=\"bulk-form\">" +
+            "<div class=\"filters\" style=\"margin-bottom:16px\">" +
+            "<button type=\"submit\" name=\"bulkAction\" value=\"trigger\" class=\"btn btn-primary btn-sm\">▶ Trigger Now</button>" +
+            "<button type=\"submit\" name=\"bulkAction\" value=\"delete\" class=\"btn btn-danger btn-sm\" onclick=\"return confirm('Delete selected?')\">✕ Delete</button>" +
+            "<span style=\"color:var(--text-muted);font-size:12px;margin-left:8px\">Select rows below, or trigger/delete all if none selected.</span>" +
+            "</div>" +
+            "<table><thead><tr>" +
+            "<th style=\"width:36px\"><input type=\"checkbox\" id=\"select-all\" title=\"Select all\" /></th>" +
+            "<th>ID</th><th>Cron</th><th>Queue</th><th>Job</th><th>Last Execution</th><th>Next Execution</th>" +
+            $"</tr></thead><tbody>{rows}</tbody></table>" +
+            "</form>" +
+            "<script>" +
+            "document.getElementById('select-all').addEventListener('change',function(){" +
+            "document.querySelectorAll('input[name=\"ids\"]').forEach(c=>c.checked=this.checked);});" +
+            "</script>";
+
         var body =
             "<h1 class=\"page-title\">Recurring Jobs</h1>" +
+            $"<p style=\"color:var(--text-muted);font-size:12px;margin-bottom:16px\">{jobs.Count} job(s) registered</p>" +
             "<div class=\"section\">" +
             (jobs.Count == 0
                 ? "<p style=\"color:var(--text-muted)\">No recurring jobs registered.</p>"
-                : "<table><thead><tr>" +
-                  "<th>ID</th><th>Type</th><th>Cron</th><th>Queue</th><th>Last Run</th><th>Next Run</th><th>Actions</th>" +
-                  $"</tr></thead><tbody>{rows}</tbody></table>") +
+                : table) +
             "</div>";
 
         return HtmlShell.Wrap(Title, PathPrefix, "recurring", body);

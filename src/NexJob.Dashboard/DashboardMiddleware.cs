@@ -103,8 +103,66 @@ public sealed class DashboardMiddleware
 
         if (subPath.StartsWith("recurring/") && subPath.Contains("/trigger"))
         {
-            // Trigger is handled by the page itself; redirect back
+            var recurringId = Uri.UnescapeDataString(subPath.Split('/')[1]);
+            await storage.SetRecurringJobNextExecutionAsync(
+                recurringId, DateTimeOffset.UtcNow.AddSeconds(-1), context.RequestAborted);
             context.Response.Redirect($"{_pathPrefix}/recurring");
+            return true;
+        }
+
+        // ── Bulk actions ──────────────────────────────────────────────────────
+
+        if (subPath == "recurring/bulk")
+        {
+            var form   = await context.Request.ReadFormAsync(context.RequestAborted);
+            var action = form["bulkAction"].ToString();
+            var ids    = form["ids"].ToArray();
+
+            // if nothing selected, act on all
+            if (ids.Length == 0)
+                ids = (await storage.GetRecurringJobsAsync(context.RequestAborted))
+                      .Select(r => r.RecurringJobId).ToArray();
+
+            foreach (var id in ids)
+            {
+                if (string.IsNullOrEmpty(id)) continue;
+                var decoded = Uri.UnescapeDataString(id);
+                if (action == "trigger")
+                    await storage.SetRecurringJobNextExecutionAsync(
+                        decoded, DateTimeOffset.UtcNow.AddSeconds(-1), context.RequestAborted);
+                else if (action == "delete")
+                    await storage.DeleteRecurringJobAsync(decoded, context.RequestAborted);
+            }
+
+            context.Response.Redirect($"{_pathPrefix}/recurring");
+            return true;
+        }
+
+        if (subPath == "jobs/bulk")
+        {
+            var form   = await context.Request.ReadFormAsync(context.RequestAborted);
+            var action = form["bulkAction"].ToString();
+            var ids    = form["ids"].ToArray();
+
+            // if nothing selected, act on all failed jobs
+            if (ids.Length == 0)
+            {
+                var all = await storage.GetJobsAsync(
+                    new JobFilter { Status = JobStatus.Failed }, 1, int.MaxValue, context.RequestAborted);
+                ids = all.Items.Select(j => j.Id.Value.ToString()).ToArray();
+            }
+
+            foreach (var idStr in ids)
+            {
+                if (!Guid.TryParse(idStr, out var guid)) continue;
+                var jobId = new JobId(guid);
+                if (action == "requeue")
+                    await storage.RequeueJobAsync(jobId, context.RequestAborted);
+                else if (action == "delete")
+                    await storage.DeleteJobAsync(jobId, context.RequestAborted);
+            }
+
+            context.Response.Redirect($"{_pathPrefix}/failed");
             return true;
         }
 
