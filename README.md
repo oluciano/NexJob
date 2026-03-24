@@ -52,27 +52,31 @@ Every .NET developer has used Hangfire. And every .NET developer has hit the sam
 - You can't change workers or pause a queue without restarting the server.
 - The license is LGPL for the core and paid for anything production-worthy.
 
-NexJob was built to solve all of that. MIT license, end to end. Every storage adapter open-source. Native `async/await` from the ground up. OpenTelemetry built in, not bolted on. Configuration that lives in your `appsettings.json`. A dashboard where you can pause queues, adjust workers, and change schedules — live, without restarting anything.
+NexJob was built to solve all of that. MIT license, end to end. Every storage adapter open-source. Native `async/await` from the ground up. Priority queues and idempotency built in. A dark-mode dashboard to inspect every queue, job state, and retry — without touching the code. OpenTelemetry, `appsettings.json` support, and live runtime config are on the roadmap.
 
 ---
 
 ## At a glance
+
+> ✅ = implemented &nbsp;·&nbsp; 🔜 = on the roadmap
 
 | | NexJob | Hangfire |
 |---|:---:|:---:|
 | License | MIT | LGPL / paid Pro |
 | `async/await` native | ✅ | ❌ |
 | Priority queues | ✅ | ❌ |
-| Resource throttling | ✅ | ❌ |
-| OpenTelemetry built-in | ✅ | ❌ |
-| Payload versioning | ✅ | ❌ |
 | Idempotency keys | ✅ | ❌ |
-| `appsettings.json` support | ✅ | ❌ |
-| Execution windows per queue | ✅ | ❌ |
-| Live config without restart | ✅ | ❌ |
-| All storage adapters free | ✅ | ❌ |
 | In-memory for testing | ✅ | ✅ |
 | Cron / recurring jobs | ✅ | ✅ |
+| PostgreSQL + MongoDB adapters free | ✅ | ❌ |
+| Dashboard (dark mode) | ✅ | ❌ |
+| All storage adapters free | ✅ | ❌ |
+| Resource throttling | 🔜 | ❌ |
+| OpenTelemetry built-in | 🔜 | ❌ |
+| Payload versioning | 🔜 | ❌ |
+| `appsettings.json` support | 🔜 | ❌ |
+| Execution windows per queue | 🔜 | ❌ |
+| Live config without restart | 🔜 | ❌ |
 
 ---
 
@@ -124,21 +128,14 @@ public class SendInvoiceJob : IJob<SendInvoiceInput>
 ### 2 — Register
 
 ```csharp
-// Option A — from appsettings.json (recommended)
-builder.Services.AddNexJob(builder.Configuration);
-
-// Option B — fluent configuration
 builder.Services.AddNexJob(opt =>
 {
-    opt.UsePostgres(connectionString);
     opt.Workers = 10;
+    opt.PollingInterval = TimeSpan.FromSeconds(1);
 });
 
-// Option C — both (appsettings as base, code as override)
-builder.Services.AddNexJob(builder.Configuration, opt =>
-{
-    opt.UsePostgres(connectionString);
-});
+// Register your jobs
+builder.Services.AddTransient<SendInvoiceJob>();
 ```
 
 ### 3 — Schedule
@@ -179,130 +176,6 @@ Open `/jobs` and see every queue, every job state, every retry — live.
 
 ---
 
-## Configuration via appsettings.json
-
-Every NexJob setting can be configured in `appsettings.json`. No code changes needed to tune behavior across environments.
-
-```json
-{
-  "NexJob": {
-    "Workers": 10,
-    "DefaultQueue": "default",
-    "DefaultRetryAttempts": 5,
-    "PollingInterval": "00:00:05",
-    "HeartbeatInterval": "00:00:30",
-    "HeartbeatTimeout": "00:05:00",
-    "Queues": [
-      { "Name": "critical", "Workers": 3 },
-      { "Name": "default", "Workers": 5 },
-      {
-        "Name": "reports",
-        "Workers": 2,
-        "ExecutionWindow": {
-          "StartTime": "22:00",
-          "EndTime": "06:00",
-          "TimeZone": "America/Sao_Paulo"
-        }
-      },
-      { "Name": "low", "Workers": 1 }
-    ],
-    "Dashboard": {
-      "Path": "/jobs",
-      "Title": "MyApp Jobs",
-      "RequireAuth": false,
-      "PollIntervalSeconds": 3
-    }
-  }
-}
-```
-
-Use different files per environment with no code changes:
-
-```json
-// appsettings.Development.json
-{
-  "NexJob": {
-    "Workers": 2,
-    "PollingInterval": "00:00:01"
-  }
-}
-```
-
-```json
-// appsettings.Production.json
-{
-  "NexJob": {
-    "Workers": 20,
-    "PollingInterval": "00:00:05"
-  }
-}
-```
-
----
-
-## Execution Windows
-
-Restrict queues to specific time windows — without touching a single cron expression.
-
-```json
-{
-  "NexJob": {
-    "Queues": [
-      {
-        "Name": "reports",
-        "ExecutionWindow": {
-          "StartTime": "22:00",
-          "EndTime": "06:00",
-          "TimeZone": "America/Sao_Paulo"
-        }
-      }
-    ]
-  }
-}
-```
-
-The `reports` queue will only process jobs between 10 PM and 6 AM São Paulo time. Jobs enqueued during the day wait silently — no changes to the job code, no cron hacks.
-
-Windows that cross midnight work naturally: `22:00 → 06:00` means jobs run after 10 PM **or** before 6 AM.
-
----
-
-## Live configuration via Dashboard
-
-Change NexJob behavior at runtime — no restarts, no redeployments.
-
-Open `/jobs/settings` in the dashboard to:
-
-- **Adjust workers** — drag a slider from 1 to 50, applied instantly
-- **Pause a queue** — toggle any queue on/off without touching the code
-- **Pause all recurring jobs** — one click to freeze all cron-based jobs
-- **Change polling interval** — tune the polling speed live
-- **View effective config** — see the merged result of appsettings + runtime overrides
-- **Reset to appsettings** — clear all runtime overrides in one click
-
-```
-┌─────────────────────────────────────────────┐
-│ Settings                                    │
-├─────────────────────────────────────────────┤
-│ Workers          ●━━━━━━━━━━━━━━━━━  10     │
-│                                             │
-│ Queues                                      │
-│  critical   [●] active    3 workers         │
-│  default    [●] active    5 workers         │
-│  reports    [○] paused    window: 22–06     │
-│  low        [●] active    1 worker          │
-│                                             │
-│ Recurring Jobs   [●] running                │
-│ Polling Interval ●━━━━━━━  5s               │
-│                                             │
-│              [Reset to appsettings]         │
-└─────────────────────────────────────────────┘
-```
-
-Runtime changes survive configuration reloads but reset on application restart. For persistent runtime config, use a storage-backed `IRuntimeSettingsStore`.
-
----
-
 ## Priority queues
 
 Jobs with `Critical` priority jump the queue. No workarounds, no separate deployments.
@@ -317,79 +190,37 @@ await scheduler.EnqueueAsync<AlertJob, AlertInput>(
 
 ## Resource throttling
 
-Don't overwhelm external APIs. Declare a limit once, NexJob enforces it across all workers.
+> 🔜 Coming in v0.3
 
 ```csharp
 [Throttle(resource: "stripe", maxConcurrent: 3)]
 public class ChargeCardJob : IJob<ChargeInput> { ... }
-
-[Throttle(resource: "sendgrid", maxConcurrent: 5)]
-public class BulkEmailJob : IJob<EmailInput> { ... }
 ```
-
-Both `ChargeCardJob` and any other job sharing `resource: "stripe"` use the same concurrency slot — globally, across all server instances.
 
 ---
 
 ## Observability
 
-NexJob emits OpenTelemetry spans for every job — enqueue, execute, retry, fail. Zero configuration if you already have OTEL wired up.
-
-```csharp
-builder.Services.AddNexJob(builder.Configuration, opt =>
-{
-    opt.UsePostgres(connectionString);
-    opt.UseOpenTelemetry();
-});
-```
-
-Every span carries:
-
-```
-nexjob.job_id       = "3f2a8c1d-..."
-nexjob.job_type     = "SendInvoiceJob"
-nexjob.queue        = "default"
-nexjob.attempt      = 1
-nexjob.status       = "succeeded"
-nexjob.duration_ms  = 142
-```
+> 🔜 Coming in v0.4 — OpenTelemetry spans for every job lifecycle event.
 
 ---
 
 ## Payload versioning
 
-Your job inputs will change. NexJob handles it gracefully — no data loss, no broken jobs stuck in the queue.
-
-```csharp
-// Old input (v1)
-public record SendInvoiceInputV1(Guid OrderId, string Email);
-
-// New input (v2)
-public record SendInvoiceInputV2(Guid OrderId, string Email, string Language);
-
-// Migration — discovered and applied automatically before execution
-public class SendInvoiceMigrationV1ToV2 : IJobMigration<SendInvoiceInputV1, SendInvoiceInputV2>
-{
-    public SendInvoiceInputV2 Migrate(SendInvoiceInputV1 old)
-        => new(old.OrderId, old.Email, Language: "en-US");
-}
-```
+> 🔜 Coming in v0.4 — migrate job inputs across schema versions without losing queued jobs.
 
 ---
 
 ## Testing
 
-The in-memory provider requires zero setup. Use `TestScheduler` to assert without executing.
+The in-memory provider requires zero setup:
 
 ```csharp
-services.AddNexJob(opt => opt.UseInMemory());
-
-var scheduler = new TestScheduler();
-await sut.PlaceOrderAsync(order);
-
-scheduler.ShouldHaveEnqueued<SendInvoiceJob, SendInvoiceInput>(
-    job => job.OrderId == order.Id);
+builder.Services.AddNexJob(opt => opt.Workers = 1);
+// InMemoryStorageProvider is the default — no extra config needed
 ```
+
+> 🔜 `TestScheduler` with `ShouldHaveEnqueued` assertions coming in v0.3.
 
 ---
 
@@ -405,15 +236,16 @@ Failed jobs retry with exponential backoff and jitter. Dead-lettered jobs are pr
 | 4 | ~17 minutes |
 | 5 | ~42 minutes |
 
-Override per job:
+Configure globally:
 
 ```csharp
-[Retry(attempts: 3)]
-public class SendSmsJob : IJob<SmsInput> { ... }
-
-[Retry(attempts: 0)]
-public class IdempotentWebhookJob : IJob<WebhookInput> { ... }
+builder.Services.AddNexJob(opt =>
+{
+    opt.MaxAttempts = 3;   // default: 5
+});
 ```
+
+> 🔜 Per-job `[Retry(attempts: 3)]` attribute coming in v0.3.
 
 ---
 
@@ -437,32 +269,24 @@ Bring your own? Implement `IStorageProvider` — one interface, ten methods.
 ## Configuration reference
 
 ```csharp
-builder.Services.AddNexJob(builder.Configuration, opt =>
+builder.Services.AddNexJob(opt =>
 {
-    // Storage — pick one
-    opt.UsePostgres(connectionString);
-    opt.UseSqlServer(connectionString);
-    opt.UseRedis(connectionString);
-    opt.UseMongoDB(connectionString, databaseName: "nexjob");
-    opt.UseOracle(connectionString);
-    opt.UseInMemory();                                       // dev/tests
-
-    // Workers & queues (override appsettings)
+    // Workers & queues
     opt.Workers = 10;
-    opt.Queues = ["critical", "default", "low"];
     opt.DefaultQueue = "default";
 
-    // Timing (override appsettings)
-    opt.PollingInterval = TimeSpan.FromSeconds(5);
+    // Timing
+    opt.PollingInterval  = TimeSpan.FromSeconds(5);
     opt.HeartbeatInterval = TimeSpan.FromSeconds(30);
-    opt.HeartbeatTimeout = TimeSpan.FromMinutes(5);
+    opt.HeartbeatTimeout  = TimeSpan.FromMinutes(5);
 
-    // Retries (override appsettings)
-    opt.DefaultRetryAttempts = 5;
-
-    // Observability
-    opt.UseOpenTelemetry();
+    // Retries
+    opt.MaxAttempts = 5;
 });
+
+// Storage — pick one (InMemory is the default)
+builder.Services.AddNexJobPostgres(connectionString);
+builder.Services.AddNexJobMongo(connectionString, databaseName: "nexjob");
 ```
 
 ---
@@ -470,12 +294,11 @@ builder.Services.AddNexJob(builder.Configuration, opt =>
 ## Roadmap
 
 ```
-v0.1  ◆ Core interfaces · in-memory provider · fire-and-forget · 55 tests passing
-v0.2  ◆ appsettings.json support · execution windows · live config via dashboard
-v0.3  ○ PostgreSQL provider · delayed jobs · recurring (cron)
-v0.4  ○ Dashboard (Blazor SSR) · real-time streaming · live settings UI
-v0.5  ○ SQL Server · Redis · MongoDB · Oracle providers
-v0.6  ○ OpenTelemetry · payload versioning · IJobMigration
+v0.1  ◆ Core interfaces · in-memory provider · fire-and-forget · 55 tests
+v0.2  ◆ PostgreSQL + MongoDB providers · Blazor SSR dashboard · integration tests
+v0.3  ○ [Throttle] enforcement · [Retry] per-job · TestScheduler · appsettings.json
+v0.4  ○ SQL Server · Redis · OpenTelemetry · payload versioning · IJobMigration
+v0.5  ○ Execution windows · live config via dashboard · Oracle provider
 v1.0  ○ Stable API · production-ready · published to NuGet
 ```
 
