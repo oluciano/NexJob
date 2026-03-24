@@ -1,0 +1,24 @@
+# Build outputs
+bin/
+obj/
+
+# NuGet
+*.nupkg
+*.snupkg
+.nuget/
+
+# Rider / VS / VSCode
+.idea/
+.vs/
+.vscode/
+*.user
+*.suo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# dotnet coverage
+*.coverage
+*.coveragexml
+TestResults/

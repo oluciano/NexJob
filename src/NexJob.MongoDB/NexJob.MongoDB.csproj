@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <PackageId>NexJob.MongoDB</PackageId>
+    <Description>MongoDB storage provider for NexJob.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\NexJob\NexJob.csproj" />
+    <PackageReference Include="MongoDB.Driver" Version="2.30.0" />
+  </ItemGroup>
+
+</Project>
