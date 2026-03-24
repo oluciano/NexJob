@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <PackageId>NexJob.Dashboard</PackageId>
+    <Description>Blazor SSR dashboard middleware for NexJob.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\NexJob\NexJob.csproj" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.Web" Version="8.0.12" />
+  </ItemGroup>
+
+</Project>
