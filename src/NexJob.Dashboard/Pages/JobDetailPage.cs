@@ -28,7 +28,14 @@ internal sealed class JobDetailPage : IComponent
             return HtmlShell.Wrap(Title, PathPrefix, "jobs",
                 "<h2>Job not found</h2><p><a href=\"" + PathPrefix + "/jobs\">← Back to Jobs</a></p>");
 
+        var now = DateTimeOffset.UtcNow;
+
         var actions = "";
+        if (job.Status == JobStatus.Scheduled)
+            actions +=
+                $"<form method=\"post\" action=\"{PathPrefix}/jobs/{job.Id.Value}/runnow\" style=\"display:inline\">" +
+                "<button type=\"submit\" class=\"btn btn-primary btn-sm\">▶ Run Now</button></form> ";
+
         if (job.Status == JobStatus.Failed)
             actions +=
                 $"<form method=\"post\" action=\"{PathPrefix}/jobs/{job.Id.Value}/requeue\" style=\"display:inline\">" +
@@ -45,7 +52,9 @@ internal sealed class JobDetailPage : IComponent
             ("Priority",    job.Priority.ToString()),
             ("Attempts",    $"{job.Attempts} / {job.MaxAttempts}"),
             ("Created",     job.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss UTC")),
-            ("Scheduled",   job.ScheduledAt?.ToString("yyyy-MM-dd HH:mm:ss UTC") ?? "—"),
+            ("Scheduled",   job.ScheduledAt.HasValue
+                                ? $"{job.ScheduledAt.Value:yyyy-MM-dd HH:mm:ss UTC} &nbsp;·&nbsp; {Helpers.FormatCountdown(job.ScheduledAt.Value - now)}"
+                                : "—"),
             ("Started",     job.ProcessingStartedAt?.ToString("yyyy-MM-dd HH:mm:ss UTC") ?? "—"),
             ("Completed",   job.CompletedAt?.ToString("yyyy-MM-dd HH:mm:ss UTC") ?? "—"),
             ("Retry At",    job.RetryAt?.ToString("yyyy-MM-dd HH:mm:ss UTC") ?? "—"),

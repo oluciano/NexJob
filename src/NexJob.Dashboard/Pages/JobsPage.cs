@@ -50,20 +50,37 @@ internal sealed class JobsPage : IComponent
             $"<button type=\"submit\" class=\"btn btn-primary btn-sm\">Filter</button>" +
             $"</form>";
 
+        var now = DateTimeOffset.UtcNow;
         var rows = string.Join("", result.Items.Select(j =>
-            $"<tr>" +
-            $"<td><a href=\"{PathPrefix}/jobs/{j.Id.Value}\">{j.Id.Value.ToString()[..8]}…</a></td>" +
-            $"<td>{Helpers.BadgeHtml(j.Status)}</td>" +
-            $"<td>{Helpers.ShortType(j.JobType)}</td>" +
-            $"<td>{System.Web.HttpUtility.HtmlEncode(j.Queue)}</td>" +
-            $"<td>{j.Priority}</td>" +
-            $"<td>{j.CreatedAt:MM/dd HH:mm}</td>" +
-            $"<td>{j.CompletedAt?.ToString("MM/dd HH:mm") ?? "—"}</td>" +
-            $"</tr>"));
+        {
+            var timeCell = j.Status switch
+            {
+                JobStatus.Scheduled =>
+                    j.ScheduledAt.HasValue
+                        ? $"<span title=\"{j.ScheduledAt.Value:yyyy-MM-dd HH:mm:ss UTC}\" style=\"color:var(--accent-light)\">" +
+                          $"{Helpers.FormatCountdown(j.ScheduledAt.Value - now)}</span>"
+                        : "—",
+                JobStatus.Succeeded or JobStatus.Failed =>
+                    j.CompletedAt?.ToString("MM/dd HH:mm") ?? "—",
+                JobStatus.Processing =>
+                    $"<span style=\"color:var(--warning)\">running…</span>",
+                _ => "—"
+            };
+
+            return $"<tr>" +
+                   $"<td><a href=\"{PathPrefix}/jobs/{j.Id.Value}\">{j.Id.Value.ToString()[..8]}…</a></td>" +
+                   $"<td>{Helpers.BadgeHtml(j.Status)}</td>" +
+                   $"<td>{Helpers.ShortType(j.JobType)}</td>" +
+                   $"<td>{System.Web.HttpUtility.HtmlEncode(j.Queue)}</td>" +
+                   $"<td>{j.Priority}</td>" +
+                   $"<td>{j.CreatedAt:MM/dd HH:mm}</td>" +
+                   $"<td>{timeCell}</td>" +
+                   $"</tr>";
+        }));
 
         var table = result.Items.Count == 0
             ? "<p style=\"color:var(--text-muted)\">No jobs found.</p>"
-            : $"<table><thead><tr><th>ID</th><th>Status</th><th>Type</th><th>Queue</th><th>Priority</th><th>Created</th><th>Completed</th></tr></thead><tbody>{rows}</tbody></table>";
+            : $"<table><thead><tr><th>ID</th><th>Status</th><th>Type</th><th>Queue</th><th>Priority</th><th>Created</th><th>Runs At / Completed</th></tr></thead><tbody>{rows}</tbody></table>";
 
         var pagination = BuildPagination(result);
 

@@ -14,16 +14,17 @@ public sealed class FlakeyJob(ILogger<FlakeyJob> logger) : IJob<FlakeyRequest>
 
     public Task ExecuteAsync(FlakeyRequest input, CancellationToken cancellationToken)
     {
-        var count = _attempts.AddOrUpdate(input.Name, 1, (_, v) => v + 1);
+        var key   = input.Name ?? "unnamed";
+        var count = _attempts.AddOrUpdate(key, 1, (_, v) => v + 1);
 
         if (count <= input.FailTimes)
         {
             logger.LogWarning("[FlakeyJob] {Name} — attempt {Count}/{FailTimes} FAILING intentionally",
-                input.Name, count, input.FailTimes);
-            throw new InvalidOperationException($"Simulated failure #{count} for '{input.Name}'");
+                key, count, input.FailTimes);
+            throw new InvalidOperationException($"Simulated failure #{count} for '{key}'");
         }
 
-        _attempts.TryRemove(input.Name, out _);
+        _attempts.TryRemove(key, out _);
         logger.LogInformation("[FlakeyJob] {Name} — SUCCEEDED after {FailTimes} failure(s)", input.Name, input.FailTimes);
         return Task.CompletedTask;
     }

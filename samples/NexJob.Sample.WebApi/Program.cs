@@ -181,7 +181,7 @@ app.MapGet("/jobs/due-recurring", async (IStorageProvider storage) =>
     }));
 });
 
-app.UseNexJobDashboard("/jobs");
+app.UseNexJobDashboard("/dashboard");
 
 app.Run();
 

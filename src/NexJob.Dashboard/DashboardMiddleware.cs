@@ -19,7 +19,8 @@ public sealed class DashboardMiddleware
     private readonly string _pathPrefix;
     private readonly DashboardOptions _options;
 
-    internal DashboardMiddleware(RequestDelegate next, string pathPrefix, DashboardOptions options)
+    /// <summary>Creates a new instance of <see cref="DashboardMiddleware"/>.</summary>
+    public DashboardMiddleware(RequestDelegate next, string pathPrefix, DashboardOptions options)
     {
         _next       = next;
         _pathPrefix = pathPrefix.TrimEnd('/');
@@ -58,6 +59,17 @@ public sealed class DashboardMiddleware
     private async Task<bool> HandleActionsAsync(HttpContext context, string subPath)
     {
         var storage = context.RequestServices.GetRequiredService<IStorageProvider>();
+
+        if (subPath.StartsWith("jobs/") && subPath.Contains("/runnow"))
+        {
+            var idStr = subPath.Split('/')[1];
+            if (Guid.TryParse(idStr, out var guid))
+            {
+                await storage.RequeueJobAsync(new JobId(guid), context.RequestAborted);
+                context.Response.Redirect($"{_pathPrefix}/jobs/{guid}");
+                return true;
+            }
+        }
 
         if (subPath.StartsWith("jobs/") && subPath.Contains("/requeue"))
         {
