@@ -254,7 +254,7 @@ public abstract class StorageProviderTestsBase
 
         // → Processing: fetch job A, leave it running
         await storage.EnqueueAsync(MakeJob());
-        var processing = (await storage.FetchNextAsync(["default"]))!;
+        await storage.FetchNextAsync(["default"]); // leave as Processing
 
         // → Succeeded: fetch job B, acknowledge it
         await storage.EnqueueAsync(MakeJob());

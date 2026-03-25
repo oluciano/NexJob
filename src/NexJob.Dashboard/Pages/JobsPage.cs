@@ -64,7 +64,7 @@ internal sealed class JobsPage : IComponent
                     j.CompletedAt?.ToString("MM/dd HH:mm") ?? "—",
                 JobStatus.Processing =>
                     $"<span style=\"color:var(--warning)\">running…</span>",
-                _ => "—"
+                _ => "—",
             };
 
             return $"<tr>" +

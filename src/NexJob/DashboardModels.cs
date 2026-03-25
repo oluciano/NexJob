@@ -39,6 +39,7 @@ public sealed class HourlyThroughput
 }
 
 /// <summary>A page of results from a paginated query.</summary>
+/// <typeparam name="T">The type of items returned in each page.</typeparam>
 public sealed class PagedResult<T>
 {
     /// <summary>Items on the current page.</summary>

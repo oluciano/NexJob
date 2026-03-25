@@ -59,7 +59,7 @@ public sealed class ThrottleAttribute : Attribute
 /// }
 /// </code>
 /// </example>
-public interface IJobMigration<TOld, TNew>
+public interface IJobMigration<in TOld, out TNew>
 {
     /// <summary>
     /// Converts an instance of the old payload type into the new payload type.

@@ -69,8 +69,7 @@ public sealed class JobDispatcherServiceTests
         using var host = BuildHost(s => s.AddTransient(_ => new QuickSuccessJob(tcs)));
         await host.StartAsync();
 
-        var storage   = (InMemoryStorageProvider)host.Services.GetRequiredService<NexJob.Storage.IStorageProvider>();
-        var scheduler = host.Services.GetRequiredService<IScheduler>();
+        var storage = (InMemoryStorageProvider)host.Services.GetRequiredService<NexJob.Storage.IStorageProvider>();
 
         // Register a recurring job definition
         await storage.UpsertRecurringJobAsync(new RecurringJobRecord
@@ -192,7 +191,7 @@ public record QuickInput;
 
 public sealed class QuickSuccessJob(TaskCompletionSource<bool> signal) : IJob<QuickInput>
 {
-    public Task ExecuteAsync(QuickInput input, CancellationToken ct)
+    public Task ExecuteAsync(QuickInput input, CancellationToken cancellationToken)
     {
         signal.TrySetResult(true);
         return Task.CompletedTask;
@@ -203,7 +202,7 @@ public record FailInput;
 
 public sealed class AlwaysFailJob(TaskCompletionSource<bool> signalOnDeadLetter) : IJob<FailInput>
 {
-    public Task ExecuteAsync(FailInput input, CancellationToken ct)
+    public Task ExecuteAsync(FailInput input, CancellationToken cancellationToken)
     {
         // Signal only when we know we'll be dead-lettered (MaxAttempts=1 means this IS the last attempt)
         signalOnDeadLetter.TrySetResult(true);

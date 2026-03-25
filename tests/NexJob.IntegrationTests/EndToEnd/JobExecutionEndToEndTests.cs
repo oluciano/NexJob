@@ -98,8 +98,11 @@ public sealed class JobExecutionEndToEndTests
         var parentId = await scheduler.EnqueueAsync<ParentJob, ParentInput>(new());
         await scheduler.ContinueWithAsync<ChildJob, ChildInput>(parentId, new());
 
-        await parentDone.Task.WaitAsync(TimeSpan.FromSeconds(10));
-        await childDone.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        var parentResult = await parentDone.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        var childResult  = await childDone.Task.WaitAsync(TimeSpan.FromSeconds(10));
+
+        parentResult.Should().BeTrue();
+        childResult.Should().BeTrue();
 
         await host.StopAsync();
     }
@@ -111,7 +114,7 @@ public record SignalInput(string Value);
 
 public class SignalJob(TaskCompletionSource<string> signal) : IJob<SignalInput>
 {
-    public Task ExecuteAsync(SignalInput input, CancellationToken ct)
+    public Task ExecuteAsync(SignalInput input, CancellationToken cancellationToken)
     {
         signal.TrySetResult(input.Value);
         return Task.CompletedTask;
@@ -121,11 +124,15 @@ public class SignalJob(TaskCompletionSource<string> signal) : IJob<SignalInput>
 public record FlakyInput;
 
 /// <summary>Shared mutable counter — survives across Transient DI instantiations.</summary>
-public sealed class AttemptCounter { public int Value; }
+public sealed class AttemptCounter
+{
+    /// <summary>Number of attempts made so far.</summary>
+    public int Value { get; set; }
+}
 
 public class FlakyJob(AttemptCounter counter, TaskCompletionSource<bool> done) : IJob<FlakyInput>
 {
-    public Task ExecuteAsync(FlakyInput input, CancellationToken ct)
+    public Task ExecuteAsync(FlakyInput input, CancellationToken cancellationToken)
     {
         counter.Value++;
         if (counter.Value < 3) throw new InvalidOperationException("not yet");
@@ -139,7 +146,7 @@ public record ChildInput;
 
 public class ParentJob(TaskCompletionSource<bool> done) : IJob<ParentInput>
 {
-    public Task ExecuteAsync(ParentInput input, CancellationToken ct)
+    public Task ExecuteAsync(ParentInput input, CancellationToken cancellationToken)
     {
         done.TrySetResult(true);
         return Task.CompletedTask;
@@ -148,7 +155,7 @@ public class ParentJob(TaskCompletionSource<bool> done) : IJob<ParentInput>
 
 public class ChildJob(TaskCompletionSource<bool> done) : IJob<ChildInput>
 {
-    public Task ExecuteAsync(ChildInput input, CancellationToken ct)
+    public Task ExecuteAsync(ChildInput input, CancellationToken cancellationToken)
     {
         done.TrySetResult(true);
         return Task.CompletedTask;

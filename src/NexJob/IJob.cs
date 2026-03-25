@@ -4,7 +4,8 @@ namespace NexJob;
 /// Defines a background job that processes a strongly-typed input.
 /// Implement this interface to create a NexJob job.
 /// </summary>
-public interface IJob<TInput>
+/// <typeparam name="TInput">The type of the input payload for this job.</typeparam>
+public interface IJob<in TInput>
 {
     /// <summary>
     /// Executes the background job with the provided input.
