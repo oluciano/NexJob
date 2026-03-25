@@ -163,10 +163,7 @@ internal sealed class JobDispatcherService : BackgroundService
 
             if (job.Attempts < job.MaxAttempts)
             {
-                var delaySec = Math.Pow(job.Attempts, 4)
-                               + 15
-                               + new Random().Next(30) * (job.Attempts + 1);
-                retryAt = DateTimeOffset.UtcNow.AddSeconds(delaySec);
+                retryAt = DateTimeOffset.UtcNow + _options.RetryDelayFactory(job.Attempts);
             }
             else
             {
