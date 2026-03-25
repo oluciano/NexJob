@@ -43,7 +43,7 @@ public sealed class JobExecutionEndToEndTests
     [Fact]
     public async Task Failed_job_is_retried_and_eventually_succeeds()
     {
-        var attempts = 0;
+        var counter   = new AttemptCounter();
         var succeeded = new TaskCompletionSource<bool>();
 
         using var host = Host.CreateDefaultBuilder()
@@ -51,11 +51,13 @@ public sealed class JobExecutionEndToEndTests
             {
                 services.AddNexJob(opt =>
                 {
-                    opt.Workers = 1;
-                    opt.PollingInterval = TimeSpan.FromMilliseconds(50);
-                    opt.MaxAttempts = 3;
+                    opt.Workers          = 1;
+                    opt.PollingInterval  = TimeSpan.FromMilliseconds(50);
+                    opt.MaxAttempts      = 3;
+                    // Use a short retry delay so the test completes in milliseconds
+                    opt.RetryDelayFactory = _ => TimeSpan.FromMilliseconds(100);
                 });
-                services.AddTransient(_ => new FlakyJob(ref attempts, succeeded));
+                services.AddTransient(_ => new FlakyJob(counter, succeeded));
             })
             .Build();
 
@@ -64,9 +66,9 @@ public sealed class JobExecutionEndToEndTests
         var scheduler = host.Services.GetRequiredService<IScheduler>();
         await scheduler.EnqueueAsync<FlakyJob, FlakyInput>(new());
 
-        var result = await succeeded.Task.WaitAsync(TimeSpan.FromSeconds(30));
+        var result = await succeeded.Task.WaitAsync(TimeSpan.FromSeconds(10));
         result.Should().BeTrue();
-        attempts.Should().BeGreaterThan(1);
+        counter.Value.Should().BeGreaterThan(1);
 
         await host.StopAsync();
     }
@@ -118,14 +120,15 @@ public class SignalJob(TaskCompletionSource<string> signal) : IJob<SignalInput>
 
 public record FlakyInput;
 
-public class FlakyJob(ref int attempts, TaskCompletionSource<bool> done) : IJob<FlakyInput>
-{
-    private int _attempts = attempts;
+/// <summary>Shared mutable counter — survives across Transient DI instantiations.</summary>
+public sealed class AttemptCounter { public int Value; }
 
+public class FlakyJob(AttemptCounter counter, TaskCompletionSource<bool> done) : IJob<FlakyInput>
+{
     public Task ExecuteAsync(FlakyInput input, CancellationToken ct)
     {
-        _attempts++;
-        if (_attempts < 3) throw new InvalidOperationException("not yet");
+        counter.Value++;
+        if (counter.Value < 3) throw new InvalidOperationException("not yet");
         done.TrySetResult(true);
         return Task.CompletedTask;
     }

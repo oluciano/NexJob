@@ -47,6 +47,14 @@ public sealed class NexJobOptions
     /// Queues are drained in the order specified. Defaults to <c>["default"]</c>.
     /// </summary>
     public IReadOnlyList<string> Queues { get; set; } = ["default"];
+
+    /// <summary>
+    /// Computes the retry delay for a failed job given the attempt number (1-based).
+    /// Defaults to exponential backoff: <c>pow(attempt, 4) + 15 + rand(30) × (attempt + 1)</c> seconds.
+    /// Override in tests or when you need a different backoff strategy.
+    /// </summary>
+    public Func<int, TimeSpan> RetryDelayFactory { get; set; } = attempt =>
+        TimeSpan.FromSeconds(Math.Pow(attempt, 4) + 15 + Random.Shared.Next(30) * (attempt + 1));
 }
 
 /// <summary>
