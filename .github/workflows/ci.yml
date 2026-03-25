@@ -7,7 +7,8 @@ on:
     branches: [main]
 
 jobs:
-  build:
+  unit-tests:
+    name: Unit Tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,5 +20,21 @@ jobs:
         run: dotnet restore
       - name: Build
         run: dotnet build --no-restore --configuration Release
-      - name: Test
-        run: dotnet test --no-build --configuration Release --verbosity normal
+      - name: Unit Tests
+        run: dotnet test tests/NexJob.Tests --no-build --configuration Release --verbosity normal
+
+  integration-tests:
+    name: Integration Tests (Docker)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Restore
+        run: dotnet restore
+      - name: Build
+        run: dotnet build --no-restore --configuration Release
+      - name: Integration Tests (Testcontainers)
+        run: dotnet test tests/NexJob.IntegrationTests --no-build --configuration Release --verbosity normal
