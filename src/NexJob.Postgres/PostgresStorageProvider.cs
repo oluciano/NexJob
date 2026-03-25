@@ -21,6 +21,9 @@ public sealed class PostgresStorageProvider : IStorageProvider
     public PostgresStorageProvider(string connectionString)
     {
         _connectionString = connectionString;
+        // Allow Dapper to match snake_case column names to PascalCase properties
+        // (e.g., recurring_job_id → RecurringJobId, completed_at → CompletedAt)
+        Dapper.DefaultTypeMap.MatchNamesWithUnderscores = true;
         EnsureSchema();
     }
 

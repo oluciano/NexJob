@@ -40,6 +40,8 @@ internal sealed class OrphanedJobWatcherService : BackgroundService
             try
             {
                 await _storage.RequeueOrphanedJobsAsync(_options.HeartbeatTimeout, stoppingToken);
+                // Check once per heartbeat timeout period — any more frequent is redundant
+                await Task.Delay(_options.HeartbeatTimeout, stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -49,9 +51,6 @@ internal sealed class OrphanedJobWatcherService : BackgroundService
             {
                 _logger.LogError(ex, "Error in OrphanedJobWatcherService");
             }
-
-            // Check once per heartbeat timeout period — any more frequent is redundant
-            await Task.Delay(_options.HeartbeatTimeout, stoppingToken);
         }
 
         _logger.LogInformation("OrphanedJobWatcherService stopped.");

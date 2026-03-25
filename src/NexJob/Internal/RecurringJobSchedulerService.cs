@@ -39,6 +39,7 @@ internal sealed class RecurringJobSchedulerService : BackgroundService
             try
             {
                 await EnqueueDueJobsAsync(stoppingToken);
+                await Task.Delay(_options.PollingInterval, stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -48,8 +49,6 @@ internal sealed class RecurringJobSchedulerService : BackgroundService
             {
                 _logger.LogError(ex, "Error in RecurringJobSchedulerService");
             }
-
-            await Task.Delay(_options.PollingInterval, stoppingToken);
         }
 
         _logger.LogInformation("RecurringJobSchedulerService stopped.");
