@@ -198,6 +198,18 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
     }
 
     /// <inheritdoc/>
+    public Task SetRecurringJobLastExecutionResultAsync(string recurringJobId, JobStatus status, string? errorMessage, CancellationToken cancellationToken = default)
+    {
+        if (_recurringJobs.TryGetValue(recurringJobId, out var job))
+        {
+            job.LastExecutionStatus = status;
+            job.LastExecutionError  = errorMessage;
+        }
+
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc/>
     public Task DeleteRecurringJobAsync(string recurringJobId, CancellationToken cancellationToken = default)
     {
         _recurringJobs.TryRemove(recurringJobId, out _);

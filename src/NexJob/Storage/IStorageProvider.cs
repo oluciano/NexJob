@@ -89,6 +89,17 @@ public interface IStorageProvider
     Task SetRecurringJobNextExecutionAsync(string recurringJobId, DateTimeOffset nextExecution, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Records the outcome of the most recent execution of a recurring job — updates
+    /// <see cref="RecurringJobRecord.LastExecutionStatus"/> and, on failure,
+    /// <see cref="RecurringJobRecord.LastExecutionError"/>.
+    /// </summary>
+    /// <param name="recurringJobId">The identifier of the recurring job.</param>
+    /// <param name="status">The final status of the executed instance (<see cref="JobStatus.Succeeded"/> or <see cref="JobStatus.Failed"/>).</param>
+    /// <param name="errorMessage">Error message if the job failed; <see langword="null"/> on success.</param>
+    /// <param name="cancellationToken">Token to cancel the operation.</param>
+    Task SetRecurringJobLastExecutionResultAsync(string recurringJobId, JobStatus status, string? errorMessage, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Permanently removes a recurring job definition. Already-enqueued instances
     /// of the job are not affected.
     /// </summary>

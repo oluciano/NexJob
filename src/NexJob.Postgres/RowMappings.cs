@@ -23,6 +23,7 @@ internal sealed class JobRow
     public string? ExceptionMessage { get; set; }
     public string? ExceptionStackTrace { get; set; }
     public Guid? ParentJobId { get; set; }
+    public string? RecurringJobId { get; set; }
 
     public JobRecord ToRecord() => new()
     {
@@ -46,6 +47,7 @@ internal sealed class JobRow
         LastErrorMessage    = ExceptionMessage,
         LastErrorStackTrace = ExceptionStackTrace,
         ParentJobId         = ParentJobId.HasValue ? new JobId(ParentJobId.Value) : null,
+        RecurringJobId      = RecurringJobId,
     };
 }
 
@@ -62,18 +64,23 @@ internal sealed class RecurringJobRow
     public DateTimeOffset? NextExecution { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset? LastExecution { get; set; }
+    public string? LastExecutionStatus { get; set; }
+    public string? LastExecutionError { get; set; }
 
     public RecurringJobRecord ToRecord() => new()
     {
-        RecurringJobId = RecurringJobId,
-        JobType        = JobType,
-        InputType      = InputType,
-        InputJson      = InputJson,
-        Cron           = Cron,
-        TimeZoneId     = TimeZoneId == "UTC" ? null : TimeZoneId,
-        Queue          = Queue,
-        NextExecution  = NextExecution,
-        CreatedAt      = CreatedAt,
-        LastExecutedAt = LastExecution,
+        RecurringJobId      = RecurringJobId,
+        JobType             = JobType,
+        InputType           = InputType,
+        InputJson           = InputJson,
+        Cron                = Cron,
+        TimeZoneId          = TimeZoneId == "UTC" ? null : TimeZoneId,
+        Queue               = Queue,
+        NextExecution       = NextExecution,
+        CreatedAt           = CreatedAt,
+        LastExecutedAt      = LastExecution,
+        LastExecutionStatus = LastExecutionStatus is not null
+            ? Enum.Parse<JobStatus>(LastExecutionStatus) : null,
+        LastExecutionError  = LastExecutionError,
     };
 }

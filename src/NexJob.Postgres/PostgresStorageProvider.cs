@@ -62,10 +62,10 @@ public sealed class PostgresStorageProvider : IStorageProvider
             """
             INSERT INTO nexjob_jobs
                 (id, job_type, input_type, input_json, schema_version, queue, priority, status,
-                 idempotency_key, attempts, max_attempts, created_at, scheduled_at, parent_job_id)
+                 idempotency_key, attempts, max_attempts, created_at, scheduled_at, parent_job_id, recurring_job_id)
             VALUES
                 (@Id, @JobType, @InputType, @InputJson::jsonb, @SchemaVersion, @Queue, @Priority,
-                 @Status, @IdempotencyKey, @Attempts, @MaxAttempts, @CreatedAt, @ScheduledAt, @ParentJobId)
+                 @Status, @IdempotencyKey, @Attempts, @MaxAttempts, @CreatedAt, @ScheduledAt, @ParentJobId, @RecurringJobId)
             """,
             new
             {
@@ -83,6 +83,7 @@ public sealed class PostgresStorageProvider : IStorageProvider
                 job.CreatedAt,
                 job.ScheduledAt,
                 ParentJobId    = job.ParentJobId?.Value,
+                job.RecurringJobId,
             });
 
         return job.Id;
@@ -267,6 +268,22 @@ public sealed class PostgresStorageProvider : IStorageProvider
             WHERE recurring_job_id = @id
             """,
             new { id = recurringJobId, next = nextExecution });
+    }
+
+    /// <inheritdoc/>
+    public async Task SetRecurringJobLastExecutionResultAsync(
+        string recurringJobId, JobStatus status, string? errorMessage,
+        CancellationToken cancellationToken = default)
+    {
+        await using var conn = Open();
+        await conn.OpenAsync(cancellationToken);
+        await conn.ExecuteAsync(
+            """
+            UPDATE nexjob_recurring_jobs
+            SET last_execution_status = @status, last_execution_error = @error, updated_at = NOW()
+            WHERE recurring_job_id = @id
+            """,
+            new { id = recurringJobId, status = status.ToString(), error = errorMessage });
     }
 
     /// <inheritdoc/>

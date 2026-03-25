@@ -182,6 +182,17 @@ public sealed class MongoStorageProvider : IStorageProvider
     }
 
     /// <inheritdoc/>
+    public async Task SetRecurringJobLastExecutionResultAsync(string recurringJobId, JobStatus status, string? errorMessage, CancellationToken cancellationToken = default)
+    {
+        var filter = Builders<RecurringJobDocument>.Filter.Eq(d => d.RecurringJobId, recurringJobId);
+        var update = Builders<RecurringJobDocument>.Update
+            .Set(d => d.LastExecutionStatus, (JobStatus?)status)
+            .Set(d => d.LastExecutionError,  errorMessage);
+
+        await _recurringJobs.UpdateOneAsync(filter, update, cancellationToken: cancellationToken);
+    }
+
+    /// <inheritdoc/>
     public async Task DeleteRecurringJobAsync(string recurringJobId, CancellationToken cancellationToken = default)
     {
         var filter = Builders<RecurringJobDocument>.Filter.Eq(d => d.RecurringJobId, recurringJobId);

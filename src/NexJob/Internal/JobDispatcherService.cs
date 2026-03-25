@@ -144,6 +144,10 @@ internal sealed class JobDispatcherService : BackgroundService
             await _storage.AcknowledgeAsync(job.Id, CancellationToken.None);
             await _storage.EnqueueContinuationsAsync(job.Id, CancellationToken.None);
 
+            if (job.RecurringJobId is not null)
+                await _storage.SetRecurringJobLastExecutionResultAsync(
+                    job.RecurringJobId, JobStatus.Succeeded, null, CancellationToken.None);
+
             _logger.LogDebug("Job {JobId} completed successfully", job.Id);
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -171,6 +175,10 @@ internal sealed class JobDispatcherService : BackgroundService
             }
 
             await _storage.SetFailedAsync(job.Id, ex, retryAt, CancellationToken.None);
+
+            if (job.RecurringJobId is not null && retryAt is null)
+                await _storage.SetRecurringJobLastExecutionResultAsync(
+                    job.RecurringJobId, JobStatus.Failed, ex.Message, CancellationToken.None);
         }
         finally
         {

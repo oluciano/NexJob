@@ -148,6 +148,13 @@ public sealed class JobRecord
     /// Set when the job is created via <see cref="IScheduler.ContinueWithAsync{TJob,TInput}"/>.
     /// </summary>
     public JobId? ParentJobId { get; init; }
+
+    /// <summary>
+    /// Identifier of the <see cref="RecurringJobRecord"/> that spawned this job instance,
+    /// or <see langword="null"/> for manually enqueued jobs.
+    /// Used to update <see cref="RecurringJobRecord.LastExecutionStatus"/> on completion.
+    /// </summary>
+    public string? RecurringJobId { get; init; }
 }
 
 /// <summary>
@@ -188,4 +195,16 @@ public sealed class RecurringJobRecord
 
     /// <summary>UTC timestamp of the most recent execution, or <see langword="null"/> if never run.</summary>
     public DateTimeOffset? LastExecutedAt { get; set; }
+
+    /// <summary>
+    /// Status of the most recent execution (<see cref="JobStatus.Succeeded"/> or
+    /// <see cref="JobStatus.Failed"/>), or <see langword="null"/> if never run.
+    /// </summary>
+    public JobStatus? LastExecutionStatus { get; set; }
+
+    /// <summary>
+    /// Error message from the most recent failed execution, or <see langword="null"/> if the
+    /// last execution succeeded or the job has never run.
+    /// </summary>
+    public string? LastExecutionError { get; set; }
 }

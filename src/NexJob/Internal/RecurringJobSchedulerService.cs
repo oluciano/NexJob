@@ -77,6 +77,7 @@ internal sealed class RecurringJobSchedulerService : BackgroundService
                     Status = JobStatus.Enqueued,
                     CreatedAt = DateTimeOffset.UtcNow,
                     MaxAttempts = _options.MaxAttempts,
+                    RecurringJobId = recurring.RecurringJobId,
                 };
 
                 await _storage.EnqueueAsync(jobRecord, cancellationToken);

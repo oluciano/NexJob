@@ -30,6 +30,7 @@ internal sealed class JobDocument
     public string? LastErrorMessage { get; set; }
     public string? LastErrorStackTrace { get; set; }
     public JobId? ParentJobId { get; set; }
+    public string? RecurringJobId { get; set; }
 
     public static JobDocument FromRecord(JobRecord r) => new()
     {
@@ -53,6 +54,7 @@ internal sealed class JobDocument
         LastErrorMessage    = r.LastErrorMessage,
         LastErrorStackTrace = r.LastErrorStackTrace,
         ParentJobId         = r.ParentJobId,
+        RecurringJobId      = r.RecurringJobId,
     };
 
     public JobRecord ToRecord() => new()
@@ -77,6 +79,7 @@ internal sealed class JobDocument
         LastErrorMessage    = LastErrorMessage,
         LastErrorStackTrace = LastErrorStackTrace,
         ParentJobId         = ParentJobId,
+        RecurringJobId      = RecurringJobId,
     };
 }
 
@@ -94,32 +97,39 @@ internal sealed class RecurringJobDocument
     public DateTimeOffset? NextExecution { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset? LastExecutedAt { get; set; }
+    [BsonRepresentation(BsonType.String)]
+    public JobStatus? LastExecutionStatus { get; set; }
+    public string? LastExecutionError { get; set; }
 
     public static RecurringJobDocument FromRecord(RecurringJobRecord r) => new()
     {
-        RecurringJobId = r.RecurringJobId,
-        JobType        = r.JobType,
-        InputType      = r.InputType,
-        InputJson      = r.InputJson,
-        Cron           = r.Cron,
-        TimeZoneId     = r.TimeZoneId,
-        Queue          = r.Queue,
-        NextExecution  = r.NextExecution,
-        CreatedAt      = r.CreatedAt,
-        LastExecutedAt = r.LastExecutedAt,
+        RecurringJobId      = r.RecurringJobId,
+        JobType             = r.JobType,
+        InputType           = r.InputType,
+        InputJson           = r.InputJson,
+        Cron                = r.Cron,
+        TimeZoneId          = r.TimeZoneId,
+        Queue               = r.Queue,
+        NextExecution       = r.NextExecution,
+        CreatedAt           = r.CreatedAt,
+        LastExecutedAt      = r.LastExecutedAt,
+        LastExecutionStatus = r.LastExecutionStatus,
+        LastExecutionError  = r.LastExecutionError,
     };
 
     public RecurringJobRecord ToRecord() => new()
     {
-        RecurringJobId = RecurringJobId,
-        JobType        = JobType,
-        InputType      = InputType,
-        InputJson      = InputJson,
-        Cron           = Cron,
-        TimeZoneId     = TimeZoneId,
-        Queue          = Queue,
-        NextExecution  = NextExecution,
-        CreatedAt      = CreatedAt,
-        LastExecutedAt = LastExecutedAt,
+        RecurringJobId      = RecurringJobId,
+        JobType             = JobType,
+        InputType           = InputType,
+        InputJson           = InputJson,
+        Cron                = Cron,
+        TimeZoneId          = TimeZoneId,
+        Queue               = Queue,
+        NextExecution       = NextExecution,
+        CreatedAt           = CreatedAt,
+        LastExecutedAt      = LastExecutedAt,
+        LastExecutionStatus = LastExecutionStatus,
+        LastExecutionError  = LastExecutionError,
     };
 }

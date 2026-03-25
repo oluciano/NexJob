@@ -24,7 +24,8 @@ internal static class SchemaSQL
             retry_at              TIMESTAMPTZ,
             exception_message     TEXT,
             exception_stack_trace TEXT,
-            parent_job_id         UUID
+            parent_job_id         UUID,
+            recurring_job_id      TEXT
         );
 
         CREATE INDEX IF NOT EXISTS idx_nexjob_jobs_fetch
@@ -51,10 +52,12 @@ internal static class SchemaSQL
             cron              TEXT        NOT NULL,
             time_zone_id      TEXT        NOT NULL DEFAULT 'UTC',
             queue             TEXT        NOT NULL DEFAULT 'default',
-            next_execution    TIMESTAMPTZ,
-            last_execution    TIMESTAMPTZ,
-            created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            next_execution          TIMESTAMPTZ,
+            last_execution          TIMESTAMPTZ,
+            last_execution_status   TEXT,
+            last_execution_error    TEXT,
+            created_at              TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at              TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
 
         CREATE INDEX IF NOT EXISTS idx_nexjob_recurring_next

@@ -31,9 +31,21 @@ internal sealed class RecurringPage : IComponent
                 ? Helpers.FormatCountdown(r.NextExecution.Value - now)
                 : "<span style=\"color:var(--text-muted)\">—</span>";
 
-            var lastRun = r.LastExecutedAt.HasValue
-                ? $"<span title=\"{r.LastExecutedAt.Value:yyyy-MM-dd HH:mm:ss UTC}\">{r.LastExecutedAt.Value:MM/dd HH:mm}</span>"
-                : "—";
+            string lastRun;
+            if (r.LastExecutedAt.HasValue)
+            {
+                var badge = r.LastExecutionStatus switch
+                {
+                    JobStatus.Succeeded => "<span class=\"badge badge-succeeded\" style=\"margin-left:4px\">✓ ok</span>",
+                    JobStatus.Failed    => $"<span class=\"badge badge-failed\" title=\"{System.Web.HttpUtility.HtmlAttributeEncode(r.LastExecutionError ?? "")}\" style=\"margin-left:4px\">✗ err</span>",
+                    _                  => "",
+                };
+                lastRun = $"<span title=\"{r.LastExecutedAt.Value:yyyy-MM-dd HH:mm:ss UTC}\">{r.LastExecutedAt.Value:MM/dd HH:mm}</span>{badge}";
+            }
+            else
+            {
+                lastRun = "<span style=\"color:var(--text-muted)\">never</span>";
+            }
 
             return $"<tr>" +
                    $"<td style=\"width:36px\"><input type=\"checkbox\" name=\"ids\" value=\"{System.Web.HttpUtility.HtmlAttributeEncode(r.RecurringJobId)}\" /></td>" +
