@@ -24,17 +24,21 @@ public sealed class RecurringJobSchedulerServiceTests
             storage, options, NullLogger<RecurringJobSchedulerService>.Instance);
     }
 
-    private static RecurringJobRecord MakeRecurring(string id, DateTimeOffset nextExecution) =>
+    private static RecurringJobRecord MakeRecurring(
+        string id,
+        DateTimeOffset nextExecution,
+        RecurringConcurrencyPolicy policy = RecurringConcurrencyPolicy.SkipIfRunning) =>
         new()
         {
-            RecurringJobId = id,
-            JobType        = "FakeJob",
-            InputType      = "System.String",
-            InputJson      = "\"go\"",
-            Cron           = "* * * * *",   // every minute
-            Queue          = "default",
-            NextExecution  = nextExecution,
-            CreatedAt      = DateTimeOffset.UtcNow,
+            RecurringJobId    = id,
+            JobType           = "FakeJob",
+            InputType         = "System.String",
+            InputJson         = "\"go\"",
+            Cron              = "* * * * *",   // every minute
+            Queue             = "default",
+            NextExecution     = nextExecution,
+            CreatedAt         = DateTimeOffset.UtcNow,
+            ConcurrencyPolicy = policy,
         };
 
     // ─── tests ────────────────────────────────────────────────────────────────
@@ -131,6 +135,35 @@ public sealed class RecurringJobSchedulerServiceTests
         // There must be no second Enqueued job — idempotency key blocks the duplicate
         var second = await storage.FetchNextAsync(["default"]);
         second.Should().BeNull("second instance must be blocked while first is Processing");
+    }
+
+    [Fact]
+    public async Task AllowConcurrentPolicy_SpawnsSecondInstanceWhileFirstIsRunning()
+    {
+        // With AllowConcurrent, no idempotency key — a second instance IS created even
+        // when the first job is still Processing.
+        var storage = new InMemoryStorageProvider();
+        await storage.UpsertRecurringJobAsync(
+            MakeRecurring("r-concurrent", DateTimeOffset.UtcNow.AddSeconds(-1),
+                RecurringConcurrencyPolicy.AllowConcurrent));
+
+        var svc = (IHostedService)MakeService(storage, pollingInterval: TimeSpan.FromMilliseconds(30));
+        await svc.StartAsync(CancellationToken.None);
+        await Task.Delay(50); // first cycle enqueues
+
+        // Claim the first job (status → Processing)
+        var first = await storage.FetchNextAsync(["default"]);
+        first.Should().NotBeNull();
+
+        // Force NextExecution back to the past so scheduler fires again
+        await storage.SetRecurringJobNextExecutionAsync("r-concurrent", DateTimeOffset.UtcNow.AddSeconds(-1));
+        await Task.Delay(100); // let scheduler fire a second time
+
+        await svc.StopAsync(CancellationToken.None);
+
+        // There MUST be a second enqueued job — no idempotency key with AllowConcurrent
+        var second = await storage.FetchNextAsync(["default"]);
+        second.Should().NotBeNull("AllowConcurrent must spawn a second instance while first is running");
     }
 
     [Fact]

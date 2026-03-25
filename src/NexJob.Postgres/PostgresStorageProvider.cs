@@ -214,19 +214,20 @@ public sealed class PostgresStorageProvider : IStorageProvider
             """
             INSERT INTO nexjob_recurring_jobs
                 (recurring_job_id, job_type, input_type, input_json, cron,
-                 time_zone_id, queue, next_execution, created_at, updated_at)
+                 time_zone_id, queue, next_execution, concurrency_policy, created_at, updated_at)
             VALUES
                 (@RecurringJobId, @JobType, @InputType, @InputJson::jsonb, @Cron,
-                 @TimeZoneId, @Queue, @NextExecution, @CreatedAt, NOW())
+                 @TimeZoneId, @Queue, @NextExecution, @ConcurrencyPolicy, @CreatedAt, NOW())
             ON CONFLICT (recurring_job_id) DO UPDATE
-            SET job_type       = EXCLUDED.job_type,
-                input_type     = EXCLUDED.input_type,
-                input_json     = EXCLUDED.input_json,
-                cron           = EXCLUDED.cron,
-                time_zone_id   = EXCLUDED.time_zone_id,
-                queue          = EXCLUDED.queue,
-                next_execution = EXCLUDED.next_execution,
-                updated_at     = NOW()
+            SET job_type           = EXCLUDED.job_type,
+                input_type         = EXCLUDED.input_type,
+                input_json         = EXCLUDED.input_json,
+                cron               = EXCLUDED.cron,
+                time_zone_id       = EXCLUDED.time_zone_id,
+                queue              = EXCLUDED.queue,
+                next_execution     = EXCLUDED.next_execution,
+                concurrency_policy = EXCLUDED.concurrency_policy,
+                updated_at         = NOW()
             """,
             new
             {

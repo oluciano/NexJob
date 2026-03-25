@@ -47,12 +47,16 @@ internal sealed class RecurringPage : IComponent
                 lastRun = "<span style=\"color:var(--text-muted)\">never</span>";
             }
 
+            var concurrencyBadge = r.ConcurrencyPolicy == RecurringConcurrencyPolicy.AllowConcurrent
+                ? "<span class=\"badge\" style=\"background:var(--info,#4a9eff);color:#fff;margin-left:4px\" title=\"AllowConcurrent: multiple instances may run in parallel\">⟳ concurrent</span>"
+                : "";
+
             return $"<tr>" +
                    $"<td style=\"width:36px\"><input type=\"checkbox\" name=\"ids\" value=\"{System.Web.HttpUtility.HtmlAttributeEncode(r.RecurringJobId)}\" /></td>" +
                    $"<td>{System.Web.HttpUtility.HtmlEncode(r.RecurringJobId)}</td>" +
                    $"<td><code style=\"color:var(--warning)\">{System.Web.HttpUtility.HtmlEncode(r.Cron)}</code></td>" +
                    $"<td>{System.Web.HttpUtility.HtmlEncode(r.Queue)}</td>" +
-                   $"<td>{Helpers.ShortType(r.JobType)}</td>" +
+                   $"<td>{Helpers.ShortType(r.JobType)}{concurrencyBadge}</td>" +
                    $"<td>{lastRun}</td>" +
                    $"<td>{countdown}</td>" +
                    $"</tr>";

@@ -84,6 +84,12 @@ public interface IScheduler
     /// Time zone used to evaluate the cron expression. Defaults to UTC.
     /// </param>
     /// <param name="queue">Target queue name. Uses the default queue when <see langword="null"/>.</param>
+    /// <param name="concurrencyPolicy">
+    /// Controls what happens when a new cron firing occurs while a previous instance is still
+    /// running. <see cref="RecurringConcurrencyPolicy.SkipIfRunning"/> (default) silently skips
+    /// the new firing; <see cref="RecurringConcurrencyPolicy.AllowConcurrent"/> always enqueues
+    /// a new instance, enabling parallel execution of the same job.
+    /// </param>
     /// <param name="cancellationToken">Token to cancel the operation.</param>
     Task RecurringAsync<TJob, TInput>(
         string recurringJobId,
@@ -91,6 +97,7 @@ public interface IScheduler
         string cron,
         TimeZoneInfo? timeZone = null,
         string? queue = null,
+        RecurringConcurrencyPolicy concurrencyPolicy = RecurringConcurrencyPolicy.SkipIfRunning,
         CancellationToken cancellationToken = default)
         where TJob : IJob<TInput>;
 

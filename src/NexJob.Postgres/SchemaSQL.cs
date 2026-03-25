@@ -56,6 +56,7 @@ internal static class SchemaSQL
             last_execution          TIMESTAMPTZ,
             last_execution_status   TEXT,
             last_execution_error    TEXT,
+            concurrency_policy      TEXT        NOT NULL DEFAULT 'SkipIfRunning',
             created_at              TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_at              TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );

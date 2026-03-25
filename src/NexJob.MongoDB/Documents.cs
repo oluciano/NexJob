@@ -100,6 +100,8 @@ internal sealed class RecurringJobDocument
     [BsonRepresentation(BsonType.String)]
     public JobStatus? LastExecutionStatus { get; set; }
     public string? LastExecutionError { get; set; }
+    [BsonRepresentation(BsonType.String)]
+    public RecurringConcurrencyPolicy ConcurrencyPolicy { get; set; } = RecurringConcurrencyPolicy.SkipIfRunning;
 
     public static RecurringJobDocument FromRecord(RecurringJobRecord r) => new()
     {
@@ -115,6 +117,7 @@ internal sealed class RecurringJobDocument
         LastExecutedAt      = r.LastExecutedAt,
         LastExecutionStatus = r.LastExecutionStatus,
         LastExecutionError  = r.LastExecutionError,
+        ConcurrencyPolicy   = r.ConcurrencyPolicy,
     };
 
     public RecurringJobRecord ToRecord() => new()
@@ -131,5 +134,6 @@ internal sealed class RecurringJobDocument
         LastExecutedAt      = LastExecutedAt,
         LastExecutionStatus = LastExecutionStatus,
         LastExecutionError  = LastExecutionError,
+        ConcurrencyPolicy   = ConcurrencyPolicy,
     };
 }

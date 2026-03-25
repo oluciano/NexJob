@@ -78,10 +78,12 @@ internal sealed class RecurringJobSchedulerService : BackgroundService
                     CreatedAt      = DateTimeOffset.UtcNow,
                     MaxAttempts    = _options.MaxAttempts,
                     RecurringJobId = recurring.RecurringJobId,
-                    // Prevents a second instance from running while this one is
-                    // Enqueued or Processing — cron overlap and manual triggers
-                    // are silently skipped until the current execution completes.
-                    IdempotencyKey = $"recurring:{recurring.RecurringJobId}",
+                    // SkipIfRunning: idempotency key blocks a second instance while
+                    // the first is Enqueued or Processing.
+                    // AllowConcurrent: no key — every firing creates a new instance.
+                    IdempotencyKey = recurring.ConcurrencyPolicy == RecurringConcurrencyPolicy.SkipIfRunning
+                        ? $"recurring:{recurring.RecurringJobId}"
+                        : null,
                 };
 
                 await _storage.EnqueueAsync(jobRecord, cancellationToken);

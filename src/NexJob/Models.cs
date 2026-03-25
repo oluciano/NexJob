@@ -158,6 +158,28 @@ public sealed class JobRecord
 }
 
 /// <summary>
+/// Controls how the recurring job scheduler behaves when a previous instance of the
+/// same job is still <see cref="JobStatus.Enqueued"/> or <see cref="JobStatus.Processing"/>.
+/// </summary>
+public enum RecurringConcurrencyPolicy
+{
+    /// <summary>
+    /// Default. If an instance of this job is already queued or running, the new
+    /// firing is silently skipped. Safe for jobs that must not overlap (reports,
+    /// clean-up tasks, anything that assumes exclusive access to a resource).
+    /// </summary>
+    SkipIfRunning = 0,
+
+    /// <summary>
+    /// Every cron firing (and every manual trigger) creates a new job instance
+    /// regardless of how many are already running. Use this when concurrent
+    /// instances are safe and desirable — for example, range-based data processing
+    /// where each instance locks its own shard and works independently.
+    /// </summary>
+    AllowConcurrent = 1,
+}
+
+/// <summary>
 /// Persisted definition of a recurring job. The scheduler uses this record to
 /// calculate the next execution time and enqueue a <see cref="JobRecord"/> on schedule.
 /// </summary>
@@ -207,4 +229,11 @@ public sealed class RecurringJobRecord
     /// last execution succeeded or the job has never run.
     /// </summary>
     public string? LastExecutionError { get; set; }
+
+    /// <summary>
+    /// Controls what happens when a new firing occurs while a previous instance is still
+    /// running. Defaults to <see cref="RecurringConcurrencyPolicy.SkipIfRunning"/>.
+    /// </summary>
+    public RecurringConcurrencyPolicy ConcurrencyPolicy { get; init; } =
+        RecurringConcurrencyPolicy.SkipIfRunning;
 }

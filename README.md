@@ -151,11 +151,18 @@ await scheduler.ScheduleAsync<SendInvoiceJob, SendInvoiceInput>(
     new(orderId, email),
     delay: TimeSpan.FromMinutes(5));
 
-// Recurring (cron)
+// Recurring (cron) — default: skip if already running
 await scheduler.RecurringAsync<MonthlyReportJob, MonthlyReportInput>(
     id: "monthly-report",
     input: new(DateTime.UtcNow.Month),
     cron: "0 9 1 * *");
+
+// Recurring — allow multiple instances in parallel (range-based sharding etc.)
+await scheduler.RecurringAsync<ImportChunkJob, ImportChunkInput>(
+    id: "import-chunk",
+    input: new(ShardId: 0),
+    cron: "*/5 * * * *",
+    concurrencyPolicy: RecurringConcurrencyPolicy.AllowConcurrent);
 
 // Continuation — runs only after parent succeeds
 var jobId = await scheduler.EnqueueAsync<ProcessPaymentJob, PaymentInput>(paymentInput);
@@ -197,6 +204,38 @@ Limit how many instances of a job run concurrently across all workers — no ext
 [Throttle(resource: "stripe", maxConcurrent: 3)]
 public class ChargeCardJob : IJob<ChargeInput> { ... }
 ```
+
+---
+
+## Recurring concurrency policy
+
+By default, NexJob prevents a recurring job from having more than one active instance at a time.
+If the previous execution is still running when the cron fires again, the new firing is silently
+skipped — no duplicates, no queued pile-up.
+
+```csharp
+// SkipIfRunning (default) — safe for jobs that must not overlap
+await scheduler.RecurringAsync<SyncInventoryJob, Unit>(
+    id:    "sync-inventory",
+    input: Unit.Value,
+    cron:  "*/5 * * * *");
+    // concurrencyPolicy defaults to RecurringConcurrencyPolicy.SkipIfRunning
+```
+
+Some jobs are designed to run in parallel — for example, range-based imports that each
+process a different shard of data. Use `AllowConcurrent` to opt out of the overlap guard:
+
+```csharp
+// AllowConcurrent — each firing spawns a new instance regardless of running ones
+await scheduler.RecurringAsync<ImportShardJob, ShardInput>(
+    id:                "import-shard",
+    input:             new(ShardId: myShardId),
+    cron:              "*/10 * * * *",
+    concurrencyPolicy: RecurringConcurrencyPolicy.AllowConcurrent);
+```
+
+The dashboard shows a **⟳ concurrent** badge on any recurring job registered with
+`AllowConcurrent`, so the behaviour is always visible at a glance.
 
 ---
 

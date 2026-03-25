@@ -77,6 +77,7 @@ internal sealed class DefaultScheduler : IScheduler
         string cron,
         TimeZoneInfo? timeZone = null,
         string? queue = null,
+        RecurringConcurrencyPolicy concurrencyPolicy = RecurringConcurrencyPolicy.SkipIfRunning,
         CancellationToken cancellationToken = default)
         where TJob : IJob<TInput>
     {
@@ -86,15 +87,16 @@ internal sealed class DefaultScheduler : IScheduler
 
         var record = new RecurringJobRecord
         {
-            RecurringJobId = recurringJobId,
-            JobType = typeof(TJob).AssemblyQualifiedName!,
-            InputType = typeof(TInput).AssemblyQualifiedName!,
-            InputJson = JsonSerializer.Serialize(input),
-            Cron = cron,
-            TimeZoneId = timeZone?.Id,
-            Queue = queue ?? "default",
-            NextExecution = nextExecution,
-            CreatedAt = DateTimeOffset.UtcNow,
+            RecurringJobId    = recurringJobId,
+            JobType           = typeof(TJob).AssemblyQualifiedName!,
+            InputType         = typeof(TInput).AssemblyQualifiedName!,
+            InputJson         = JsonSerializer.Serialize(input),
+            Cron              = cron,
+            TimeZoneId        = timeZone?.Id,
+            Queue             = queue ?? "default",
+            NextExecution     = nextExecution,
+            CreatedAt         = DateTimeOffset.UtcNow,
+            ConcurrencyPolicy = concurrencyPolicy,
         };
 
         return _storage.UpsertRecurringJobAsync(record, cancellationToken);
