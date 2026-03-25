@@ -43,14 +43,6 @@ dotnet_diagnostic.SA1602.severity = none
 # Too prescriptive; existing docs are clear without the mandatory verb prefix.
 dotnet_diagnostic.SA1623.severity = none
 
-# SA1402 — file may only contain a single type.
-# We intentionally group related small types (e.g. DashboardModels.cs, Configuration.cs).
-dotnet_diagnostic.SA1402.severity = none
-
-# SA1649 — file name must match the first type name.
-# Follows from SA1402: multi-type files cannot satisfy both rules simultaneously.
-dotnet_diagnostic.SA1649.severity = none
-
 # SA1201 — elements must appear in a specific order (enum after class/record).
 # Our files are organised by logical section, not by element kind.
 dotnet_diagnostic.SA1201.severity = none
@@ -175,14 +167,16 @@ dotnet_diagnostic.SA1615.severity = none
 dotnet_diagnostic.SA1623.severity = none
 dotnet_diagnostic.SA1633.severity = none
 dotnet_diagnostic.SA1642.severity = none
-dotnet_diagnostic.SA1649.severity = none
 
 # ── Sample project overrides ──────────────────────────────────────────────────
 # Program.cs uses top-level statements; types at the end are intentionally in
 # the global namespace and have no explicit access modifier by design.
+# Job files co-locate the input record with the job class for readability in demos.
 [samples/**/*.cs]
 dotnet_diagnostic.S3903.severity = none
 dotnet_diagnostic.SA1400.severity = none
+dotnet_diagnostic.SA1402.severity = none
+dotnet_diagnostic.SA1649.severity = none
 
 [*.{json,yaml,yml}]
 indent_size = 2
