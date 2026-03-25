@@ -68,16 +68,20 @@ internal sealed class RecurringJobSchedulerService : BackgroundService
             {
                 var jobRecord = new JobRecord
                 {
-                    Id = JobId.New(),
-                    JobType = recurring.JobType,
-                    InputType = recurring.InputType,
-                    InputJson = recurring.InputJson,
-                    Queue = recurring.Queue,
-                    Priority = JobPriority.Normal,
-                    Status = JobStatus.Enqueued,
-                    CreatedAt = DateTimeOffset.UtcNow,
-                    MaxAttempts = _options.MaxAttempts,
+                    Id             = JobId.New(),
+                    JobType        = recurring.JobType,
+                    InputType      = recurring.InputType,
+                    InputJson      = recurring.InputJson,
+                    Queue          = recurring.Queue,
+                    Priority       = JobPriority.Normal,
+                    Status         = JobStatus.Enqueued,
+                    CreatedAt      = DateTimeOffset.UtcNow,
+                    MaxAttempts    = _options.MaxAttempts,
                     RecurringJobId = recurring.RecurringJobId,
+                    // Prevents a second instance from running while this one is
+                    // Enqueued or Processing — cron overlap and manual triggers
+                    // are silently skipped until the current execution completes.
+                    IdempotencyKey = $"recurring:{recurring.RecurringJobId}",
                 };
 
                 await _storage.EnqueueAsync(jobRecord, cancellationToken);

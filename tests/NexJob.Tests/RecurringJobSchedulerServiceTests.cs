@@ -107,6 +107,33 @@ public sealed class RecurringJobSchedulerServiceTests
     }
 
     [Fact]
+    public async Task CronFiringWhileJobIsRunning_DoesNotStartSecondInstance()
+    {
+        // Simulates cron overlap: job is still Processing when the scheduler fires again.
+        var storage = new InMemoryStorageProvider();
+        await storage.UpsertRecurringJobAsync(
+            MakeRecurring("r-overlap", DateTimeOffset.UtcNow.AddSeconds(-1)));
+
+        var svc = (IHostedService)MakeService(storage, pollingInterval: TimeSpan.FromMilliseconds(30));
+        await svc.StartAsync(CancellationToken.None);
+        await Task.Delay(50); // first cycle enqueues + advances NextExecution
+
+        // Claim the job (simulates worker picking it up — status → Processing)
+        var running = await storage.FetchNextAsync(["default"]);
+        running.Should().NotBeNull();
+
+        // Force NextExecution back to the past so scheduler fires again while job is "running"
+        await storage.SetRecurringJobNextExecutionAsync("r-overlap", DateTimeOffset.UtcNow.AddSeconds(-1));
+        await Task.Delay(100); // let scheduler fire a second time
+
+        await svc.StopAsync(CancellationToken.None);
+
+        // There must be no second Enqueued job — idempotency key blocks the duplicate
+        var second = await storage.FetchNextAsync(["default"]);
+        second.Should().BeNull("second instance must be blocked while first is Processing");
+    }
+
+    [Fact]
     public async Task MultipleJobsDue_AllAreEnqueued()
     {
         var storage = new InMemoryStorageProvider();
