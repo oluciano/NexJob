@@ -54,7 +54,7 @@ public sealed class NexJobOptions
     /// Override in tests or when you need a different backoff strategy.
     /// </summary>
     public Func<int, TimeSpan> RetryDelayFactory { get; set; } = attempt =>
-        TimeSpan.FromSeconds(Math.Pow(attempt, 4) + 15 + Random.Shared.Next(30) * (attempt + 1));
+        TimeSpan.FromSeconds(Math.Pow(attempt, 4) + 15 + (Random.Shared.Next(30) * (attempt + 1)));
 }
 
 /// <summary>

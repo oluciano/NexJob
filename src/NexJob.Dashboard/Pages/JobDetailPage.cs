@@ -69,12 +69,23 @@ internal sealed class JobDetailPage : IComponent
             "<h2>Payload</h2>" +
             $"<pre>{Helpers.FormatJson(job.InputJson)}</pre>";
 
-        var errorSection = job.LastErrorMessage is null ? "" :
-            "<h2 style=\"color:var(--danger);margin-top:20px\">Last Error</h2>" +
-            $"<pre style=\"border-color:var(--danger)\">{System.Web.HttpUtility.HtmlEncode(job.LastErrorMessage)}</pre>" +
-            (job.LastErrorStackTrace is null ? "" :
-                "<h2 style=\"color:var(--danger);margin-top:12px\">Stack Trace</h2>" +
-                $"<pre style=\"border-color:var(--danger)\">{System.Web.HttpUtility.HtmlEncode(job.LastErrorStackTrace)}</pre>");
+        string errorSection;
+        if (job.LastErrorMessage is null)
+        {
+            errorSection = string.Empty;
+        }
+        else
+        {
+            var stackTrace = job.LastErrorStackTrace is null
+                ? string.Empty
+                : "<h2 style=\"color:var(--danger);margin-top:12px\">Stack Trace</h2>" +
+                  $"<pre style=\"border-color:var(--danger)\">{System.Web.HttpUtility.HtmlEncode(job.LastErrorStackTrace)}</pre>";
+
+            errorSection =
+                "<h2 style=\"color:var(--danger);margin-top:20px\">Last Error</h2>" +
+                $"<pre style=\"border-color:var(--danger)\">{System.Web.HttpUtility.HtmlEncode(job.LastErrorMessage)}</pre>" +
+                stackTrace;
+        }
 
         var body =
             $"<div style=\"display:flex;align-items:center;gap:16px;margin-bottom:24px\">" +

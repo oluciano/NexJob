@@ -150,10 +150,10 @@ internal sealed class JobDispatcherService : BackgroundService
 
             _logger.LogDebug("Job {JobId} completed successfully", job.Id);
         }
-        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        catch (OperationCanceledException ex) when (stoppingToken.IsCancellationRequested)
         {
             // Host is shutting down — do not retry; the orphan watcher will requeue
-            _logger.LogWarning("Job {JobId} was interrupted by host shutdown", job.Id);
+            _logger.LogWarning(ex, "Job {JobId} was interrupted by host shutdown", job.Id);
         }
         catch (Exception ex)
         {

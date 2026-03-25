@@ -12,6 +12,178 @@ indent_size = 4
 dotnet_sort_system_directives_first = true
 csharp_prefer_braces = true:warning
 
+# ── StyleCop: rules that conflict with this project's established conventions ──
+
+# SA1309 — field names must not begin with underscore.
+# Our convention is _camelCase for private fields (see CONTRIBUTING.md).
+dotnet_diagnostic.SA1309.severity = none
+# SX1309 is the complementary rule that REQUIRES the underscore prefix (StyleCop.Analyzers.Unstable).
+dotnet_diagnostic.SX1309.severity = none
+
+# SA1633 — file must have a copyright/license header.
+# We use MIT and list it in the NuGet metadata, not in every file.
+dotnet_diagnostic.SA1633.severity = none
+
+# SA1200 — using directives must be placed inside namespace.
+# All our files use top-level usings (outside namespace), which is the modern C# standard.
+dotnet_diagnostic.SA1200.severity = none
+
+# SA1101 — prefix local calls with 'this'.
+# Not part of our style guide; adds noise without value.
+dotnet_diagnostic.SA1101.severity = none
+
+# SA1600/SA1601/SA1602 — elements must be documented.
+# Public members already have XML docs. Internal/private members are covered by
+# GenerateDocumentationFile = true; we do not require triple-slash on every private member.
+dotnet_diagnostic.SA1600.severity = none
+dotnet_diagnostic.SA1601.severity = none
+dotnet_diagnostic.SA1602.severity = none
+
+# SA1623 — property documentation must begin with "Gets" or "Gets or sets".
+# Too prescriptive; existing docs are clear without the mandatory verb prefix.
+dotnet_diagnostic.SA1623.severity = none
+
+# SA1402 — file may only contain a single type.
+# We intentionally group related small types (e.g. DashboardModels.cs, Configuration.cs).
+dotnet_diagnostic.SA1402.severity = none
+
+# SA1649 — file name must match the first type name.
+# Follows from SA1402: multi-type files cannot satisfy both rules simultaneously.
+dotnet_diagnostic.SA1649.severity = none
+
+# SA1201 — elements must appear in a specific order (enum after class/record).
+# Our files are organised by logical section, not by element kind.
+dotnet_diagnostic.SA1201.severity = none
+
+# SA1204 — static members must appear before non-static members.
+# Organisation by responsibility (ctor → methods → helpers) is more readable here.
+dotnet_diagnostic.SA1204.severity = none
+
+# SA1512 — single-line comment must not be followed by a blank line.
+# Our section dividers (// ─── name ──────) are intentionally separated by a blank line.
+dotnet_diagnostic.SA1512.severity = none
+
+# SA1025 — code must not contain multiple whitespace characters in a row.
+# Aligned assignments (var x   = 1; var foo = 2;) are used for readability in object initialisers.
+dotnet_diagnostic.SA1025.severity = none
+
+# SA1202 — members must appear in access-modifier order.
+# Our files use logical sections (// ─── helpers ───) that group by purpose, not visibility.
+dotnet_diagnostic.SA1202.severity = none
+
+# SA1515 — single-line comment must be preceded by a blank line.
+# Many inline comments in tight code blocks intentionally omit the blank line.
+dotnet_diagnostic.SA1515.severity = none
+
+# SA1615 — return value should be documented.
+# Task/Task<T> return values on interface methods are self-evident; adding <returns> everywhere
+# would be boilerplate noise without value.
+dotnet_diagnostic.SA1615.severity = none
+
+# SA1611 — parameter documentation missing.
+# CancellationToken parameters are conventional and self-documenting.
+dotnet_diagnostic.SA1611.severity = none
+
+# SA1642 — constructor summary must begin with "Initializes a new instance of the <see cref=…/> class."
+# Our constructor docs are descriptive rather than following this formulaic wording.
+dotnet_diagnostic.SA1642.severity = none
+
+# SA1116/SA1117 — parameter placement rules (all on one line OR each on its own line).
+# Our call sites occasionally mix styles for readability when arguments are short.
+dotnet_diagnostic.SA1116.severity = none
+dotnet_diagnostic.SA1117.severity = none
+
+# SA1503/SA1519 — braces must not be omitted.
+# Equivalent to csharp_prefer_braces already enforced via editorconfig; no need to duplicate.
+dotnet_diagnostic.SA1503.severity = none
+dotnet_diagnostic.SA1519.severity = none
+
+# SA0001 — XML comment analysis disabled (fires when GenerateDocumentationFile=false).
+# Test projects intentionally omit doc generation; suppress the resulting SA0001.
+dotnet_diagnostic.SA0001.severity = none
+
+# SA1516 — elements should be separated by blank line.
+# Compact DTO/row-mapping classes intentionally omit blank lines between properties.
+dotnet_diagnostic.SA1516.severity = none
+
+# S2094 — remove empty class/record.
+# Empty input records (e.g. record QuickInput;) are legitimate test fixtures.
+dotnet_diagnostic.S2094.severity = none
+
+# SA1122 — use string.Empty for empty strings.
+# "" and string.Empty are equivalent; this is a matter of preference.
+dotnet_diagnostic.SA1122.severity = none
+
+# SA1513 — closing brace should be followed by blank line.
+# Our compact style intentionally omits trailing blank lines after short blocks.
+dotnet_diagnostic.SA1513.severity = none
+
+# SA1501/SA1107 — statement on single line / multiple statements on one line.
+# Property accessors and short lambda bodies on a single line are valid style choices.
+dotnet_diagnostic.SA1501.severity = none
+dotnet_diagnostic.SA1107.severity = none
+
+# SA1009/SA1111 — closing parenthesis placement.
+# Multi-line method calls with trailing-paren style conflict with fluent call alignment.
+dotnet_diagnostic.SA1009.severity = none
+dotnet_diagnostic.SA1111.severity = none
+
+# SA1214 — readonly fields should appear before non-readonly fields.
+# Fields are organised by purpose, not by mutability.
+dotnet_diagnostic.SA1214.severity = none
+
+# SA1134 — each attribute should be on its own line.
+# Blazor [Parameter] attributes on the same line as the property is standard Blazor convention.
+dotnet_diagnostic.SA1134.severity = none
+
+# SA1001 — commas should be followed by whitespace.
+# False positives inside verbatim/interpolated HTML strings used in the dashboard renderer.
+dotnet_diagnostic.SA1001.severity = none
+
+# SA1114 — parameter list should follow declaration.
+# Related to SA1116/SA1117; same reason for suppression.
+dotnet_diagnostic.SA1114.severity = none
+
+# SA1413 — use trailing comma in multi-line initializers.
+# Good practice going forward, but retroactively fixing all existing initializers
+# is too much churn. New code should use trailing commas; existing code is left as-is.
+dotnet_diagnostic.SA1413.severity = none
+
+# ── Test project overrides ────────────────────────────────────────────────────
+# Tests have different style requirements: readability > formality.
+# StyleCop rules are suppressed; Sonar rules that catch real bugs remain active.
+[tests/**/*.cs]
+dotnet_diagnostic.SA0001.severity = none
+dotnet_diagnostic.SA1200.severity = none
+dotnet_diagnostic.SA1201.severity = none
+dotnet_diagnostic.SA1202.severity = none
+dotnet_diagnostic.SA1204.severity = none
+dotnet_diagnostic.SA1210.severity = none
+dotnet_diagnostic.SA1309.severity = none
+dotnet_diagnostic.SA1402.severity = none
+dotnet_diagnostic.SA1413.severity = none
+dotnet_diagnostic.SA1503.severity = none
+dotnet_diagnostic.SA1512.severity = none
+dotnet_diagnostic.SA1515.severity = none
+dotnet_diagnostic.SA1516.severity = none
+dotnet_diagnostic.SA1519.severity = none
+dotnet_diagnostic.SA1600.severity = none
+dotnet_diagnostic.SA1601.severity = none
+dotnet_diagnostic.SA1602.severity = none
+dotnet_diagnostic.SA1611.severity = none
+dotnet_diagnostic.SA1615.severity = none
+dotnet_diagnostic.SA1623.severity = none
+dotnet_diagnostic.SA1633.severity = none
+dotnet_diagnostic.SA1642.severity = none
+dotnet_diagnostic.SA1649.severity = none
+
+# ── Sample project overrides ──────────────────────────────────────────────────
+# Program.cs uses top-level statements; types at the end are intentionally in
+# the global namespace and have no explicit access modifier by design.
+[samples/**/*.cs]
+dotnet_diagnostic.S3903.severity = none
+dotnet_diagnostic.SA1400.severity = none
+
 [*.{json,yaml,yml}]
 indent_size = 2
 

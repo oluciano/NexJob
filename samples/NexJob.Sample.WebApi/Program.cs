@@ -98,7 +98,7 @@ app.MapPost("/jobs/chain", async (EmailPayload email, IScheduler scheduler) =>
     {
         reportJobId = reportId.Value,
         emailJobId  = emailId.Value,
-        description = "Email will be sent after the report finishes"
+        description = "Email will be sent after the report finishes",
     });
 });
 
@@ -186,7 +186,7 @@ app.MapPost("/jobs/stress/idempotent", async (IdempotentStressRequest req, ISche
     {
         requestsSent  = req.Concurrency,
         distinctJobIds = distinctIds.Count,
-        ids           = distinctIds
+        ids           = distinctIds,
     });
 });
 
@@ -201,13 +201,13 @@ app.MapGet("/jobs/due-recurring", async (IStorageProvider storage) =>
         r.Cron,
         r.Queue,
         r.NextExecution,
-        r.LastExecutedAt
+        r.LastExecutedAt,
     }));
 });
 
 app.UseNexJobDashboard("/dashboard");
 
-app.Run();
+await app.RunAsync();
 
 // ── Request models ────────────────────────────────────────────────────────────
 

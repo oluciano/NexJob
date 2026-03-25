@@ -1,6 +1,6 @@
 namespace NexJob.Postgres;
 
-internal static class SchemaSQL
+internal static class SchemaSql
 {
     internal const string CreateTables =
         """

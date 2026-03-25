@@ -1,7 +1,7 @@
 using System.Data;
 using Dapper;
-using Npgsql;
 using NexJob.Storage;
+using Npgsql;
 
 namespace NexJob.Postgres;
 
@@ -35,7 +35,7 @@ public sealed class PostgresStorageProvider : IStorageProvider
     {
         using var conn = Open();
         conn.Open();
-        conn.Execute(SchemaSQL.CreateTables);
+        conn.Execute(SchemaSql.CreateTables);
     }
 
     // ── EnqueueAsync ──────────────────────────────────────────────────────────

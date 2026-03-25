@@ -20,8 +20,11 @@ internal static class Helpers
         _                              => $"<span class=\"badge\">{s}</span>",
     };
 
-    internal static string Truncate(string? s, int max) =>
-        s is null ? "" : s.Length <= max ? s : s[..max] + "…";
+    internal static string Truncate(string? s, int max)
+    {
+        if (s is null) return string.Empty;
+        return s.Length <= max ? s : s[..max] + "…";
+    }
 
     internal static string FormatJson(string json)
     {
