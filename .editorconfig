@@ -136,11 +136,6 @@ dotnet_diagnostic.SA1001.severity = none
 # Related to SA1116/SA1117; same reason for suppression.
 dotnet_diagnostic.SA1114.severity = none
 
-# SA1413 — use trailing comma in multi-line initializers.
-# Good practice going forward, but retroactively fixing all existing initializers
-# is too much churn. New code should use trailing commas; existing code is left as-is.
-dotnet_diagnostic.SA1413.severity = none
-
 # ── Test project overrides ────────────────────────────────────────────────────
 # Tests have different style requirements: readability > formality.
 # StyleCop rules are suppressed; Sonar rules that catch real bugs remain active.
@@ -153,7 +148,6 @@ dotnet_diagnostic.SA1204.severity = none
 dotnet_diagnostic.SA1210.severity = none
 dotnet_diagnostic.SA1309.severity = none
 dotnet_diagnostic.SA1402.severity = none
-dotnet_diagnostic.SA1413.severity = none
 dotnet_diagnostic.SA1503.severity = none
 dotnet_diagnostic.SA1512.severity = none
 dotnet_diagnostic.SA1515.severity = none
