@@ -149,6 +149,34 @@ dotnet_diagnostic.SA1114.severity = none
 # is too much churn. New code should use trailing commas; existing code is left as-is.
 dotnet_diagnostic.SA1413.severity = none
 
+# ── Test project overrides ────────────────────────────────────────────────────
+# Tests have different style requirements: readability > formality.
+# StyleCop rules are suppressed; Sonar rules that catch real bugs remain active.
+[tests/**/*.cs]
+dotnet_diagnostic.SA0001.severity = none
+dotnet_diagnostic.SA1200.severity = none
+dotnet_diagnostic.SA1201.severity = none
+dotnet_diagnostic.SA1202.severity = none
+dotnet_diagnostic.SA1204.severity = none
+dotnet_diagnostic.SA1210.severity = none
+dotnet_diagnostic.SA1309.severity = none
+dotnet_diagnostic.SA1402.severity = none
+dotnet_diagnostic.SA1413.severity = none
+dotnet_diagnostic.SA1503.severity = none
+dotnet_diagnostic.SA1512.severity = none
+dotnet_diagnostic.SA1515.severity = none
+dotnet_diagnostic.SA1516.severity = none
+dotnet_diagnostic.SA1519.severity = none
+dotnet_diagnostic.SA1600.severity = none
+dotnet_diagnostic.SA1601.severity = none
+dotnet_diagnostic.SA1602.severity = none
+dotnet_diagnostic.SA1611.severity = none
+dotnet_diagnostic.SA1615.severity = none
+dotnet_diagnostic.SA1623.severity = none
+dotnet_diagnostic.SA1633.severity = none
+dotnet_diagnostic.SA1642.severity = none
+dotnet_diagnostic.SA1649.severity = none
+
 # ── Sample project overrides ──────────────────────────────────────────────────
 # Program.cs uses top-level statements; types at the end are intentionally in
 # the global namespace and have no explicit access modifier by design.
