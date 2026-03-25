@@ -71,7 +71,8 @@ NexJob was built to solve all of that. MIT license, end to end. Every storage ad
 | PostgreSQL + MongoDB adapters free | ✅ | ❌ |
 | Dashboard (dark mode) | ✅ | ❌ |
 | All storage adapters free | ✅ | ❌ |
-| Resource throttling | 🔜 | ❌ |
+| Resource throttling | ✅ | ❌ |
+| Job continuations (chaining) | ✅ | ❌ |
 | OpenTelemetry built-in | 🔜 | ❌ |
 | Payload versioning | 🔜 | ❌ |
 | `appsettings.json` support | 🔜 | ❌ |
@@ -169,10 +170,10 @@ await scheduler.EnqueueAsync<SendInvoiceJob, SendInvoiceInput>(
 ### 4 — Dashboard
 
 ```csharp
-app.UseNexJobDashboard("/jobs");
+app.UseNexJobDashboard("/dashboard");
 ```
 
-Open `/jobs` and see every queue, every job state, every retry — live.
+Open `/dashboard` and see every queue, every job state, every retry — live.
 
 ---
 
@@ -190,7 +191,7 @@ await scheduler.EnqueueAsync<AlertJob, AlertInput>(
 
 ## Resource throttling
 
-> 🔜 Coming in v0.3
+Limit how many instances of a job run concurrently across all workers — no extra infrastructure required.
 
 ```csharp
 [Throttle(resource: "stripe", maxConcurrent: 3)]
@@ -201,13 +202,13 @@ public class ChargeCardJob : IJob<ChargeInput> { ... }
 
 ## Observability
 
-> 🔜 Coming in v0.4 — OpenTelemetry spans for every job lifecycle event.
+> 🔜 Coming in v0.6 — OpenTelemetry spans for every job lifecycle event.
 
 ---
 
 ## Payload versioning
 
-> 🔜 Coming in v0.4 — migrate job inputs across schema versions without losing queued jobs.
+> 🔜 Coming in v0.6 — migrate job inputs across schema versions without losing queued jobs.
 
 ---
 
@@ -220,7 +221,7 @@ builder.Services.AddNexJob(opt => opt.Workers = 1);
 // InMemoryStorageProvider is the default — no extra config needed
 ```
 
-> 🔜 `TestScheduler` with `ShouldHaveEnqueued` assertions coming in v0.3.
+> 🔜 `TestScheduler` with `ShouldHaveEnqueued` assertions coming in v0.6.
 
 ---
 
@@ -241,11 +242,11 @@ Configure globally:
 ```csharp
 builder.Services.AddNexJob(opt =>
 {
-    opt.MaxAttempts = 3;   // default: 5
+    opt.MaxAttempts = 3;   // default: 10
 });
 ```
 
-> 🔜 Per-job `[Retry(attempts: 3)]` attribute coming in v0.3.
+> 🔜 Per-job `[Retry(attempts: 3)]` attribute coming in v0.6.
 
 ---
 
@@ -253,40 +254,40 @@ builder.Services.AddNexJob(opt =>
 
 All open-source. No license walls. Ever.
 
-| Package | Storage | Notes |
+| Package | Storage | Status |
 |---|---|---|
-| `NexJob` | In-memory | Dev and testing only |
-| `NexJob.Postgres` | PostgreSQL 14+ | `SELECT FOR UPDATE SKIP LOCKED` |
-| `NexJob.SqlServer` | SQL Server 2019+ | Atomic dequeue guaranteed |
-| `NexJob.Redis` | Redis 7+ | Lua scripts for atomicity |
-| `NexJob.MongoDB` | MongoDB 6+ | Change streams + atomic findAndModify |
-| `NexJob.Oracle` | Oracle 19c+ | `SKIP LOCKED` + autonomous transactions |
+| `NexJob` | In-memory | ✅ Dev and testing |
+| `NexJob.Postgres` | PostgreSQL 14+ | ✅ `SELECT FOR UPDATE SKIP LOCKED` |
+| `NexJob.MongoDB` | MongoDB 6+ | ✅ Atomic `findAndModify` |
+| `NexJob.SqlServer` | SQL Server 2019+ | 🔜 Coming soon |
+| `NexJob.Redis` | Redis 7+ | 🔜 Coming soon |
+| `NexJob.Oracle` | Oracle 19c+ | 🔜 Coming soon |
 
-Bring your own? Implement `IStorageProvider` — one interface, ten methods.
+Bring your own? Implement `IStorageProvider` — one interface, ~15 methods.
 
 ---
 
 ## Configuration reference
 
 ```csharp
+// Storage — pick one and register BEFORE AddNexJob (InMemory is the default)
+builder.Services.AddNexJobPostgres(connectionString);
+builder.Services.AddNexJobMongoDB(connectionString, databaseName: "nexjob");
+
 builder.Services.AddNexJob(opt =>
 {
     // Workers & queues
     opt.Workers = 10;
-    opt.DefaultQueue = "default";
+    opt.Queues  = ["default", "critical"];   // polled in order
 
     // Timing
-    opt.PollingInterval  = TimeSpan.FromSeconds(5);
+    opt.PollingInterval   = TimeSpan.FromSeconds(5);
     opt.HeartbeatInterval = TimeSpan.FromSeconds(30);
     opt.HeartbeatTimeout  = TimeSpan.FromMinutes(5);
 
     // Retries
     opt.MaxAttempts = 5;
 });
-
-// Storage — pick one (InMemory is the default)
-builder.Services.AddNexJobPostgres(connectionString);
-builder.Services.AddNexJobMongo(connectionString, databaseName: "nexjob");
 ```
 
 ---
@@ -294,11 +295,12 @@ builder.Services.AddNexJobMongo(connectionString, databaseName: "nexjob");
 ## Roadmap
 
 ```
-v0.1  ◆ Core interfaces · in-memory provider · fire-and-forget · 55 tests
-v0.2  ◆ PostgreSQL + MongoDB providers · Blazor SSR dashboard · integration tests
-v0.3  ○ [Throttle] enforcement · [Retry] per-job · TestScheduler · appsettings.json
-v0.4  ○ SQL Server · Redis · OpenTelemetry · payload versioning · IJobMigration
-v0.5  ○ Execution windows · live config via dashboard · Oracle provider
+v0.1  ✅ Core interfaces · in-memory provider · fire-and-forget
+v0.2  ✅ PostgreSQL + MongoDB providers · delayed jobs · cron · dashboard (Blazor SSR)
+v0.3  ✅ Priority queues · resource throttling ([Throttle]) · job continuations
+v0.4  ✅ Recurring job execution status · unit + integration tests · CI pipeline
+v0.5  ○ SQL Server · Redis · Oracle providers
+v0.6  ○ OpenTelemetry · payload versioning (IJobMigration) · [Retry] per-job
 v1.0  ○ Stable API · production-ready · published to NuGet
 ```
 
