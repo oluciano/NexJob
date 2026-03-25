@@ -249,7 +249,7 @@ public abstract class StorageProviderTestsBase
             Id             = new JobId(Guid.NewGuid()),
             JobType        = "NexJob.IntegrationTests.FakeJob",
             InputType      = "NexJob.IntegrationTests.FakeInput",
-            InputJson      = $"{{\"seq\":{Guid.NewGuid()}}}",
+            InputJson      = $"{{\"seq\":\"{Guid.NewGuid()}\"}}",
             Queue          = queue,
             Priority       = JobPriority.Normal,
             Status         = JobStatus.Enqueued,

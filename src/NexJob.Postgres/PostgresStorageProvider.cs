@@ -236,10 +236,11 @@ public sealed class PostgresStorageProvider : IStorageProvider
                 recurringJob.InputType,
                 recurringJob.InputJson,
                 recurringJob.Cron,
-                TimeZoneId     = recurringJob.TimeZoneId ?? "UTC",
+                TimeZoneId        = recurringJob.TimeZoneId ?? "UTC",
                 recurringJob.Queue,
                 recurringJob.NextExecution,
                 recurringJob.CreatedAt,
+                ConcurrencyPolicy = recurringJob.ConcurrencyPolicy.ToString(),
             });
     }
 
