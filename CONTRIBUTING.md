@@ -40,7 +40,6 @@ src/
 
 tests/
   NexJob.Tests/           ← Unit tests (no external dependencies)
-  NexJob.MongoDB.Tests/   ← MongoDB integration tests (requires MongoDB)
   NexJob.IntegrationTests/← Contract tests via Testcontainers (requires Docker)
 
 samples/
@@ -82,14 +81,35 @@ public sealed class MyProviderTests : StorageProviderTestsBase, IAsyncLifetime
 
 ---
 
+## Branch workflow
+
+`main` is protected — all changes must go through a PR and pass CI before merging.
+
+```
+feat/short-description      ← new feature
+fix/short-description        ← bug fix
+docs/short-description       ← documentation only
+chore/short-description      ← build, deps, tooling
+test/short-description       ← tests only
+```
+
+```bash
+git checkout -b feat/my-feature
+# … make changes …
+git push -u origin feat/my-feature
+gh pr create
+```
+
+CI runs both **Unit Tests** and **Integration Tests (Docker)** on every PR.
+Both jobs must be green before the PR can be merged.
+
+---
+
 ## Running tests
 
 ```bash
 # Unit tests only (no Docker required)
 dotnet test tests/NexJob.Tests/
-
-# MongoDB integration tests (requires local MongoDB or Docker)
-dotnet test tests/NexJob.MongoDB.Tests/
 
 # Full contract tests via Testcontainers (requires Docker)
 dotnet test tests/NexJob.IntegrationTests/
