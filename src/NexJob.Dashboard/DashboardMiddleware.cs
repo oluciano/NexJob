@@ -46,6 +46,14 @@ public sealed class DashboardMiddleware
 
         var subPath = path[_pathPrefix.Length..].TrimStart('/');
 
+        // SSE metrics stream
+        if (subPath == "stream" && context.Request.Method == HttpMethods.Get)
+        {
+            var storage = context.RequestServices.GetRequiredService<IStorageProvider>();
+            await DashboardStreamEndpoint.HandleAsync(context, storage);
+            return;
+        }
+
         // Handle API actions (POST)
         if (context.Request.Method == HttpMethods.Post && await HandleActionsAsync(context, subPath))
             return;
