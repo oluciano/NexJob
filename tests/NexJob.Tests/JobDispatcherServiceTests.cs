@@ -28,8 +28,8 @@ public sealed class JobDispatcherServiceTests
             {
                 services.AddNexJob(opt =>
                 {
-                    opt.Workers         = workers;
-                    opt.MaxAttempts     = maxAttempts;
+                    opt.Workers = workers;
+                    opt.MaxAttempts = maxAttempts;
                     opt.PollingInterval = TimeSpan.FromMilliseconds(20);
                 });
                 registerJobs(services);
@@ -75,27 +75,27 @@ public sealed class JobDispatcherServiceTests
         await storage.UpsertRecurringJobAsync(new RecurringJobRecord
         {
             RecurringJobId = "daily-success",
-            JobType        = typeof(QuickSuccessJob).AssemblyQualifiedName!,
-            InputType      = typeof(QuickInput).AssemblyQualifiedName!,
-            InputJson      = "{}",
-            Cron           = "* * * * *",
-            Queue          = "default",
-            CreatedAt      = DateTimeOffset.UtcNow,
+            JobType = typeof(QuickSuccessJob).AssemblyQualifiedName!,
+            InputType = typeof(QuickInput).AssemblyQualifiedName!,
+            InputJson = "{}",
+            Cron = "* * * * *",
+            Queue = "default",
+            CreatedAt = DateTimeOffset.UtcNow,
         });
 
         // Manually enqueue a job instance with RecurringJobId set (what RecurringJobSchedulerService does)
         await storage.EnqueueAsync(new JobRecord
         {
-            Id             = JobId.New(),
-            JobType        = typeof(QuickSuccessJob).AssemblyQualifiedName!,
-            InputType      = typeof(QuickInput).AssemblyQualifiedName!,
-            InputJson      = "{}",
-            Queue          = "default",
-            Priority       = JobPriority.Normal,
-            Status         = JobStatus.Enqueued,
-            MaxAttempts    = 10,
+            Id = JobId.New(),
+            JobType = typeof(QuickSuccessJob).AssemblyQualifiedName!,
+            InputType = typeof(QuickInput).AssemblyQualifiedName!,
+            InputJson = "{}",
+            Queue = "default",
+            Priority = JobPriority.Normal,
+            Status = JobStatus.Enqueued,
+            MaxAttempts = 10,
             RecurringJobId = "daily-success",
-            CreatedAt      = DateTimeOffset.UtcNow,
+            CreatedAt = DateTimeOffset.UtcNow,
         });
 
         await tcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
@@ -124,26 +124,26 @@ public sealed class JobDispatcherServiceTests
         await storage.UpsertRecurringJobAsync(new RecurringJobRecord
         {
             RecurringJobId = "daily-fail",
-            JobType        = typeof(AlwaysFailJob).AssemblyQualifiedName!,
-            InputType      = typeof(FailInput).AssemblyQualifiedName!,
-            InputJson      = "{}",
-            Cron           = "* * * * *",
-            Queue          = "default",
-            CreatedAt      = DateTimeOffset.UtcNow,
+            JobType = typeof(AlwaysFailJob).AssemblyQualifiedName!,
+            InputType = typeof(FailInput).AssemblyQualifiedName!,
+            InputJson = "{}",
+            Cron = "* * * * *",
+            Queue = "default",
+            CreatedAt = DateTimeOffset.UtcNow,
         });
 
         await storage.EnqueueAsync(new JobRecord
         {
-            Id             = JobId.New(),
-            JobType        = typeof(AlwaysFailJob).AssemblyQualifiedName!,
-            InputType      = typeof(FailInput).AssemblyQualifiedName!,
-            InputJson      = "{}",
-            Queue          = "default",
-            Priority       = JobPriority.Normal,
-            Status         = JobStatus.Enqueued,
-            MaxAttempts    = 1,
+            Id = JobId.New(),
+            JobType = typeof(AlwaysFailJob).AssemblyQualifiedName!,
+            InputType = typeof(FailInput).AssemblyQualifiedName!,
+            InputJson = "{}",
+            Queue = "default",
+            Priority = JobPriority.Normal,
+            Status = JobStatus.Enqueued,
+            MaxAttempts = 1,
             RecurringJobId = "daily-fail",
-            CreatedAt      = DateTimeOffset.UtcNow,
+            CreatedAt = DateTimeOffset.UtcNow,
         });
 
         // Wait until the job is dead-lettered
@@ -154,6 +154,74 @@ public sealed class JobDispatcherServiceTests
         var rec = all.Single(r => r.RecurringJobId == "daily-fail");
         rec.LastExecutionStatus.Should().Be(JobStatus.Failed);
         rec.LastExecutionError.Should().NotBeNullOrEmpty();
+
+        await host.StopAsync();
+    }
+
+    // ─── retry scheduling ─────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task FailedJob_SchedulesRetry_WhenAttemptsRemaining()
+    {
+        // Use maxAttempts=3 so the first failure still has retries left.
+        // Use a fast, deterministic RetryDelayFactory to avoid real-time waits.
+        using var host = Host.CreateDefaultBuilder()
+            .ConfigureServices(services =>
+            {
+                services.AddNexJob(opt =>
+                {
+                    opt.Workers = 1;
+                    opt.MaxAttempts = 3;
+                    opt.PollingInterval = TimeSpan.FromMilliseconds(20);
+                    // Fixed short delay — just long enough to observe Scheduled state before promotion
+                    opt.RetryDelayFactory = _ => TimeSpan.FromSeconds(60);
+                });
+                services.AddTransient<AlwaysFailJobForRetry>();
+            })
+            .Build();
+
+        await host.StartAsync();
+
+        var storage = (InMemoryStorageProvider)host.Services.GetRequiredService<NexJob.Storage.IStorageProvider>();
+        var scheduler = host.Services.GetRequiredService<IScheduler>();
+
+        await scheduler.EnqueueAsync<AlwaysFailJobForRetry, RetryInput>(new());
+
+        // Wait until the dispatcher has processed the first attempt and called SetFailedAsync
+        await Task.Delay(300);
+
+        var metrics = await storage.GetMetricsAsync();
+
+        // After one failure with retries remaining the job must be in Scheduled state (not Failed/Succeeded)
+        metrics.Failed.Should().Be(0, "job has retries remaining so it must not move to dead-letter yet");
+        metrics.Succeeded.Should().Be(0);
+
+        await host.StopAsync();
+    }
+
+    [Fact]
+    public async Task FailedJob_NoRetry_WhenMaxAttemptsExhausted()
+    {
+        // maxAttempts=1 → dead-letter on first failure
+        var tcs = new TaskCompletionSource<bool>();
+
+        using var host = BuildHost(
+            s => s.AddTransient(_ => new AlwaysFailJob(tcs)),
+            maxAttempts: 1);
+
+        await host.StartAsync();
+
+        var scheduler = host.Services.GetRequiredService<IScheduler>();
+        await scheduler.EnqueueAsync<AlwaysFailJob, FailInput>(new());
+
+        await tcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await Task.Delay(100);
+
+        var storage = (InMemoryStorageProvider)host.Services.GetRequiredService<NexJob.Storage.IStorageProvider>();
+        var metrics = await storage.GetMetricsAsync();
+
+        metrics.Failed.Should().Be(1, "job must be dead-lettered when MaxAttempts is exhausted");
+        metrics.Succeeded.Should().Be(0);
 
         await host.StopAsync();
     }
@@ -199,6 +267,19 @@ public sealed class QuickSuccessJob(TaskCompletionSource<bool> signal) : IJob<Qu
 }
 
 public record FailInput;
+
+public record RetryInput;
+
+/// <summary>
+/// Always throws so we can observe that the dispatcher schedules a retry
+/// rather than immediately dead-lettering the job.
+/// </summary>
+public sealed class AlwaysFailJobForRetry : IJob<RetryInput>
+{
+    /// <inheritdoc/>
+    public Task ExecuteAsync(RetryInput input, CancellationToken cancellationToken)
+        => throw new InvalidOperationException("intentional failure for retry test");
+}
 
 public sealed class AlwaysFailJob(TaskCompletionSource<bool> signalOnDeadLetter) : IJob<FailInput>
 {

@@ -24,9 +24,9 @@ internal static class DashboardStreamEndpoint
     /// </summary>
     internal static async Task HandleAsync(HttpContext context, IStorageProvider storage)
     {
-        context.Response.ContentType  = "text/event-stream";
-        context.Response.Headers["Cache-Control"]      = "no-cache";
-        context.Response.Headers["X-Accel-Buffering"]  = "no"; // disable nginx proxy buffering
+        context.Response.ContentType = "text/event-stream";
+        context.Response.Headers["Cache-Control"] = "no-cache";
+        context.Response.Headers["X-Accel-Buffering"] = "no"; // disable nginx proxy buffering
 
         var ct = context.RequestAborted;
 

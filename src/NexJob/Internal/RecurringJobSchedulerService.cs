@@ -62,7 +62,8 @@ internal sealed class RecurringJobSchedulerService : BackgroundService
             ? TimeZoneInfo.FindSystemTimeZoneById(recurring.TimeZoneId)
             : TimeZoneInfo.Utc;
 
-        var cronExpression = DefaultScheduler.ParseCron(recurring.Cron);
+        var effectiveCron = recurring.CronOverride ?? recurring.Cron;
+        var cronExpression = DefaultScheduler.ParseCron(effectiveCron);
         return cronExpression.GetNextOccurrence(DateTimeOffset.UtcNow, tz);
     }
 
@@ -73,19 +74,31 @@ internal sealed class RecurringJobSchedulerService : BackgroundService
 
         foreach (var recurring in dueJobs)
         {
+            if (recurring.DeletedByUser)
+            {
+                _logger.LogDebug("Recurring job '{Id}' was deleted by user, skipping.", recurring.RecurringJobId);
+                continue;
+            }
+
+            if (!recurring.Enabled)
+            {
+                _logger.LogDebug("Skipping disabled recurring job '{Id}'.", recurring.RecurringJobId);
+                continue;
+            }
+
             try
             {
                 var jobRecord = new JobRecord
                 {
-                    Id             = JobId.New(),
-                    JobType        = recurring.JobType,
-                    InputType      = recurring.InputType,
-                    InputJson      = recurring.InputJson,
-                    Queue          = recurring.Queue,
-                    Priority       = JobPriority.Normal,
-                    Status         = JobStatus.Enqueued,
-                    CreatedAt      = DateTimeOffset.UtcNow,
-                    MaxAttempts    = _options.MaxAttempts,
+                    Id = JobId.New(),
+                    JobType = recurring.JobType,
+                    InputType = recurring.InputType,
+                    InputJson = recurring.InputJson,
+                    Queue = recurring.Queue,
+                    Priority = JobPriority.Normal,
+                    Status = JobStatus.Enqueued,
+                    CreatedAt = DateTimeOffset.UtcNow,
+                    MaxAttempts = _options.MaxAttempts,
                     RecurringJobId = recurring.RecurringJobId,
                     // SkipIfRunning: idempotency key blocks a second instance while
                     // the first is Enqueued or Processing.

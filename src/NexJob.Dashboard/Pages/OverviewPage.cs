@@ -24,7 +24,7 @@ internal sealed class OverviewPage : IComponent
 
     private string BuildHtml(JobMetrics m)
     {
-        var max  = m.HourlyThroughput.Count > 0 ? m.HourlyThroughput.Max(h => h.Count) : 1;
+        var max = m.HourlyThroughput.Count > 0 ? m.HourlyThroughput.Max(h => h.Count) : 1;
         var bars = string.Join(string.Empty, m.HourlyThroughput.Select(h =>
         {
             var pct = max > 0 ? (int)(h.Count * 80.0 / max) : 2;

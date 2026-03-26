@@ -11,25 +11,42 @@ jobs:
     name: Unit Tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6.0.2
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5.2.0
         with:
           dotnet-version: 8.0.x
       - name: Restore
         run: dotnet restore
       - name: Build
         run: dotnet build --no-restore --configuration Release
-      - name: Unit Tests
-        run: dotnet test tests/NexJob.Tests --no-build --configuration Release --verbosity normal
+      - name: Test with coverage
+        run: |
+          dotnet test tests/NexJob.Tests \
+            --no-build --configuration Release --verbosity normal \
+            "/p:CollectCoverage=true" \
+            "/p:CoverletOutputFormat=cobertura" \
+            "/p:CoverletOutput=./coverage/" \
+            "/p:Include=[NexJob]*" \
+            "/p:Exclude=[NexJob.Tests]*%2c[*.Tests]*" \
+            "/p:Threshold=80" \
+            "/p:ThresholdType=line" \
+            "/p:ThresholdStat=total"
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: tests/NexJob.Tests/coverage/
 
   integration-tests:
     name: Integration Tests (Docker)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6.0.2
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5.2.0
         with:
           dotnet-version: 8.0.x
       - name: Restore
@@ -38,3 +55,35 @@ jobs:
         run: dotnet build --no-restore --configuration Release
       - name: Integration Tests (Testcontainers)
         run: dotnet test tests/NexJob.IntegrationTests --no-build --configuration Release --verbosity normal
+
+  format-check:
+    name: Format Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5.2.0
+        with:
+          dotnet-version: 8.0.x
+      - name: Check formatting
+        run: dotnet format --verify-no-changes --severity warn
+
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5.2.0
+        with:
+          dotnet-version: 8.0.x
+      - name: Check for vulnerabilities
+        run: |
+          dotnet restore
+          dotnet list package --vulnerable --include-transitive 2>&1 | tee vulnerable.txt
+          if grep -q "has the following vulnerable packages" vulnerable.txt; then
+            echo "Vulnerable packages found!"
+            cat vulnerable.txt
+            exit 1
+          fi
+          echo "No vulnerable packages found"

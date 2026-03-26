@@ -55,10 +55,18 @@ public static class MongoNexJobExtensions
 
     private static void RegisterSerializers()
     {
-        if (_serializersRegistered) return;
+        if (_serializersRegistered)
+        {
+            return;
+        }
+
         lock (_lock)
         {
-            if (_serializersRegistered) return;
+            if (_serializersRegistered)
+            {
+                return;
+            }
+
             BsonSerializer.TryRegisterSerializer(JobIdSerializer.Instance);
             BsonSerializer.TryRegisterSerializer(NullableJobIdSerializer.Instance);
             _serializersRegistered = true;

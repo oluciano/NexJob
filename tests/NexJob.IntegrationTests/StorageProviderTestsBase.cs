@@ -20,7 +20,7 @@ public abstract class StorageProviderTestsBase
     public async Task EnqueueAsync_then_FetchNextAsync_returns_the_job()
     {
         var storage = await CreateStorageAsync();
-        var record  = MakeJob();
+        var record = MakeJob();
 
         await storage.EnqueueAsync(record);
         var fetched = await storage.FetchNextAsync(["default"]);
@@ -59,7 +59,7 @@ public abstract class StorageProviderTestsBase
         var storage = await CreateStorageAsync();
         await storage.EnqueueAsync(MakeJob());
 
-        var first  = await storage.FetchNextAsync(["default"]);
+        var first = await storage.FetchNextAsync(["default"]);
         var second = await storage.FetchNextAsync(["default"]);
 
         first.Should().NotBeNull();
@@ -142,7 +142,7 @@ public abstract class StorageProviderTestsBase
         var storage = await CreateStorageAsync();
         await storage.EnqueueAsync(MakeJob());
         var fetched = (await storage.FetchNextAsync(["default"]))!;
-        var before  = fetched.HeartbeatAt;
+        var before = fetched.HeartbeatAt;
 
         await Task.Delay(10); // ensure clock advances
         await storage.UpdateHeartbeatAsync(fetched.Id);
@@ -158,7 +158,7 @@ public abstract class StorageProviderTestsBase
     public async Task EnqueueAsync_with_same_idempotency_key_is_deduplicated()
     {
         var storage = await CreateStorageAsync();
-        var key     = Guid.NewGuid().ToString();
+        var key = Guid.NewGuid().ToString();
 
         var id1 = await storage.EnqueueAsync(MakeJob(idempotencyKey: key));
         var id2 = await storage.EnqueueAsync(MakeJob(idempotencyKey: key));
@@ -207,9 +207,9 @@ public abstract class StorageProviderTestsBase
     [Fact]
     public async Task EnqueueContinuationsAsync_releases_awaiting_jobs()
     {
-        var storage  = await CreateStorageAsync();
+        var storage = await CreateStorageAsync();
         var parentId = new JobId(Guid.NewGuid());
-        var child    = MakeJob(status: JobStatus.AwaitingContinuation, parentJobId: parentId);
+        var child = MakeJob(status: JobStatus.AwaitingContinuation, parentJobId: parentId);
         await storage.EnqueueAsync(child);
 
         await storage.EnqueueContinuationsAsync(parentId);
@@ -221,9 +221,9 @@ public abstract class StorageProviderTestsBase
     [Fact]
     public async Task EnqueueContinuationsAsync_does_not_release_other_parents_jobs()
     {
-        var storage  = await CreateStorageAsync();
-        var parentA  = new JobId(Guid.NewGuid());
-        var parentB  = new JobId(Guid.NewGuid());
+        var storage = await CreateStorageAsync();
+        var parentA = new JobId(Guid.NewGuid());
+        var parentB = new JobId(Guid.NewGuid());
         var childOfB = MakeJob(status: JobStatus.AwaitingContinuation, parentJobId: parentB);
         await storage.EnqueueAsync(childOfB);
 
@@ -286,7 +286,9 @@ public abstract class StorageProviderTestsBase
     {
         var storage = await CreateStorageAsync();
         for (var i = 0; i < 5; i++)
+        {
             await storage.EnqueueAsync(MakeJob());
+        }
 
         var page = await storage.GetJobsAsync(new JobFilter(), page: 1, pageSize: 3);
 
@@ -340,7 +342,7 @@ public abstract class StorageProviderTestsBase
     public async Task DeleteJobAsync_removes_the_job()
     {
         var storage = await CreateStorageAsync();
-        var job     = MakeJob();
+        var job = MakeJob();
         await storage.EnqueueAsync(job);
 
         await storage.DeleteJobAsync(job.Id);
@@ -378,7 +380,7 @@ public abstract class StorageProviderTestsBase
         var metrics = await storage.GetQueueMetricsAsync();
 
         var alpha = metrics.First(q => q.Queue == "alpha");
-        var beta  = metrics.First(q => q.Queue == "beta");
+        var beta = metrics.First(q => q.Queue == "beta");
 
         alpha.Enqueued.Should().Be(1);
         alpha.Processing.Should().Be(1);
@@ -391,7 +393,7 @@ public abstract class StorageProviderTestsBase
     [Fact]
     public async Task UpsertRecurringJobAsync_and_GetRecurringJobsAsync_roundtrip()
     {
-        var storage   = await CreateStorageAsync();
+        var storage = await CreateStorageAsync();
         var recurring = MakeRecurring();
 
         await storage.UpsertRecurringJobAsync(recurring);
@@ -407,7 +409,7 @@ public abstract class StorageProviderTestsBase
     public async Task UpsertRecurringJobAsync_updates_existing_definition()
     {
         var storage = await CreateStorageAsync();
-        var id      = $"upsert-test-{Guid.NewGuid()}";
+        var id = $"upsert-test-{Guid.NewGuid()}";
         await storage.UpsertRecurringJobAsync(MakeRecurring(id: id, cron: "* * * * *"));
 
         await storage.UpsertRecurringJobAsync(MakeRecurring(id: id, cron: "0 9 * * *"));
@@ -421,11 +423,11 @@ public abstract class StorageProviderTestsBase
     public async Task GetDueRecurringJobsAsync_returns_only_due_jobs()
     {
         var storage = await CreateStorageAsync();
-        var dueId    = $"due-{Guid.NewGuid()}";
+        var dueId = $"due-{Guid.NewGuid()}";
         var futureId = $"future-{Guid.NewGuid()}";
 
         await storage.UpsertRecurringJobAsync(
-            MakeRecurring(id: dueId,    nextExecution: DateTimeOffset.UtcNow.AddSeconds(-1)));
+            MakeRecurring(id: dueId, nextExecution: DateTimeOffset.UtcNow.AddSeconds(-1)));
         await storage.UpsertRecurringJobAsync(
             MakeRecurring(id: futureId, nextExecution: DateTimeOffset.UtcNow.AddHours(1)));
 
@@ -438,14 +440,14 @@ public abstract class StorageProviderTestsBase
     [Fact]
     public async Task SetRecurringJobNextExecutionAsync_persists_next_and_last_execution()
     {
-        var storage   = await CreateStorageAsync();
+        var storage = await CreateStorageAsync();
         var recurring = MakeRecurring();
         await storage.UpsertRecurringJobAsync(recurring);
 
         var next = DateTimeOffset.UtcNow.AddMinutes(5);
         await storage.SetRecurringJobNextExecutionAsync(recurring.RecurringJobId, next);
 
-        var all   = await storage.GetRecurringJobsAsync();
+        var all = await storage.GetRecurringJobsAsync();
         var saved = all.Single(r => r.RecurringJobId == recurring.RecurringJobId);
 
         saved.NextExecution.Should().NotBeNull();
@@ -455,14 +457,14 @@ public abstract class StorageProviderTestsBase
     [Fact]
     public async Task SetRecurringJobLastExecutionResultAsync_records_success()
     {
-        var storage   = await CreateStorageAsync();
+        var storage = await CreateStorageAsync();
         var recurring = MakeRecurring();
         await storage.UpsertRecurringJobAsync(recurring);
 
         await storage.SetRecurringJobLastExecutionResultAsync(
             recurring.RecurringJobId, JobStatus.Succeeded, errorMessage: null);
 
-        var all   = await storage.GetRecurringJobsAsync();
+        var all = await storage.GetRecurringJobsAsync();
         var saved = all.Single(r => r.RecurringJobId == recurring.RecurringJobId);
 
         saved.LastExecutionStatus.Should().Be(JobStatus.Succeeded);
@@ -472,14 +474,14 @@ public abstract class StorageProviderTestsBase
     [Fact]
     public async Task SetRecurringJobLastExecutionResultAsync_records_failure_with_error()
     {
-        var storage   = await CreateStorageAsync();
+        var storage = await CreateStorageAsync();
         var recurring = MakeRecurring();
         await storage.UpsertRecurringJobAsync(recurring);
 
         await storage.SetRecurringJobLastExecutionResultAsync(
             recurring.RecurringJobId, JobStatus.Failed, errorMessage: "timeout");
 
-        var all   = await storage.GetRecurringJobsAsync();
+        var all = await storage.GetRecurringJobsAsync();
         var saved = all.Single(r => r.RecurringJobId == recurring.RecurringJobId);
 
         saved.LastExecutionStatus.Should().Be(JobStatus.Failed);
@@ -489,7 +491,7 @@ public abstract class StorageProviderTestsBase
     [Fact]
     public async Task DeleteRecurringJobAsync_removes_the_definition()
     {
-        var storage   = await CreateStorageAsync();
+        var storage = await CreateStorageAsync();
         var recurring = MakeRecurring();
         await storage.UpsertRecurringJobAsync(recurring);
 
@@ -502,40 +504,40 @@ public abstract class StorageProviderTestsBase
     // ── Helpers ────────────────────────────────────────────────────────────────
 
     private static JobRecord MakeJob(
-        string queue           = "default",
+        string queue = "default",
         string? idempotencyKey = null,
-        JobPriority priority   = JobPriority.Normal,
-        JobStatus status       = JobStatus.Enqueued,
-        JobId? parentJobId     = null) =>
+        JobPriority priority = JobPriority.Normal,
+        JobStatus status = JobStatus.Enqueued,
+        JobId? parentJobId = null) =>
         new()
         {
-            Id             = new JobId(Guid.NewGuid()),
-            JobType        = "NexJob.IntegrationTests.FakeJob",
-            InputType      = "NexJob.IntegrationTests.FakeInput",
-            InputJson      = $"{{\"seq\":\"{Guid.NewGuid()}\"}}",
-            Queue          = queue,
-            Priority       = priority,
-            Status         = status,
-            MaxAttempts    = 5,
-            CreatedAt      = DateTimeOffset.UtcNow,
+            Id = new JobId(Guid.NewGuid()),
+            JobType = "NexJob.IntegrationTests.FakeJob",
+            InputType = "NexJob.IntegrationTests.FakeInput",
+            InputJson = $"{{\"seq\":\"{Guid.NewGuid()}\"}}",
+            Queue = queue,
+            Priority = priority,
+            Status = status,
+            MaxAttempts = 5,
+            CreatedAt = DateTimeOffset.UtcNow,
             IdempotencyKey = idempotencyKey,
-            ParentJobId    = parentJobId,
+            ParentJobId = parentJobId,
         };
 
     private static RecurringJobRecord MakeRecurring(
-        string? id             = null,
-        string cron            = "* * * * *",
+        string? id = null,
+        string cron = "* * * * *",
         DateTimeOffset? nextExecution = null) =>
         new()
         {
-            RecurringJobId    = id ?? $"test-recurring-{Guid.NewGuid()}",
-            JobType           = "NexJob.IntegrationTests.FakeJob",
-            InputType         = "NexJob.IntegrationTests.FakeInput",
-            InputJson         = "{}",
-            Cron              = cron,
-            Queue             = "default",
-            NextExecution     = nextExecution ?? DateTimeOffset.UtcNow,
-            CreatedAt         = DateTimeOffset.UtcNow,
+            RecurringJobId = id ?? $"test-recurring-{Guid.NewGuid()}",
+            JobType = "NexJob.IntegrationTests.FakeJob",
+            InputType = "NexJob.IntegrationTests.FakeInput",
+            InputJson = "{}",
+            Cron = cron,
+            Queue = "default",
+            NextExecution = nextExecution ?? DateTimeOffset.UtcNow,
+            CreatedAt = DateTimeOffset.UtcNow,
             ConcurrencyPolicy = RecurringConcurrencyPolicy.SkipIfRunning,
         };
 }

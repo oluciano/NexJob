@@ -57,4 +57,25 @@ public sealed class RecurringJobRecord
     /// </summary>
     public RecurringConcurrencyPolicy ConcurrencyPolicy { get; init; } =
         RecurringConcurrencyPolicy.SkipIfRunning;
+
+    /// <summary>
+    /// User-supplied cron override. When set, the scheduler uses this expression instead
+    /// of <see cref="Cron"/>. Set to <see langword="null"/> to revert to the default cron.
+    /// </summary>
+    public string? CronOverride { get; set; }
+
+    /// <summary>
+    /// When <see langword="false"/> the scheduler skips this job at every firing.
+    /// Defaults to <see langword="true"/>.
+    /// </summary>
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>
+    /// When <see langword="true"/> this job was soft-deleted by the user via
+    /// <see cref="Storage.IStorageProvider.ForceDeleteRecurringJobAsync"/>. The scheduler skips
+    /// it at every firing and it will not be resurrected by a subsequent call to
+    /// <see cref="Storage.IStorageProvider.UpsertRecurringJobAsync"/>.
+    /// Use <see cref="Storage.IStorageProvider.RestoreRecurringJobAsync"/> to reverse the deletion.
+    /// </summary>
+    public bool DeletedByUser { get; set; }
 }

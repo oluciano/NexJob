@@ -97,7 +97,10 @@ internal sealed class JobsPage : IComponent
 
     private string BuildPagination(PagedResult<JobRecord> result)
     {
-        if (result.TotalPages <= 1) return string.Empty;
+        if (result.TotalPages <= 1)
+        {
+            return string.Empty;
+        }
 
         var qs = $"?status={Uri.EscapeDataString(StatusFilter?.ToString() ?? string.Empty)}&search={Uri.EscapeDataString(Search ?? string.Empty)}";
 
