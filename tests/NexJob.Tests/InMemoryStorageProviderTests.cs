@@ -304,6 +304,164 @@ public sealed class InMemoryStorageProviderTests
         due.Should().NotContain(r => r.RecurringJobId == "future");
     }
 
+    // ─── UpdateRecurringJobConfigAsync ───────────────────────────────────────
+
+    [Fact]
+    public async Task UpdateRecurringJobConfig_SetsCronOverride()
+    {
+        var recurring = MakeRecurring("job-override");
+        await _sut.UpsertRecurringJobAsync(recurring);
+
+        await _sut.UpdateRecurringJobConfigAsync("job-override", "0 6 * * *", enabled: true);
+
+        var all = await _sut.GetRecurringJobsAsync();
+        all.Single(r => r.RecurringJobId == "job-override")
+           .CronOverride.Should().Be("0 6 * * *");
+    }
+
+    [Fact]
+    public async Task UpdateRecurringJobConfig_SetsEnabledFalse()
+    {
+        var recurring = MakeRecurring("job-pause");
+        await _sut.UpsertRecurringJobAsync(recurring);
+
+        await _sut.UpdateRecurringJobConfigAsync("job-pause", cronOverride: null, enabled: false);
+
+        var all = await _sut.GetRecurringJobsAsync();
+        all.Single(r => r.RecurringJobId == "job-pause")
+           .Enabled.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task UpdateRecurringJobConfig_ClearsCronOverride_WhenNull()
+    {
+        var recurring = MakeRecurring("job-clear");
+        await _sut.UpsertRecurringJobAsync(recurring);
+        await _sut.UpdateRecurringJobConfigAsync("job-clear", "0 6 * * *", enabled: true);
+
+        await _sut.UpdateRecurringJobConfigAsync("job-clear", cronOverride: null, enabled: true);
+
+        var all = await _sut.GetRecurringJobsAsync();
+        all.Single(r => r.RecurringJobId == "job-clear")
+           .CronOverride.Should().BeNull();
+    }
+
+    // ─── ForceDeleteRecurringJobAsync ─────────────────────────────────────────
+
+    [Fact]
+    public async Task ForceDelete_SetsDeletedByUserTrue()
+    {
+        var recurring = MakeRecurring("job-softdelete");
+        await _sut.UpsertRecurringJobAsync(recurring);
+
+        await _sut.ForceDeleteRecurringJobAsync("job-softdelete");
+
+        var all = await _sut.GetRecurringJobsAsync();
+        var record = all.Single(r => r.RecurringJobId == "job-softdelete");
+        record.DeletedByUser.Should().BeTrue();
+        record.Enabled.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task ForceDelete_RemovesAssociatedJobRecords()
+    {
+        var recurring = MakeRecurring("job-cleanup");
+        await _sut.UpsertRecurringJobAsync(recurring);
+
+        // Enqueue two jobs linked to this recurring job
+        var job1 = MakeJobForRecurring("job-cleanup");
+        var job2 = MakeJobForRecurring("job-cleanup");
+        await _sut.EnqueueAsync(job1);
+        await _sut.EnqueueAsync(job2);
+
+        await _sut.ForceDeleteRecurringJobAsync("job-cleanup");
+
+        // Neither job should be fetchable
+        var result = await _sut.GetJobsAsync(new JobFilter(), page: 1, pageSize: 100);
+        result.Items.Should().NotContain(j => j.RecurringJobId == "job-cleanup",
+            "associated job records must be removed by ForceDeleteRecurringJobAsync");
+    }
+
+    [Fact]
+    public async Task ForceDelete_JobStillInList()
+    {
+        var recurring = MakeRecurring("job-still-listed");
+        await _sut.UpsertRecurringJobAsync(recurring);
+
+        await _sut.ForceDeleteRecurringJobAsync("job-still-listed");
+
+        var all = await _sut.GetRecurringJobsAsync();
+        all.Should().Contain(r => r.RecurringJobId == "job-still-listed",
+            "soft-deleted recurring job must remain in the list");
+    }
+
+    // ─── RestoreRecurringJobAsync ─────────────────────────────────────────────
+
+    [Fact]
+    public async Task Restore_ClearsDeletedByUserAndEnables()
+    {
+        var recurring = MakeRecurring("job-restore");
+        await _sut.UpsertRecurringJobAsync(recurring);
+        await _sut.ForceDeleteRecurringJobAsync("job-restore");
+
+        await _sut.RestoreRecurringJobAsync("job-restore");
+
+        var all = await _sut.GetRecurringJobsAsync();
+        var record = all.Single(r => r.RecurringJobId == "job-restore");
+        record.DeletedByUser.Should().BeFalse();
+        record.Enabled.Should().BeTrue();
+    }
+
+    // ─── UpsertRecurringJobAsync preserves user config ────────────────────────
+
+    [Fact]
+    public async Task Upsert_PreservesDeletedByUser_OnUpdate()
+    {
+        var recurring = MakeRecurring("job-preserve-deleted");
+        await _sut.UpsertRecurringJobAsync(recurring);
+        await _sut.ForceDeleteRecurringJobAsync("job-preserve-deleted");
+
+        // Simulate app restart: upsert the same definition again
+        var updated = MakeRecurring("job-preserve-deleted");
+        await _sut.UpsertRecurringJobAsync(updated);
+
+        var all = await _sut.GetRecurringJobsAsync();
+        all.Single(r => r.RecurringJobId == "job-preserve-deleted")
+           .DeletedByUser.Should().BeTrue("upsert must not resurrect a user-deleted job");
+    }
+
+    [Fact]
+    public async Task Upsert_PreservesCronOverride_OnUpdate()
+    {
+        var recurring = MakeRecurring("job-preserve-cron");
+        await _sut.UpsertRecurringJobAsync(recurring);
+        await _sut.UpdateRecurringJobConfigAsync("job-preserve-cron", "0 6 * * *", enabled: true);
+
+        // Simulate app restart with a different default cron — override must be kept
+        var updated = MakeRecurring("job-preserve-cron", cron: "0 12 * * *");
+        await _sut.UpsertRecurringJobAsync(updated);
+
+        var all = await _sut.GetRecurringJobsAsync();
+        all.Single(r => r.RecurringJobId == "job-preserve-cron")
+           .CronOverride.Should().Be("0 6 * * *", "upsert must preserve user-set CronOverride");
+    }
+
+    [Fact]
+    public async Task Upsert_PreservesEnabled_OnUpdate()
+    {
+        var recurring = MakeRecurring("job-preserve-enabled");
+        await _sut.UpsertRecurringJobAsync(recurring);
+        await _sut.UpdateRecurringJobConfigAsync("job-preserve-enabled", cronOverride: null, enabled: false);
+
+        // Simulate app restart — disabled state must be kept
+        var updated = MakeRecurring("job-preserve-enabled");
+        await _sut.UpsertRecurringJobAsync(updated);
+
+        var all = await _sut.GetRecurringJobsAsync();
+        all.Single(r => r.RecurringJobId == "job-preserve-enabled")
+           .Enabled.Should().BeFalse("upsert must preserve user-set Enabled=false");
+    }
+
     // ─── helpers ─────────────────────────────────────────────────────────────
 
     private static JobRecord MakeJob(
@@ -321,6 +479,34 @@ public sealed class InMemoryStorageProviderTests
             IdempotencyKey = idempotencyKey,
             CreatedAt = DateTimeOffset.UtcNow,
             MaxAttempts = 10,
+        };
+
+    private static RecurringJobRecord MakeRecurring(string id, string cron = "0 * * * *") =>
+        new()
+        {
+            RecurringJobId = id,
+            JobType = typeof(StubJob).AssemblyQualifiedName!,
+            InputType = typeof(string).AssemblyQualifiedName!,
+            InputJson = "\"go\"",
+            Cron = cron,
+            Queue = "default",
+            NextExecution = DateTimeOffset.UtcNow.AddHours(1),
+            CreatedAt = DateTimeOffset.UtcNow,
+        };
+
+    private static JobRecord MakeJobForRecurring(string recurringJobId) =>
+        new()
+        {
+            Id = JobId.New(),
+            JobType = typeof(StubJob).AssemblyQualifiedName!,
+            InputType = typeof(string).AssemblyQualifiedName!,
+            InputJson = "\"test\"",
+            Queue = "default",
+            Priority = JobPriority.Normal,
+            Status = JobStatus.Enqueued,
+            CreatedAt = DateTimeOffset.UtcNow,
+            MaxAttempts = 10,
+            RecurringJobId = recurringJobId,
         };
 }
 

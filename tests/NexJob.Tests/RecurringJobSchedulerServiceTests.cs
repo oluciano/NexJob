@@ -185,4 +185,82 @@ public sealed class RecurringJobSchedulerServiceTests
         first.Should().NotBeNull();
         second.Should().NotBeNull();
     }
+
+    // ─── live config: DeletedByUser / Enabled / CronOverride ─────────────────
+
+    [Fact]
+    public async Task Scheduler_SkipsJob_WhenDeletedByUser()
+    {
+        var storage = new InMemoryStorageProvider();
+        var recurring = MakeRecurring("r-deleted", DateTimeOffset.UtcNow.AddSeconds(-1));
+        await storage.UpsertRecurringJobAsync(recurring);
+        await storage.ForceDeleteRecurringJobAsync("r-deleted");
+
+        var svc = (IHostedService)MakeService(storage);
+        await svc.StartAsync(CancellationToken.None);
+        await Task.Delay(150);
+        await svc.StopAsync(CancellationToken.None);
+
+        var job = await storage.FetchNextAsync(["default"]);
+        job.Should().BeNull("deleted-by-user jobs must be skipped by the scheduler");
+    }
+
+    [Fact]
+    public async Task Scheduler_SkipsJob_WhenDisabled()
+    {
+        var storage = new InMemoryStorageProvider();
+        var recurring = MakeRecurring("r-disabled", DateTimeOffset.UtcNow.AddSeconds(-1));
+        await storage.UpsertRecurringJobAsync(recurring);
+        await storage.UpdateRecurringJobConfigAsync("r-disabled", cronOverride: null, enabled: false);
+
+        var svc = (IHostedService)MakeService(storage);
+        await svc.StartAsync(CancellationToken.None);
+        await Task.Delay(150);
+        await svc.StopAsync(CancellationToken.None);
+
+        var job = await storage.FetchNextAsync(["default"]);
+        job.Should().BeNull("disabled jobs must be skipped by the scheduler");
+    }
+
+    [Fact]
+    public async Task Scheduler_UsesCronOverride_WhenSet()
+    {
+        var storage = new InMemoryStorageProvider();
+
+        // Default cron fires never (far future); override fires every minute
+        var recurring = new RecurringJobRecord
+        {
+            RecurringJobId    = "r-override",
+            JobType           = "FakeJob",
+            InputType         = "System.String",
+            InputJson         = "\"go\"",
+            Cron              = "0 0 1 1 *",    // once a year — effectively never fires again
+            Queue             = "default",
+            NextExecution     = DateTimeOffset.UtcNow.AddSeconds(-1),  // due now
+            CreatedAt         = DateTimeOffset.UtcNow,
+            ConcurrencyPolicy = RecurringConcurrencyPolicy.SkipIfRunning,
+        };
+        await storage.UpsertRecurringJobAsync(recurring);
+        await storage.UpdateRecurringJobConfigAsync("r-override", "* * * * *", enabled: true);
+
+        var before = DateTimeOffset.UtcNow;
+
+        var svc = (IHostedService)MakeService(storage);
+        await svc.StartAsync(CancellationToken.None);
+        await Task.Delay(150);
+        await svc.StopAsync(CancellationToken.None);
+
+        // Job must have been enqueued (override cron was used)
+        var job = await storage.FetchNextAsync(["default"]);
+        job.Should().NotBeNull("scheduler must enqueue job when override cron is due");
+
+        // NextExecution must have been recalculated using the override cron ("* * * * *")
+        // which means next occurrence is at most ~1 minute from now — not a year away
+        var all = await storage.GetRecurringJobsAsync();
+        var next = all.Single(r => r.RecurringJobId == "r-override").NextExecution;
+        next.Should().NotBeNull();
+        next!.Value.Should().BeAfter(before, "NextExecution must be advanced");
+        next.Value.Should().BeBefore(before.AddMinutes(2),
+            "NextExecution recalculated from override cron (* * * * *) must be within the next two minutes");
+    }
 }
