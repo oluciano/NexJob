@@ -23,8 +23,12 @@ internal sealed class NullableJobIdSerializer : SerializerBase<JobId?>
     public override void Serialize(BsonSerializationContext context, BsonSerializationArgs args, JobId? value)
     {
         if (value is null)
+        {
             context.Writer.WriteNull();
+        }
         else
+        {
             context.Writer.WriteString(value.Value.Value.ToString());
+        }
     }
 }

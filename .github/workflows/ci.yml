@@ -55,3 +55,35 @@ jobs:
         run: dotnet build --no-restore --configuration Release
       - name: Integration Tests (Testcontainers)
         run: dotnet test tests/NexJob.IntegrationTests --no-build --configuration Release --verbosity normal
+
+  format-check:
+    name: Format Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5.2.0
+        with:
+          dotnet-version: 8.0.x
+      - name: Check formatting
+        run: dotnet format --verify-no-changes --severity warn
+
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5.2.0
+        with:
+          dotnet-version: 8.0.x
+      - name: Check for vulnerabilities
+        run: |
+          dotnet restore
+          dotnet list package --vulnerable --include-transitive 2>&1 | tee vulnerable.txt
+          if grep -q "has the following vulnerable packages" vulnerable.txt; then
+            echo "Vulnerable packages found!"
+            cat vulnerable.txt
+            exit 1
+          fi
+          echo "No vulnerable packages found"

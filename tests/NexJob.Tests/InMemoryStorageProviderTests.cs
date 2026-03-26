@@ -97,19 +97,19 @@ public sealed class InMemoryStorageProviderTests
     [Fact]
     public async Task FetchNextAsync_RespectsPriorityOrder()
     {
-        var normalJob   = MakeJob(priority: JobPriority.Normal);
+        var normalJob = MakeJob(priority: JobPriority.Normal);
         var criticalJob = MakeJob(priority: JobPriority.Critical);
-        var lowJob      = MakeJob(priority: JobPriority.Low);
-        var highJob     = MakeJob(priority: JobPriority.High);
+        var lowJob = MakeJob(priority: JobPriority.Low);
+        var highJob = MakeJob(priority: JobPriority.High);
 
         await _sut.EnqueueAsync(normalJob);
         await _sut.EnqueueAsync(lowJob);
         await _sut.EnqueueAsync(criticalJob);
         await _sut.EnqueueAsync(highJob);
 
-        var first  = await _sut.FetchNextAsync(["default"]);
+        var first = await _sut.FetchNextAsync(["default"]);
         var second = await _sut.FetchNextAsync(["default"]);
-        var third  = await _sut.FetchNextAsync(["default"]);
+        var third = await _sut.FetchNextAsync(["default"]);
         var fourth = await _sut.FetchNextAsync(["default"]);
 
         first!.Priority.Should().Be(JobPriority.Critical);
@@ -124,7 +124,7 @@ public sealed class InMemoryStorageProviderTests
         var job = MakeJob();
         await _sut.EnqueueAsync(job);
 
-        var first  = await _sut.FetchNextAsync(["default"]);
+        var first = await _sut.FetchNextAsync(["default"]);
         var second = await _sut.FetchNextAsync(["default"]);
 
         first.Should().NotBeNull();

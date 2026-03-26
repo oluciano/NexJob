@@ -125,11 +125,11 @@ internal static class HtmlShell
                     <span class="logo">⚡ {{title}}</span>
                 </div>
                 <ul class="nav-list">
-                    <li><a href="{{pathPrefix}}" class="{{Active(activeRoute,"overview")}}">Overview</a></li>
-                    <li><a href="{{pathPrefix}}/queues" class="{{Active(activeRoute,"queues")}}">Queues</a></li>
-                    <li><a href="{{pathPrefix}}/jobs" class="{{Active(activeRoute,"jobs")}}">Jobs</a></li>
-                    <li><a href="{{pathPrefix}}/recurring" class="{{Active(activeRoute,"recurring")}}">Recurring</a></li>
-                    <li><a href="{{pathPrefix}}/failed" class="{{Active(activeRoute,"failed")}}">Failed</a></li>
+                    <li><a href="{{pathPrefix}}" class="{{Active(activeRoute, "overview")}}">Overview</a></li>
+                    <li><a href="{{pathPrefix}}/queues" class="{{Active(activeRoute, "queues")}}">Queues</a></li>
+                    <li><a href="{{pathPrefix}}/jobs" class="{{Active(activeRoute, "jobs")}}">Jobs</a></li>
+                    <li><a href="{{pathPrefix}}/recurring" class="{{Active(activeRoute, "recurring")}}">Recurring</a></li>
+                    <li><a href="{{pathPrefix}}/failed" class="{{Active(activeRoute, "failed")}}">Failed</a></li>
                 </ul>
             </nav>
             <main class="content">

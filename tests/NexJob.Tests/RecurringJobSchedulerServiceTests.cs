@@ -30,14 +30,14 @@ public sealed class RecurringJobSchedulerServiceTests
         RecurringConcurrencyPolicy policy = RecurringConcurrencyPolicy.SkipIfRunning) =>
         new()
         {
-            RecurringJobId    = id,
-            JobType           = "FakeJob",
-            InputType         = "System.String",
-            InputJson         = "\"go\"",
-            Cron              = "* * * * *",   // every minute
-            Queue             = "default",
-            NextExecution     = nextExecution,
-            CreatedAt         = DateTimeOffset.UtcNow,
+            RecurringJobId = id,
+            JobType = "FakeJob",
+            InputType = "System.String",
+            InputJson = "\"go\"",
+            Cron = "* * * * *",   // every minute
+            Queue = "default",
+            NextExecution = nextExecution,
+            CreatedAt = DateTimeOffset.UtcNow,
             ConcurrencyPolicy = policy,
         };
 
@@ -180,7 +180,7 @@ public sealed class RecurringJobSchedulerServiceTests
         await Task.Delay(150);
         await svc.StopAsync(CancellationToken.None);
 
-        var first  = await storage.FetchNextAsync(["default"]);
+        var first = await storage.FetchNextAsync(["default"]);
         var second = await storage.FetchNextAsync(["default"]);
         first.Should().NotBeNull();
         second.Should().NotBeNull();
@@ -230,14 +230,14 @@ public sealed class RecurringJobSchedulerServiceTests
         // Default cron fires never (far future); override fires every minute
         var recurring = new RecurringJobRecord
         {
-            RecurringJobId    = "r-override",
-            JobType           = "FakeJob",
-            InputType         = "System.String",
-            InputJson         = "\"go\"",
-            Cron              = "0 0 1 1 *",    // once a year — effectively never fires again
-            Queue             = "default",
-            NextExecution     = DateTimeOffset.UtcNow.AddSeconds(-1),  // due now
-            CreatedAt         = DateTimeOffset.UtcNow,
+            RecurringJobId = "r-override",
+            JobType = "FakeJob",
+            InputType = "System.String",
+            InputJson = "\"go\"",
+            Cron = "0 0 1 1 *",    // once a year — effectively never fires again
+            Queue = "default",
+            NextExecution = DateTimeOffset.UtcNow.AddSeconds(-1),  // due now
+            CreatedAt = DateTimeOffset.UtcNow,
             ConcurrencyPolicy = RecurringConcurrencyPolicy.SkipIfRunning,
         };
         await storage.UpsertRecurringJobAsync(recurring);

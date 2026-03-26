@@ -43,7 +43,7 @@ public sealed class JobExecutionEndToEndTests
     [Fact]
     public async Task Failed_job_is_retried_and_eventually_succeeds()
     {
-        var counter   = new AttemptCounter();
+        var counter = new AttemptCounter();
         var succeeded = new TaskCompletionSource<bool>();
 
         using var host = Host.CreateDefaultBuilder()
@@ -51,9 +51,9 @@ public sealed class JobExecutionEndToEndTests
             {
                 services.AddNexJob(opt =>
                 {
-                    opt.Workers          = 1;
-                    opt.PollingInterval  = TimeSpan.FromMilliseconds(50);
-                    opt.MaxAttempts      = 3;
+                    opt.Workers = 1;
+                    opt.PollingInterval = TimeSpan.FromMilliseconds(50);
+                    opt.MaxAttempts = 3;
                     // Use a short retry delay so the test completes in milliseconds
                     opt.RetryDelayFactory = _ => TimeSpan.FromMilliseconds(100);
                 });
@@ -76,8 +76,8 @@ public sealed class JobExecutionEndToEndTests
     [Fact]
     public async Task Continuation_runs_after_parent_succeeds()
     {
-        var parentDone  = new TaskCompletionSource<bool>();
-        var childDone   = new TaskCompletionSource<bool>();
+        var parentDone = new TaskCompletionSource<bool>();
+        var childDone = new TaskCompletionSource<bool>();
 
         using var host = Host.CreateDefaultBuilder()
             .ConfigureServices(services =>
@@ -99,7 +99,7 @@ public sealed class JobExecutionEndToEndTests
         await scheduler.ContinueWithAsync<ChildJob, ChildInput>(parentId, new());
 
         var parentResult = await parentDone.Task.WaitAsync(TimeSpan.FromSeconds(10));
-        var childResult  = await childDone.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        var childResult = await childDone.Task.WaitAsync(TimeSpan.FromSeconds(10));
 
         parentResult.Should().BeTrue();
         childResult.Should().BeTrue();
@@ -135,7 +135,11 @@ public class FlakyJob(AttemptCounter counter, TaskCompletionSource<bool> done) :
     public Task ExecuteAsync(FlakyInput input, CancellationToken cancellationToken)
     {
         counter.Value++;
-        if (counter.Value < 3) throw new InvalidOperationException("not yet");
+        if (counter.Value < 3)
+        {
+            throw new InvalidOperationException("not yet");
+        }
+
         done.TrySetResult(true);
         return Task.CompletedTask;
     }

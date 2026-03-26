@@ -47,7 +47,9 @@ public sealed class PostgresStorageProvider : IStorageProvider
                 new { key = job.IdempotencyKey });
 
             if (existing.HasValue)
+            {
                 return new JobId(existing.Value);
+            }
         }
 
         await conn.ExecuteAsync(
@@ -61,20 +63,20 @@ public sealed class PostgresStorageProvider : IStorageProvider
             """,
             new
             {
-                Id             = job.Id.Value,
+                Id = job.Id.Value,
                 job.JobType,
                 job.InputType,
                 job.InputJson,
                 job.SchemaVersion,
                 job.Queue,
-                Priority       = (int)job.Priority,
-                Status         = job.Status.ToString(),
+                Priority = (int)job.Priority,
+                Status = job.Status.ToString(),
                 job.IdempotencyKey,
                 job.Attempts,
                 job.MaxAttempts,
                 job.CreatedAt,
                 job.ScheduledAt,
-                ParentJobId    = job.ParentJobId?.Value,
+                ParentJobId = job.ParentJobId?.Value,
                 job.RecurringJobId,
             });
 
@@ -232,7 +234,7 @@ public sealed class PostgresStorageProvider : IStorageProvider
                 recurringJob.InputType,
                 recurringJob.InputJson,
                 recurringJob.Cron,
-                TimeZoneId        = recurringJob.TimeZoneId ?? "UTC",
+                TimeZoneId = recurringJob.TimeZoneId ?? "UTC",
                 recurringJob.Queue,
                 recurringJob.NextExecution,
                 recurringJob.CreatedAt,
@@ -423,14 +425,14 @@ public sealed class PostgresStorageProvider : IStorageProvider
 
         return new JobMetrics
         {
-            Enqueued         = counts.GetValueOrDefault("Enqueued"),
-            Processing       = counts.GetValueOrDefault("Processing"),
-            Succeeded        = counts.GetValueOrDefault("Succeeded"),
-            Failed           = counts.GetValueOrDefault("Failed"),
-            Scheduled        = counts.GetValueOrDefault("Scheduled"),
-            Recurring        = recurringCount,
+            Enqueued = counts.GetValueOrDefault("Enqueued"),
+            Processing = counts.GetValueOrDefault("Processing"),
+            Succeeded = counts.GetValueOrDefault("Succeeded"),
+            Failed = counts.GetValueOrDefault("Failed"),
+            Scheduled = counts.GetValueOrDefault("Scheduled"),
+            Recurring = recurringCount,
             HourlyThroughput = throughput,
-            RecentFailures   = recentFailures,
+            RecentFailures = recentFailures,
         };
     }
 
@@ -443,16 +445,16 @@ public sealed class PostgresStorageProvider : IStorageProvider
         await conn.OpenAsync(cancellationToken);
 
         var where = new List<string>();
-        var p     = new DynamicParameters();
+        var p = new DynamicParameters();
 
-        if (filter.Status.HasValue)     { where.Add("status = @status");      p.Add("status", filter.Status.Value.ToString()); }
-        if (!string.IsNullOrWhiteSpace(filter.Queue))  { where.Add("queue = @queue");        p.Add("queue",  filter.Queue); }
+        if (filter.Status.HasValue) { where.Add("status = @status"); p.Add("status", filter.Status.Value.ToString()); }
+        if (!string.IsNullOrWhiteSpace(filter.Queue)) { where.Add("queue = @queue"); p.Add("queue", filter.Queue); }
         if (!string.IsNullOrWhiteSpace(filter.Search)) { where.Add("(job_type ILIKE @search OR id::text ILIKE @search)"); p.Add("search", $"%{filter.Search.Trim()}%"); }
 
-        var clause  = where.Count > 0 ? "WHERE " + string.Join(" AND ", where) : string.Empty;
-        var total   = await conn.ExecuteScalarAsync<int>($"SELECT COUNT(*)::int FROM nexjob_jobs {clause}", p);
+        var clause = where.Count > 0 ? "WHERE " + string.Join(" AND ", where) : string.Empty;
+        var total = await conn.ExecuteScalarAsync<int>($"SELECT COUNT(*)::int FROM nexjob_jobs {clause}", p);
 
-        p.Add("limit",  pageSize);
+        p.Add("limit", pageSize);
         p.Add("offset", (page - 1) * pageSize);
 
         var items = (await conn.QueryAsync<JobRow>(

@@ -37,8 +37,8 @@ internal sealed class RecurringPage : IComponent
                 var badge = r.LastExecutionStatus switch
                 {
                     JobStatus.Succeeded => "<span class=\"badge badge-succeeded\" style=\"margin-left:4px\">✓ ok</span>",
-                    JobStatus.Failed    => $"<span class=\"badge badge-failed\" title=\"{System.Web.HttpUtility.HtmlAttributeEncode(r.LastExecutionError ?? string.Empty)}\" style=\"margin-left:4px\">✗ err</span>",
-                    _                  => string.Empty,
+                    JobStatus.Failed => $"<span class=\"badge badge-failed\" title=\"{System.Web.HttpUtility.HtmlAttributeEncode(r.LastExecutionError ?? string.Empty)}\" style=\"margin-left:4px\">✗ err</span>",
+                    _ => string.Empty,
                 };
                 lastRun = $"<span title=\"{r.LastExecutedAt.Value:yyyy-MM-dd HH:mm:ss UTC}\">{r.LastExecutedAt.Value:MM/dd HH:mm}</span>{badge}";
             }

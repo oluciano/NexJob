@@ -23,7 +23,7 @@ public sealed class MongoStorageProviderTests : StorageProviderTestsBase, IAsync
 
     protected override Task<IStorageProvider> CreateStorageAsync()
     {
-        var client   = new MongoClient(_container.GetConnectionString());
+        var client = new MongoClient(_container.GetConnectionString());
         var database = client.GetDatabase("nexjob_test");
         return Task.FromResult<IStorageProvider>(new MongoStorageProvider(database));
     }

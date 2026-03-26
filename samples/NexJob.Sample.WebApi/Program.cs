@@ -79,8 +79,11 @@ app.MapPost("/jobs/seed/failed", async (IScheduler scheduler) =>
 {
     // Enqueue flakey jobs with failTimes > MaxAttempts so they dead-letter fast
     for (var i = 1; i <= 5; i++)
+    {
         await scheduler.EnqueueAsync<FlakeyJob, FlakeyRequest>(
             new FlakeyRequest($"dead-letter-{i}", FailTimes: 99));
+    }
+
     return Results.Accepted(null, new { enqueued = 5, note = "will fail after max attempts" });
 });
 
@@ -92,12 +95,12 @@ app.MapPost("/jobs/chain", async (EmailPayload email, IScheduler scheduler) =>
         DateOnly.FromDateTime(DateTime.Today.AddDays(-7)),
         DateOnly.FromDateTime(DateTime.Today));
     var reportId = await scheduler.EnqueueAsync<GenerateReportJob, ReportRequest>(report);
-    var emailId  = await scheduler.ContinueWithAsync<SendEmailJob, EmailPayload>(reportId, email);
+    var emailId = await scheduler.ContinueWithAsync<SendEmailJob, EmailPayload>(reportId, email);
 
     return Results.Accepted(null, new
     {
         reportJobId = reportId.Value,
-        emailJobId  = emailId.Value,
+        emailJobId = emailId.Value,
         description = "Email will be sent after the report finishes",
     });
 });
@@ -184,9 +187,9 @@ app.MapPost("/jobs/stress/idempotent", async (IdempotentStressRequest req, ISche
 
     return Results.Ok(new
     {
-        requestsSent  = req.Concurrency,
+        requestsSent = req.Concurrency,
         distinctJobIds = distinctIds.Count,
-        ids           = distinctIds,
+        ids = distinctIds,
     });
 });
 

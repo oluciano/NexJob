@@ -22,22 +22,22 @@ internal sealed class RecurringJobRow
 
     public RecurringJobRecord ToRecord() => new()
     {
-        RecurringJobId      = RecurringJobId,
-        JobType             = JobType,
-        InputType           = InputType,
-        InputJson           = InputJson,
-        Cron                = Cron,
-        TimeZoneId          = TimeZoneId == "UTC" ? null : TimeZoneId,
-        Queue               = Queue,
-        NextExecution       = NextExecution,
-        CreatedAt           = CreatedAt,
-        LastExecutedAt      = LastExecution,
+        RecurringJobId = RecurringJobId,
+        JobType = JobType,
+        InputType = InputType,
+        InputJson = InputJson,
+        Cron = Cron,
+        TimeZoneId = TimeZoneId == "UTC" ? null : TimeZoneId,
+        Queue = Queue,
+        NextExecution = NextExecution,
+        CreatedAt = CreatedAt,
+        LastExecutedAt = LastExecution,
         LastExecutionStatus = LastExecutionStatus is not null
             ? Enum.Parse<JobStatus>(LastExecutionStatus) : null,
-        LastExecutionError  = LastExecutionError,
-        ConcurrencyPolicy   = Enum.Parse<RecurringConcurrencyPolicy>(ConcurrencyPolicy),
-        CronOverride        = CronOverride,
-        Enabled             = Enabled,
-        DeletedByUser       = DeletedByUser,
+        LastExecutionError = LastExecutionError,
+        ConcurrencyPolicy = Enum.Parse<RecurringConcurrencyPolicy>(ConcurrencyPolicy),
+        CronOverride = CronOverride,
+        Enabled = Enabled,
+        DeletedByUser = DeletedByUser,
     };
 }

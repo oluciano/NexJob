@@ -25,17 +25,17 @@ public sealed class OrphanedJobWatcherServiceTests
     /// </summary>
     private static JobRecord MakeProcessingJob(DateTimeOffset? heartbeatAt = null) => new()
     {
-        Id          = JobId.New(),
-        JobType     = "FakeJob",
-        InputType   = "System.String",
-        InputJson   = "\"test\"",
-        Queue       = "default",
-        Priority    = JobPriority.Normal,
-        Status      = JobStatus.Processing,
+        Id = JobId.New(),
+        JobType = "FakeJob",
+        InputType = "System.String",
+        InputJson = "\"test\"",
+        Queue = "default",
+        Priority = JobPriority.Normal,
+        Status = JobStatus.Processing,
         HeartbeatAt = heartbeatAt,
-        Attempts    = 1,
+        Attempts = 1,
         MaxAttempts = 5,
-        CreatedAt   = DateTimeOffset.UtcNow,
+        CreatedAt = DateTimeOffset.UtcNow,
     };
 
     // ─── tests ────────────────────────────────────────────────────────────────
@@ -102,17 +102,17 @@ public sealed class OrphanedJobWatcherServiceTests
         // An Enqueued job with no heartbeat — watcher should ignore it
         await storage.EnqueueAsync(new JobRecord
         {
-            Id          = JobId.New(),
-            JobType     = "FakeJob",
-            InputType   = "System.String",
-            InputJson   = "\"test\"",
-            Queue       = "default",
-            Priority    = JobPriority.Normal,
-            Status      = JobStatus.Enqueued,
+            Id = JobId.New(),
+            JobType = "FakeJob",
+            InputType = "System.String",
+            InputJson = "\"test\"",
+            Queue = "default",
+            Priority = JobPriority.Normal,
+            Status = JobStatus.Enqueued,
             HeartbeatAt = null,
-            Attempts    = 0,
+            Attempts = 0,
             MaxAttempts = 5,
-            CreatedAt   = DateTimeOffset.UtcNow,
+            CreatedAt = DateTimeOffset.UtcNow,
         });
 
         var svc = (IHostedService)MakeService(storage, heartbeatTimeout: TimeSpan.FromMilliseconds(5));
@@ -121,7 +121,7 @@ public sealed class OrphanedJobWatcherServiceTests
         await svc.StopAsync(CancellationToken.None);
 
         // The job was Enqueued before; watcher should not duplicate it
-        var first  = await storage.FetchNextAsync(["default"]);
+        var first = await storage.FetchNextAsync(["default"]);
         var second = await storage.FetchNextAsync(["default"]);
         first.Should().NotBeNull();
         second.Should().BeNull("Enqueued job must not be duplicated by the orphan watcher");

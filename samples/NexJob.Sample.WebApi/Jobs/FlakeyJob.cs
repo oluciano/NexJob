@@ -14,7 +14,7 @@ public sealed class FlakeyJob(ILogger<FlakeyJob> logger) : IJob<FlakeyRequest>
 
     public Task ExecuteAsync(FlakeyRequest input, CancellationToken cancellationToken)
     {
-        var key   = input.Name ?? "unnamed";
+        var key = input.Name ?? "unnamed";
         var count = _attempts.AddOrUpdate(key, 1, (_, v) => v + 1);
 
         if (count <= input.FailTimes)

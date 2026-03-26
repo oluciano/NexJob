@@ -87,15 +87,15 @@ internal sealed class DefaultScheduler : IScheduler
 
         var record = new RecurringJobRecord
         {
-            RecurringJobId    = recurringJobId,
-            JobType           = typeof(TJob).AssemblyQualifiedName!,
-            InputType         = typeof(TInput).AssemblyQualifiedName!,
-            InputJson         = JsonSerializer.Serialize(input),
-            Cron              = cron,
-            TimeZoneId        = timeZone?.Id,
-            Queue             = queue ?? "default",
-            NextExecution     = nextExecution,
-            CreatedAt         = DateTimeOffset.UtcNow,
+            RecurringJobId = recurringJobId,
+            JobType = typeof(TJob).AssemblyQualifiedName!,
+            InputType = typeof(TInput).AssemblyQualifiedName!,
+            InputJson = JsonSerializer.Serialize(input),
+            Cron = cron,
+            TimeZoneId = timeZone?.Id,
+            Queue = queue ?? "default",
+            NextExecution = nextExecution,
+            CreatedAt = DateTimeOffset.UtcNow,
             ConcurrencyPolicy = concurrencyPolicy,
         };
 

@@ -23,9 +23,9 @@ public sealed class DashboardMiddleware
     /// <summary>Creates a new instance of <see cref="DashboardMiddleware"/>.</summary>
     public DashboardMiddleware(RequestDelegate next, string pathPrefix, DashboardOptions options)
     {
-        _next       = next;
+        _next = next;
         _pathPrefix = pathPrefix.TrimEnd('/');
-        _options    = options;
+        _options = options;
     }
 
     /// <summary>Processes an incoming request.</summary>
@@ -57,7 +57,9 @@ public sealed class DashboardMiddleware
 
         // Handle API actions (POST)
         if (context.Request.Method == HttpMethods.Post && await HandleActionsAsync(context, subPath))
+        {
             return;
+        }
 
         // Render page
         var html = await RenderPageAsync(context, subPath);
@@ -136,7 +138,10 @@ public sealed class DashboardMiddleware
             var allJobs = await storage.GetRecurringJobsAsync(context.RequestAborted);
             var existing = allJobs.FirstOrDefault(r => r.RecurringJobId == recurringId);
             if (existing is not null)
+            {
                 await storage.UpdateRecurringJobConfigAsync(recurringId, existing.CronOverride, enabled: false, context.RequestAborted);
+            }
+
             context.Response.Redirect($"{_pathPrefix}/recurring");
             return true;
         }
@@ -147,7 +152,10 @@ public sealed class DashboardMiddleware
             var allJobs = await storage.GetRecurringJobsAsync(context.RequestAborted);
             var existing = allJobs.FirstOrDefault(r => r.RecurringJobId == recurringId);
             if (existing is not null)
+            {
                 await storage.UpdateRecurringJobConfigAsync(recurringId, existing.CronOverride, enabled: true, context.RequestAborted);
+            }
+
             context.Response.Redirect($"{_pathPrefix}/recurring");
             return true;
         }
@@ -180,7 +188,9 @@ public sealed class DashboardMiddleware
             var allJobs = await storage.GetRecurringJobsAsync(context.RequestAborted);
             var existing = allJobs.FirstOrDefault(r => r.RecurringJobId == recurringId);
             if (existing is not null)
+            {
                 await storage.UpdateRecurringJobConfigAsync(recurringId, cronOverride, existing.Enabled, context.RequestAborted);
+            }
 
             context.Response.Redirect($"{_pathPrefix}/recurring");
             return true;
@@ -206,24 +216,34 @@ public sealed class DashboardMiddleware
 
         if (subPath == "recurring/bulk")
         {
-            var form   = await context.Request.ReadFormAsync(context.RequestAborted);
+            var form = await context.Request.ReadFormAsync(context.RequestAborted);
             var action = form["bulkAction"].ToString();
-            var ids    = form["ids"].ToArray();
+            var ids = form["ids"].ToArray();
 
             // if nothing selected, act on all
             if (ids.Length == 0)
+            {
                 ids = (await storage.GetRecurringJobsAsync(context.RequestAborted))
                       .Select(r => r.RecurringJobId).ToArray();
+            }
 
             foreach (var id in ids)
             {
-                if (string.IsNullOrEmpty(id)) continue;
+                if (string.IsNullOrEmpty(id))
+                {
+                    continue;
+                }
+
                 var decoded = Uri.UnescapeDataString(id);
                 if (action == "trigger")
+                {
                     await storage.SetRecurringJobNextExecutionAsync(
                         decoded, DateTimeOffset.UtcNow.AddSeconds(-1), context.RequestAborted);
+                }
                 else if (action == "delete")
+                {
                     await storage.DeleteRecurringJobAsync(decoded, context.RequestAborted);
+                }
             }
 
             context.Response.Redirect($"{_pathPrefix}/recurring");
@@ -232,9 +252,9 @@ public sealed class DashboardMiddleware
 
         if (subPath == "jobs/bulk")
         {
-            var form   = await context.Request.ReadFormAsync(context.RequestAborted);
+            var form = await context.Request.ReadFormAsync(context.RequestAborted);
             var action = form["bulkAction"].ToString();
-            var ids    = form["ids"].ToArray();
+            var ids = form["ids"].ToArray();
 
             // if nothing selected, act on all failed jobs
             if (ids.Length == 0)
@@ -246,12 +266,20 @@ public sealed class DashboardMiddleware
 
             foreach (var idStr in ids)
             {
-                if (!Guid.TryParse(idStr, out var guid)) continue;
+                if (!Guid.TryParse(idStr, out var guid))
+                {
+                    continue;
+                }
+
                 var jobId = new JobId(guid);
                 if (action == "requeue")
+                {
                     await storage.RequeueJobAsync(jobId, context.RequestAborted);
+                }
                 else if (action == "delete")
+                {
                     await storage.DeleteJobAsync(jobId, context.RequestAborted);
+                }
             }
 
             context.Response.Redirect($"{_pathPrefix}/failed");
@@ -273,9 +301,9 @@ public sealed class DashboardMiddleware
         {
             parameters = ParameterView.FromDictionary(new Dictionary<string, object?>
             {
-                ["Storage"]     = storage,
-                ["PathPrefix"]  = _pathPrefix,
-                ["Title"]       = _options.Title,
+                ["Storage"] = storage,
+                ["PathPrefix"] = _pathPrefix,
+                ["Title"] = _options.Title,
             });
             return await RenderAsync<OverviewPage>(renderer, parameters);
         }
@@ -284,28 +312,28 @@ public sealed class DashboardMiddleware
         {
             parameters = ParameterView.FromDictionary(new Dictionary<string, object?>
             {
-                ["Storage"]    = storage,
+                ["Storage"] = storage,
                 ["PathPrefix"] = _pathPrefix,
-                ["Title"]      = _options.Title,
+                ["Title"] = _options.Title,
             });
             return await RenderAsync<QueuesPage>(renderer, parameters);
         }
 
         if (subPath == "jobs" || subPath.StartsWith("jobs?"))
         {
-            var query  = context.Request.Query;
+            var query = context.Request.Query;
             var status = query.TryGetValue("status", out var sv) && Enum.TryParse<JobStatus>(sv, out var s) ? (JobStatus?)s : null;
             var search = query.TryGetValue("search", out var sr) ? (string?)sr : null;
-            var page   = query.TryGetValue("page",   out var pg) && int.TryParse(pg, out var p) ? p : 1;
+            var page = query.TryGetValue("page", out var pg) && int.TryParse(pg, out var p) ? p : 1;
 
             parameters = ParameterView.FromDictionary(new Dictionary<string, object?>
             {
-                ["Storage"]      = storage,
-                ["PathPrefix"]   = _pathPrefix,
-                ["Title"]        = _options.Title,
+                ["Storage"] = storage,
+                ["PathPrefix"] = _pathPrefix,
+                ["Title"] = _options.Title,
                 ["StatusFilter"] = status,
-                ["Search"]       = search,
-                ["Page"]         = page,
+                ["Search"] = search,
+                ["Page"] = page,
             });
             return await RenderAsync<JobsPage>(renderer, parameters);
         }
@@ -317,10 +345,10 @@ public sealed class DashboardMiddleware
             {
                 parameters = ParameterView.FromDictionary(new Dictionary<string, object?>
                 {
-                    ["Storage"]    = storage,
+                    ["Storage"] = storage,
                     ["PathPrefix"] = _pathPrefix,
-                    ["Title"]      = _options.Title,
-                    ["JobId"]      = new JobId(guid),
+                    ["Title"] = _options.Title,
+                    ["JobId"] = new JobId(guid),
                 });
                 return await RenderAsync<JobDetailPage>(renderer, parameters);
             }
@@ -330,9 +358,9 @@ public sealed class DashboardMiddleware
         {
             parameters = ParameterView.FromDictionary(new Dictionary<string, object?>
             {
-                ["Storage"]    = storage,
+                ["Storage"] = storage,
                 ["PathPrefix"] = _pathPrefix,
-                ["Title"]      = _options.Title,
+                ["Title"] = _options.Title,
             });
             return await RenderAsync<RecurringPage>(renderer, parameters);
         }
@@ -341,9 +369,9 @@ public sealed class DashboardMiddleware
         {
             parameters = ParameterView.FromDictionary(new Dictionary<string, object?>
             {
-                ["Storage"]    = storage,
+                ["Storage"] = storage,
                 ["PathPrefix"] = _pathPrefix,
-                ["Title"]      = _options.Title,
+                ["Title"] = _options.Title,
             });
             return await RenderAsync<FailedPage>(renderer, parameters);
         }

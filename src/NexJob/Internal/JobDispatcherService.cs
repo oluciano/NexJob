@@ -109,9 +109,9 @@ internal sealed class JobDispatcherService : BackgroundService
             var method = jt.GetMethod(nameof(IJob<object>.ExecuteAsync),
                 [it, typeof(CancellationToken)])!;
 
-            var jobParam   = Expression.Parameter(typeof(object), "job");
+            var jobParam = Expression.Parameter(typeof(object), "job");
             var inputParam = Expression.Parameter(typeof(object), "input");
-            var ctParam    = Expression.Parameter(typeof(CancellationToken), "ct");
+            var ctParam = Expression.Parameter(typeof(CancellationToken), "ct");
 
             var call = Expression.Call(
                 Expression.Convert(jobParam, jt),
@@ -164,15 +164,19 @@ internal sealed class JobDispatcherService : BackgroundService
             finally
             {
                 foreach (var sem in acquired)
+                {
                     sem.Release();
+                }
             }
 
             await _storage.AcknowledgeAsync(job.Id, CancellationToken.None);
             await _storage.EnqueueContinuationsAsync(job.Id, CancellationToken.None);
 
             if (job.RecurringJobId is not null)
+            {
                 await _storage.SetRecurringJobLastExecutionResultAsync(
                     job.RecurringJobId, JobStatus.Succeeded, null, CancellationToken.None);
+            }
 
             _logger.LogDebug("Job {JobId} completed successfully", job.Id);
         }
@@ -200,8 +204,10 @@ internal sealed class JobDispatcherService : BackgroundService
             await _storage.SetFailedAsync(job.Id, ex, retryAt, CancellationToken.None);
 
             if (job.RecurringJobId is not null && retryAt is null)
+            {
                 await _storage.SetRecurringJobLastExecutionResultAsync(
                     job.RecurringJobId, JobStatus.Failed, ex.Message, CancellationToken.None);
+            }
         }
         finally
         {

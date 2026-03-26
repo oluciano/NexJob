@@ -22,7 +22,7 @@ public sealed class ThrottleRegistryTests
     [Fact]
     public void GetOrCreate_ReturnsSameSemaphore_ForSameResource()
     {
-        var first  = _sut.GetOrCreate("resource-b", maxConcurrent: 2);
+        var first = _sut.GetOrCreate("resource-b", maxConcurrent: 2);
         var second = _sut.GetOrCreate("resource-b", maxConcurrent: 2);
 
         second.Should().BeSameAs(first, "repeated calls for the same resource must return the cached instance");
@@ -45,7 +45,9 @@ public sealed class ThrottleRegistryTests
 
         // Acquire all available slots
         for (var i = 0; i < max; i++)
+        {
             await sem.WaitAsync();
+        }
 
         // The semaphore should now be exhausted — a subsequent WaitAsync must not complete immediately
         var acquired = await sem.WaitAsync(millisecondsTimeout: 0);
@@ -60,7 +62,7 @@ public sealed class ThrottleRegistryTests
     public void GetOrCreate_SecondCallWithDifferentMax_ReturnsOriginalSemaphore()
     {
         // The registry ignores the maxConcurrent parameter on subsequent calls for the same key.
-        var first  = _sut.GetOrCreate("resource-f", maxConcurrent: 5);
+        var first = _sut.GetOrCreate("resource-f", maxConcurrent: 5);
         var second = _sut.GetOrCreate("resource-f", maxConcurrent: 99);
 
         second.Should().BeSameAs(first, "the original semaphore is returned regardless of the new maxConcurrent value");

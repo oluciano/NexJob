@@ -25,23 +25,29 @@ internal sealed class JobDetailPage : IComponent
     private string BuildHtml(JobRecord? job)
     {
         if (job is null)
+        {
             return HtmlShell.Wrap(Title, PathPrefix, "jobs",
                 "<h2>Job not found</h2><p><a href=\"" + PathPrefix + "/jobs\">← Back to Jobs</a></p>");
+        }
 
         var now = DateTimeOffset.UtcNow;
 
         var actions = string.Empty;
         if (job.Status == JobStatus.Scheduled)
+        {
             actions +=
                 $"<form method=\"post\" action=\"{PathPrefix}/jobs/{job.Id.Value}/runnow\" style=\"display:inline\">" +
                 "<button type=\"submit\" class=\"btn btn-primary btn-sm\">▶ Run Now</button></form> ";
+        }
 
         if (job.Status == JobStatus.Failed)
+        {
             actions +=
                 $"<form method=\"post\" action=\"{PathPrefix}/jobs/{job.Id.Value}/requeue\" style=\"display:inline\">" +
                 "<button type=\"submit\" class=\"btn btn-primary btn-sm\">Requeue</button></form> " +
                 $"<form method=\"post\" action=\"{PathPrefix}/jobs/{job.Id.Value}/delete\" style=\"display:inline\">" +
                 "<button type=\"submit\" class=\"btn btn-danger btn-sm\">Delete</button></form>";
+        }
 
         var rows = new[]
         {

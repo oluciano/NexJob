@@ -90,15 +90,15 @@ internal sealed class RecurringJobSchedulerService : BackgroundService
             {
                 var jobRecord = new JobRecord
                 {
-                    Id             = JobId.New(),
-                    JobType        = recurring.JobType,
-                    InputType      = recurring.InputType,
-                    InputJson      = recurring.InputJson,
-                    Queue          = recurring.Queue,
-                    Priority       = JobPriority.Normal,
-                    Status         = JobStatus.Enqueued,
-                    CreatedAt      = DateTimeOffset.UtcNow,
-                    MaxAttempts    = _options.MaxAttempts,
+                    Id = JobId.New(),
+                    JobType = recurring.JobType,
+                    InputType = recurring.InputType,
+                    InputJson = recurring.InputJson,
+                    Queue = recurring.Queue,
+                    Priority = JobPriority.Normal,
+                    Status = JobStatus.Enqueued,
+                    CreatedAt = DateTimeOffset.UtcNow,
+                    MaxAttempts = _options.MaxAttempts,
                     RecurringJobId = recurring.RecurringJobId,
                     // SkipIfRunning: idempotency key blocks a second instance while
                     // the first is Enqueued or Processing.

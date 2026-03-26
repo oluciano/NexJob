@@ -44,11 +44,15 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
         _jobs[job.Id.Value] = job;
 
         if (job.IdempotencyKey is not null)
+        {
             _idempotencyIndex[job.IdempotencyKey] = job.Id.Value;
+        }
 
         // Only push to channel when immediately runnable (not scheduled for future)
         if (job.Status == JobStatus.Enqueued && job.ScheduledAt is null)
+        {
             WriteToChannel(job);
+        }
 
         return Task.FromResult(job.Id);
     }
@@ -68,13 +72,17 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
                 while (channels[i].Reader.TryRead(out var jobId))
                 {
                     if (!_jobs.TryGetValue(jobId, out var job))
+                    {
                         continue;
+                    }
 
                     // Atomic claim: lock on the job instance to prevent double-processing
                     lock (job)
                     {
                         if (job.Status != JobStatus.Enqueued)
+                        {
                             continue;
+                        }
 
                         job.Status = JobStatus.Processing;
                         job.ProcessingStartedAt = DateTimeOffset.UtcNow;
@@ -110,7 +118,9 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
     public Task SetFailedAsync(JobId jobId, Exception exception, DateTimeOffset? retryAt, CancellationToken cancellationToken = default)
     {
         if (!_jobs.TryGetValue(jobId.Value, out var job))
+        {
             return Task.CompletedTask;
+        }
 
         lock (job)
         {
@@ -137,7 +147,9 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
     public Task UpdateHeartbeatAsync(JobId jobId, CancellationToken cancellationToken = default)
     {
         if (_jobs.TryGetValue(jobId.Value, out var job))
+        {
             job.HeartbeatAt = DateTimeOffset.UtcNow;
+        }
 
         return Task.CompletedTask;
     }
@@ -153,9 +165,9 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
             // If the existing record was deleted by the user, keep it deleted — do not resurrect it.
             (_, existing) =>
             {
-                recurringJob.CronOverride   = existing.CronOverride;
-                recurringJob.Enabled        = existing.Enabled;
-                recurringJob.DeletedByUser  = existing.DeletedByUser;
+                recurringJob.CronOverride = existing.CronOverride;
+                recurringJob.Enabled = existing.Enabled;
+                recurringJob.DeletedByUser = existing.DeletedByUser;
                 return recurringJob;
             });
         return Task.CompletedTask;
@@ -189,7 +201,7 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
         if (_recurringJobs.TryGetValue(recurringJobId, out var job))
         {
             job.LastExecutionStatus = status;
-            job.LastExecutionError  = errorMessage;
+            job.LastExecutionError = errorMessage;
         }
 
         return Task.CompletedTask;
@@ -210,7 +222,7 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
         if (_recurringJobs.TryGetValue(recurringJobId, out var job))
         {
             job.CronOverride = cronOverride;
-            job.Enabled      = enabled;
+            job.Enabled = enabled;
         }
 
         return Task.CompletedTask;
@@ -222,7 +234,7 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
         if (_recurringJobs.TryGetValue(recurringJobId, out var job))
         {
             job.DeletedByUser = true;
-            job.Enabled       = false;
+            job.Enabled = false;
         }
 
         var toRemove = _jobs.Values
@@ -231,7 +243,9 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
             .ToList();
 
         foreach (var id in toRemove)
+        {
             _jobs.TryRemove(id, out _);
+        }
 
         return Task.CompletedTask;
     }
@@ -242,7 +256,7 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
         if (_recurringJobs.TryGetValue(recurringJobId, out var job))
         {
             job.DeletedByUser = false;
-            job.Enabled       = true;
+            job.Enabled = true;
         }
 
         return Task.CompletedTask;
@@ -263,18 +277,26 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
         foreach (var job in _jobs.Values)
         {
             if (job.Status != JobStatus.Processing)
+            {
                 continue;
+            }
 
             if (job.HeartbeatAt.HasValue && job.HeartbeatAt.Value >= cutoff)
+            {
                 continue;
+            }
 
             lock (job)
             {
                 if (job.Status != JobStatus.Processing)
+                {
                     continue;
+                }
 
                 if (job.HeartbeatAt.HasValue && job.HeartbeatAt.Value >= cutoff)
+                {
                     continue;
+                }
 
                 job.Status = JobStatus.Enqueued;
                 job.ProcessingStartedAt = null;
@@ -292,12 +314,16 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
         foreach (var job in _jobs.Values)
         {
             if (job.Status != JobStatus.AwaitingContinuation || job.ParentJobId != parentJobId)
+            {
                 continue;
+            }
 
             lock (job)
             {
                 if (job.Status != JobStatus.AwaitingContinuation)
+                {
                     continue;
+                }
 
                 job.Status = JobStatus.Enqueued;
                 WriteToChannel(job);
@@ -312,9 +338,9 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
     /// <inheritdoc/>
     public Task<JobMetrics> GetMetricsAsync(CancellationToken cancellationToken = default)
     {
-        var now      = DateTimeOffset.UtcNow;
+        var now = DateTimeOffset.UtcNow;
         var cutoff24 = now.AddHours(-24);
-        var jobs     = _jobs.Values.ToList();
+        var jobs = _jobs.Values.ToList();
 
         // Per-hour throughput for the last 24 hours
         var throughput = jobs
@@ -334,14 +360,14 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
 
         var metrics = new JobMetrics
         {
-            Enqueued        = jobs.Count(j => j.Status == JobStatus.Enqueued),
-            Processing      = jobs.Count(j => j.Status == JobStatus.Processing),
-            Succeeded       = jobs.Count(j => j.Status == JobStatus.Succeeded),
-            Failed          = jobs.Count(j => j.Status == JobStatus.Failed),
-            Scheduled       = jobs.Count(j => j.Status == JobStatus.Scheduled),
-            Recurring       = _recurringJobs.Count,
+            Enqueued = jobs.Count(j => j.Status == JobStatus.Enqueued),
+            Processing = jobs.Count(j => j.Status == JobStatus.Processing),
+            Succeeded = jobs.Count(j => j.Status == JobStatus.Succeeded),
+            Failed = jobs.Count(j => j.Status == JobStatus.Failed),
+            Scheduled = jobs.Count(j => j.Status == JobStatus.Scheduled),
+            Recurring = _recurringJobs.Count,
             HourlyThroughput = throughput,
-            RecentFailures  = recentFailures,
+            RecentFailures = recentFailures,
         };
 
         return Task.FromResult(metrics);
@@ -354,10 +380,14 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
         var query = _jobs.Values.AsEnumerable();
 
         if (filter.Status.HasValue)
+        {
             query = query.Where(j => j.Status == filter.Status.Value);
+        }
 
         if (!string.IsNullOrWhiteSpace(filter.Queue))
+        {
             query = query.Where(j => j.Queue.Equals(filter.Queue, StringComparison.OrdinalIgnoreCase));
+        }
 
         if (!string.IsNullOrWhiteSpace(filter.Search))
         {
@@ -368,15 +398,15 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
         }
 
         var ordered = query.OrderByDescending(j => j.CreatedAt).ToList();
-        var total   = ordered.Count;
-        var items   = ordered.Skip((page - 1) * pageSize).Take(pageSize).ToList();
+        var total = ordered.Count;
+        var items = ordered.Skip((page - 1) * pageSize).Take(pageSize).ToList();
 
         return Task.FromResult(new PagedResult<JobRecord>
         {
-            Items      = items,
+            Items = items,
             TotalCount = total,
-            Page       = page,
-            PageSize   = pageSize,
+            Page = page,
+            PageSize = pageSize,
         });
     }
 
@@ -398,13 +428,15 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
     public Task RequeueJobAsync(JobId id, CancellationToken cancellationToken = default)
     {
         if (!_jobs.TryGetValue(id.Value, out var job))
+        {
             return Task.CompletedTask;
+        }
 
         lock (job)
         {
-            job.Status   = JobStatus.Enqueued;
+            job.Status = JobStatus.Enqueued;
             job.Attempts = 0;
-            job.RetryAt  = null;
+            job.RetryAt = null;
             job.CompletedAt = null;
             job.LastErrorMessage = null;
             job.LastErrorStackTrace = null;
@@ -421,8 +453,8 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
             .GroupBy(j => j.Queue)
             .Select(g => new QueueMetrics
             {
-                Queue      = g.Key,
-                Enqueued   = g.Count(j => j.Status == JobStatus.Enqueued),
+                Queue = g.Key,
+                Enqueued = g.Count(j => j.Status == JobStatus.Enqueued),
                 Processing = g.Count(j => j.Status == JobStatus.Processing),
             })
             .OrderBy(q => q.Queue)
@@ -436,10 +468,10 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
     private static int PriorityIndex(JobPriority priority) => priority switch
     {
         JobPriority.Critical => 0,
-        JobPriority.High     => 1,
-        JobPriority.Normal   => 2,
-        JobPriority.Low      => 3,
-        _                    => 2,
+        JobPriority.High => 1,
+        JobPriority.Normal => 2,
+        JobPriority.Low => 3,
+        _ => 2,
     };
 
     private Channel<Guid>[] GetOrCreateQueueChannels(string queue) =>
@@ -464,20 +496,28 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
         foreach (var job in _jobs.Values)
         {
             if (job.Status != JobStatus.Scheduled)
+            {
                 continue;
+            }
 
             var dueAt = job.RetryAt ?? job.ScheduledAt;
             if (!dueAt.HasValue || dueAt.Value > now)
+            {
                 continue;
+            }
 
             lock (job)
             {
                 if (job.Status != JobStatus.Scheduled)
+                {
                     continue;
+                }
 
                 dueAt = job.RetryAt ?? job.ScheduledAt;
                 if (!dueAt.HasValue || dueAt.Value > now)
+                {
                     continue;
+                }
 
                 job.Status = JobStatus.Enqueued;
                 WriteToChannel(job);
