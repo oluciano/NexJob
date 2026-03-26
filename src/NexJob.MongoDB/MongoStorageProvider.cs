@@ -439,6 +439,24 @@ public sealed class MongoStorageProvider : IStorageProvider
             .ToList();
     }
 
+    /// <inheritdoc/>
+    public async Task SaveExecutionLogsAsync(
+        JobId jobId, IReadOnlyList<JobExecutionLog> logs,
+        CancellationToken cancellationToken = default)
+    {
+        var entries = logs.Select(e => new ExecutionLogEntry
+        {
+            Timestamp = e.Timestamp,
+            Level = e.Level,
+            Message = e.Message,
+        }).ToList();
+
+        var update = Builders<JobDocument>.Update
+            .Set(d => d.ExecutionLogs, entries);
+
+        await _jobs.UpdateOneAsync(ById(jobId), update, cancellationToken: cancellationToken);
+    }
+
     // ── Private helpers ───────────────────────────────────────────────────────
 
     private static FilterDefinition<JobDocument> ById(JobId id) =>

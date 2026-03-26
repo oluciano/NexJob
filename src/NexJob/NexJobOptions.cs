@@ -50,4 +50,9 @@ public sealed class NexJobOptions
     /// </summary>
     public Func<int, TimeSpan> RetryDelayFactory { get; set; } = attempt =>
         TimeSpan.FromSeconds(Math.Pow(attempt, 4) + 15 + (Random.Shared.Next(30) * (attempt + 1)));
+
+    /// <summary>
+    /// Maximum number of log lines captured per job execution. Defaults to <c>200</c>.
+    /// </summary>
+    public int MaxJobLogLines { get; set; } = 200;
 }

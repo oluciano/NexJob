@@ -463,6 +463,22 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
         return Task.FromResult(result);
     }
 
+    /// <inheritdoc/>
+    public Task SaveExecutionLogsAsync(
+        JobId jobId, IReadOnlyList<JobExecutionLog> logs,
+        CancellationToken cancellationToken = default)
+    {
+        if (_jobs.TryGetValue(jobId.Value, out var job))
+        {
+            lock (job)
+            {
+                job.ExecutionLogs = logs;
+            }
+        }
+
+        return Task.CompletedTask;
+    }
+
     // ─── private helpers ─────────────────────────────────────────────────────
 
     private static int PriorityIndex(JobPriority priority) => priority switch

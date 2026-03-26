@@ -1,4 +1,5 @@
 using System.Data;
+using System.Text.Json;
 using Dapper;
 using NexJob.Storage;
 using Npgsql;
@@ -518,6 +519,18 @@ public sealed class PostgresStorageProvider : IStorageProvider
         return rows
             .Select(r => new QueueMetrics { Queue = r.Queue, Enqueued = r.Enqueued, Processing = r.Processing })
             .ToList();
+    }
+
+    /// <inheritdoc/>
+    public async Task SaveExecutionLogsAsync(
+        JobId jobId, IReadOnlyList<JobExecutionLog> logs,
+        CancellationToken cancellationToken = default)
+    {
+        await using var conn = Open();
+        await conn.OpenAsync(cancellationToken);
+        await conn.ExecuteAsync(
+            "UPDATE nexjob_jobs SET execution_logs = @Logs::jsonb WHERE id = @Id",
+            new { Id = jobId.Value, Logs = JsonSerializer.Serialize(logs) });
     }
 
     // ── Schema ────────────────────────────────────────────────────────────────

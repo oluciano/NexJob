@@ -67,5 +67,7 @@ internal static class SchemaSql
         ALTER TABLE nexjob_recurring_jobs ADD COLUMN IF NOT EXISTS cron_override TEXT NULL;
         ALTER TABLE nexjob_recurring_jobs ADD COLUMN IF NOT EXISTS enabled BOOLEAN NOT NULL DEFAULT TRUE;
         ALTER TABLE nexjob_recurring_jobs ADD COLUMN IF NOT EXISTS deleted_by_user BOOLEAN NOT NULL DEFAULT FALSE;
+
+        ALTER TABLE nexjob_jobs ADD COLUMN IF NOT EXISTS execution_logs JSONB NULL;
         """;
 }

@@ -197,6 +197,15 @@ public interface IStorageProvider
     Task RequeueJobAsync(JobId id, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Persists the log entries captured during the most recent execution of a job.
+    /// Replaces any previously stored logs for the same job.
+    /// </summary>
+    /// <param name="jobId">The identifier of the job whose logs should be saved.</param>
+    /// <param name="logs">Captured log entries to persist.</param>
+    /// <param name="cancellationToken">Token to cancel the operation.</param>
+    Task SaveExecutionLogsAsync(JobId jobId, IReadOnlyList<JobExecutionLog> logs, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Returns per-queue metrics (enqueued + processing counts) for all active queues.
     /// </summary>
     Task<IReadOnlyList<QueueMetrics>> GetQueueMetricsAsync(CancellationToken cancellationToken = default);

@@ -32,6 +32,9 @@ internal sealed class JobDocument
     public JobId? ParentJobId { get; set; }
     public string? RecurringJobId { get; set; }
 
+    [BsonElement("execution_logs")]
+    public List<ExecutionLogEntry>? ExecutionLogs { get; set; }
+
     public static JobDocument FromRecord(JobRecord r) => new()
     {
         Id = r.Id,
@@ -55,6 +58,14 @@ internal sealed class JobDocument
         LastErrorStackTrace = r.LastErrorStackTrace,
         ParentJobId = r.ParentJobId,
         RecurringJobId = r.RecurringJobId,
+        ExecutionLogs = r.ExecutionLogs.Count == 0
+            ? null
+            : r.ExecutionLogs.Select(e => new ExecutionLogEntry
+            {
+                Timestamp = e.Timestamp,
+                Level = e.Level,
+                Message = e.Message,
+            }).ToList(),
     };
 
     public JobRecord ToRecord() => new()
@@ -80,5 +91,13 @@ internal sealed class JobDocument
         LastErrorStackTrace = LastErrorStackTrace,
         ParentJobId = ParentJobId,
         RecurringJobId = RecurringJobId,
+        ExecutionLogs = ExecutionLogs is null
+            ? Array.Empty<JobExecutionLog>()
+            : ExecutionLogs.Select(e => new JobExecutionLog
+            {
+                Timestamp = e.Timestamp,
+                Level = e.Level,
+                Message = e.Message,
+            }).ToList(),
     };
 }

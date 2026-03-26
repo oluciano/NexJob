@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 namespace NexJob.Postgres;
 
 /// <summary>Dapper row mapping for nexjob_jobs.</summary>
@@ -24,6 +26,7 @@ internal sealed class JobRow
     public string? ExceptionStackTrace { get; set; }
     public Guid? ParentJobId { get; set; }
     public string? RecurringJobId { get; set; }
+    public string? ExecutionLogs { get; set; }
 
     public JobRecord ToRecord() => new()
     {
@@ -48,5 +51,8 @@ internal sealed class JobRow
         LastErrorStackTrace = ExceptionStackTrace,
         ParentJobId = ParentJobId.HasValue ? new JobId(ParentJobId.Value) : null,
         RecurringJobId = RecurringJobId,
+        ExecutionLogs = string.IsNullOrEmpty(ExecutionLogs)
+            ? Array.Empty<JobExecutionLog>()
+            : (IReadOnlyList<JobExecutionLog>?)JsonSerializer.Deserialize<List<JobExecutionLog>>(ExecutionLogs) ?? Array.Empty<JobExecutionLog>(),
     };
 }
