@@ -2,7 +2,9 @@
 
   <PropertyGroup>
     <PackageId>NexJob.Dashboard</PackageId>
-    <Description>Blazor SSR dashboard middleware for NexJob.</Description>
+    <IsPackable>true</IsPackable>
+    <PackageTags>background-jobs;scheduler;dashboard;blazor;aspnetcore;dotnet</PackageTags>
+    <Description>Blazor SSR dashboard middleware for NexJob — real-time monitoring of background jobs.</Description>
     <AddRazorSupportForMvc>true</AddRazorSupportForMvc>
   </PropertyGroup>
 

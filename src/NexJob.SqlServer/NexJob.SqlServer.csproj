@@ -2,6 +2,7 @@
 
   <PropertyGroup>
     <PackageId>NexJob.SqlServer</PackageId>
+    <IsPackable>false</IsPackable>
     <Description>SQL Server storage provider for NexJob.</Description>
   </PropertyGroup>
 

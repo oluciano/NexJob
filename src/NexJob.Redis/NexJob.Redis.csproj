@@ -2,6 +2,7 @@
 
   <PropertyGroup>
     <PackageId>NexJob.Redis</PackageId>
+    <IsPackable>false</IsPackable>
     <Description>Redis storage provider for NexJob.</Description>
   </PropertyGroup>
 

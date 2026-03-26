@@ -2,6 +2,7 @@
 
   <PropertyGroup>
     <PackageId>NexJob.Oracle</PackageId>
+    <IsPackable>false</IsPackable>
     <Description>Oracle storage provider for NexJob.</Description>
   </PropertyGroup>
 
