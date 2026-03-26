@@ -13,6 +13,11 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <VersionPrefix>0.1.0</VersionPrefix>
     <VersionSuffix>alpha</VersionSuffix>
+    <PackageProjectUrl>https://github.com/oluciano/NexJob</PackageProjectUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageIcon>icon.png</PackageIcon>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <IsPackable>false</IsPackable>
   </PropertyGroup>
 
   <!-- Analyzers applied to every project in the solution -->

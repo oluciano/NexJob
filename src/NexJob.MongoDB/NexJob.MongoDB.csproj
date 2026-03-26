@@ -2,7 +2,9 @@
 
   <PropertyGroup>
     <PackageId>NexJob.MongoDB</PackageId>
-    <Description>MongoDB storage provider for NexJob.</Description>
+    <IsPackable>true</IsPackable>
+    <PackageTags>background-jobs;scheduler;mongodb;nosql;dotnet</PackageTags>
+    <Description>MongoDB storage provider for NexJob — the open-source background job scheduler for .NET 8+.</Description>
   </PropertyGroup>
 
   <ItemGroup>

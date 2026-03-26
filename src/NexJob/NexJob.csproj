@@ -2,8 +2,15 @@
 
   <PropertyGroup>
     <PackageId>NexJob</PackageId>
-    <Description>Modern background job scheduler for .NET 8+ — open-source Hangfire alternative with native async/await, priority queues, and resource throttling.</Description>
+    <IsPackable>true</IsPackable>
+    <PackageTags>background-jobs;scheduler;queue;hangfire;async;dotnet</PackageTags>
+    <Description>Modern background job scheduler for .NET 8+. Open-source Hangfire alternative with native async/await, priority queues, resource throttling, and pluggable storage.</Description>
   </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="..\..\README.md" Pack="true" PackagePath="\"/>
+    <None Include="..\..\icon.png" Pack="true" PackagePath="\" Condition="Exists('..\..\icon.png')"/>
+  </ItemGroup>
 
   <ItemGroup>
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">

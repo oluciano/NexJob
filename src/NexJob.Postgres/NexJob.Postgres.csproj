@@ -2,7 +2,9 @@
 
   <PropertyGroup>
     <PackageId>NexJob.Postgres</PackageId>
-    <Description>PostgreSQL storage provider for NexJob.</Description>
+    <IsPackable>true</IsPackable>
+    <PackageTags>background-jobs;scheduler;postgresql;postgres;npgsql;dapper;dotnet</PackageTags>
+    <Description>PostgreSQL storage provider for NexJob — the open-source background job scheduler for .NET 8+.</Description>
   </PropertyGroup>
 
   <ItemGroup>
