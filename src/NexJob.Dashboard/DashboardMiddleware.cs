@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using NexJob.Configuration;
 using NexJob.Dashboard.Pages;
 using NexJob.Storage;
 
@@ -318,6 +319,83 @@ public sealed class DashboardMiddleware
             return true;
         }
 
+        // ── Settings live-config actions ──────────────────────────────────────
+
+        var runtimeStore = context.RequestServices.GetRequiredService<IRuntimeSettingsStore>();
+
+        if (subPath == "settings/workers")
+        {
+            var form = await context.Request.ReadFormAsync(context.RequestAborted);
+            if (int.TryParse(form["workers"], out var workers) && workers > 0)
+            {
+                var rt = await runtimeStore.GetAsync(context.RequestAborted);
+                rt.Workers = workers;
+                await runtimeStore.SaveAsync(rt, context.RequestAborted);
+            }
+
+            context.Response.Redirect($"{_pathPrefix}/settings");
+            return true;
+        }
+
+        if (subPath == "settings/polling")
+        {
+            var form = await context.Request.ReadFormAsync(context.RequestAborted);
+            if (int.TryParse(form["seconds"], out var seconds) && seconds > 0)
+            {
+                var rt = await runtimeStore.GetAsync(context.RequestAborted);
+                rt.PollingInterval = TimeSpan.FromSeconds(seconds);
+                await runtimeStore.SaveAsync(rt, context.RequestAborted);
+            }
+
+            context.Response.Redirect($"{_pathPrefix}/settings");
+            return true;
+        }
+
+        if (subPath == "settings/reset")
+        {
+            await runtimeStore.SaveAsync(new RuntimeSettings(), context.RequestAborted);
+            context.Response.Redirect($"{_pathPrefix}/settings");
+            return true;
+        }
+
+        if (subPath.StartsWith("queues/") && subPath.EndsWith("/pause"))
+        {
+            var queueName = Uri.UnescapeDataString(subPath.Split('/')[1]);
+            var rt = await runtimeStore.GetAsync(context.RequestAborted);
+            rt.PausedQueues.Add(queueName);
+            await runtimeStore.SaveAsync(rt, context.RequestAborted);
+            context.Response.Redirect($"{_pathPrefix}/settings");
+            return true;
+        }
+
+        if (subPath.StartsWith("queues/") && subPath.EndsWith("/resume"))
+        {
+            var queueName = Uri.UnescapeDataString(subPath.Split('/')[1]);
+            var rt = await runtimeStore.GetAsync(context.RequestAborted);
+            rt.PausedQueues.Remove(queueName);
+            await runtimeStore.SaveAsync(rt, context.RequestAborted);
+            context.Response.Redirect($"{_pathPrefix}/settings");
+            return true;
+        }
+
+        if (subPath == "recurring/pause-all")
+        {
+            var rt = await runtimeStore.GetAsync(context.RequestAborted);
+            rt.RecurringJobsPaused = true;
+            await runtimeStore.SaveAsync(rt, context.RequestAborted);
+            context.Response.Redirect($"{_pathPrefix}/settings");
+            return true;
+        }
+
+        if (subPath == "recurring/resume-all")
+        {
+            var rt = await runtimeStore.GetAsync(context.RequestAborted);
+            rt.RecurringJobsPaused = false;
+            await runtimeStore.SaveAsync(rt, context.RequestAborted);
+            context.Response.Redirect($"{_pathPrefix}/settings");
+            return true;
+        }
+
         return false;
     }
 
@@ -433,6 +511,23 @@ public sealed class DashboardMiddleware
                 ["Title"] = _options.Title,
             });
             return await RenderAsync<FailedPage>(renderer, parameters);
+        }
+
+        if (subPath == "settings")
+        {
+            var runtimeStore = context.RequestServices.GetRequiredService<IRuntimeSettingsStore>();
+            var nexJobOptions = context.RequestServices.GetRequiredService<NexJobOptions>();
+            var runtime = await runtimeStore.GetAsync(context.RequestAborted);
+
+            parameters = ParameterView.FromDictionary(new Dictionary<string, object?>
+            {
+                ["RuntimeStore"] = runtimeStore,
+                ["Options"] = nexJobOptions,
+                ["Runtime"] = runtime,
+                ["PathPrefix"] = _pathPrefix,
+                ["Title"] = _options.Title,
+            });
+            return await RenderAsync<SettingsPage>(renderer, parameters);
         }
 
         return HtmlShell.NotFound(_options.Title, _pathPrefix);

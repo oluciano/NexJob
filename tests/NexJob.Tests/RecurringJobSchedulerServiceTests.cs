@@ -3,6 +3,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NexJob;
+using NexJob.Configuration;
 using NexJob.Internal;
 using Xunit;
 
@@ -21,7 +22,7 @@ public sealed class RecurringJobSchedulerServiceTests
             PollingInterval = pollingInterval ?? TimeSpan.FromMilliseconds(30),
         };
         return new RecurringJobSchedulerService(
-            storage, options, NullLogger<RecurringJobSchedulerService>.Instance);
+            storage, new InMemoryRuntimeSettingsStore(), options, NullLogger<RecurringJobSchedulerService>.Instance);
     }
 
     private static RecurringJobRecord MakeRecurring(

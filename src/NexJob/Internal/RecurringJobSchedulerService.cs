@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using NexJob.Configuration;
 using NexJob.Storage;
 
 namespace NexJob.Internal;
@@ -12,6 +13,7 @@ namespace NexJob.Internal;
 internal sealed class RecurringJobSchedulerService : BackgroundService
 {
     private readonly IStorageProvider _storage;
+    private readonly IRuntimeSettingsStore _runtimeStore;
     private readonly NexJobOptions _options;
     private readonly ILogger<RecurringJobSchedulerService> _logger;
 
@@ -20,10 +22,12 @@ internal sealed class RecurringJobSchedulerService : BackgroundService
     /// </summary>
     public RecurringJobSchedulerService(
         IStorageProvider storage,
+        IRuntimeSettingsStore runtimeStore,
         NexJobOptions options,
         ILogger<RecurringJobSchedulerService> logger)
     {
         _storage = storage;
+        _runtimeStore = runtimeStore;
         _options = options;
         _logger = logger;
     }
@@ -38,8 +42,16 @@ internal sealed class RecurringJobSchedulerService : BackgroundService
         {
             try
             {
+                var runtime = await _runtimeStore.GetAsync(stoppingToken);
+                if (runtime.RecurringJobsPaused)
+                {
+                    _logger.LogDebug("Recurring jobs are globally paused; skipping scheduling cycle.");
+                    await Task.Delay(runtime.PollingInterval ?? _options.PollingInterval, stoppingToken);
+                    continue;
+                }
+
                 await EnqueueDueJobsAsync(stoppingToken);
-                await Task.Delay(_options.PollingInterval, stoppingToken);
+                await Task.Delay(runtime.PollingInterval ?? _options.PollingInterval, stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {

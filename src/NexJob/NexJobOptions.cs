@@ -1,9 +1,10 @@
+using NexJob.Configuration;
+
 namespace NexJob;
 
 /// <summary>
 /// Configuration options for the NexJob background job system.
-/// Pass an <see cref="Action{NexJobOptions}"/> to
-/// <see cref="NexJobServiceCollectionExtensions.AddNexJob"/> to customise these values.
+/// Pass an <see cref="Action{NexJobOptions}"/> to <c>AddNexJob</c> to customise these values.
 /// </summary>
 public sealed class NexJobOptions
 {
@@ -55,4 +56,29 @@ public sealed class NexJobOptions
     /// Maximum number of log lines captured per job execution. Defaults to <c>200</c>.
     /// </summary>
     public int MaxJobLogLines { get; set; } = 200;
+
+    /// <summary>
+    /// Per-queue settings loaded from <c>appsettings.json</c>, used for execution windows.
+    /// Populated by <see cref="ApplySettings"/>.
+    /// </summary>
+    public List<QueueSettings> QueueSettings { get; set; } = [];
+
+    /// <summary>
+    /// Applies values from a <see cref="NexJobSettings"/> instance (typically loaded from
+    /// <c>appsettings.json</c>) onto this options object.
+    /// <see cref="RetryDelayFactory"/> is intentionally not overwritten — it can only be
+    /// set via code.
+    /// </summary>
+    internal void ApplySettings(NexJobSettings s)
+    {
+        Workers = s.Workers;
+        MaxAttempts = s.MaxAttempts;
+        MaxJobLogLines = s.MaxJobLogLines;
+        PollingInterval = s.PollingInterval;
+        HeartbeatInterval = s.HeartbeatInterval;
+        HeartbeatTimeout = s.HeartbeatTimeout;
+        QueueSettings = s.Queues;
+        if (s.Queues.Count > 0)
+            Queues = s.Queues.Select(q => q.Name).ToArray();
+    }
 }
