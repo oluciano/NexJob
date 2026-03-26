@@ -59,7 +59,9 @@ public sealed class RedisStorageProvider : IStorageProvider
             var idemRedisKey = IdempotencyRedisKey(job.IdempotencyKey);
             var existing = await _db.StringGetAsync(idemRedisKey);
             if (existing.HasValue && Guid.TryParse(existing.ToString(), out var existingGuid))
+            {
                 return new JobId(existingGuid);
+            }
         }
 
         var id = job.Id.Value.ToString();
@@ -98,11 +100,15 @@ public sealed class RedisStorageProvider : IStorageProvider
 
         var rawResult = await _db.ScriptEvaluateAsync(FetchNextScript.ExecutableScript, keys, args);
         if (rawResult.IsNull)
+        {
             return null;
+        }
 
         var resultItems = (RedisValue[])rawResult!;
         if (resultItems.Length == 0)
+        {
             return null;
+        }
 
         return HashToRecord(ParseFlatArray(resultItems));
     }
@@ -212,16 +218,22 @@ public sealed class RedisStorageProvider : IStorageProvider
         {
             var hash = await _db.HashGetAllAsync(RecurringKey(idVal.ToString()));
             if (hash.Length == 0)
+            {
                 continue;
+            }
 
             var dict = ParseHash(hash);
             var nextExecStr = dict.GetValueOrDefault("nextExecution", string.Empty);
             if (!DateTimeOffset.TryParse(nextExecStr, CultureInfo.InvariantCulture,
                     DateTimeStyles.RoundtripKind, out var nextExec))
+            {
                 continue;
+            }
 
             if (nextExec <= utcNow)
+            {
                 result.Add(HashToRecurring(dict));
+            }
         }
 
         return result;
@@ -273,7 +285,9 @@ public sealed class RedisStorageProvider : IStorageProvider
         {
             var hash = await _db.HashGetAllAsync(RecurringKey(idVal.ToString()));
             if (hash.Length > 0)
+            {
                 result.Add(HashToRecurring(ParseHash(hash)));
+            }
         }
 
         return result.OrderBy(r => r.RecurringJobId).ToList();
@@ -336,10 +350,14 @@ public sealed class RedisStorageProvider : IStorageProvider
             var id = entry.Name.ToString();
             if (!DateTimeOffset.TryParse(entry.Value.ToString(), CultureInfo.InvariantCulture,
                     DateTimeStyles.RoundtripKind, out var heartbeat))
+            {
                 continue;
+            }
 
             if (heartbeat >= cutoff)
+            {
                 continue;
+            }
 
             var jobHash = await _db.HashGetAllAsync(JobKey(id));
             if (jobHash.Length == 0)
@@ -379,11 +397,15 @@ public sealed class RedisStorageProvider : IStorageProvider
             var childId = childIdVal.ToString();
             var jobHash = await _db.HashGetAllAsync(JobKey(childId));
             if (jobHash.Length == 0)
+            {
                 continue;
+            }
 
             var dict = ParseHash(jobHash);
             if (dict.GetValueOrDefault("status") != "AwaitingContinuation")
+            {
                 continue;
+            }
 
             var queue = dict.GetValueOrDefault("queue", "default");
             var priorityStr = dict.GetValueOrDefault("priority", "3");
@@ -409,7 +431,9 @@ public sealed class RedisStorageProvider : IStorageProvider
         {
             var hash = await _db.HashGetAllAsync(key);
             if (hash.Length == 0)
+            {
                 continue;
+            }
 
             var dict = ParseHash(hash);
             var s = dict.GetValueOrDefault("status", string.Empty);
@@ -417,7 +441,9 @@ public sealed class RedisStorageProvider : IStorageProvider
             counts[s] = cnt + 1;
 
             if (s == "Failed")
+            {
                 recentFailures.Add(HashToRecord(dict));
+            }
         }
 
         var cutoffMs = DateTimeOffset.UtcNow.AddHours(-24).ToUnixTimeMilliseconds();
@@ -463,11 +489,15 @@ public sealed class RedisStorageProvider : IStorageProvider
         {
             var hash = await _db.HashGetAllAsync(key);
             if (hash.Length == 0)
+            {
                 continue;
+            }
 
             var record = HashToRecord(ParseHash(hash));
             if (MatchesFilter(record, filter))
+            {
                 all.Add(record);
+            }
         }
 
         all = all.OrderByDescending(j => j.CreatedAt).ToList();
@@ -505,7 +535,9 @@ public sealed class RedisStorageProvider : IStorageProvider
         var idStr = id.Value.ToString();
         var hash = await _db.HashGetAllAsync(JobKey(idStr));
         if (hash.Length == 0)
+        {
             return;
+        }
 
         var dict = ParseHash(hash);
         var queue = dict.GetValueOrDefault("queue", "default");
@@ -537,7 +569,9 @@ public sealed class RedisStorageProvider : IStorageProvider
             var status = fields[0].ToString();
             var queue = fields[1].ToString();
             if (string.IsNullOrEmpty(queue))
+            {
                 continue;
+            }
 
             metrics.TryGetValue(queue, out var current);
             metrics[queue] = status switch
@@ -594,17 +628,28 @@ public sealed class RedisStorageProvider : IStorageProvider
     private static bool MatchesFilter(JobRecord record, JobFilter filter)
     {
         if (filter.Status.HasValue && record.Status != filter.Status.Value)
+        {
             return false;
+        }
+
         if (!string.IsNullOrWhiteSpace(filter.Queue) && record.Queue != filter.Queue)
+        {
             return false;
+        }
+
         if (!string.IsNullOrEmpty(filter.RecurringJobId) && record.RecurringJobId != filter.RecurringJobId)
+        {
             return false;
+        }
+
         if (!string.IsNullOrWhiteSpace(filter.Search))
         {
             var s = filter.Search.Trim();
             if (!record.JobType.Contains(s, StringComparison.OrdinalIgnoreCase) &&
                 !record.Id.Value.ToString().Contains(s, StringComparison.OrdinalIgnoreCase))
+            {
                 return false;
+            }
         }
 
         return true;
@@ -643,7 +688,10 @@ public sealed class RedisStorageProvider : IStorageProvider
     {
         var dict = new Dictionary<string, string>(StringComparer.Ordinal);
         for (var i = 0; i + 1 < flatArray.Length; i += 2)
+        {
             dict[flatArray[i].ToString()] = flatArray[i + 1].ToString();
+        }
+
         return dict;
     }
 
@@ -752,7 +800,9 @@ public sealed class RedisStorageProvider : IStorageProvider
         var endpoints = _db.Multiplexer.GetEndPoints();
         var server = _db.Multiplexer.GetServer(endpoints[0]);
         await foreach (var key in server.KeysAsync(database: _db.Database, pattern: "nexjob:jobs:*"))
+        {
             yield return key;
+        }
     }
 
     private async Task PromoteScheduledJobsAsync()

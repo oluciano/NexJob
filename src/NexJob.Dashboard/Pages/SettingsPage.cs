@@ -135,11 +135,17 @@ internal sealed class SettingsPage : ComponentBase
 
             string status;
             if (isPaused)
+            {
                 status = "<span class='badge badge-failed'>Paused</span>";
+            }
             else if (!inWindow)
+            {
                 status = "<span class='badge badge-scheduled'>Outside Window</span>";
+            }
             else
+            {
                 status = "<span class='badge badge-succeeded'>Active</span>";
+            }
 
             var toggleAction = isPaused
                 ? $"<form method='post' action='{PathPrefix}/queues/{q}/resume' style='display:inline'><button class='btn btn-primary btn-sm'>Resume</button></form>"

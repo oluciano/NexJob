@@ -79,6 +79,8 @@ public sealed class NexJobOptions
         HeartbeatTimeout = s.HeartbeatTimeout;
         QueueSettings = s.Queues;
         if (s.Queues.Count > 0)
+        {
             Queues = s.Queues.Select(q => q.Name).ToArray();
+        }
     }
 }

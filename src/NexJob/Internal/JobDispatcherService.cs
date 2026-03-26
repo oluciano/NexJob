@@ -256,7 +256,9 @@ internal sealed class JobDispatcherService : BackgroundService
             .Where(q =>
             {
                 if (runtime.PausedQueues.Contains(q))
+                {
                     return false;
+                }
 
                 var s = _options.QueueSettings.Find(qs => qs.Name == q);
                 return s?.ExecutionWindow?.IsWithinWindow(now) ?? true;

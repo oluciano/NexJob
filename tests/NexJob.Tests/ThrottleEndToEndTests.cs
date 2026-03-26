@@ -105,7 +105,10 @@ public sealed class ConcurrencyTracker
         do
         {
             peak = _peak;
-            if (current <= peak) break;
+            if (current <= peak)
+            {
+                break;
+            }
         }
         while (Interlocked.CompareExchange(ref _peak, current, peak) != peak);
     }

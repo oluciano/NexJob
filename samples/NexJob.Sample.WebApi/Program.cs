@@ -106,7 +106,10 @@ app.MapPost("/campaigns/{campaignId}/schedule", async (string campaignId, Schedu
 app.MapGet("/jobs/{id:guid}/status", async (Guid id, IStorageProvider storage) =>
 {
     var job = await storage.GetJobByIdAsync(new JobId(id));
-    if (job is null) return Results.NotFound(new { error = "Job not found", id });
+    if (job is null)
+    {
+        return Results.NotFound(new { error = "Job not found", id });
+    }
 
     return Results.Ok(new
     {
