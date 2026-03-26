@@ -158,6 +158,74 @@ public sealed class JobDispatcherServiceTests
         await host.StopAsync();
     }
 
+    // ─── retry scheduling ─────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task FailedJob_SchedulesRetry_WhenAttemptsRemaining()
+    {
+        // Use maxAttempts=3 so the first failure still has retries left.
+        // Use a fast, deterministic RetryDelayFactory to avoid real-time waits.
+        using var host = Host.CreateDefaultBuilder()
+            .ConfigureServices(services =>
+            {
+                services.AddNexJob(opt =>
+                {
+                    opt.Workers         = 1;
+                    opt.MaxAttempts     = 3;
+                    opt.PollingInterval = TimeSpan.FromMilliseconds(20);
+                    // Fixed short delay — just long enough to observe Scheduled state before promotion
+                    opt.RetryDelayFactory = _ => TimeSpan.FromSeconds(60);
+                });
+                services.AddTransient<AlwaysFailJobForRetry>();
+            })
+            .Build();
+
+        await host.StartAsync();
+
+        var storage   = (InMemoryStorageProvider)host.Services.GetRequiredService<NexJob.Storage.IStorageProvider>();
+        var scheduler = host.Services.GetRequiredService<IScheduler>();
+
+        await scheduler.EnqueueAsync<AlwaysFailJobForRetry, RetryInput>(new());
+
+        // Wait until the dispatcher has processed the first attempt and called SetFailedAsync
+        await Task.Delay(300);
+
+        var metrics = await storage.GetMetricsAsync();
+
+        // After one failure with retries remaining the job must be in Scheduled state (not Failed/Succeeded)
+        metrics.Failed.Should().Be(0, "job has retries remaining so it must not move to dead-letter yet");
+        metrics.Succeeded.Should().Be(0);
+
+        await host.StopAsync();
+    }
+
+    [Fact]
+    public async Task FailedJob_NoRetry_WhenMaxAttemptsExhausted()
+    {
+        // maxAttempts=1 → dead-letter on first failure
+        var tcs = new TaskCompletionSource<bool>();
+
+        using var host = BuildHost(
+            s => s.AddTransient(_ => new AlwaysFailJob(tcs)),
+            maxAttempts: 1);
+
+        await host.StartAsync();
+
+        var scheduler = host.Services.GetRequiredService<IScheduler>();
+        await scheduler.EnqueueAsync<AlwaysFailJob, FailInput>(new());
+
+        await tcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await Task.Delay(100);
+
+        var storage = (InMemoryStorageProvider)host.Services.GetRequiredService<NexJob.Storage.IStorageProvider>();
+        var metrics = await storage.GetMetricsAsync();
+
+        metrics.Failed.Should().Be(1, "job must be dead-lettered when MaxAttempts is exhausted");
+        metrics.Succeeded.Should().Be(0);
+
+        await host.StopAsync();
+    }
+
     // ─── dead-letter ──────────────────────────────────────────────────────────
 
     [Fact]
@@ -199,6 +267,19 @@ public sealed class QuickSuccessJob(TaskCompletionSource<bool> signal) : IJob<Qu
 }
 
 public record FailInput;
+
+public record RetryInput;
+
+/// <summary>
+/// Always throws so we can observe that the dispatcher schedules a retry
+/// rather than immediately dead-lettering the job.
+/// </summary>
+public sealed class AlwaysFailJobForRetry : IJob<RetryInput>
+{
+    /// <inheritdoc/>
+    public Task ExecuteAsync(RetryInput input, CancellationToken cancellationToken)
+        => throw new InvalidOperationException("intentional failure for retry test");
+}
 
 public sealed class AlwaysFailJob(TaskCompletionSource<bool> signalOnDeadLetter) : IJob<FailInput>
 {
