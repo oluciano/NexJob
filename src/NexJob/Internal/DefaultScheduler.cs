@@ -1,6 +1,8 @@
+using System.Diagnostics;
 using System.Text.Json;
 using Cronos;
 using NexJob.Storage;
+using NexJob.Telemetry;
 
 namespace NexJob.Internal;
 
@@ -25,7 +27,7 @@ internal sealed class DefaultScheduler : IScheduler
     }
 
     /// <inheritdoc/>
-    public Task<JobId> EnqueueAsync<TJob, TInput>(
+    public async Task<JobId> EnqueueAsync<TJob, TInput>(
         TInput input,
         string? queue = null,
         JobPriority priority = JobPriority.Normal,
@@ -36,7 +38,14 @@ internal sealed class DefaultScheduler : IScheduler
         var job = BuildJobRecord<TJob, TInput>(input, queue, priority, idempotencyKey,
             status: JobStatus.Enqueued, scheduledAt: null);
 
-        return _storage.EnqueueAsync(job, cancellationToken);
+        using var activity = NexJobActivitySource.StartEnqueue(typeof(TJob).FullName ?? typeof(TJob).Name, job.Queue);
+
+        var jobId = await _storage.EnqueueAsync(job, cancellationToken);
+
+        activity?.SetTag("nexjob.job_id", jobId.Value.ToString());
+        NexJobMetrics.JobsEnqueued.Add(1, new TagList { { "nexjob.job_type", typeof(TJob).Name }, { "nexjob.queue", job.Queue } });
+
+        return jobId;
     }
 
     /// <inheritdoc/>
@@ -110,6 +119,8 @@ internal sealed class DefaultScheduler : IScheduler
         CancellationToken cancellationToken = default)
         where TJob : IJob<TInput>
     {
+        var traceParent = Activity.Current?.Id;
+
         var job = new JobRecord
         {
             Id = JobId.New(),
@@ -122,6 +133,7 @@ internal sealed class DefaultScheduler : IScheduler
             ParentJobId = parentJobId,
             CreatedAt = DateTimeOffset.UtcNow,
             MaxAttempts = _options.MaxAttempts,
+            TraceParent = traceParent,
         };
 
         return await _storage.EnqueueAsync(job, cancellationToken);
