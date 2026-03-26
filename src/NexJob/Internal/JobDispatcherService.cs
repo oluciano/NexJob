@@ -134,17 +134,13 @@ internal sealed class JobDispatcherService : BackgroundService
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
         var heartbeatTask = RunHeartbeatAsync(job.Id, cts.Token);
 
-        // Create capture provider before execution; register it with the app's ILoggerFactory.
-        // Note: AddProvider affects the singleton ILoggerFactory, so all log categories emitted
-        // during this job's execution window will be captured — not only the job's own logger.
-        var captureProvider = new JobCaptureLoggerProvider(_options.MaxJobLogLines);
+        // Each job task has its own async context; the scope captures all log entries
+        // emitted by any category within this execution without affecting other concurrent jobs.
+        using var logScope = new JobExecutionLogScope(_options.MaxJobLogLines);
 
         try
         {
             using var scope = _scopeFactory.CreateScope();
-
-            var loggerFactory = scope.ServiceProvider.GetRequiredService<ILoggerFactory>();
-            loggerFactory.AddProvider(captureProvider);
 
             var jobType = Type.GetType(job.JobType, throwOnError: true)!;
             var inputType = Type.GetType(job.InputType, throwOnError: true)!;
@@ -178,7 +174,7 @@ internal sealed class JobDispatcherService : BackgroundService
             }
 
             await _storage.AcknowledgeAsync(job.Id, CancellationToken.None);
-            await _storage.SaveExecutionLogsAsync(job.Id, captureProvider.Entries, CancellationToken.None);
+            await _storage.SaveExecutionLogsAsync(job.Id, logScope.Entries, CancellationToken.None);
             await _storage.EnqueueContinuationsAsync(job.Id, CancellationToken.None);
 
             if (job.RecurringJobId is not null)
@@ -211,7 +207,7 @@ internal sealed class JobDispatcherService : BackgroundService
             }
 
             await _storage.SetFailedAsync(job.Id, ex, retryAt, CancellationToken.None);
-            await _storage.SaveExecutionLogsAsync(job.Id, captureProvider.Entries, CancellationToken.None);
+            await _storage.SaveExecutionLogsAsync(job.Id, logScope.Entries, CancellationToken.None);
 
             if (job.RecurringJobId is not null && retryAt is null)
             {

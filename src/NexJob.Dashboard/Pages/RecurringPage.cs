@@ -113,7 +113,7 @@ internal sealed class RecurringPage : IComponent
 
             return $"<tr>" +
                    $"<td style=\"width:36px\"><input type=\"checkbox\" name=\"ids\" value=\"{encodedId}\" /></td>" +
-                   $"<td>{System.Web.HttpUtility.HtmlEncode(r.RecurringJobId)}{deletedBadge}{pausedBadge}</td>" +
+                   $"<td><a href=\"{PathPrefix}/recurring/{encodedIdUrl}\">{System.Web.HttpUtility.HtmlEncode(r.RecurringJobId)}</a>{deletedBadge}{pausedBadge}</td>" +
                    $"<td><code style=\"color:var(--warning)\">{System.Web.HttpUtility.HtmlEncode(effectiveCron)}</code>{cronOverrideBadge}</td>" +
                    $"<td>{System.Web.HttpUtility.HtmlEncode(r.Queue)}</td>" +
                    $"<td>{Helpers.ShortType(r.JobType)}{concurrencyBadge}</td>" +
@@ -126,9 +126,9 @@ internal sealed class RecurringPage : IComponent
         var table =
             $"<form method=\"post\" action=\"{PathPrefix}/recurring/bulk\" id=\"bulk-form\">" +
             "<div class=\"filters\" style=\"margin-bottom:16px\">" +
-            "<button type=\"submit\" name=\"bulkAction\" value=\"trigger\" class=\"btn btn-primary btn-sm\">▶ Trigger Now</button>" +
-            "<button type=\"submit\" name=\"bulkAction\" value=\"delete\" class=\"btn btn-danger btn-sm\" onclick=\"return confirm('Delete selected?')\">✕ Delete</button>" +
-            "<span style=\"color:var(--text-muted);font-size:12px;margin-left:8px\">Select rows below, or trigger/delete all if none selected.</span>" +
+            "<button type=\"submit\" name=\"bulkAction\" value=\"trigger\" class=\"btn btn-primary btn-sm\">▶ Trigger Selected</button>" +
+            "<button type=\"submit\" name=\"bulkAction\" value=\"delete\" class=\"btn btn-danger btn-sm\" onclick=\"return confirm('Delete selected?')\">✕ Delete Selected</button>" +
+            "<span style=\"color:var(--text-muted);font-size:12px;margin-left:8px\">Select rows to apply bulk actions.</span>" +
             "</div>" +
             "<table><thead><tr>" +
             "<th style=\"width:36px\"><input type=\"checkbox\" id=\"select-all\" title=\"Select all\" /></th>" +

@@ -225,6 +225,14 @@ public sealed class MongoStorageProvider : IStorageProvider
     }
 
     /// <inheritdoc/>
+    public async Task<RecurringJobRecord?> GetRecurringJobByIdAsync(string recurringJobId, CancellationToken cancellationToken = default)
+    {
+        var filter = Builders<RecurringJobDocument>.Filter.Eq(d => d.RecurringJobId, recurringJobId);
+        var doc = await _recurringJobs.Find(filter).FirstOrDefaultAsync(cancellationToken);
+        return doc?.ToRecord();
+    }
+
+    /// <inheritdoc/>
     public async Task UpdateRecurringJobConfigAsync(
         string recurringJobId, string? cronOverride, bool enabled,
         CancellationToken cancellationToken = default)
@@ -375,6 +383,11 @@ public sealed class MongoStorageProvider : IStorageProvider
             filterDef &= fb.Or(
                 fb.Regex(d => d.JobType, new BsonRegularExpression(term, "i")),
                 fb.Regex(d => d.Id, new BsonRegularExpression(term, "i")));
+        }
+
+        if (!string.IsNullOrEmpty(filter.RecurringJobId))
+        {
+            filterDef &= fb.Eq(d => d.RecurringJobId, filter.RecurringJobId);
         }
 
         var total = (int)await _jobs.CountDocumentsAsync(filterDef, cancellationToken: cancellationToken);

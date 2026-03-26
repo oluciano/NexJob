@@ -3,28 +3,20 @@ using Microsoft.Extensions.Logging;
 namespace NexJob.Internal;
 
 /// <summary>
-/// An <see cref="ILoggerProvider"/> that captures log entries emitted during job execution.
-/// Register it with the scope's <see cref="ILoggerFactory"/> before executing the job, then
-/// read <see cref="Entries"/> after execution to persist the captured output.
+/// A singleton <see cref="ILoggerProvider"/> registered once at startup that routes log
+/// entries to whichever <see cref="JobExecutionLogScope"/> is active in the current async
+/// execution context.
 /// </summary>
 /// <remarks>
-/// Because <see cref="ILoggerFactory.AddProvider"/> affects the singleton factory, this provider
-/// captures all log categories emitted during the job execution window — not only the job's own
-/// logger. Entries are capped at <see cref="_maxLines"/> to bound memory usage.
+/// Because it uses <see cref="AsyncLocal{T}"/> via <see cref="JobExecutionLogScope.Current"/>,
+/// concurrent jobs running in separate isolated task contexts each see their own
+/// isolated scope, preventing cross-job log bleed. Categories not running within a
+/// <see cref="JobExecutionLogScope"/> (e.g. ASP.NET request logs) are silently ignored.
 /// </remarks>
 internal sealed class JobCaptureLoggerProvider : ILoggerProvider
 {
-    private readonly List<JobExecutionLog> _entries = new();
-    private readonly int _maxLines;
-
-    /// <summary>Initialises the provider with the given line cap.</summary>
-    public JobCaptureLoggerProvider(int maxLines) => _maxLines = maxLines;
-
-    /// <summary>All captured log entries in emission order.</summary>
-    public IReadOnlyList<JobExecutionLog> Entries => _entries;
-
     /// <inheritdoc/>
-    public ILogger CreateLogger(string categoryName) => new CaptureLogger(this);
+    public ILogger CreateLogger(string categoryName) => new CaptureLogger();
 
     /// <inheritdoc/>
     public void Dispose()
@@ -35,20 +27,14 @@ internal sealed class JobCaptureLoggerProvider : ILoggerProvider
 
     private sealed class CaptureLogger : ILogger
     {
-        private readonly JobCaptureLoggerProvider _provider;
-
-        public CaptureLogger(JobCaptureLoggerProvider provider)
-        {
-            _provider = provider;
-        }
-
         /// <inheritdoc/>
         public IDisposable? BeginScope<TState>(TState state)
             where TState : notnull
             => null;
 
         /// <inheritdoc/>
-        public bool IsEnabled(LogLevel logLevel) => logLevel != LogLevel.None;
+        public bool IsEnabled(LogLevel logLevel) =>
+            logLevel != LogLevel.None && JobExecutionLogScope.Current != null;
 
         /// <inheritdoc/>
         public void Log<TState>(
@@ -58,7 +44,8 @@ internal sealed class JobCaptureLoggerProvider : ILoggerProvider
             Exception? exception,
             Func<TState, Exception?, string> formatter)
         {
-            if (_provider._entries.Count >= _provider._maxLines)
+            var scope = JobExecutionLogScope.Current;
+            if (scope is null)
             {
                 return;
             }
@@ -69,12 +56,7 @@ internal sealed class JobCaptureLoggerProvider : ILoggerProvider
                 message += $"\n{exception}";
             }
 
-            _provider._entries.Add(new JobExecutionLog
-            {
-                Timestamp = DateTimeOffset.UtcNow,
-                Level = logLevel.ToString(),
-                Message = message,
-            });
+            scope.Capture(logLevel, message);
         }
     }
 }

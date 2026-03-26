@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 using NexJob.Internal;
 using NexJob.Storage;
 
@@ -34,6 +35,8 @@ public static class NexJobServiceCollectionExtensions
         services.TryAddSingleton<IStorageProvider, InMemoryStorageProvider>();
         services.AddSingleton<IScheduler, DefaultScheduler>();
         services.AddSingleton<ThrottleRegistry>();
+        services.AddSingleton<JobCaptureLoggerProvider>();
+        services.AddSingleton<ILoggerProvider>(sp => sp.GetRequiredService<JobCaptureLoggerProvider>());
         services.AddHostedService<JobDispatcherService>();
         services.AddHostedService<RecurringJobSchedulerService>();
         services.AddHostedService<OrphanedJobWatcherService>();

@@ -55,6 +55,38 @@ public sealed class DashboardMiddleware
             return;
         }
 
+        // GET /jobs/{id}/logs — returns execution logs as JSON for modal
+        var logsSegments = subPath.Split('/');
+        if (context.Request.Method == HttpMethods.Get &&
+            logsSegments.Length == 3 &&
+            logsSegments[0] == "jobs" &&
+            logsSegments[2] == "logs")
+        {
+            var logsStorage = context.RequestServices.GetRequiredService<IStorageProvider>();
+            if (!Guid.TryParse(logsSegments[1], out var logsGuid))
+            {
+                context.Response.StatusCode = 400;
+                return;
+            }
+
+            var logsJob = await logsStorage.GetJobByIdAsync(new JobId(logsGuid), context.RequestAborted);
+            if (logsJob is null)
+            {
+                context.Response.StatusCode = 404;
+                return;
+            }
+
+            context.Response.ContentType = "application/json";
+            var logs = logsJob.ExecutionLogs ?? Array.Empty<JobExecutionLog>();
+            await context.Response.WriteAsJsonAsync(logs.Select(l => new
+            {
+                timestamp = l.Timestamp.ToString("yyyy-MM-dd HH:mm:ss.fff"),
+                level = l.Level,
+                message = l.Message,
+            }), context.RequestAborted);
+            return;
+        }
+
         // Handle API actions (POST)
         if (context.Request.Method == HttpMethods.Post && await HandleActionsAsync(context, subPath))
         {
@@ -128,7 +160,7 @@ public sealed class DashboardMiddleware
             var recurringId = Uri.UnescapeDataString(subPath.Split('/')[1]);
             await storage.SetRecurringJobNextExecutionAsync(
                 recurringId, DateTimeOffset.UtcNow.AddSeconds(-1), context.RequestAborted);
-            context.Response.Redirect($"{_pathPrefix}/recurring");
+            context.Response.Redirect($"{_pathPrefix}/recurring/{Uri.EscapeDataString(recurringId)}");
             return true;
         }
 
@@ -142,7 +174,7 @@ public sealed class DashboardMiddleware
                 await storage.UpdateRecurringJobConfigAsync(recurringId, existing.CronOverride, enabled: false, context.RequestAborted);
             }
 
-            context.Response.Redirect($"{_pathPrefix}/recurring");
+            context.Response.Redirect($"{_pathPrefix}/recurring/{Uri.EscapeDataString(recurringId)}");
             return true;
         }
 
@@ -156,7 +188,7 @@ public sealed class DashboardMiddleware
                 await storage.UpdateRecurringJobConfigAsync(recurringId, existing.CronOverride, enabled: true, context.RequestAborted);
             }
 
-            context.Response.Redirect($"{_pathPrefix}/recurring");
+            context.Response.Redirect($"{_pathPrefix}/recurring/{Uri.EscapeDataString(recurringId)}");
             return true;
         }
 
@@ -180,7 +212,7 @@ public sealed class DashboardMiddleware
                 catch (CronFormatException)
                 {
                     // Invalid cron — redirect back without saving
-                    context.Response.Redirect($"{_pathPrefix}/recurring");
+                    context.Response.Redirect($"{_pathPrefix}/recurring/{Uri.EscapeDataString(recurringId)}");
                     return true;
                 }
             }
@@ -192,7 +224,7 @@ public sealed class DashboardMiddleware
                 await storage.UpdateRecurringJobConfigAsync(recurringId, cronOverride, existing.Enabled, context.RequestAborted);
             }
 
-            context.Response.Redirect($"{_pathPrefix}/recurring");
+            context.Response.Redirect($"{_pathPrefix}/recurring/{Uri.EscapeDataString(recurringId)}");
             return true;
         }
 
@@ -208,7 +240,7 @@ public sealed class DashboardMiddleware
         {
             var recurringId = Uri.UnescapeDataString(subPath.Split('/')[1]);
             await storage.RestoreRecurringJobAsync(recurringId, context.RequestAborted);
-            context.Response.Redirect($"{_pathPrefix}/recurring");
+            context.Response.Redirect($"{_pathPrefix}/recurring/{Uri.EscapeDataString(recurringId)}");
             return true;
         }
 
@@ -220,11 +252,11 @@ public sealed class DashboardMiddleware
             var action = form["bulkAction"].ToString();
             var ids = form["ids"].ToArray();
 
-            // if nothing selected, act on all
+            // nothing selected — do nothing
             if (ids.Length == 0)
             {
-                ids = (await storage.GetRecurringJobsAsync(context.RequestAborted))
-                      .Select(r => r.RecurringJobId).ToArray();
+                context.Response.Redirect($"{_pathPrefix}/recurring");
+                return true;
             }
 
             foreach (var id in ids)
@@ -352,6 +384,33 @@ public sealed class DashboardMiddleware
                 });
                 return await RenderAsync<JobDetailPage>(renderer, parameters);
             }
+        }
+
+        if (subPath.StartsWith("recurring/", StringComparison.Ordinal) &&
+            subPath.Split('/').Length == 2 &&
+            subPath.Split('/')[1] != string.Empty)
+        {
+            var recurringId = Uri.UnescapeDataString(subPath.Split('/')[1]);
+            var recurringJob = await storage.GetRecurringJobByIdAsync(recurringId, context.RequestAborted);
+            if (recurringJob is null)
+            {
+                return HtmlShell.NotFound(_options.Title, _pathPrefix);
+            }
+
+            var pageNum = context.Request.Query.TryGetValue("page", out var pg) && int.TryParse(pg, out var pn) ? pn : 1;
+            var pageSize = int.TryParse(context.Request.Query["pageSize"], out var ps) && (ps == 10 || ps == 20 || ps == 50) ? ps : 20;
+            var jobFilter = new JobFilter { RecurringJobId = recurringId };
+            var executions = await storage.GetJobsAsync(jobFilter, pageNum, pageSize, context.RequestAborted);
+
+            parameters = ParameterView.FromDictionary(new Dictionary<string, object?>
+            {
+                ["Job"] = recurringJob,
+                ["Executions"] = executions,
+                ["PageSize"] = pageSize,
+                ["PathPrefix"] = _pathPrefix,
+                ["Title"] = _options.Title,
+            });
+            return await RenderAsync<RecurringJobDetailPage>(renderer, parameters);
         }
 
         if (subPath == "recurring")

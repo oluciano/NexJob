@@ -309,6 +309,17 @@ public sealed class PostgresStorageProvider : IStorageProvider
     }
 
     /// <inheritdoc/>
+    public async Task<RecurringJobRecord?> GetRecurringJobByIdAsync(string recurringJobId, CancellationToken cancellationToken = default)
+    {
+        await using var conn = Open();
+        await conn.OpenAsync(cancellationToken);
+        var row = await conn.QuerySingleOrDefaultAsync<RecurringJobRow>(
+            "SELECT * FROM nexjob_recurring_jobs WHERE recurring_job_id = @Id",
+            new { Id = recurringJobId });
+        return row?.ToRecord();
+    }
+
+    /// <inheritdoc/>
     public async Task UpdateRecurringJobConfigAsync(
         string recurringJobId, string? cronOverride, bool enabled,
         CancellationToken cancellationToken = default)
@@ -451,6 +462,7 @@ public sealed class PostgresStorageProvider : IStorageProvider
         if (filter.Status.HasValue) { where.Add("status = @status"); p.Add("status", filter.Status.Value.ToString()); }
         if (!string.IsNullOrWhiteSpace(filter.Queue)) { where.Add("queue = @queue"); p.Add("queue", filter.Queue); }
         if (!string.IsNullOrWhiteSpace(filter.Search)) { where.Add("(job_type ILIKE @search OR id::text ILIKE @search)"); p.Add("search", $"%{filter.Search.Trim()}%"); }
+        if (!string.IsNullOrEmpty(filter.RecurringJobId)) { where.Add("recurring_job_id = @recurringJobId"); p.Add("recurringJobId", filter.RecurringJobId); }
 
         var clause = where.Count > 0 ? "WHERE " + string.Join(" AND ", where) : string.Empty;
         var total = await conn.ExecuteScalarAsync<int>($"SELECT COUNT(*)::int FROM nexjob_jobs {clause}", p);

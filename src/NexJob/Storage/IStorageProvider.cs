@@ -142,6 +142,11 @@ public interface IStorageProvider
     /// <param name="cancellationToken">Token to cancel the operation.</param>
     Task<IReadOnlyList<RecurringJobRecord>> GetRecurringJobsAsync(CancellationToken cancellationToken = default);
 
+    /// <summary>Returns the recurring job definition with the specified identifier, or <see langword="null"/> if not found.</summary>
+    /// <param name="recurringJobId">The identifier of the recurring job to look up.</param>
+    /// <param name="cancellationToken">Token to cancel the operation.</param>
+    Task<RecurringJobRecord?> GetRecurringJobByIdAsync(string recurringJobId, CancellationToken cancellationToken = default);
+
     /// <summary>
     /// Finds all jobs in <see cref="JobStatus.Processing"/> state whose heartbeat has
     /// not been refreshed within <paramref name="heartbeatTimeout"/>, and re-enqueues

@@ -14,4 +14,7 @@ public sealed class JobFilter
 
     /// <summary>Filter by queue name. <see langword="null"/> returns all queues.</summary>
     public string? Queue { get; init; }
+
+    /// <summary>Filter by recurring job identifier. <see langword="null"/> returns jobs from all recurring definitions.</summary>
+    public string? RecurringJobId { get; init; }
 }
