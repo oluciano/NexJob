@@ -63,5 +63,8 @@ internal static class SchemaSql
 
         CREATE INDEX IF NOT EXISTS idx_nexjob_recurring_next
             ON nexjob_recurring_jobs (next_execution);
+
+        ALTER TABLE nexjob_recurring_jobs ADD COLUMN IF NOT EXISTS cron_override TEXT NULL;
+        ALTER TABLE nexjob_recurring_jobs ADD COLUMN IF NOT EXISTS enabled BOOLEAN NOT NULL DEFAULT TRUE;
         """;
 }

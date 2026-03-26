@@ -155,11 +155,24 @@ public sealed class MongoStorageProvider : IStorageProvider
     /// <inheritdoc/>
     public async Task UpsertRecurringJobAsync(RecurringJobRecord recurringJob, CancellationToken cancellationToken = default)
     {
-        var doc    = RecurringJobDocument.FromRecord(recurringJob);
         var filter = Builders<RecurringJobDocument>.Filter.Eq(d => d.RecurringJobId, recurringJob.RecurringJobId);
-        var options = new ReplaceOptions { IsUpsert = true };
 
-        await _recurringJobs.ReplaceOneAsync(filter, doc, options, cancellationToken);
+        // On insert set cron_override=null and enabled=true; on update preserve existing values.
+        var update = Builders<RecurringJobDocument>.Update
+            .Set(d => d.JobType,           recurringJob.JobType)
+            .Set(d => d.InputType,         recurringJob.InputType)
+            .Set(d => d.InputJson,         recurringJob.InputJson)
+            .Set(d => d.Cron,              recurringJob.Cron)
+            .Set(d => d.TimeZoneId,        recurringJob.TimeZoneId)
+            .Set(d => d.Queue,             recurringJob.Queue)
+            .Set(d => d.NextExecution,     recurringJob.NextExecution)
+            .Set(d => d.CreatedAt,         recurringJob.CreatedAt)
+            .Set(d => d.ConcurrencyPolicy, recurringJob.ConcurrencyPolicy)
+            .SetOnInsert(d => d.CronOverride, (string?)null)
+            .SetOnInsert(d => d.Enabled,      true);
+
+        var options = new UpdateOptions { IsUpsert = true };
+        await _recurringJobs.UpdateOneAsync(filter, update, options, cancellationToken);
     }
 
     /// <inheritdoc/>
@@ -205,6 +218,30 @@ public sealed class MongoStorageProvider : IStorageProvider
         var docs = await _recurringJobs.Find(Builders<RecurringJobDocument>.Filter.Empty)
             .ToListAsync(cancellationToken);
         return docs.Select(d => d.ToRecord()).ToList();
+    }
+
+    /// <inheritdoc/>
+    public async Task UpdateRecurringJobConfigAsync(
+        string recurringJobId, string? cronOverride, bool enabled,
+        CancellationToken cancellationToken = default)
+    {
+        var filter = Builders<RecurringJobDocument>.Filter.Eq(d => d.RecurringJobId, recurringJobId);
+        var update = Builders<RecurringJobDocument>.Update
+            .Set(d => d.CronOverride, cronOverride)
+            .Set(d => d.Enabled,      enabled);
+
+        await _recurringJobs.UpdateOneAsync(filter, update, cancellationToken: cancellationToken);
+    }
+
+    /// <inheritdoc/>
+    public async Task ForceDeleteRecurringJobAsync(
+        string recurringJobId, CancellationToken cancellationToken = default)
+    {
+        var jobsFilter = Builders<JobDocument>.Filter.Eq(d => d.RecurringJobId, recurringJobId);
+        await _jobs.DeleteManyAsync(jobsFilter, cancellationToken);
+
+        var recurringFilter = Builders<RecurringJobDocument>.Filter.Eq(d => d.RecurringJobId, recurringJobId);
+        await _recurringJobs.DeleteOneAsync(recurringFilter, cancellationToken);
     }
 
     // ── Orphan requeue ────────────────────────────────────────────────────────

@@ -27,7 +27,7 @@ internal sealed class RecurringPage : IComponent
 
         var rows = string.Join(string.Empty, jobs.Select(r =>
         {
-            var countdown = r.NextExecution.HasValue
+            var countdown = r.NextExecution.HasValue && r.Enabled
                 ? Helpers.FormatCountdown(r.NextExecution.Value - now)
                 : "<span style=\"color:var(--text-muted)\">—</span>";
 
@@ -51,14 +51,56 @@ internal sealed class RecurringPage : IComponent
                 ? "<span class=\"badge\" style=\"background:var(--info,#4a9eff);color:#fff;margin-left:4px\" title=\"AllowConcurrent: multiple instances may run in parallel\">⟳ concurrent</span>"
                 : string.Empty;
 
+            var pausedBadge = !r.Enabled
+                ? "<span class=\"badge\" style=\"background:var(--warning,#f59e0b);color:#000;margin-left:4px\">Paused</span>"
+                : string.Empty;
+
+            var effectiveCron = r.CronOverride ?? r.Cron;
+            var cronOverrideBadge = r.CronOverride is not null
+                ? $"<span class=\"badge\" style=\"background:var(--info,#4a9eff);color:#fff;margin-left:4px\" title=\"Override active; default: {System.Web.HttpUtility.HtmlAttributeEncode(r.Cron)}\">overridden</span>"
+                : string.Empty;
+
+            var encodedId = System.Web.HttpUtility.HtmlAttributeEncode(r.RecurringJobId);
+            var encodedIdUrl = Uri.EscapeDataString(r.RecurringJobId);
+
+            // Per-row action buttons (outside the bulk form to avoid nested forms)
+            var pauseResumeButton = r.Enabled
+                ? $"<form method=\"post\" action=\"{PathPrefix}/recurring/{encodedIdUrl}/pause\" style=\"display:inline\"><button type=\"submit\" class=\"btn btn-sm\" style=\"background:var(--warning,#f59e0b);color:#000\" title=\"Pause\">⏸ Pause</button></form>"
+                : $"<form method=\"post\" action=\"{PathPrefix}/recurring/{encodedIdUrl}/resume\" style=\"display:inline\"><button type=\"submit\" class=\"btn btn-primary btn-sm\" title=\"Resume\">▶ Resume</button></form>";
+
+            var editForm =
+                $"<details style=\"margin-top:4px\">" +
+                $"<summary class=\"btn btn-sm\" style=\"cursor:pointer;display:inline-block\">✎ Edit cron</summary>" +
+                $"<form method=\"post\" action=\"{PathPrefix}/recurring/{encodedIdUrl}/update-config\" style=\"margin-top:6px;display:flex;gap:6px;align-items:center\">" +
+                $"<input type=\"text\" name=\"cronOverride\" placeholder=\"{System.Web.HttpUtility.HtmlAttributeEncode(effectiveCron)}\" value=\"{System.Web.HttpUtility.HtmlAttributeEncode(r.CronOverride ?? string.Empty)}\" style=\"font-family:monospace;width:160px\" />" +
+                $"<button type=\"submit\" class=\"btn btn-primary btn-sm\">Save</button>" +
+                $"<button type=\"submit\" name=\"cronOverride\" value=\"\" class=\"btn btn-sm\">Reset to default</button>" +
+                $"</form>" +
+                $"</details>";
+
+            var triggerButton =
+                $"<form method=\"post\" action=\"{PathPrefix}/recurring/{encodedIdUrl}/trigger\" style=\"display:inline\"><button type=\"submit\" class=\"btn btn-primary btn-sm\">▶ Trigger</button></form>";
+
+            var forceDeleteButton =
+                $"<form method=\"post\" action=\"{PathPrefix}/recurring/{encodedIdUrl}/force-delete\" style=\"display:inline\"><button type=\"submit\" class=\"btn btn-danger btn-sm\" onclick=\"return confirm('Permanently delete this job and all its records?')\">✕ Force Delete</button></form>";
+
+            var actionsCell =
+                $"<div style=\"display:flex;gap:4px;flex-wrap:wrap;align-items:center\">" +
+                triggerButton +
+                pauseResumeButton +
+                forceDeleteButton +
+                $"</div>" +
+                editForm;
+
             return $"<tr>" +
-                   $"<td style=\"width:36px\"><input type=\"checkbox\" name=\"ids\" value=\"{System.Web.HttpUtility.HtmlAttributeEncode(r.RecurringJobId)}\" /></td>" +
-                   $"<td>{System.Web.HttpUtility.HtmlEncode(r.RecurringJobId)}</td>" +
-                   $"<td><code style=\"color:var(--warning)\">{System.Web.HttpUtility.HtmlEncode(r.Cron)}</code></td>" +
+                   $"<td style=\"width:36px\"><input type=\"checkbox\" name=\"ids\" value=\"{encodedId}\" /></td>" +
+                   $"<td>{System.Web.HttpUtility.HtmlEncode(r.RecurringJobId)}{pausedBadge}</td>" +
+                   $"<td><code style=\"color:var(--warning)\">{System.Web.HttpUtility.HtmlEncode(effectiveCron)}</code>{cronOverrideBadge}</td>" +
                    $"<td>{System.Web.HttpUtility.HtmlEncode(r.Queue)}</td>" +
                    $"<td>{Helpers.ShortType(r.JobType)}{concurrencyBadge}</td>" +
                    $"<td>{lastRun}</td>" +
                    $"<td>{countdown}</td>" +
+                   $"<td>{actionsCell}</td>" +
                    $"</tr>";
         }));
 
@@ -71,7 +113,7 @@ internal sealed class RecurringPage : IComponent
             "</div>" +
             "<table><thead><tr>" +
             "<th style=\"width:36px\"><input type=\"checkbox\" id=\"select-all\" title=\"Select all\" /></th>" +
-            "<th>ID</th><th>Cron</th><th>Queue</th><th>Job</th><th>Last Execution</th><th>Next Execution</th>" +
+            "<th>ID</th><th>Cron</th><th>Queue</th><th>Job</th><th>Last Execution</th><th>Next Execution</th><th>Actions</th>" +
             $"</tr></thead><tbody>{rows}</tbody></table>" +
             "</form>" +
             "<script>" +

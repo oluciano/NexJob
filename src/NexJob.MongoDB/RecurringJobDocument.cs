@@ -23,6 +23,12 @@ internal sealed class RecurringJobDocument
     [BsonRepresentation(BsonType.String)]
     public RecurringConcurrencyPolicy ConcurrencyPolicy { get; set; } = RecurringConcurrencyPolicy.SkipIfRunning;
 
+    /// <summary>User-supplied cron override; <see langword="null"/> means use <see cref="Cron"/>.</summary>
+    public string? CronOverride { get; set; }
+
+    /// <summary>When <see langword="false"/> the scheduler skips this job. Defaults to <see langword="true"/>.</summary>
+    public bool Enabled { get; set; } = true;
+
     public static RecurringJobDocument FromRecord(RecurringJobRecord r) => new()
     {
         RecurringJobId      = r.RecurringJobId,
@@ -38,6 +44,8 @@ internal sealed class RecurringJobDocument
         LastExecutionStatus = r.LastExecutionStatus,
         LastExecutionError  = r.LastExecutionError,
         ConcurrencyPolicy   = r.ConcurrencyPolicy,
+        CronOverride        = r.CronOverride,
+        Enabled             = r.Enabled,
     };
 
     public RecurringJobRecord ToRecord() => new()
@@ -55,5 +63,7 @@ internal sealed class RecurringJobDocument
         LastExecutionStatus = LastExecutionStatus,
         LastExecutionError  = LastExecutionError,
         ConcurrencyPolicy   = ConcurrencyPolicy,
+        CronOverride        = CronOverride,
+        Enabled             = Enabled,
     };
 }

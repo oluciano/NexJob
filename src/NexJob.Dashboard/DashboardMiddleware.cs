@@ -1,3 +1,4 @@
+using Cronos;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web;
@@ -125,6 +126,70 @@ public sealed class DashboardMiddleware
             var recurringId = Uri.UnescapeDataString(subPath.Split('/')[1]);
             await storage.SetRecurringJobNextExecutionAsync(
                 recurringId, DateTimeOffset.UtcNow.AddSeconds(-1), context.RequestAborted);
+            context.Response.Redirect($"{_pathPrefix}/recurring");
+            return true;
+        }
+
+        if (subPath.StartsWith("recurring/") && subPath.Contains("/pause"))
+        {
+            var recurringId = Uri.UnescapeDataString(subPath.Split('/')[1]);
+            var allJobs = await storage.GetRecurringJobsAsync(context.RequestAborted);
+            var existing = allJobs.FirstOrDefault(r => r.RecurringJobId == recurringId);
+            if (existing is not null)
+                await storage.UpdateRecurringJobConfigAsync(recurringId, existing.CronOverride, enabled: false, context.RequestAborted);
+            context.Response.Redirect($"{_pathPrefix}/recurring");
+            return true;
+        }
+
+        if (subPath.StartsWith("recurring/") && subPath.Contains("/resume"))
+        {
+            var recurringId = Uri.UnescapeDataString(subPath.Split('/')[1]);
+            var allJobs = await storage.GetRecurringJobsAsync(context.RequestAborted);
+            var existing = allJobs.FirstOrDefault(r => r.RecurringJobId == recurringId);
+            if (existing is not null)
+                await storage.UpdateRecurringJobConfigAsync(recurringId, existing.CronOverride, enabled: true, context.RequestAborted);
+            context.Response.Redirect($"{_pathPrefix}/recurring");
+            return true;
+        }
+
+        if (subPath.StartsWith("recurring/") && subPath.Contains("/update-config"))
+        {
+            var recurringId = Uri.UnescapeDataString(subPath.Split('/')[1]);
+            var form = await context.Request.ReadFormAsync(context.RequestAborted);
+            var cronOverrideRaw = form["cronOverride"].ToString();
+
+            string? cronOverride = null;
+            if (!string.IsNullOrWhiteSpace(cronOverrideRaw))
+            {
+                // Validate cron expression before persisting
+                try
+                {
+                    try { CronExpression.Parse(cronOverrideRaw, CronFormat.IncludeSeconds); }
+                    catch (CronFormatException) { CronExpression.Parse(cronOverrideRaw, CronFormat.Standard); }
+
+                    cronOverride = cronOverrideRaw.Trim();
+                }
+                catch (CronFormatException)
+                {
+                    // Invalid cron — redirect back without saving
+                    context.Response.Redirect($"{_pathPrefix}/recurring");
+                    return true;
+                }
+            }
+
+            var allJobs = await storage.GetRecurringJobsAsync(context.RequestAborted);
+            var existing = allJobs.FirstOrDefault(r => r.RecurringJobId == recurringId);
+            if (existing is not null)
+                await storage.UpdateRecurringJobConfigAsync(recurringId, cronOverride, existing.Enabled, context.RequestAborted);
+
+            context.Response.Redirect($"{_pathPrefix}/recurring");
+            return true;
+        }
+
+        if (subPath.StartsWith("recurring/") && subPath.Contains("/force-delete"))
+        {
+            var recurringId = Uri.UnescapeDataString(subPath.Split('/')[1]);
+            await storage.ForceDeleteRecurringJobAsync(recurringId, context.RequestAborted);
             context.Response.Redirect($"{_pathPrefix}/recurring");
             return true;
         }

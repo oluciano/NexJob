@@ -206,10 +206,12 @@ public sealed class PostgresStorageProvider : IStorageProvider
             """
             INSERT INTO nexjob_recurring_jobs
                 (recurring_job_id, job_type, input_type, input_json, cron,
-                 time_zone_id, queue, next_execution, concurrency_policy, created_at, updated_at)
+                 time_zone_id, queue, next_execution, concurrency_policy, created_at, updated_at,
+                 cron_override, enabled)
             VALUES
                 (@RecurringJobId, @JobType, @InputType, @InputJson::jsonb, @Cron,
-                 @TimeZoneId, @Queue, @NextExecution, @ConcurrencyPolicy, @CreatedAt, NOW())
+                 @TimeZoneId, @Queue, @NextExecution, @ConcurrencyPolicy, @CreatedAt, NOW(),
+                 NULL, TRUE)
             ON CONFLICT (recurring_job_id) DO UPDATE
             SET job_type           = EXCLUDED.job_type,
                 input_type         = EXCLUDED.input_type,
@@ -299,6 +301,36 @@ public sealed class PostgresStorageProvider : IStorageProvider
         var rows = await conn.QueryAsync<RecurringJobRow>(
             "SELECT * FROM nexjob_recurring_jobs ORDER BY recurring_job_id");
         return rows.Select(r => r.ToRecord()).ToList();
+    }
+
+    /// <inheritdoc/>
+    public async Task UpdateRecurringJobConfigAsync(
+        string recurringJobId, string? cronOverride, bool enabled,
+        CancellationToken cancellationToken = default)
+    {
+        await using var conn = Open();
+        await conn.OpenAsync(cancellationToken);
+        await conn.ExecuteAsync(
+            """
+            UPDATE nexjob_recurring_jobs
+            SET cron_override = @CronOverride, enabled = @Enabled, updated_at = NOW()
+            WHERE recurring_job_id = @Id
+            """,
+            new { Id = recurringJobId, CronOverride = cronOverride, Enabled = enabled });
+    }
+
+    /// <inheritdoc/>
+    public async Task ForceDeleteRecurringJobAsync(
+        string recurringJobId, CancellationToken cancellationToken = default)
+    {
+        await using var conn = Open();
+        await conn.OpenAsync(cancellationToken);
+        await conn.ExecuteAsync(
+            "DELETE FROM nexjob_jobs WHERE recurring_job_id = @id",
+            new { id = recurringJobId });
+        await conn.ExecuteAsync(
+            "DELETE FROM nexjob_recurring_jobs WHERE recurring_job_id = @id",
+            new { id = recurringJobId });
     }
 
     // ── Orphan requeue ────────────────────────────────────────────────────────

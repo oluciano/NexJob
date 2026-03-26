@@ -62,7 +62,8 @@ internal sealed class RecurringJobSchedulerService : BackgroundService
             ? TimeZoneInfo.FindSystemTimeZoneById(recurring.TimeZoneId)
             : TimeZoneInfo.Utc;
 
-        var cronExpression = DefaultScheduler.ParseCron(recurring.Cron);
+        var effectiveCron = recurring.CronOverride ?? recurring.Cron;
+        var cronExpression = DefaultScheduler.ParseCron(effectiveCron);
         return cronExpression.GetNextOccurrence(DateTimeOffset.UtcNow, tz);
     }
 
@@ -73,6 +74,12 @@ internal sealed class RecurringJobSchedulerService : BackgroundService
 
         foreach (var recurring in dueJobs)
         {
+            if (!recurring.Enabled)
+            {
+                _logger.LogDebug("Skipping disabled recurring job '{Id}'.", recurring.RecurringJobId);
+                continue;
+            }
+
             try
             {
                 var jobRecord = new JobRecord

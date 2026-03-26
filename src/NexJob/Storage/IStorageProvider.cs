@@ -107,6 +107,23 @@ public interface IStorageProvider
     /// <param name="cancellationToken">Token to cancel the operation.</param>
     Task DeleteRecurringJobAsync(string recurringJobId, CancellationToken cancellationToken = default);
 
+    /// <summary>Updates the cron override and enabled flag for a recurring job.</summary>
+    /// <param name="recurringJobId">The identifier of the recurring job to update.</param>
+    /// <param name="cronOverride">
+    /// User-supplied cron expression that overrides the default schedule,
+    /// or <see langword="null"/> to clear any existing override.
+    /// </param>
+    /// <param name="enabled">
+    /// When <see langword="false"/> the scheduler will skip this job at every firing.
+    /// </param>
+    /// <param name="cancellationToken">Token to cancel the operation.</param>
+    Task UpdateRecurringJobConfigAsync(string recurringJobId, string? cronOverride, bool enabled, CancellationToken cancellationToken = default);
+
+    /// <summary>Permanently deletes a recurring job and all its associated job records.</summary>
+    /// <param name="recurringJobId">The identifier of the recurring job to delete.</param>
+    /// <param name="cancellationToken">Token to cancel the operation.</param>
+    Task ForceDeleteRecurringJobAsync(string recurringJobId, CancellationToken cancellationToken = default);
+
     /// <summary>
     /// Returns all registered recurring job definitions, regardless of their next execution time.
     /// Used by the dashboard to display the full list of recurring jobs.

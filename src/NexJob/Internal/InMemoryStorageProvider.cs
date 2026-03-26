@@ -145,7 +145,17 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
     /// <inheritdoc/>
     public Task UpsertRecurringJobAsync(RecurringJobRecord recurringJob, CancellationToken cancellationToken = default)
     {
-        _recurringJobs[recurringJob.RecurringJobId] = recurringJob;
+        _recurringJobs.AddOrUpdate(
+            recurringJob.RecurringJobId,
+            // Insert: use the record as-is (Enabled defaults to true on the model)
+            _ => recurringJob,
+            // Update: preserve user-set CronOverride and Enabled fields
+            (_, existing) =>
+            {
+                recurringJob.CronOverride = existing.CronOverride;
+                recurringJob.Enabled      = existing.Enabled;
+                return recurringJob;
+            });
         return Task.CompletedTask;
     }
 
@@ -187,6 +197,36 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
     public Task DeleteRecurringJobAsync(string recurringJobId, CancellationToken cancellationToken = default)
     {
         _recurringJobs.TryRemove(recurringJobId, out _);
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc/>
+    public Task UpdateRecurringJobConfigAsync(
+        string recurringJobId, string? cronOverride, bool enabled,
+        CancellationToken cancellationToken = default)
+    {
+        if (_recurringJobs.TryGetValue(recurringJobId, out var job))
+        {
+            job.CronOverride = cronOverride;
+            job.Enabled      = enabled;
+        }
+
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc/>
+    public Task ForceDeleteRecurringJobAsync(string recurringJobId, CancellationToken cancellationToken = default)
+    {
+        _recurringJobs.TryRemove(recurringJobId, out _);
+
+        var toRemove = _jobs.Values
+            .Where(j => j.RecurringJobId == recurringJobId)
+            .Select(j => j.Id.Value)
+            .ToList();
+
+        foreach (var id in toRemove)
+            _jobs.TryRemove(id, out _);
+
         return Task.CompletedTask;
     }
 

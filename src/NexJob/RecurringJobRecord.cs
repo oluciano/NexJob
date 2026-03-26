@@ -57,4 +57,16 @@ public sealed class RecurringJobRecord
     /// </summary>
     public RecurringConcurrencyPolicy ConcurrencyPolicy { get; init; } =
         RecurringConcurrencyPolicy.SkipIfRunning;
+
+    /// <summary>
+    /// User-supplied cron override. When set, the scheduler uses this expression instead
+    /// of <see cref="Cron"/>. Set to <see langword="null"/> to revert to the default cron.
+    /// </summary>
+    public string? CronOverride { get; set; }
+
+    /// <summary>
+    /// When <see langword="false"/> the scheduler skips this job at every firing.
+    /// Defaults to <see langword="true"/>.
+    /// </summary>
+    public bool Enabled { get; set; } = true;
 }

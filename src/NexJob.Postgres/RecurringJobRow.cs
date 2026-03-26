@@ -16,6 +16,8 @@ internal sealed class RecurringJobRow
     public string? LastExecutionStatus { get; set; }
     public string? LastExecutionError { get; set; }
     public string ConcurrencyPolicy { get; set; } = "SkipIfRunning";
+    public string? CronOverride { get; set; }
+    public bool Enabled { get; set; } = true;
 
     public RecurringJobRecord ToRecord() => new()
     {
@@ -33,5 +35,7 @@ internal sealed class RecurringJobRow
             ? Enum.Parse<JobStatus>(LastExecutionStatus) : null,
         LastExecutionError  = LastExecutionError,
         ConcurrencyPolicy   = Enum.Parse<RecurringConcurrencyPolicy>(ConcurrencyPolicy),
+        CronOverride        = CronOverride,
+        Enabled             = Enabled,
     };
 }
