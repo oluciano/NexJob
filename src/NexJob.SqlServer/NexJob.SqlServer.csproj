@@ -8,6 +8,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\NexJob\NexJob.csproj" />
+    <PackageReference Include="Dapper" Version="2.1.35" />
     <PackageReference Include="Microsoft.Data.SqlClient" Version="5.2.2" />
   </ItemGroup>
 

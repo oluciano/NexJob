@@ -5,6 +5,7 @@ using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using NexJob.Configuration;
 using NexJob.Storage;
 
 namespace NexJob.Internal;
@@ -23,6 +24,7 @@ internal sealed class JobDispatcherService : BackgroundService
     private readonly IStorageProvider _storage;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ThrottleRegistry _throttleRegistry;
+    private readonly IRuntimeSettingsStore _runtimeStore;
     private readonly NexJobOptions _options;
     private readonly ILogger<JobDispatcherService> _logger;
 
@@ -33,12 +35,14 @@ internal sealed class JobDispatcherService : BackgroundService
         IStorageProvider storage,
         IServiceScopeFactory scopeFactory,
         ThrottleRegistry throttleRegistry,
+        IRuntimeSettingsStore runtimeStore,
         NexJobOptions options,
         ILogger<JobDispatcherService> logger)
     {
         _storage = storage;
         _scopeFactory = scopeFactory;
         _throttleRegistry = throttleRegistry;
+        _runtimeStore = runtimeStore;
         _options = options;
         _logger = logger;
     }
@@ -55,10 +59,31 @@ internal sealed class JobDispatcherService : BackgroundService
         {
             await workerSlots.WaitAsync(stoppingToken);
 
+            // Filter out paused queues and queues outside their execution window
+            RuntimeSettings runtime;
+            try
+            {
+                runtime = await _runtimeStore.GetAsync(stoppingToken);
+            }
+            catch (OperationCanceledException)
+            {
+                workerSlots.Release();
+                break;
+            }
+
+            var activeQueues = GetActiveQueues(runtime);
+            if (activeQueues.Count == 0)
+            {
+                workerSlots.Release();
+                var delay = runtime.PollingInterval ?? _options.PollingInterval;
+                await Task.Delay(delay, stoppingToken).ConfigureAwait(false);
+                continue;
+            }
+
             JobRecord? job;
             try
             {
-                job = await _storage.FetchNextAsync(_options.Queues, stoppingToken);
+                job = await _storage.FetchNextAsync(activeQueues, stoppingToken);
             }
             catch (OperationCanceledException)
             {
@@ -134,6 +159,10 @@ internal sealed class JobDispatcherService : BackgroundService
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
         var heartbeatTask = RunHeartbeatAsync(job.Id, cts.Token);
 
+        // Each job task has its own async context; the scope captures all log entries
+        // emitted by any category within this execution without affecting other concurrent jobs.
+        using var logScope = new JobExecutionLogScope(_options.MaxJobLogLines);
+
         try
         {
             using var scope = _scopeFactory.CreateScope();
@@ -170,6 +199,7 @@ internal sealed class JobDispatcherService : BackgroundService
             }
 
             await _storage.AcknowledgeAsync(job.Id, CancellationToken.None);
+            await _storage.SaveExecutionLogsAsync(job.Id, logScope.Entries, CancellationToken.None);
             await _storage.EnqueueContinuationsAsync(job.Id, CancellationToken.None);
 
             if (job.RecurringJobId is not null)
@@ -202,6 +232,7 @@ internal sealed class JobDispatcherService : BackgroundService
             }
 
             await _storage.SetFailedAsync(job.Id, ex, retryAt, CancellationToken.None);
+            await _storage.SaveExecutionLogsAsync(job.Id, logScope.Entries, CancellationToken.None);
 
             if (job.RecurringJobId is not null && retryAt is null)
             {
@@ -214,6 +245,25 @@ internal sealed class JobDispatcherService : BackgroundService
             await cts.CancelAsync();
             await heartbeatTask;
         }
+    }
+
+    // ─── queue filtering ──────────────────────────────────────────────────────
+
+    private IReadOnlyList<string> GetActiveQueues(RuntimeSettings runtime)
+    {
+        var now = DateTimeOffset.UtcNow;
+        return _options.Queues
+            .Where(q =>
+            {
+                if (runtime.PausedQueues.Contains(q))
+                {
+                    return false;
+                }
+
+                var s = _options.QueueSettings.Find(qs => qs.Name == q);
+                return s?.ExecutionWindow?.IsWithinWindow(now) ?? true;
+            })
+            .ToList();
     }
 
     private async Task RunHeartbeatAsync(JobId jobId, CancellationToken cancellationToken)

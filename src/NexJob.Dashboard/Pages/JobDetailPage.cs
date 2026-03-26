@@ -93,6 +93,38 @@ internal sealed class JobDetailPage : IComponent
                 stackTrace;
         }
 
+        string logsSection;
+        if (job.ExecutionLogs.Count == 0)
+        {
+            logsSection =
+                "<h2 style=\"margin-top:20px\">Execution Logs</h2>" +
+                "<p style=\"color:var(--text-muted);font-size:13px\">No logs captured for this execution.</p>";
+        }
+        else
+        {
+            var logLines = string.Join(string.Empty, job.ExecutionLogs.Select(entry =>
+            {
+                var color = entry.Level switch
+                {
+                    "Warning" => "#fbbf24",
+                    "Error" or "Critical" => "#f87171",
+                    "Debug" or "Trace" => "#6b7280",
+                    _ => "#e5e7eb",
+                };
+                var ts = entry.Timestamp.ToString("yyyy-MM-dd HH:mm:ss.fff");
+                var msg = System.Web.HttpUtility.HtmlEncode(entry.Message).Replace("\n", "&#10;");
+                return $"<span style=\"color:{color}\">[{ts}] [{entry.Level,-11}] {msg}</span>\n";
+            }));
+
+            logsSection =
+                "<h2 style=\"margin-top:20px\">Execution Logs</h2>" +
+                "<pre style=\"background:#111827;color:#e5e7eb;border:1px solid #374151;" +
+                "border-radius:6px;padding:12px 16px;font-family:monospace;font-size:12px;" +
+                "line-height:1.6;overflow-x:auto;white-space:pre-wrap;word-break:break-all\">" +
+                logLines +
+                "</pre>";
+        }
+
         var body =
             $"<div style=\"display:flex;align-items:center;gap:16px;margin-bottom:24px\">" +
             $"<h1 class=\"page-title\" style=\"margin-bottom:0\">Job Detail</h1>" +
@@ -103,6 +135,7 @@ internal sealed class JobDetailPage : IComponent
             $"<div class=\"detail-grid\">{detailGrid}</div>" +
             payloadSection +
             errorSection +
+            logsSection +
             "</div>";
 
         return HtmlShell.Wrap(Title, PathPrefix, "jobs", body);

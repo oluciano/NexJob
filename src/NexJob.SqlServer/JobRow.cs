@@ -1,6 +1,6 @@
 using System.Text.Json;
 
-namespace NexJob.Postgres;
+namespace NexJob.SqlServer;
 
 /// <summary>Dapper row mapping for nexjob_jobs.</summary>
 internal sealed class JobRow

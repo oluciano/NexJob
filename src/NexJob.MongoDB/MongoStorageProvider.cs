@@ -225,6 +225,14 @@ public sealed class MongoStorageProvider : IStorageProvider
     }
 
     /// <inheritdoc/>
+    public async Task<RecurringJobRecord?> GetRecurringJobByIdAsync(string recurringJobId, CancellationToken cancellationToken = default)
+    {
+        var filter = Builders<RecurringJobDocument>.Filter.Eq(d => d.RecurringJobId, recurringJobId);
+        var doc = await _recurringJobs.Find(filter).FirstOrDefaultAsync(cancellationToken);
+        return doc?.ToRecord();
+    }
+
+    /// <inheritdoc/>
     public async Task UpdateRecurringJobConfigAsync(
         string recurringJobId, string? cronOverride, bool enabled,
         CancellationToken cancellationToken = default)
@@ -377,6 +385,11 @@ public sealed class MongoStorageProvider : IStorageProvider
                 fb.Regex(d => d.Id, new BsonRegularExpression(term, "i")));
         }
 
+        if (!string.IsNullOrEmpty(filter.RecurringJobId))
+        {
+            filterDef &= fb.Eq(d => d.RecurringJobId, filter.RecurringJobId);
+        }
+
         var total = (int)await _jobs.CountDocumentsAsync(filterDef, cancellationToken: cancellationToken);
 
         var docs = await _jobs.Find(filterDef)
@@ -437,6 +450,24 @@ public sealed class MongoStorageProvider : IStorageProvider
             .Select(r => new QueueMetrics { Queue = r.Queue, Enqueued = r.Enqueued, Processing = r.Processing })
             .OrderBy(q => q.Queue)
             .ToList();
+    }
+
+    /// <inheritdoc/>
+    public async Task SaveExecutionLogsAsync(
+        JobId jobId, IReadOnlyList<JobExecutionLog> logs,
+        CancellationToken cancellationToken = default)
+    {
+        var entries = logs.Select(e => new ExecutionLogEntry
+        {
+            Timestamp = e.Timestamp,
+            Level = e.Level,
+            Message = e.Message,
+        }).ToList();
+
+        var update = Builders<JobDocument>.Update
+            .Set(d => d.ExecutionLogs, entries);
+
+        await _jobs.UpdateOneAsync(ById(jobId), update, cancellationToken: cancellationToken);
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────

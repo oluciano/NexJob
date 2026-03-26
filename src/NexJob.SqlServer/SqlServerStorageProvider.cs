@@ -1,29 +1,26 @@
-using System.Data;
 using System.Text.Json;
 using Dapper;
+using Microsoft.Data.SqlClient;
 using NexJob.Storage;
-using Npgsql;
 
-namespace NexJob.Postgres;
+namespace NexJob.SqlServer;
 
 /// <summary>
-/// PostgreSQL-backed implementation of <see cref="IStorageProvider"/>.
-/// Uses <c>SELECT FOR UPDATE SKIP LOCKED</c> for atomic job claiming, preventing
+/// SQL Server-backed implementation of <see cref="IStorageProvider"/>.
+/// Uses <c>WITH (UPDLOCK, READPAST)</c> for atomic job claiming, preventing
 /// double-processing across multiple workers or server instances.
 /// </summary>
-public sealed class PostgresStorageProvider : IStorageProvider
+public sealed class SqlServerStorageProvider : IStorageProvider
 {
     private readonly string _connectionString;
 
     /// <summary>
     /// Initialises the provider and ensures the database schema exists.
-    /// Safe to call multiple times — all DDL statements use <c>IF NOT EXISTS</c>.
+    /// Safe to call multiple times — all DDL statements use existence checks.
     /// </summary>
-    public PostgresStorageProvider(string connectionString)
+    public SqlServerStorageProvider(string connectionString)
     {
         _connectionString = connectionString;
-        // Allow Dapper to match snake_case column names to PascalCase properties
-        // (e.g., recurring_job_id → RecurringJobId, completed_at → CompletedAt)
         Dapper.DefaultTypeMap.MatchNamesWithUnderscores = true;
         EnsureSchema();
     }
@@ -40,10 +37,9 @@ public sealed class PostgresStorageProvider : IStorageProvider
         {
             var existing = await conn.QuerySingleOrDefaultAsync<Guid?>(
                 """
-                SELECT id FROM nexjob_jobs
+                SELECT TOP 1 id FROM nexjob_jobs
                 WHERE idempotency_key = @key
                   AND status IN ('Enqueued','Processing','Scheduled','AwaitingContinuation')
-                LIMIT 1
                 """,
                 new { key = job.IdempotencyKey });
 
@@ -59,7 +55,7 @@ public sealed class PostgresStorageProvider : IStorageProvider
                 (id, job_type, input_type, input_json, schema_version, queue, priority, status,
                  idempotency_key, attempts, max_attempts, created_at, scheduled_at, parent_job_id, recurring_job_id)
             VALUES
-                (@Id, @JobType, @InputType, @InputJson::jsonb, @SchemaVersion, @Queue, @Priority,
+                (@Id, @JobType, @InputType, @InputJson, @SchemaVersion, @Queue, @Priority,
                  @Status, @IdempotencyKey, @Attempts, @MaxAttempts, @CreatedAt, @ScheduledAt, @ParentJobId, @RecurringJobId)
             """,
             new
@@ -101,32 +97,30 @@ public sealed class PostgresStorageProvider : IStorageProvider
             SET status = 'Enqueued'
             WHERE status = 'Scheduled'
               AND (
-                    (retry_at IS NOT NULL AND retry_at <= NOW())
-                 OR (retry_at IS NULL AND scheduled_at IS NOT NULL AND scheduled_at <= NOW())
+                    (retry_at IS NOT NULL AND retry_at <= SYSUTCDATETIME())
+                 OR (retry_at IS NULL AND scheduled_at IS NOT NULL AND scheduled_at <= SYSUTCDATETIME())
               )
             """, transaction: tx);
 
+        // Build queue priority list for ordering
+        var queueList = string.Join(",", queues.Select((q, i) => $"('{q.Replace("'", "''")}',{i})"));
+
         var row = await conn.QuerySingleOrDefaultAsync<JobRow>(
-            """
+            $"""
             UPDATE nexjob_jobs
             SET status                = 'Processing',
-                processing_started_at = NOW(),
-                heartbeat_at          = NOW(),
+                processing_started_at = SYSUTCDATETIME(),
+                heartbeat_at          = SYSUTCDATETIME(),
                 attempts              = attempts + 1
+            OUTPUT INSERTED.*
             WHERE id = (
-                SELECT id FROM nexjob_jobs
-                WHERE status = 'Enqueued'
-                  AND queue = ANY(@queues)
-                ORDER BY
-                    array_position(@queues, queue),
-                    priority ASC,
-                    created_at ASC
-                LIMIT 1
-                FOR UPDATE SKIP LOCKED
+                SELECT TOP 1 j.id
+                FROM nexjob_jobs j WITH (UPDLOCK, READPAST)
+                INNER JOIN (VALUES {queueList}) AS q(name, ord) ON j.queue = q.name
+                WHERE j.status = 'Enqueued'
+                ORDER BY q.ord ASC, j.priority ASC, j.created_at ASC
             )
-            RETURNING *
             """,
-            new { queues = queues.ToArray() },
             transaction: tx);
 
         await tx.CommitAsync(cancellationToken);
@@ -143,7 +137,7 @@ public sealed class PostgresStorageProvider : IStorageProvider
         await conn.ExecuteAsync(
             """
             UPDATE nexjob_jobs
-            SET status = 'Succeeded', completed_at = NOW(), heartbeat_at = NULL
+            SET status = 'Succeeded', completed_at = SYSUTCDATETIME(), heartbeat_at = NULL
             WHERE id = @id
             """,
             new { id = jobId.Value });
@@ -176,7 +170,7 @@ public sealed class PostgresStorageProvider : IStorageProvider
             await conn.ExecuteAsync(
                 """
                 UPDATE nexjob_jobs
-                SET status = 'Failed', completed_at = NOW(),
+                SET status = 'Failed', completed_at = SYSUTCDATETIME(),
                     exception_message = @msg, exception_stack_trace = @stack,
                     heartbeat_at = NULL
                 WHERE id = @id
@@ -193,7 +187,7 @@ public sealed class PostgresStorageProvider : IStorageProvider
         await using var conn = Open();
         await conn.OpenAsync(cancellationToken);
         await conn.ExecuteAsync(
-            "UPDATE nexjob_jobs SET heartbeat_at = NOW() WHERE id = @id",
+            "UPDATE nexjob_jobs SET heartbeat_at = SYSUTCDATETIME() WHERE id = @id",
             new { id = jobId.Value });
     }
 
@@ -207,26 +201,27 @@ public sealed class PostgresStorageProvider : IStorageProvider
         await conn.OpenAsync(cancellationToken);
         await conn.ExecuteAsync(
             """
-            INSERT INTO nexjob_recurring_jobs
-                (recurring_job_id, job_type, input_type, input_json, cron,
-                 time_zone_id, queue, next_execution, concurrency_policy, created_at, updated_at,
-                 cron_override, enabled)
-            VALUES
-                (@RecurringJobId, @JobType, @InputType, @InputJson::jsonb, @Cron,
-                 @TimeZoneId, @Queue, @NextExecution, @ConcurrencyPolicy, @CreatedAt, NOW(),
-                 NULL, TRUE)
-            ON CONFLICT (recurring_job_id) DO UPDATE
-            SET job_type           = EXCLUDED.job_type,
-                input_type         = EXCLUDED.input_type,
-                input_json         = EXCLUDED.input_json,
-                cron               = EXCLUDED.cron,
-                time_zone_id       = EXCLUDED.time_zone_id,
-                queue              = EXCLUDED.queue,
-                next_execution     = EXCLUDED.next_execution,
-                concurrency_policy = EXCLUDED.concurrency_policy,
-                updated_at         = NOW()
-            -- cron_override, enabled, and deleted_by_user are intentionally excluded:
-            -- they are user-controlled and must not be overwritten by application startup
+            MERGE nexjob_recurring_jobs WITH (HOLDLOCK) AS target
+            USING (SELECT @RecurringJobId AS recurring_job_id) AS source
+            ON target.recurring_job_id = source.recurring_job_id
+            WHEN MATCHED THEN
+                UPDATE SET
+                    job_type           = @JobType,
+                    input_type         = @InputType,
+                    input_json         = @InputJson,
+                    cron               = @Cron,
+                    time_zone_id       = @TimeZoneId,
+                    queue              = @Queue,
+                    next_execution     = @NextExecution,
+                    concurrency_policy = @ConcurrencyPolicy,
+                    updated_at         = SYSUTCDATETIME()
+            WHEN NOT MATCHED THEN
+                INSERT (recurring_job_id, job_type, input_type, input_json, cron,
+                        time_zone_id, queue, next_execution, concurrency_policy, created_at, updated_at,
+                        cron_override, enabled, deleted_by_user)
+                VALUES (@RecurringJobId, @JobType, @InputType, @InputJson, @Cron,
+                        @TimeZoneId, @Queue, @NextExecution, @ConcurrencyPolicy, SYSUTCDATETIME(), SYSUTCDATETIME(),
+                        NULL, 1, 0);
             """,
             new
             {
@@ -265,7 +260,7 @@ public sealed class PostgresStorageProvider : IStorageProvider
         await conn.ExecuteAsync(
             """
             UPDATE nexjob_recurring_jobs
-            SET next_execution = @next, last_execution = NOW(), updated_at = NOW()
+            SET next_execution = @next, last_execution = SYSUTCDATETIME(), updated_at = SYSUTCDATETIME()
             WHERE recurring_job_id = @id
             """,
             new { id = recurringJobId, next = nextExecution });
@@ -281,7 +276,7 @@ public sealed class PostgresStorageProvider : IStorageProvider
         await conn.ExecuteAsync(
             """
             UPDATE nexjob_recurring_jobs
-            SET last_execution_status = @status, last_execution_error = @error, updated_at = NOW()
+            SET last_execution_status = @status, last_execution_error = @error, updated_at = SYSUTCDATETIME()
             WHERE recurring_job_id = @id
             """,
             new { id = recurringJobId, status = status.ToString(), error = errorMessage });
@@ -329,7 +324,7 @@ public sealed class PostgresStorageProvider : IStorageProvider
         await conn.ExecuteAsync(
             """
             UPDATE nexjob_recurring_jobs
-            SET cron_override = @CronOverride, enabled = @Enabled, updated_at = NOW()
+            SET cron_override = @CronOverride, enabled = @Enabled, updated_at = SYSUTCDATETIME()
             WHERE recurring_job_id = @Id
             """,
             new { Id = recurringJobId, CronOverride = cronOverride, Enabled = enabled });
@@ -347,7 +342,7 @@ public sealed class PostgresStorageProvider : IStorageProvider
         await conn.ExecuteAsync(
             """
             UPDATE nexjob_recurring_jobs
-            SET deleted_by_user = TRUE, enabled = FALSE, updated_at = NOW()
+            SET deleted_by_user = 1, enabled = 0, updated_at = SYSUTCDATETIME()
             WHERE recurring_job_id = @id
             """,
             new { id = recurringJobId });
@@ -362,7 +357,7 @@ public sealed class PostgresStorageProvider : IStorageProvider
         await conn.ExecuteAsync(
             """
             UPDATE nexjob_recurring_jobs
-            SET deleted_by_user = FALSE, enabled = TRUE, updated_at = NOW()
+            SET deleted_by_user = 0, enabled = 1, updated_at = SYSUTCDATETIME()
             WHERE recurring_job_id = @id
             """,
             new { id = recurringJobId });
@@ -412,28 +407,29 @@ public sealed class PostgresStorageProvider : IStorageProvider
         await conn.OpenAsync(cancellationToken);
 
         var counts = (await conn.QueryAsync<(string Status, int Count)>(
-            "SELECT status, COUNT(*)::int FROM nexjob_jobs GROUP BY status"))
+            "SELECT status, COUNT(*) AS count FROM nexjob_jobs GROUP BY status"))
             .ToDictionary(x => x.Status, x => x.Count);
 
         var throughput = (await conn.QueryAsync<(DateTimeOffset Hour, int Count)>(
             """
-            SELECT date_trunc('hour', completed_at) AS hour, COUNT(*)::int
+            SELECT DATEADD(HOUR, DATEDIFF(HOUR, 0, CAST(completed_at AS DATETIME2)), 0) AS hour,
+                   COUNT(*) AS count
             FROM nexjob_jobs
-            WHERE completed_at >= NOW() - INTERVAL '24 hours'
+            WHERE completed_at >= DATEADD(HOUR, -24, SYSUTCDATETIME())
               AND status IN ('Succeeded','Failed')
-            GROUP BY hour
+            GROUP BY DATEADD(HOUR, DATEDIFF(HOUR, 0, CAST(completed_at AS DATETIME2)), 0)
             ORDER BY hour
             """))
             .Select(r => new HourlyThroughput { Hour = r.Hour, Count = r.Count })
             .ToList();
 
         var recentFailures = (await conn.QueryAsync<JobRow>(
-            "SELECT * FROM nexjob_jobs WHERE status = 'Failed' ORDER BY completed_at DESC LIMIT 10"))
+            "SELECT TOP 10 * FROM nexjob_jobs WHERE status = 'Failed' ORDER BY completed_at DESC"))
             .Select(r => r.ToRecord())
             .ToList();
 
         var recurringCount = await conn.ExecuteScalarAsync<int>(
-            "SELECT COUNT(*)::int FROM nexjob_recurring_jobs");
+            "SELECT COUNT(*) FROM nexjob_recurring_jobs");
 
         return new JobMetrics
         {
@@ -461,17 +457,18 @@ public sealed class PostgresStorageProvider : IStorageProvider
 
         if (filter.Status.HasValue) { where.Add("status = @status"); p.Add("status", filter.Status.Value.ToString()); }
         if (!string.IsNullOrWhiteSpace(filter.Queue)) { where.Add("queue = @queue"); p.Add("queue", filter.Queue); }
-        if (!string.IsNullOrWhiteSpace(filter.Search)) { where.Add("(job_type ILIKE @search OR id::text ILIKE @search)"); p.Add("search", $"%{filter.Search.Trim()}%"); }
+        if (!string.IsNullOrWhiteSpace(filter.Search)) { where.Add("(job_type LIKE @search OR CAST(id AS NVARCHAR(50)) LIKE @search)"); p.Add("search", $"%{filter.Search.Trim()}%"); }
         if (!string.IsNullOrEmpty(filter.RecurringJobId)) { where.Add("recurring_job_id = @recurringJobId"); p.Add("recurringJobId", filter.RecurringJobId); }
 
         var clause = where.Count > 0 ? "WHERE " + string.Join(" AND ", where) : string.Empty;
-        var total = await conn.ExecuteScalarAsync<int>($"SELECT COUNT(*)::int FROM nexjob_jobs {clause}", p);
+        var total = await conn.ExecuteScalarAsync<int>($"SELECT COUNT(*) FROM nexjob_jobs {clause}", p);
 
-        p.Add("limit", pageSize);
-        p.Add("offset", (page - 1) * pageSize);
+        var offset = (page - 1) * pageSize;
+        p.Add("offset", offset);
+        p.Add("pageSize", pageSize);
 
         var items = (await conn.QueryAsync<JobRow>(
-            $"SELECT * FROM nexjob_jobs {clause} ORDER BY created_at DESC LIMIT @limit OFFSET @offset", p))
+            $"SELECT * FROM nexjob_jobs {clause} ORDER BY created_at DESC OFFSET @offset ROWS FETCH NEXT @pageSize ROWS ONLY", p))
             .Select(r => r.ToRecord())
             .ToList();
 
@@ -520,8 +517,8 @@ public sealed class PostgresStorageProvider : IStorageProvider
         var rows = await conn.QueryAsync<(string Queue, int Enqueued, int Processing)>(
             """
             SELECT queue,
-                   COUNT(*) FILTER (WHERE status = 'Enqueued')::int   AS enqueued,
-                   COUNT(*) FILTER (WHERE status = 'Processing')::int AS processing
+                   SUM(CASE WHEN status = 'Enqueued' THEN 1 ELSE 0 END) AS enqueued,
+                   SUM(CASE WHEN status = 'Processing' THEN 1 ELSE 0 END) AS processing
             FROM nexjob_jobs
             WHERE status IN ('Enqueued','Processing')
             GROUP BY queue
@@ -541,18 +538,18 @@ public sealed class PostgresStorageProvider : IStorageProvider
         await using var conn = Open();
         await conn.OpenAsync(cancellationToken);
         await conn.ExecuteAsync(
-            "UPDATE nexjob_jobs SET execution_logs = @Logs::jsonb WHERE id = @Id",
+            "UPDATE nexjob_jobs SET execution_logs = @Logs WHERE id = @Id",
             new { Id = jobId.Value, Logs = JsonSerializer.Serialize(logs) });
     }
 
     // ── Schema ────────────────────────────────────────────────────────────────
 
-    private NpgsqlConnection Open() => new(_connectionString);
+    private SqlConnection Open() => new(_connectionString);
 
     private void EnsureSchema()
     {
         using var conn = Open();
         conn.Open();
-        conn.Execute(SchemaSql.CreateTables);
+        conn.Execute(SqlServerSchemaSql.CreateTables);
     }
 }

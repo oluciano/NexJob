@@ -142,6 +142,11 @@ public interface IStorageProvider
     /// <param name="cancellationToken">Token to cancel the operation.</param>
     Task<IReadOnlyList<RecurringJobRecord>> GetRecurringJobsAsync(CancellationToken cancellationToken = default);
 
+    /// <summary>Returns the recurring job definition with the specified identifier, or <see langword="null"/> if not found.</summary>
+    /// <param name="recurringJobId">The identifier of the recurring job to look up.</param>
+    /// <param name="cancellationToken">Token to cancel the operation.</param>
+    Task<RecurringJobRecord?> GetRecurringJobByIdAsync(string recurringJobId, CancellationToken cancellationToken = default);
+
     /// <summary>
     /// Finds all jobs in <see cref="JobStatus.Processing"/> state whose heartbeat has
     /// not been refreshed within <paramref name="heartbeatTimeout"/>, and re-enqueues
@@ -195,6 +200,15 @@ public interface IStorageProvider
     /// <see cref="JobStatus.Enqueued"/>. Used by the dashboard Requeue action.
     /// </summary>
     Task RequeueJobAsync(JobId id, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Persists the log entries captured during the most recent execution of a job.
+    /// Replaces any previously stored logs for the same job.
+    /// </summary>
+    /// <param name="jobId">The identifier of the job whose logs should be saved.</param>
+    /// <param name="logs">Captured log entries to persist.</param>
+    /// <param name="cancellationToken">Token to cancel the operation.</param>
+    Task SaveExecutionLogsAsync(JobId jobId, IReadOnlyList<JobExecutionLog> logs, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Returns per-queue metrics (enqueued + processing counts) for all active queues.

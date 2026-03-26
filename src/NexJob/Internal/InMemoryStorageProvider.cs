@@ -270,6 +270,13 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
     }
 
     /// <inheritdoc/>
+    public Task<RecurringJobRecord?> GetRecurringJobByIdAsync(string recurringJobId, CancellationToken cancellationToken = default)
+    {
+        _recurringJobs.TryGetValue(recurringJobId, out var record);
+        return Task.FromResult(record);
+    }
+
+    /// <inheritdoc/>
     public Task RequeueOrphanedJobsAsync(TimeSpan heartbeatTimeout, CancellationToken cancellationToken = default)
     {
         var cutoff = DateTimeOffset.UtcNow - heartbeatTimeout;
@@ -397,6 +404,11 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
                 j.Id.Value.ToString().Contains(term, StringComparison.OrdinalIgnoreCase));
         }
 
+        if (!string.IsNullOrEmpty(filter.RecurringJobId))
+        {
+            query = query.Where(j => j.RecurringJobId == filter.RecurringJobId);
+        }
+
         var ordered = query.OrderByDescending(j => j.CreatedAt).ToList();
         var total = ordered.Count;
         var items = ordered.Skip((page - 1) * pageSize).Take(pageSize).ToList();
@@ -461,6 +473,22 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
             .ToList();
 
         return Task.FromResult(result);
+    }
+
+    /// <inheritdoc/>
+    public Task SaveExecutionLogsAsync(
+        JobId jobId, IReadOnlyList<JobExecutionLog> logs,
+        CancellationToken cancellationToken = default)
+    {
+        if (_jobs.TryGetValue(jobId.Value, out var job))
+        {
+            lock (job)
+            {
+                job.ExecutionLogs = logs;
+            }
+        }
+
+        return Task.CompletedTask;
     }
 
     // ─── private helpers ─────────────────────────────────────────────────────

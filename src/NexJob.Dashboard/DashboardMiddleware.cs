@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using NexJob.Configuration;
 using NexJob.Dashboard.Pages;
 using NexJob.Storage;
 
@@ -52,6 +53,38 @@ public sealed class DashboardMiddleware
         {
             var storage = context.RequestServices.GetRequiredService<IStorageProvider>();
             await DashboardStreamEndpoint.HandleAsync(context, storage);
+            return;
+        }
+
+        // GET /jobs/{id}/logs — returns execution logs as JSON for modal
+        var logsSegments = subPath.Split('/');
+        if (context.Request.Method == HttpMethods.Get &&
+            logsSegments.Length == 3 &&
+            logsSegments[0] == "jobs" &&
+            logsSegments[2] == "logs")
+        {
+            var logsStorage = context.RequestServices.GetRequiredService<IStorageProvider>();
+            if (!Guid.TryParse(logsSegments[1], out var logsGuid))
+            {
+                context.Response.StatusCode = 400;
+                return;
+            }
+
+            var logsJob = await logsStorage.GetJobByIdAsync(new JobId(logsGuid), context.RequestAborted);
+            if (logsJob is null)
+            {
+                context.Response.StatusCode = 404;
+                return;
+            }
+
+            context.Response.ContentType = "application/json";
+            var logs = logsJob.ExecutionLogs ?? Array.Empty<JobExecutionLog>();
+            await context.Response.WriteAsJsonAsync(logs.Select(l => new
+            {
+                timestamp = l.Timestamp.ToString("yyyy-MM-dd HH:mm:ss.fff"),
+                level = l.Level,
+                message = l.Message,
+            }), context.RequestAborted);
             return;
         }
 
@@ -128,7 +161,7 @@ public sealed class DashboardMiddleware
             var recurringId = Uri.UnescapeDataString(subPath.Split('/')[1]);
             await storage.SetRecurringJobNextExecutionAsync(
                 recurringId, DateTimeOffset.UtcNow.AddSeconds(-1), context.RequestAborted);
-            context.Response.Redirect($"{_pathPrefix}/recurring");
+            context.Response.Redirect($"{_pathPrefix}/recurring/{Uri.EscapeDataString(recurringId)}");
             return true;
         }
 
@@ -142,7 +175,7 @@ public sealed class DashboardMiddleware
                 await storage.UpdateRecurringJobConfigAsync(recurringId, existing.CronOverride, enabled: false, context.RequestAborted);
             }
 
-            context.Response.Redirect($"{_pathPrefix}/recurring");
+            context.Response.Redirect($"{_pathPrefix}/recurring/{Uri.EscapeDataString(recurringId)}");
             return true;
         }
 
@@ -156,7 +189,7 @@ public sealed class DashboardMiddleware
                 await storage.UpdateRecurringJobConfigAsync(recurringId, existing.CronOverride, enabled: true, context.RequestAborted);
             }
 
-            context.Response.Redirect($"{_pathPrefix}/recurring");
+            context.Response.Redirect($"{_pathPrefix}/recurring/{Uri.EscapeDataString(recurringId)}");
             return true;
         }
 
@@ -180,7 +213,7 @@ public sealed class DashboardMiddleware
                 catch (CronFormatException)
                 {
                     // Invalid cron — redirect back without saving
-                    context.Response.Redirect($"{_pathPrefix}/recurring");
+                    context.Response.Redirect($"{_pathPrefix}/recurring/{Uri.EscapeDataString(recurringId)}");
                     return true;
                 }
             }
@@ -192,7 +225,7 @@ public sealed class DashboardMiddleware
                 await storage.UpdateRecurringJobConfigAsync(recurringId, cronOverride, existing.Enabled, context.RequestAborted);
             }
 
-            context.Response.Redirect($"{_pathPrefix}/recurring");
+            context.Response.Redirect($"{_pathPrefix}/recurring/{Uri.EscapeDataString(recurringId)}");
             return true;
         }
 
@@ -208,7 +241,7 @@ public sealed class DashboardMiddleware
         {
             var recurringId = Uri.UnescapeDataString(subPath.Split('/')[1]);
             await storage.RestoreRecurringJobAsync(recurringId, context.RequestAborted);
-            context.Response.Redirect($"{_pathPrefix}/recurring");
+            context.Response.Redirect($"{_pathPrefix}/recurring/{Uri.EscapeDataString(recurringId)}");
             return true;
         }
 
@@ -220,11 +253,11 @@ public sealed class DashboardMiddleware
             var action = form["bulkAction"].ToString();
             var ids = form["ids"].ToArray();
 
-            // if nothing selected, act on all
+            // nothing selected — do nothing
             if (ids.Length == 0)
             {
-                ids = (await storage.GetRecurringJobsAsync(context.RequestAborted))
-                      .Select(r => r.RecurringJobId).ToArray();
+                context.Response.Redirect($"{_pathPrefix}/recurring");
+                return true;
             }
 
             foreach (var id in ids)
@@ -283,6 +316,83 @@ public sealed class DashboardMiddleware
             }
 
             context.Response.Redirect($"{_pathPrefix}/failed");
+            return true;
+        }
+
+        // ── Settings live-config actions ──────────────────────────────────────
+
+        var runtimeStore = context.RequestServices.GetRequiredService<IRuntimeSettingsStore>();
+
+        if (subPath == "settings/workers")
+        {
+            var form = await context.Request.ReadFormAsync(context.RequestAborted);
+            if (int.TryParse(form["workers"], out var workers) && workers > 0)
+            {
+                var rt = await runtimeStore.GetAsync(context.RequestAborted);
+                rt.Workers = workers;
+                await runtimeStore.SaveAsync(rt, context.RequestAborted);
+            }
+
+            context.Response.Redirect($"{_pathPrefix}/settings");
+            return true;
+        }
+
+        if (subPath == "settings/polling")
+        {
+            var form = await context.Request.ReadFormAsync(context.RequestAborted);
+            if (int.TryParse(form["seconds"], out var seconds) && seconds > 0)
+            {
+                var rt = await runtimeStore.GetAsync(context.RequestAborted);
+                rt.PollingInterval = TimeSpan.FromSeconds(seconds);
+                await runtimeStore.SaveAsync(rt, context.RequestAborted);
+            }
+
+            context.Response.Redirect($"{_pathPrefix}/settings");
+            return true;
+        }
+
+        if (subPath == "settings/reset")
+        {
+            await runtimeStore.SaveAsync(new RuntimeSettings(), context.RequestAborted);
+            context.Response.Redirect($"{_pathPrefix}/settings");
+            return true;
+        }
+
+        if (subPath.StartsWith("queues/") && subPath.EndsWith("/pause"))
+        {
+            var queueName = Uri.UnescapeDataString(subPath.Split('/')[1]);
+            var rt = await runtimeStore.GetAsync(context.RequestAborted);
+            rt.PausedQueues.Add(queueName);
+            await runtimeStore.SaveAsync(rt, context.RequestAborted);
+            context.Response.Redirect($"{_pathPrefix}/settings");
+            return true;
+        }
+
+        if (subPath.StartsWith("queues/") && subPath.EndsWith("/resume"))
+        {
+            var queueName = Uri.UnescapeDataString(subPath.Split('/')[1]);
+            var rt = await runtimeStore.GetAsync(context.RequestAborted);
+            rt.PausedQueues.Remove(queueName);
+            await runtimeStore.SaveAsync(rt, context.RequestAborted);
+            context.Response.Redirect($"{_pathPrefix}/settings");
+            return true;
+        }
+
+        if (subPath == "recurring/pause-all")
+        {
+            var rt = await runtimeStore.GetAsync(context.RequestAborted);
+            rt.RecurringJobsPaused = true;
+            await runtimeStore.SaveAsync(rt, context.RequestAborted);
+            context.Response.Redirect($"{_pathPrefix}/settings");
+            return true;
+        }
+
+        if (subPath == "recurring/resume-all")
+        {
+            var rt = await runtimeStore.GetAsync(context.RequestAborted);
+            rt.RecurringJobsPaused = false;
+            await runtimeStore.SaveAsync(rt, context.RequestAborted);
+            context.Response.Redirect($"{_pathPrefix}/settings");
             return true;
         }
 
@@ -354,6 +464,33 @@ public sealed class DashboardMiddleware
             }
         }
 
+        if (subPath.StartsWith("recurring/", StringComparison.Ordinal) &&
+            subPath.Split('/').Length == 2 &&
+            subPath.Split('/')[1] != string.Empty)
+        {
+            var recurringId = Uri.UnescapeDataString(subPath.Split('/')[1]);
+            var recurringJob = await storage.GetRecurringJobByIdAsync(recurringId, context.RequestAborted);
+            if (recurringJob is null)
+            {
+                return HtmlShell.NotFound(_options.Title, _pathPrefix);
+            }
+
+            var pageNum = context.Request.Query.TryGetValue("page", out var pg) && int.TryParse(pg, out var pn) ? pn : 1;
+            var pageSize = int.TryParse(context.Request.Query["pageSize"], out var ps) && (ps == 10 || ps == 20 || ps == 50) ? ps : 20;
+            var jobFilter = new JobFilter { RecurringJobId = recurringId };
+            var executions = await storage.GetJobsAsync(jobFilter, pageNum, pageSize, context.RequestAborted);
+
+            parameters = ParameterView.FromDictionary(new Dictionary<string, object?>
+            {
+                ["Job"] = recurringJob,
+                ["Executions"] = executions,
+                ["PageSize"] = pageSize,
+                ["PathPrefix"] = _pathPrefix,
+                ["Title"] = _options.Title,
+            });
+            return await RenderAsync<RecurringJobDetailPage>(renderer, parameters);
+        }
+
         if (subPath == "recurring")
         {
             parameters = ParameterView.FromDictionary(new Dictionary<string, object?>
@@ -374,6 +511,23 @@ public sealed class DashboardMiddleware
                 ["Title"] = _options.Title,
             });
             return await RenderAsync<FailedPage>(renderer, parameters);
+        }
+
+        if (subPath == "settings")
+        {
+            var runtimeStore = context.RequestServices.GetRequiredService<IRuntimeSettingsStore>();
+            var nexJobOptions = context.RequestServices.GetRequiredService<NexJobOptions>();
+            var runtime = await runtimeStore.GetAsync(context.RequestAborted);
+
+            parameters = ParameterView.FromDictionary(new Dictionary<string, object?>
+            {
+                ["RuntimeStore"] = runtimeStore,
+                ["Options"] = nexJobOptions,
+                ["Runtime"] = runtime,
+                ["PathPrefix"] = _pathPrefix,
+                ["Title"] = _options.Title,
+            });
+            return await RenderAsync<SettingsPage>(renderer, parameters);
         }
 
         return HtmlShell.NotFound(_options.Title, _pathPrefix);

@@ -36,7 +36,9 @@ src/
   NexJob.Postgres/        ← PostgreSQL storage adapter
   NexJob.MongoDB/         ← MongoDB storage adapter
   NexJob.Dashboard/       ← Blazor SSR dashboard middleware
-  NexJob.{Redis,SqlServer,Oracle}/  ← Other adapters (stubs)
+  NexJob.Redis/                    ← Redis storage adapter
+  NexJob.SqlServer/                ← SQL Server storage adapter
+  NexJob.Oracle/                   ← Oracle adapter (stub)
 
 tests/
   NexJob.Tests/           ← Unit tests (no external dependencies)

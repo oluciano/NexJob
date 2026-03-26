@@ -97,4 +97,7 @@ public sealed class JobRecord
     /// Used to update <see cref="RecurringJobRecord.LastExecutionStatus"/> on completion.
     /// </summary>
     public string? RecurringJobId { get; init; }
+
+    /// <summary>Log entries captured during the last execution of this job.</summary>
+    public IReadOnlyList<JobExecutionLog> ExecutionLogs { get; set; } = Array.Empty<JobExecutionLog>();
 }
