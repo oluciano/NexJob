@@ -222,6 +222,8 @@ public sealed class PostgresStorageProvider : IStorageProvider
                 next_execution     = EXCLUDED.next_execution,
                 concurrency_policy = EXCLUDED.concurrency_policy,
                 updated_at         = NOW()
+            -- cron_override, enabled, and deleted_by_user are intentionally excluded:
+            -- they are user-controlled and must not be overwritten by application startup
             """,
             new
             {
@@ -329,7 +331,26 @@ public sealed class PostgresStorageProvider : IStorageProvider
             "DELETE FROM nexjob_jobs WHERE recurring_job_id = @id",
             new { id = recurringJobId });
         await conn.ExecuteAsync(
-            "DELETE FROM nexjob_recurring_jobs WHERE recurring_job_id = @id",
+            """
+            UPDATE nexjob_recurring_jobs
+            SET deleted_by_user = TRUE, enabled = FALSE, updated_at = NOW()
+            WHERE recurring_job_id = @id
+            """,
+            new { id = recurringJobId });
+    }
+
+    /// <inheritdoc/>
+    public async Task RestoreRecurringJobAsync(
+        string recurringJobId, CancellationToken cancellationToken = default)
+    {
+        await using var conn = Open();
+        await conn.OpenAsync(cancellationToken);
+        await conn.ExecuteAsync(
+            """
+            UPDATE nexjob_recurring_jobs
+            SET deleted_by_user = FALSE, enabled = TRUE, updated_at = NOW()
+            WHERE recurring_job_id = @id
+            """,
             new { id = recurringJobId });
     }
 

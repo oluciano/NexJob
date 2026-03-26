@@ -119,10 +119,21 @@ public interface IStorageProvider
     /// <param name="cancellationToken">Token to cancel the operation.</param>
     Task UpdateRecurringJobConfigAsync(string recurringJobId, string? cronOverride, bool enabled, CancellationToken cancellationToken = default);
 
-    /// <summary>Permanently deletes a recurring job and all its associated job records.</summary>
-    /// <param name="recurringJobId">The identifier of the recurring job to delete.</param>
+    /// <summary>
+    /// Soft-deletes a recurring job by setting <see cref="RecurringJobRecord.DeletedByUser"/> to
+    /// <see langword="true"/> and <see cref="RecurringJobRecord.Enabled"/> to <see langword="false"/>.
+    /// The scheduler will skip the job at every firing and a subsequent call to
+    /// <see cref="UpsertRecurringJobAsync"/> will not resurrect it. All associated job records are
+    /// permanently removed. Use <see cref="RestoreRecurringJobAsync"/> to reverse the deletion.
+    /// </summary>
+    /// <param name="recurringJobId">The identifier of the recurring job to soft-delete.</param>
     /// <param name="cancellationToken">Token to cancel the operation.</param>
     Task ForceDeleteRecurringJobAsync(string recurringJobId, CancellationToken cancellationToken = default);
+
+    /// <summary>Restores a recurring job that was soft-deleted via <see cref="ForceDeleteRecurringJobAsync"/>.</summary>
+    /// <param name="recurringJobId">The identifier of the recurring job to restore.</param>
+    /// <param name="cancellationToken">Token to cancel the operation.</param>
+    Task RestoreRecurringJobAsync(string recurringJobId, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Returns all registered recurring job definitions, regardless of their next execution time.

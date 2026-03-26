@@ -194,6 +194,14 @@ public sealed class DashboardMiddleware
             return true;
         }
 
+        if (subPath.StartsWith("recurring/") && subPath.Contains("/restore"))
+        {
+            var recurringId = Uri.UnescapeDataString(subPath.Split('/')[1]);
+            await storage.RestoreRecurringJobAsync(recurringId, context.RequestAborted);
+            context.Response.Redirect($"{_pathPrefix}/recurring");
+            return true;
+        }
+
         // ── Bulk actions ──────────────────────────────────────────────────────
 
         if (subPath == "recurring/bulk")

@@ -157,7 +157,8 @@ public sealed class MongoStorageProvider : IStorageProvider
     {
         var filter = Builders<RecurringJobDocument>.Filter.Eq(d => d.RecurringJobId, recurringJob.RecurringJobId);
 
-        // On insert set cron_override=null and enabled=true; on update preserve existing values.
+        // On insert set cron_override=null, enabled=true, deleted_by_user=false.
+        // On update preserve existing values for those three user-controlled fields.
         var update = Builders<RecurringJobDocument>.Update
             .Set(d => d.JobType,           recurringJob.JobType)
             .Set(d => d.InputType,         recurringJob.InputType)
@@ -168,8 +169,9 @@ public sealed class MongoStorageProvider : IStorageProvider
             .Set(d => d.NextExecution,     recurringJob.NextExecution)
             .Set(d => d.CreatedAt,         recurringJob.CreatedAt)
             .Set(d => d.ConcurrencyPolicy, recurringJob.ConcurrencyPolicy)
-            .SetOnInsert(d => d.CronOverride, (string?)null)
-            .SetOnInsert(d => d.Enabled,      true);
+            .SetOnInsert(d => d.CronOverride,   (string?)null)
+            .SetOnInsert(d => d.Enabled,        true)
+            .SetOnInsert(d => d.DeletedByUser,  false);
 
         var options = new UpdateOptions { IsUpsert = true };
         await _recurringJobs.UpdateOneAsync(filter, update, options, cancellationToken);
@@ -241,7 +243,21 @@ public sealed class MongoStorageProvider : IStorageProvider
         await _jobs.DeleteManyAsync(jobsFilter, cancellationToken);
 
         var recurringFilter = Builders<RecurringJobDocument>.Filter.Eq(d => d.RecurringJobId, recurringJobId);
-        await _recurringJobs.DeleteOneAsync(recurringFilter, cancellationToken);
+        var update = Builders<RecurringJobDocument>.Update
+            .Set(d => d.DeletedByUser, true)
+            .Set(d => d.Enabled,       false);
+        await _recurringJobs.UpdateOneAsync(recurringFilter, update, cancellationToken: cancellationToken);
+    }
+
+    /// <inheritdoc/>
+    public async Task RestoreRecurringJobAsync(
+        string recurringJobId, CancellationToken cancellationToken = default)
+    {
+        var filter = Builders<RecurringJobDocument>.Filter.Eq(d => d.RecurringJobId, recurringJobId);
+        var update = Builders<RecurringJobDocument>.Update
+            .Set(d => d.DeletedByUser, false)
+            .Set(d => d.Enabled,       true);
+        await _recurringJobs.UpdateOneAsync(filter, update, cancellationToken: cancellationToken);
     }
 
     // ── Orphan requeue ────────────────────────────────────────────────────────

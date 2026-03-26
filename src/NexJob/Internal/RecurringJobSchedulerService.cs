@@ -74,6 +74,12 @@ internal sealed class RecurringJobSchedulerService : BackgroundService
 
         foreach (var recurring in dueJobs)
         {
+            if (recurring.DeletedByUser)
+            {
+                _logger.LogDebug("Recurring job '{Id}' was deleted by user, skipping.", recurring.RecurringJobId);
+                continue;
+            }
+
             if (!recurring.Enabled)
             {
                 _logger.LogDebug("Skipping disabled recurring job '{Id}'.", recurring.RecurringJobId);

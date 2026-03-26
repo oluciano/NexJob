@@ -18,6 +18,7 @@ internal sealed class RecurringJobRow
     public string ConcurrencyPolicy { get; set; } = "SkipIfRunning";
     public string? CronOverride { get; set; }
     public bool Enabled { get; set; } = true;
+    public bool DeletedByUser { get; set; }
 
     public RecurringJobRecord ToRecord() => new()
     {
@@ -37,5 +38,6 @@ internal sealed class RecurringJobRow
         ConcurrencyPolicy   = Enum.Parse<RecurringConcurrencyPolicy>(ConcurrencyPolicy),
         CronOverride        = CronOverride,
         Enabled             = Enabled,
+        DeletedByUser       = DeletedByUser,
     };
 }

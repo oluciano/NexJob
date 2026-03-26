@@ -27,7 +27,7 @@ internal sealed class RecurringPage : IComponent
 
         var rows = string.Join(string.Empty, jobs.Select(r =>
         {
-            var countdown = r.NextExecution.HasValue && r.Enabled
+            var countdown = r.NextExecution.HasValue && r.Enabled && !r.DeletedByUser
                 ? Helpers.FormatCountdown(r.NextExecution.Value - now)
                 : "<span style=\"color:var(--text-muted)\">—</span>";
 
@@ -51,7 +51,11 @@ internal sealed class RecurringPage : IComponent
                 ? "<span class=\"badge\" style=\"background:var(--info,#4a9eff);color:#fff;margin-left:4px\" title=\"AllowConcurrent: multiple instances may run in parallel\">⟳ concurrent</span>"
                 : string.Empty;
 
-            var pausedBadge = !r.Enabled
+            var deletedBadge = r.DeletedByUser
+                ? "<span class=\"badge badge-failed\" style=\"margin-left:4px\">Deleted</span>"
+                : string.Empty;
+
+            var pausedBadge = !r.DeletedByUser && !r.Enabled
                 ? "<span class=\"badge\" style=\"background:var(--warning,#f59e0b);color:#000;margin-left:4px\">Paused</span>"
                 : string.Empty;
 
@@ -63,38 +67,53 @@ internal sealed class RecurringPage : IComponent
             var encodedId = System.Web.HttpUtility.HtmlAttributeEncode(r.RecurringJobId);
             var encodedIdUrl = Uri.EscapeDataString(r.RecurringJobId);
 
-            // Per-row action buttons (outside the bulk form to avoid nested forms)
-            var pauseResumeButton = r.Enabled
-                ? $"<form method=\"post\" action=\"{PathPrefix}/recurring/{encodedIdUrl}/pause\" style=\"display:inline\"><button type=\"submit\" class=\"btn btn-sm\" style=\"background:var(--warning,#f59e0b);color:#000\" title=\"Pause\">⏸ Pause</button></form>"
-                : $"<form method=\"post\" action=\"{PathPrefix}/recurring/{encodedIdUrl}/resume\" style=\"display:inline\"><button type=\"submit\" class=\"btn btn-primary btn-sm\" title=\"Resume\">▶ Resume</button></form>";
+            string actionsCell;
+            if (r.DeletedByUser)
+            {
+                // Soft-deleted job: show only the Restore button
+                var restoreButton =
+                    $"<form method=\"post\" action=\"{PathPrefix}/recurring/{encodedIdUrl}/restore\" style=\"display:inline\"><button type=\"submit\" class=\"btn btn-primary btn-sm\" title=\"Restore this job\">↩ Restore</button></form>";
 
-            var editForm =
-                $"<details style=\"margin-top:4px\">" +
-                $"<summary class=\"btn btn-sm\" style=\"cursor:pointer;display:inline-block\">✎ Edit cron</summary>" +
-                $"<form method=\"post\" action=\"{PathPrefix}/recurring/{encodedIdUrl}/update-config\" style=\"margin-top:6px;display:flex;gap:6px;align-items:center\">" +
-                $"<input type=\"text\" name=\"cronOverride\" placeholder=\"{System.Web.HttpUtility.HtmlAttributeEncode(effectiveCron)}\" value=\"{System.Web.HttpUtility.HtmlAttributeEncode(r.CronOverride ?? string.Empty)}\" style=\"font-family:monospace;width:160px\" />" +
-                $"<button type=\"submit\" class=\"btn btn-primary btn-sm\">Save</button>" +
-                $"<button type=\"submit\" name=\"cronOverride\" value=\"\" class=\"btn btn-sm\">Reset to default</button>" +
-                $"</form>" +
-                $"</details>";
+                actionsCell =
+                    $"<div style=\"display:flex;gap:4px;flex-wrap:wrap;align-items:center\">" +
+                    restoreButton +
+                    $"</div>";
+            }
+            else
+            {
+                // Active job: show Trigger, Pause/Resume, Force Delete and Edit cron
+                var pauseResumeButton = r.Enabled
+                    ? $"<form method=\"post\" action=\"{PathPrefix}/recurring/{encodedIdUrl}/pause\" style=\"display:inline\"><button type=\"submit\" class=\"btn btn-sm\" style=\"background:var(--warning,#f59e0b);color:#000\" title=\"Pause\">⏸ Pause</button></form>"
+                    : $"<form method=\"post\" action=\"{PathPrefix}/recurring/{encodedIdUrl}/resume\" style=\"display:inline\"><button type=\"submit\" class=\"btn btn-primary btn-sm\" title=\"Resume\">▶ Resume</button></form>";
 
-            var triggerButton =
-                $"<form method=\"post\" action=\"{PathPrefix}/recurring/{encodedIdUrl}/trigger\" style=\"display:inline\"><button type=\"submit\" class=\"btn btn-primary btn-sm\">▶ Trigger</button></form>";
+                var editForm =
+                    $"<details style=\"margin-top:4px\">" +
+                    $"<summary class=\"btn btn-sm\" style=\"cursor:pointer;display:inline-block\">✎ Edit cron</summary>" +
+                    $"<form method=\"post\" action=\"{PathPrefix}/recurring/{encodedIdUrl}/update-config\" style=\"margin-top:6px;display:flex;gap:6px;align-items:center\">" +
+                    $"<input type=\"text\" name=\"cronOverride\" placeholder=\"{System.Web.HttpUtility.HtmlAttributeEncode(effectiveCron)}\" value=\"{System.Web.HttpUtility.HtmlAttributeEncode(r.CronOverride ?? string.Empty)}\" style=\"font-family:monospace;width:160px\" />" +
+                    $"<button type=\"submit\" class=\"btn btn-primary btn-sm\">Save</button>" +
+                    $"<button type=\"submit\" name=\"cronOverride\" value=\"\" class=\"btn btn-sm\">Reset to default</button>" +
+                    $"</form>" +
+                    $"</details>";
 
-            var forceDeleteButton =
-                $"<form method=\"post\" action=\"{PathPrefix}/recurring/{encodedIdUrl}/force-delete\" style=\"display:inline\"><button type=\"submit\" class=\"btn btn-danger btn-sm\" onclick=\"return confirm('Permanently delete this job and all its records?')\">✕ Force Delete</button></form>";
+                var triggerButton =
+                    $"<form method=\"post\" action=\"{PathPrefix}/recurring/{encodedIdUrl}/trigger\" style=\"display:inline\"><button type=\"submit\" class=\"btn btn-primary btn-sm\">▶ Trigger</button></form>";
 
-            var actionsCell =
-                $"<div style=\"display:flex;gap:4px;flex-wrap:wrap;align-items:center\">" +
-                triggerButton +
-                pauseResumeButton +
-                forceDeleteButton +
-                $"</div>" +
-                editForm;
+                var forceDeleteButton =
+                    $"<form method=\"post\" action=\"{PathPrefix}/recurring/{encodedIdUrl}/force-delete\" style=\"display:inline\"><button type=\"submit\" class=\"btn btn-danger btn-sm\" onclick=\"return confirm('Delete this job and all its records?')\">✕ Force Delete</button></form>";
+
+                actionsCell =
+                    $"<div style=\"display:flex;gap:4px;flex-wrap:wrap;align-items:center\">" +
+                    triggerButton +
+                    pauseResumeButton +
+                    forceDeleteButton +
+                    $"</div>" +
+                    editForm;
+            }
 
             return $"<tr>" +
                    $"<td style=\"width:36px\"><input type=\"checkbox\" name=\"ids\" value=\"{encodedId}\" /></td>" +
-                   $"<td>{System.Web.HttpUtility.HtmlEncode(r.RecurringJobId)}{pausedBadge}</td>" +
+                   $"<td>{System.Web.HttpUtility.HtmlEncode(r.RecurringJobId)}{deletedBadge}{pausedBadge}</td>" +
                    $"<td><code style=\"color:var(--warning)\">{System.Web.HttpUtility.HtmlEncode(effectiveCron)}</code>{cronOverrideBadge}</td>" +
                    $"<td>{System.Web.HttpUtility.HtmlEncode(r.Queue)}</td>" +
                    $"<td>{Helpers.ShortType(r.JobType)}{concurrencyBadge}</td>" +

@@ -29,6 +29,13 @@ internal sealed class RecurringJobDocument
     /// <summary>When <see langword="false"/> the scheduler skips this job. Defaults to <see langword="true"/>.</summary>
     public bool Enabled { get; set; } = true;
 
+    /// <summary>
+    /// When <see langword="true"/> this job was soft-deleted by the user via
+    /// <see cref="NexJob.Storage.IStorageProvider.ForceDeleteRecurringJobAsync"/>. Defaults to <see langword="false"/>.
+    /// </summary>
+    [BsonElement("deleted_by_user")]
+    public bool DeletedByUser { get; set; }
+
     public static RecurringJobDocument FromRecord(RecurringJobRecord r) => new()
     {
         RecurringJobId      = r.RecurringJobId,
@@ -46,6 +53,7 @@ internal sealed class RecurringJobDocument
         ConcurrencyPolicy   = r.ConcurrencyPolicy,
         CronOverride        = r.CronOverride,
         Enabled             = r.Enabled,
+        DeletedByUser       = r.DeletedByUser,
     };
 
     public RecurringJobRecord ToRecord() => new()
@@ -65,5 +73,6 @@ internal sealed class RecurringJobDocument
         ConcurrencyPolicy   = ConcurrencyPolicy,
         CronOverride        = CronOverride,
         Enabled             = Enabled,
+        DeletedByUser       = DeletedByUser,
     };
 }

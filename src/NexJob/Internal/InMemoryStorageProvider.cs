@@ -147,13 +147,15 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
     {
         _recurringJobs.AddOrUpdate(
             recurringJob.RecurringJobId,
-            // Insert: use the record as-is (Enabled defaults to true on the model)
+            // Insert: use the record as-is (Enabled defaults to true, DeletedByUser defaults to false)
             _ => recurringJob,
-            // Update: preserve user-set CronOverride and Enabled fields
+            // Update: preserve user-set CronOverride, Enabled and DeletedByUser fields.
+            // If the existing record was deleted by the user, keep it deleted — do not resurrect it.
             (_, existing) =>
             {
-                recurringJob.CronOverride = existing.CronOverride;
-                recurringJob.Enabled      = existing.Enabled;
+                recurringJob.CronOverride   = existing.CronOverride;
+                recurringJob.Enabled        = existing.Enabled;
+                recurringJob.DeletedByUser  = existing.DeletedByUser;
                 return recurringJob;
             });
         return Task.CompletedTask;
@@ -217,7 +219,11 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
     /// <inheritdoc/>
     public Task ForceDeleteRecurringJobAsync(string recurringJobId, CancellationToken cancellationToken = default)
     {
-        _recurringJobs.TryRemove(recurringJobId, out _);
+        if (_recurringJobs.TryGetValue(recurringJobId, out var job))
+        {
+            job.DeletedByUser = true;
+            job.Enabled       = false;
+        }
 
         var toRemove = _jobs.Values
             .Where(j => j.RecurringJobId == recurringJobId)
@@ -226,6 +232,18 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
 
         foreach (var id in toRemove)
             _jobs.TryRemove(id, out _);
+
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc/>
+    public Task RestoreRecurringJobAsync(string recurringJobId, CancellationToken cancellationToken = default)
+    {
+        if (_recurringJobs.TryGetValue(recurringJobId, out var job))
+        {
+            job.DeletedByUser = false;
+            job.Enabled       = true;
+        }
 
         return Task.CompletedTask;
     }
