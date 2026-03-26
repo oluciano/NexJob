@@ -30,7 +30,7 @@ public sealed class DashboardMiddleware
     /// <summary>Processes an incoming request.</summary>
     public async Task InvokeAsync(HttpContext context)
     {
-        var path = context.Request.Path.Value ?? "";
+        var path = context.Request.Path.Value ?? string.Empty;
 
         if (!path.StartsWith(_pathPrefix, StringComparison.OrdinalIgnoreCase))
         {
@@ -62,6 +62,17 @@ public sealed class DashboardMiddleware
         var html = await RenderPageAsync(context, subPath);
         context.Response.ContentType = "text/html; charset=utf-8";
         await context.Response.WriteAsync(html);
+    }
+
+    private static async Task<string> RenderAsync<TComponent>(
+        HtmlRenderer renderer, ParameterView parameters)
+        where TComponent : IComponent
+    {
+        return await renderer.Dispatcher.InvokeAsync(async () =>
+        {
+            var output = await renderer.RenderComponentAsync<TComponent>(parameters);
+            return output.ToHtmlString();
+        });
     }
 
     private async Task<bool> HandleActionsAsync(HttpContext context, string subPath)
@@ -185,7 +196,7 @@ public sealed class DashboardMiddleware
 
         ParameterView parameters;
 
-        if (subPath == "" || subPath == "overview")
+        if (subPath == string.Empty || subPath == "overview")
         {
             parameters = ParameterView.FromDictionary(new Dictionary<string, object?>
             {
@@ -265,16 +276,5 @@ public sealed class DashboardMiddleware
         }
 
         return HtmlShell.NotFound(_options.Title, _pathPrefix);
-    }
-
-    private static async Task<string> RenderAsync<TComponent>(
-        HtmlRenderer renderer, ParameterView parameters)
-        where TComponent : IComponent
-    {
-        return await renderer.Dispatcher.InvokeAsync(async () =>
-        {
-            var output = await renderer.RenderComponentAsync<TComponent>(parameters);
-            return output.ToHtmlString();
-        });
     }
 }

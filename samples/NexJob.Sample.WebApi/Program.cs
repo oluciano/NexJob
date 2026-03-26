@@ -71,7 +71,7 @@ app.MapPost("/jobs/seed/recurring", async (IScheduler scheduler) =>
             DateOnly.FromDateTime(DateTime.Today.AddDays(-1)),
             DateOnly.FromDateTime(DateTime.Today)), "0 6 * * *");
     await scheduler.RecurringAsync<SendEmailJob, EmailPayload>(
-        "weekly-newsletter", new EmailPayload("newsletter@nexjob.dev", "Weekly digest", ""), "0 9 * * 1");
+        "weekly-newsletter", new EmailPayload("newsletter@nexjob.dev", "Weekly digest", string.Empty), "0 9 * * 1");
     return Results.Ok(new { registered = 4 });
 });
 

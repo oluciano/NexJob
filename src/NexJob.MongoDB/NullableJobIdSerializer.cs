@@ -16,6 +16,7 @@ internal sealed class NullableJobIdSerializer : SerializerBase<JobId?>
             context.Reader.ReadNull();
             return null;
         }
+
         return new JobId(Guid.Parse(context.Reader.ReadString()));
     }
 

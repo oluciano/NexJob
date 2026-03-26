@@ -3,44 +3,6 @@ namespace NexJob.Dashboard;
 /// <summary>Shared HTML shell (layout wrapper) injected around Blazor component output.</summary>
 internal static class HtmlShell
 {
-    internal static string Wrap(string title, string pathPrefix, string activeRoute, string body) =>
-        $$"""
-        <!DOCTYPE html>
-        <html lang="en">
-        <head>
-            <meta charset="utf-8" />
-            <meta name="viewport" content="width=device-width, initial-scale=1" />
-            <title>{{title}} — NexJob</title>
-            <style>{{Css}}</style>
-        </head>
-        <body>
-        <div class="layout">
-            <nav class="sidebar">
-                <div class="sidebar-header">
-                    <span class="logo">⚡ {{title}}</span>
-                </div>
-                <ul class="nav-list">
-                    <li><a href="{{pathPrefix}}" class="{{Active(activeRoute,"overview")}}">Overview</a></li>
-                    <li><a href="{{pathPrefix}}/queues" class="{{Active(activeRoute,"queues")}}">Queues</a></li>
-                    <li><a href="{{pathPrefix}}/jobs" class="{{Active(activeRoute,"jobs")}}">Jobs</a></li>
-                    <li><a href="{{pathPrefix}}/recurring" class="{{Active(activeRoute,"recurring")}}">Recurring</a></li>
-                    <li><a href="{{pathPrefix}}/failed" class="{{Active(activeRoute,"failed")}}">Failed</a></li>
-                </ul>
-            </nav>
-            <main class="content">
-                {{body}}
-            </main>
-        </div>
-        </body>
-        </html>
-        """;
-
-    internal static string NotFound(string title, string pathPrefix) =>
-        Wrap(title, pathPrefix, "", "<h2>404 — Page not found</h2>");
-
-    private static string Active(string route, string page) =>
-        route == page ? "nav-link active" : "nav-link";
-
     private const string Css =
         """
         :root {
@@ -145,4 +107,42 @@ internal static class HtmlShell
             .nav-list li { margin: 2px; }
         }
         """;
+
+    internal static string Wrap(string title, string pathPrefix, string activeRoute, string body) =>
+        $$"""
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="utf-8" />
+            <meta name="viewport" content="width=device-width, initial-scale=1" />
+            <title>{{title}} — NexJob</title>
+            <style>{{Css}}</style>
+        </head>
+        <body>
+        <div class="layout">
+            <nav class="sidebar">
+                <div class="sidebar-header">
+                    <span class="logo">⚡ {{title}}</span>
+                </div>
+                <ul class="nav-list">
+                    <li><a href="{{pathPrefix}}" class="{{Active(activeRoute,"overview")}}">Overview</a></li>
+                    <li><a href="{{pathPrefix}}/queues" class="{{Active(activeRoute,"queues")}}">Queues</a></li>
+                    <li><a href="{{pathPrefix}}/jobs" class="{{Active(activeRoute,"jobs")}}">Jobs</a></li>
+                    <li><a href="{{pathPrefix}}/recurring" class="{{Active(activeRoute,"recurring")}}">Recurring</a></li>
+                    <li><a href="{{pathPrefix}}/failed" class="{{Active(activeRoute,"failed")}}">Failed</a></li>
+                </ul>
+            </nav>
+            <main class="content">
+                {{body}}
+            </main>
+        </div>
+        </body>
+        </html>
+        """;
+
+    internal static string NotFound(string title, string pathPrefix) =>
+        Wrap(title, pathPrefix, string.Empty, "<h2>404 — Page not found</h2>");
+
+    private static string Active(string route, string page) =>
+        route == page ? "nav-link active" : "nav-link";
 }

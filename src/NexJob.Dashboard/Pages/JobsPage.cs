@@ -6,14 +6,14 @@ namespace NexJob.Dashboard.Pages;
 
 internal sealed class JobsPage : IComponent
 {
+    private RenderHandle _handle;
+
     [Parameter] public IStorageProvider Storage { get; set; } = default!;
     [Parameter] public string PathPrefix { get; set; } = "/jobs";
     [Parameter] public string Title { get; set; } = "NexJob";
     [Parameter] public JobStatus? StatusFilter { get; set; }
     [Parameter] public string? Search { get; set; }
     [Parameter] public int Page { get; set; } = 1;
-
-    private RenderHandle _handle;
 
     void IComponent.Attach(RenderHandle renderHandle) => _handle = renderHandle;
 
@@ -27,9 +27,9 @@ internal sealed class JobsPage : IComponent
 
     private string BuildHtml(PagedResult<JobRecord> result)
     {
-        var statusOptions = string.Join("", new[]
+        var statusOptions = string.Join(string.Empty, new[]
         {
-            ("", "All"),
+            (string.Empty, "All"),
             ("Enqueued", "Enqueued"),
             ("Processing", "Processing"),
             ("Succeeded", "Succeeded"),
@@ -38,11 +38,11 @@ internal sealed class JobsPage : IComponent
             ("AwaitingContinuation", "Awaiting"),
         }.Select(o =>
         {
-            var sel = (StatusFilter?.ToString() ?? "") == o.Item1 ? " selected" : "";
+            var sel = (StatusFilter?.ToString() ?? string.Empty) == o.Item1 ? " selected" : string.Empty;
             return $"<option value=\"{o.Item1}\"{sel}>{o.Item2}</option>";
         }));
 
-        var searchVal = System.Web.HttpUtility.HtmlAttributeEncode(Search ?? "");
+        var searchVal = System.Web.HttpUtility.HtmlAttributeEncode(Search ?? string.Empty);
         var filters =
             $"<form method=\"get\" action=\"{PathPrefix}/jobs\" class=\"filters\">" +
             $"<input type=\"text\" name=\"search\" placeholder=\"Search type or queue…\" value=\"{searchVal}\" />" +
@@ -51,7 +51,7 @@ internal sealed class JobsPage : IComponent
             $"</form>";
 
         var now = DateTimeOffset.UtcNow;
-        var rows = string.Join("", result.Items.Select(j =>
+        var rows = string.Join(string.Empty, result.Items.Select(j =>
         {
             var timeCell = j.Status switch
             {
@@ -97,9 +97,9 @@ internal sealed class JobsPage : IComponent
 
     private string BuildPagination(PagedResult<JobRecord> result)
     {
-        if (result.TotalPages <= 1) return "";
+        if (result.TotalPages <= 1) return string.Empty;
 
-        var qs = $"?status={Uri.EscapeDataString(StatusFilter?.ToString() ?? "")}&search={Uri.EscapeDataString(Search ?? "")}";
+        var qs = $"?status={Uri.EscapeDataString(StatusFilter?.ToString() ?? string.Empty)}&search={Uri.EscapeDataString(Search ?? string.Empty)}";
 
         var prev = result.Page > 1
             ? $"<a href=\"{PathPrefix}/jobs{qs}&page={result.Page - 1}\" class=\"btn btn-primary btn-sm\">← Prev</a>"

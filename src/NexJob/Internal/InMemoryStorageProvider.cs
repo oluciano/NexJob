@@ -22,32 +22,6 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
     private readonly ConcurrentDictionary<string, Channel<Guid>[]> _queues =
         new(StringComparer.Ordinal);
 
-    // ─── helpers ─────────────────────────────────────────────────────────────
-
-    private static int PriorityIndex(JobPriority priority) => priority switch
-    {
-        JobPriority.Critical => 0,
-        JobPriority.High     => 1,
-        JobPriority.Normal   => 2,
-        JobPriority.Low      => 3,
-        _                    => 2,
-    };
-
-    private Channel<Guid>[] GetOrCreateQueueChannels(string queue) =>
-        _queues.GetOrAdd(queue, static _ =>
-        [
-            Channel.CreateUnbounded<Guid>(new UnboundedChannelOptions { SingleReader = false, SingleWriter = false }),
-            Channel.CreateUnbounded<Guid>(new UnboundedChannelOptions { SingleReader = false, SingleWriter = false }),
-            Channel.CreateUnbounded<Guid>(new UnboundedChannelOptions { SingleReader = false, SingleWriter = false }),
-            Channel.CreateUnbounded<Guid>(new UnboundedChannelOptions { SingleReader = false, SingleWriter = false }),
-        ]);
-
-    private void WriteToChannel(JobRecord job)
-    {
-        var channels = GetOrCreateQueueChannels(job.Queue);
-        channels[PriorityIndex(job.Priority)].Writer.TryWrite(job.Id.Value);
-    }
-
     // ─── IStorageProvider ────────────────────────────────────────────────────
 
     /// <inheritdoc/>
@@ -400,6 +374,30 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
     }
 
     // ─── private helpers ─────────────────────────────────────────────────────
+
+    private static int PriorityIndex(JobPriority priority) => priority switch
+    {
+        JobPriority.Critical => 0,
+        JobPriority.High     => 1,
+        JobPriority.Normal   => 2,
+        JobPriority.Low      => 3,
+        _                    => 2,
+    };
+
+    private Channel<Guid>[] GetOrCreateQueueChannels(string queue) =>
+        _queues.GetOrAdd(queue, static _ =>
+        [
+            Channel.CreateUnbounded<Guid>(new UnboundedChannelOptions { SingleReader = false, SingleWriter = false }),
+            Channel.CreateUnbounded<Guid>(new UnboundedChannelOptions { SingleReader = false, SingleWriter = false }),
+            Channel.CreateUnbounded<Guid>(new UnboundedChannelOptions { SingleReader = false, SingleWriter = false }),
+            Channel.CreateUnbounded<Guid>(new UnboundedChannelOptions { SingleReader = false, SingleWriter = false }),
+        ]);
+
+    private void WriteToChannel(JobRecord job)
+    {
+        var channels = GetOrCreateQueueChannels(job.Queue);
+        channels[PriorityIndex(job.Priority)].Writer.TryWrite(job.Id.Value);
+    }
 
     private void PromoteDueScheduledJobs()
     {

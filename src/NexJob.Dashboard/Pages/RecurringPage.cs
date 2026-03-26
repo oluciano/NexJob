@@ -6,11 +6,11 @@ namespace NexJob.Dashboard.Pages;
 
 internal sealed class RecurringPage : IComponent
 {
+    private RenderHandle _handle;
+
     [Parameter] public IStorageProvider Storage { get; set; } = default!;
     [Parameter] public string PathPrefix { get; set; } = "/jobs";
     [Parameter] public string Title { get; set; } = "NexJob";
-
-    private RenderHandle _handle;
 
     void IComponent.Attach(RenderHandle renderHandle) => _handle = renderHandle;
 
@@ -25,7 +25,7 @@ internal sealed class RecurringPage : IComponent
     {
         var now = DateTimeOffset.UtcNow;
 
-        var rows = string.Join("", jobs.Select(r =>
+        var rows = string.Join(string.Empty, jobs.Select(r =>
         {
             var countdown = r.NextExecution.HasValue
                 ? Helpers.FormatCountdown(r.NextExecution.Value - now)
@@ -37,8 +37,8 @@ internal sealed class RecurringPage : IComponent
                 var badge = r.LastExecutionStatus switch
                 {
                     JobStatus.Succeeded => "<span class=\"badge badge-succeeded\" style=\"margin-left:4px\">✓ ok</span>",
-                    JobStatus.Failed    => $"<span class=\"badge badge-failed\" title=\"{System.Web.HttpUtility.HtmlAttributeEncode(r.LastExecutionError ?? "")}\" style=\"margin-left:4px\">✗ err</span>",
-                    _                  => "",
+                    JobStatus.Failed    => $"<span class=\"badge badge-failed\" title=\"{System.Web.HttpUtility.HtmlAttributeEncode(r.LastExecutionError ?? string.Empty)}\" style=\"margin-left:4px\">✗ err</span>",
+                    _                  => string.Empty,
                 };
                 lastRun = $"<span title=\"{r.LastExecutedAt.Value:yyyy-MM-dd HH:mm:ss UTC}\">{r.LastExecutedAt.Value:MM/dd HH:mm}</span>{badge}";
             }
@@ -49,7 +49,7 @@ internal sealed class RecurringPage : IComponent
 
             var concurrencyBadge = r.ConcurrencyPolicy == RecurringConcurrencyPolicy.AllowConcurrent
                 ? "<span class=\"badge\" style=\"background:var(--info,#4a9eff);color:#fff;margin-left:4px\" title=\"AllowConcurrent: multiple instances may run in parallel\">⟳ concurrent</span>"
-                : "";
+                : string.Empty;
 
             return $"<tr>" +
                    $"<td style=\"width:36px\"><input type=\"checkbox\" name=\"ids\" value=\"{System.Web.HttpUtility.HtmlAttributeEncode(r.RecurringJobId)}\" /></td>" +
