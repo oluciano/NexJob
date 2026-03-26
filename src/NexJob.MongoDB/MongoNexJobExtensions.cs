@@ -10,6 +10,9 @@ namespace NexJob.MongoDB;
 /// </summary>
 public static class MongoNexJobExtensions
 {
+    private static bool _serializersRegistered;
+    private static readonly object _lock = new();
+
     /// <summary>
     /// Registers <see cref="MongoStorageProvider"/> as the <see cref="IStorageProvider"/>
     /// for NexJob, using the provided connection string and database name.
@@ -49,9 +52,6 @@ public static class MongoNexJobExtensions
         services.AddSingleton<IStorageProvider, MongoStorageProvider>();
         return services;
     }
-
-    private static bool _serializersRegistered;
-    private static readonly object _lock = new();
 
     private static void RegisterSerializers()
     {

@@ -16,15 +16,15 @@ namespace NexJob.Internal;
 /// </summary>
 internal sealed class JobDispatcherService : BackgroundService
 {
+    // Compiled invoker cache: avoids repeated reflection on hot paths
+    private static readonly ConcurrentDictionary<(Type Job, Type Input), Func<object, object, CancellationToken, Task>>
+        InvokerCache = new();
+
     private readonly IStorageProvider _storage;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ThrottleRegistry _throttleRegistry;
     private readonly NexJobOptions _options;
     private readonly ILogger<JobDispatcherService> _logger;
-
-    // Compiled invoker cache: avoids repeated reflection on hot paths
-    private static readonly ConcurrentDictionary<(Type Job, Type Input), Func<object, object, CancellationToken, Task>>
-        InvokerCache = new();
 
     /// <summary>
     /// Initializes a new <see cref="JobDispatcherService"/>.
@@ -96,6 +96,32 @@ internal sealed class JobDispatcherService : BackgroundService
         }
 
         _logger.LogInformation("JobDispatcherService stopped.");
+    }
+
+    // ─── invoker cache ───────────────────────────────────────────────────────
+
+    private static Func<object, object, CancellationToken, Task> GetOrBuildInvoker(
+        Type jobType, Type inputType)
+    {
+        return InvokerCache.GetOrAdd((jobType, inputType), static key =>
+        {
+            var (jt, it) = key;
+            var method = jt.GetMethod(nameof(IJob<object>.ExecuteAsync),
+                [it, typeof(CancellationToken)])!;
+
+            var jobParam   = Expression.Parameter(typeof(object), "job");
+            var inputParam = Expression.Parameter(typeof(object), "input");
+            var ctParam    = Expression.Parameter(typeof(CancellationToken), "ct");
+
+            var call = Expression.Call(
+                Expression.Convert(jobParam, jt),
+                method,
+                Expression.Convert(inputParam, it),
+                ctParam);
+
+            return Expression.Lambda<Func<object, object, CancellationToken, Task>>(
+                call, jobParam, inputParam, ctParam).Compile();
+        });
     }
 
     // ─── execution pipeline ──────────────────────────────────────────────────
@@ -198,31 +224,5 @@ internal sealed class JobDispatcherService : BackgroundService
         {
             // Expected on job completion
         }
-    }
-
-    // ─── invoker cache ───────────────────────────────────────────────────────
-
-    private static Func<object, object, CancellationToken, Task> GetOrBuildInvoker(
-        Type jobType, Type inputType)
-    {
-        return InvokerCache.GetOrAdd((jobType, inputType), static key =>
-        {
-            var (jt, it) = key;
-            var method = jt.GetMethod(nameof(IJob<object>.ExecuteAsync),
-                [it, typeof(CancellationToken)])!;
-
-            var jobParam   = Expression.Parameter(typeof(object), "job");
-            var inputParam = Expression.Parameter(typeof(object), "input");
-            var ctParam    = Expression.Parameter(typeof(CancellationToken), "ct");
-
-            var call = Expression.Call(
-                Expression.Convert(jobParam, jt),
-                method,
-                Expression.Convert(inputParam, it),
-                ctParam);
-
-            return Expression.Lambda<Func<object, object, CancellationToken, Task>>(
-                call, jobParam, inputParam, ctParam).Compile();
-        });
     }
 }

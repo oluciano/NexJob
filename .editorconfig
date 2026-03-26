@@ -43,13 +43,6 @@ dotnet_diagnostic.SA1602.severity = none
 # Too prescriptive; existing docs are clear without the mandatory verb prefix.
 dotnet_diagnostic.SA1623.severity = none
 
-# SA1201 — elements must appear in a specific order (enum after class/record).
-# Our files are organised by logical section, not by element kind.
-dotnet_diagnostic.SA1201.severity = none
-
-# SA1204 — static members must appear before non-static members.
-# Organisation by responsibility (ctor → methods → helpers) is more readable here.
-dotnet_diagnostic.SA1204.severity = none
 
 # SA1512 — single-line comment must not be followed by a blank line.
 # Our section dividers (// ─── name ──────) are intentionally separated by a blank line.
@@ -59,9 +52,6 @@ dotnet_diagnostic.SA1512.severity = none
 # Aligned assignments (var x   = 1; var foo = 2;) are used for readability in object initialisers.
 dotnet_diagnostic.SA1025.severity = none
 
-# SA1202 — members must appear in access-modifier order.
-# Our files use logical sections (// ─── helpers ───) that group by purpose, not visibility.
-dotnet_diagnostic.SA1202.severity = none
 
 # SA1515 — single-line comment must be preceded by a blank line.
 # Many inline comments in tight code blocks intentionally omit the blank line.
@@ -95,20 +85,14 @@ dotnet_diagnostic.SA1519.severity = none
 dotnet_diagnostic.SA0001.severity = none
 
 # SA1516 — elements should be separated by blank line.
-# Compact DTO/row-mapping classes intentionally omit blank lines between properties.
+# Row-mapping and BSON-document classes have 20-40 compact properties; adding a blank
+# line between each one doubles the file length without improving readability.
 dotnet_diagnostic.SA1516.severity = none
 
 # S2094 — remove empty class/record.
 # Empty input records (e.g. record QuickInput;) are legitimate test fixtures.
 dotnet_diagnostic.S2094.severity = none
 
-# SA1122 — use string.Empty for empty strings.
-# "" and string.Empty are equivalent; this is a matter of preference.
-dotnet_diagnostic.SA1122.severity = none
-
-# SA1513 — closing brace should be followed by blank line.
-# Our compact style intentionally omits trailing blank lines after short blocks.
-dotnet_diagnostic.SA1513.severity = none
 
 # SA1501/SA1107 — statement on single line / multiple statements on one line.
 # Property accessors and short lambda bodies on a single line are valid style choices.

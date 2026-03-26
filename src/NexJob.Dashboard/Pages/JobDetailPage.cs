@@ -6,12 +6,12 @@ namespace NexJob.Dashboard.Pages;
 
 internal sealed class JobDetailPage : IComponent
 {
+    private RenderHandle _handle;
+
     [Parameter] public IStorageProvider Storage { get; set; } = default!;
     [Parameter] public string PathPrefix { get; set; } = "/jobs";
     [Parameter] public string Title { get; set; } = "NexJob";
     [Parameter] public JobId JobId { get; set; }
-
-    private RenderHandle _handle;
 
     void IComponent.Attach(RenderHandle renderHandle) => _handle = renderHandle;
 
@@ -30,7 +30,7 @@ internal sealed class JobDetailPage : IComponent
 
         var now = DateTimeOffset.UtcNow;
 
-        var actions = "";
+        var actions = string.Empty;
         if (job.Status == JobStatus.Scheduled)
             actions +=
                 $"<form method=\"post\" action=\"{PathPrefix}/jobs/{job.Id.Value}/runnow\" style=\"display:inline\">" +
@@ -62,7 +62,7 @@ internal sealed class JobDetailPage : IComponent
             ("Parent Job",  job.ParentJobId.HasValue ? $"<a href=\"{PathPrefix}/jobs/{job.ParentJobId.Value.Value}\">{job.ParentJobId.Value.Value}</a>" : "—"),
         };
 
-        var detailGrid = string.Join("",
+        var detailGrid = string.Join(string.Empty,
             rows.Select(r => $"<div class=\"detail-label\">{r.Item1}</div><div class=\"detail-value\">{r.Item2}</div>"));
 
         var payloadSection =

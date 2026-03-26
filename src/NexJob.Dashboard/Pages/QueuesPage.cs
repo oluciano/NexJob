@@ -6,11 +6,11 @@ namespace NexJob.Dashboard.Pages;
 
 internal sealed class QueuesPage : IComponent
 {
+    private RenderHandle _handle;
+
     [Parameter] public IStorageProvider Storage { get; set; } = default!;
     [Parameter] public string PathPrefix { get; set; } = "/jobs";
     [Parameter] public string Title { get; set; } = "NexJob";
-
-    private RenderHandle _handle;
 
     void IComponent.Attach(RenderHandle renderHandle) => _handle = renderHandle;
 
@@ -23,7 +23,7 @@ internal sealed class QueuesPage : IComponent
 
     private string BuildHtml(IReadOnlyList<QueueMetrics> queues)
     {
-        var rows = string.Join("", queues.Select(q =>
+        var rows = string.Join(string.Empty, queues.Select(q =>
             $"<tr>" +
             $"<td><a href=\"{PathPrefix}/jobs?queue={Uri.EscapeDataString(q.Queue)}\">{System.Web.HttpUtility.HtmlEncode(q.Queue)}</a></td>" +
             $"<td><span style=\"color:var(--info)\">{q.Enqueued}</span></td>" +

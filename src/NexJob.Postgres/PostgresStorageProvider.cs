@@ -27,17 +27,6 @@ public sealed class PostgresStorageProvider : IStorageProvider
         EnsureSchema();
     }
 
-    private NpgsqlConnection Open() => new(_connectionString);
-
-    // ── Schema ────────────────────────────────────────────────────────────────
-
-    private void EnsureSchema()
-    {
-        using var conn = Open();
-        conn.Open();
-        conn.Execute(SchemaSql.CreateTables);
-    }
-
     // ── EnqueueAsync ──────────────────────────────────────────────────────────
 
     /// <inheritdoc/>
@@ -407,7 +396,7 @@ public sealed class PostgresStorageProvider : IStorageProvider
         if (!string.IsNullOrWhiteSpace(filter.Queue))  { where.Add("queue = @queue");        p.Add("queue",  filter.Queue); }
         if (!string.IsNullOrWhiteSpace(filter.Search)) { where.Add("(job_type ILIKE @search OR id::text ILIKE @search)"); p.Add("search", $"%{filter.Search.Trim()}%"); }
 
-        var clause  = where.Count > 0 ? "WHERE " + string.Join(" AND ", where) : "";
+        var clause  = where.Count > 0 ? "WHERE " + string.Join(" AND ", where) : string.Empty;
         var total   = await conn.ExecuteScalarAsync<int>($"SELECT COUNT(*)::int FROM nexjob_jobs {clause}", p);
 
         p.Add("limit",  pageSize);
@@ -474,5 +463,16 @@ public sealed class PostgresStorageProvider : IStorageProvider
         return rows
             .Select(r => new QueueMetrics { Queue = r.Queue, Enqueued = r.Enqueued, Processing = r.Processing })
             .ToList();
+    }
+
+    // ── Schema ────────────────────────────────────────────────────────────────
+
+    private NpgsqlConnection Open() => new(_connectionString);
+
+    private void EnsureSchema()
+    {
+        using var conn = Open();
+        conn.Open();
+        conn.Execute(SchemaSql.CreateTables);
     }
 }

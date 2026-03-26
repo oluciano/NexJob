@@ -56,6 +56,16 @@ internal sealed class RecurringJobSchedulerService : BackgroundService
 
     // ─── private ─────────────────────────────────────────────────────────────
 
+    private static DateTimeOffset? CalculateNextExecution(RecurringJobRecord recurring)
+    {
+        var tz = recurring.TimeZoneId is not null
+            ? TimeZoneInfo.FindSystemTimeZoneById(recurring.TimeZoneId)
+            : TimeZoneInfo.Utc;
+
+        var cronExpression = DefaultScheduler.ParseCron(recurring.Cron);
+        return cronExpression.GetNextOccurrence(DateTimeOffset.UtcNow, tz);
+    }
+
     private async Task EnqueueDueJobsAsync(CancellationToken cancellationToken)
     {
         var now = DateTimeOffset.UtcNow;
@@ -105,15 +115,5 @@ internal sealed class RecurringJobSchedulerService : BackgroundService
                     "Failed to enqueue recurring job '{Id}'", recurring.RecurringJobId);
             }
         }
-    }
-
-    private static DateTimeOffset? CalculateNextExecution(RecurringJobRecord recurring)
-    {
-        var tz = recurring.TimeZoneId is not null
-            ? TimeZoneInfo.FindSystemTimeZoneById(recurring.TimeZoneId)
-            : TimeZoneInfo.Utc;
-
-        var cronExpression = DefaultScheduler.ParseCron(recurring.Cron);
-        return cronExpression.GetNextOccurrence(DateTimeOffset.UtcNow, tz);
     }
 }

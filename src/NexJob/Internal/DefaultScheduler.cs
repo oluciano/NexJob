@@ -133,6 +133,19 @@ internal sealed class DefaultScheduler : IScheduler
 
     // ─── helpers ─────────────────────────────────────────────────────────────
 
+    internal static CronExpression ParseCron(string cron)
+    {
+        // Try 6-field (with seconds) first; fall back to standard 5-field
+        try
+        {
+            return CronExpression.Parse(cron, CronFormat.IncludeSeconds);
+        }
+        catch (CronFormatException)
+        {
+            return CronExpression.Parse(cron, CronFormat.Standard);
+        }
+    }
+
     private JobRecord BuildJobRecord<TJob, TInput>(
         TInput input,
         string? queue,
@@ -155,18 +168,5 @@ internal sealed class DefaultScheduler : IScheduler
             CreatedAt = DateTimeOffset.UtcNow,
             MaxAttempts = _options.MaxAttempts,
         };
-    }
-
-    internal static CronExpression ParseCron(string cron)
-    {
-        // Try 6-field (with seconds) first; fall back to standard 5-field
-        try
-        {
-            return CronExpression.Parse(cron, CronFormat.IncludeSeconds);
-        }
-        catch (CronFormatException)
-        {
-            return CronExpression.Parse(cron, CronFormat.Standard);
-        }
     }
 }

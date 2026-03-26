@@ -7,11 +7,11 @@ namespace NexJob.Dashboard.Pages;
 /// <summary>Dashboard overview page — metrics cards + throughput chart + recent failures.</summary>
 internal sealed class OverviewPage : IComponent
 {
+    private RenderHandle _handle;
+
     [Parameter] public IStorageProvider Storage { get; set; } = default!;
     [Parameter] public string PathPrefix { get; set; } = "/jobs";
     [Parameter] public string Title { get; set; } = "NexJob";
-
-    private RenderHandle _handle;
 
     void IComponent.Attach(RenderHandle renderHandle) => _handle = renderHandle;
 
@@ -25,13 +25,13 @@ internal sealed class OverviewPage : IComponent
     private string BuildHtml(JobMetrics m)
     {
         var max  = m.HourlyThroughput.Count > 0 ? m.HourlyThroughput.Max(h => h.Count) : 1;
-        var bars = string.Join("", m.HourlyThroughput.Select(h =>
+        var bars = string.Join(string.Empty, m.HourlyThroughput.Select(h =>
         {
             var pct = max > 0 ? (int)(h.Count * 80.0 / max) : 2;
             return $"<div class=\"bar-wrap\"><div class=\"bar\" style=\"height:{pct}px\" title=\"{h.Hour:HH:mm} — {h.Count}\"></div><span class=\"bar-label\">{h.Hour:HH}</span></div>";
         }));
 
-        var failRows = string.Join("", m.RecentFailures.Select(j =>
+        var failRows = string.Join(string.Empty, m.RecentFailures.Select(j =>
             $"<tr><td><a href=\"{PathPrefix}/jobs/{j.Id}\">{j.Id.Value.ToString()[..8]}…</a></td>" +
             $"<td>{Helpers.ShortType(j.JobType)}</td><td>{j.Queue}</td>" +
             $"<td>{j.CompletedAt?.ToString("MM/dd HH:mm") ?? "—"}</td>" +

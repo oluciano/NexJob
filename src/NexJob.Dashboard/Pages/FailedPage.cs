@@ -6,11 +6,11 @@ namespace NexJob.Dashboard.Pages;
 
 internal sealed class FailedPage : IComponent
 {
+    private RenderHandle _handle;
+
     [Parameter] public IStorageProvider Storage { get; set; } = default!;
     [Parameter] public string PathPrefix { get; set; } = "/jobs";
     [Parameter] public string Title { get; set; } = "NexJob";
-
-    private RenderHandle _handle;
 
     void IComponent.Attach(RenderHandle renderHandle) => _handle = renderHandle;
 
@@ -24,7 +24,7 @@ internal sealed class FailedPage : IComponent
 
     private string BuildHtml(PagedResult<JobRecord> result)
     {
-        var rows = string.Join("", result.Items.Select(j =>
+        var rows = string.Join(string.Empty, result.Items.Select(j =>
             $"<tr>" +
             $"<td style=\"width:36px\"><input type=\"checkbox\" name=\"ids\" value=\"{j.Id.Value}\" /></td>" +
             $"<td><a href=\"{PathPrefix}/jobs/{j.Id.Value}\">{j.Id.Value.ToString()[..8]}…</a></td>" +
