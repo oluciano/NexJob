@@ -35,30 +35,14 @@ jobs:
           dotnet restore
           dotnet build --no-restore --configuration Release
       - name: Pack
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
         run: |
-          dotnet pack src/NexJob/NexJob.csproj \
-            --no-build --configuration Release \
-            -p:VersionPrefix=${{ steps.version.outputs.VERSION }} \
-            -p:VersionSuffix= \
-            --output ./nupkg
-          dotnet pack src/NexJob.Postgres/NexJob.Postgres.csproj \
-            --no-build --configuration Release \
-            -p:VersionPrefix=${{ steps.version.outputs.VERSION }} \
-            -p:VersionSuffix= \
-            --output ./nupkg
-          dotnet pack src/NexJob.MongoDB/NexJob.MongoDB.csproj \
-            --no-build --configuration Release \
-            -p:VersionPrefix=${{ steps.version.outputs.VERSION }} \
-            -p:VersionSuffix= \
-            --output ./nupkg
-          dotnet pack src/NexJob.Dashboard/NexJob.Dashboard.csproj \
-            --no-build --configuration Release \
-            -p:VersionPrefix=${{ steps.version.outputs.VERSION }} \
-            -p:VersionSuffix= \
-            --output ./nupkg
+          dotnet pack src/NexJob/NexJob.csproj --no-build --configuration Release -p:VersionPrefix="$VERSION" -p:VersionSuffix= --output ./nupkg
+          dotnet pack src/NexJob.Postgres/NexJob.Postgres.csproj --no-build --configuration Release -p:VersionPrefix="$VERSION" -p:VersionSuffix= --output ./nupkg
+          dotnet pack src/NexJob.MongoDB/NexJob.MongoDB.csproj --no-build --configuration Release -p:VersionPrefix="$VERSION" -p:VersionSuffix= --output ./nupkg
+          dotnet pack src/NexJob.Dashboard/NexJob.Dashboard.csproj --no-build --configuration Release -p:VersionPrefix="$VERSION" -p:VersionSuffix= --output ./nupkg
       - name: Push to NuGet.org
-        run: |
-          dotnet nuget push ./nupkg/*.nupkg \
-            --api-key ${{ secrets.NUGET_API_KEY }} \
-            --source https://api.nuget.org/v3/index.json \
-            --skip-duplicate
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: dotnet nuget push "./nupkg/*.nupkg" --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json --skip-duplicate
