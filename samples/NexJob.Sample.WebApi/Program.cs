@@ -1,3 +1,4 @@
+using System.Reflection;
 using NexJob;
 using NexJob.Dashboard;
 using NexJob.Sample.WebApi.Jobs;
@@ -12,12 +13,7 @@ builder.Services.AddNexJob(builder.Configuration, opt =>
     opt.MaxAttempts = 1; // fail fast for demo (dead-letters immediately)
 });
 
-builder.Services.AddTransient<SendEmailJob>();
-builder.Services.AddTransient<BulkEmailJob>();
-builder.Services.AddTransient<GenerateReportJob>();
-builder.Services.AddTransient<CleanupJob>();
-builder.Services.AddTransient<FlakeyJob>();
-builder.Services.AddTransient<SlowJob>();
+builder.Services.AddNexJobJobs(typeof(SendEmailJob).Assembly);
 
 var app = builder.Build();
 

@@ -98,6 +98,13 @@ public sealed class JobRecord
     /// </summary>
     public string? RecurringJobId { get; init; }
 
+    /// <summary>
+    /// W3C traceparent header value captured at enqueue time.
+    /// Used by <see cref="NexJob.Telemetry.NexJobActivitySource"/> to restore the distributed
+    /// trace context when the job is executed, linking execution spans back to the enqueue span.
+    /// </summary>
+    public string? TraceParent { get; init; }
+
     /// <summary>Log entries captured during the last execution of this job.</summary>
     public IReadOnlyList<JobExecutionLog> ExecutionLogs { get; set; } = Array.Empty<JobExecutionLog>();
 }

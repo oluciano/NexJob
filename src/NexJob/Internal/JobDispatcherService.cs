@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Linq.Expressions;
 using System.Reflection;
 using System.Text.Json;
@@ -7,6 +8,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using NexJob.Configuration;
 using NexJob.Storage;
+using NexJob.Telemetry;
 
 namespace NexJob.Internal;
 
@@ -162,6 +164,10 @@ internal sealed class JobDispatcherService : BackgroundService
         // Each job task has its own async context; the scope captures all log entries
         // emitted by any category within this execution without affecting other concurrent jobs.
         using var logScope = new JobExecutionLogScope(_options.MaxJobLogLines);
+        using var activity = NexJobActivitySource.StartExecute(job.JobType, job.Queue, job.TraceParent);
+        activity?.SetTag("nexjob.job_id", job.Id.Value.ToString());
+        activity?.SetTag("nexjob.attempt", job.Attempts);
+        var sw = Stopwatch.StartNew();
 
         try
         {
@@ -169,7 +175,14 @@ internal sealed class JobDispatcherService : BackgroundService
 
             var jobType = Type.GetType(job.JobType, throwOnError: true)!;
             var inputType = Type.GetType(job.InputType, throwOnError: true)!;
-            var input = JsonSerializer.Deserialize(job.InputJson, inputType)
+
+            // Apply migration pipeline if payload schema version is outdated
+            var currentVersion = jobType.GetCustomAttribute<SchemaVersionAttribute>()?.Version ?? 1;
+            var migratedJson = scope.ServiceProvider
+                .GetRequiredService<MigrationPipeline>()
+                .Migrate(job.InputJson, job.SchemaVersion, currentVersion, inputType);
+
+            var input = JsonSerializer.Deserialize(migratedJson, inputType)
                         ?? throw new InvalidOperationException($"Deserialized null input for job {job.Id}.");
 
             var jobInstance = scope.ServiceProvider.GetRequiredService(jobType);
@@ -198,6 +211,11 @@ internal sealed class JobDispatcherService : BackgroundService
                 }
             }
 
+            sw.Stop();
+            NexJobMetrics.JobDuration.Record(sw.Elapsed.TotalMilliseconds, new TagList { { "nexjob.job_type", job.JobType }, { "nexjob.status", "succeeded" } });
+            NexJobMetrics.JobsSucceeded.Add(1, new TagList { { "nexjob.job_type", job.JobType } });
+            activity?.SetStatus(ActivityStatusCode.Ok);
+
             await _storage.AcknowledgeAsync(job.Id, CancellationToken.None);
             await _storage.SaveExecutionLogsAsync(job.Id, logScope.Entries, CancellationToken.None);
             await _storage.EnqueueContinuationsAsync(job.Id, CancellationToken.None);
@@ -218,6 +236,15 @@ internal sealed class JobDispatcherService : BackgroundService
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Job {JobId} failed on attempt {Attempt}", job.Id, job.Attempts);
+
+            NexJobMetrics.JobsFailed.Add(1, new TagList { { "nexjob.job_type", job.JobType } });
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            activity?.AddEvent(new ActivityEvent("exception", tags: new ActivityTagsCollection
+            {
+                { "exception.type", ex.GetType().FullName },
+                { "exception.message", ex.Message },
+                { "exception.stacktrace", ex.StackTrace },
+            }));
 
             DateTimeOffset? retryAt = null;
 

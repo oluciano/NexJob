@@ -1,3 +1,4 @@
+using System.Reflection;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -68,6 +69,52 @@ public static class NexJobServiceCollectionExtensions
         return RegisterCore(services, options);
     }
 
+    /// <summary>
+    /// Scans <paramref name="assembly"/> for all non-abstract classes implementing
+    /// <see cref="IJob{TInput}"/> and registers each one as <c>Transient</c>.
+    /// </summary>
+    /// <param name="services">The service collection to configure.</param>
+    /// <param name="assembly">The assembly to scan.</param>
+    /// <returns>The original <paramref name="services"/> for chaining.</returns>
+    public static IServiceCollection AddNexJobJobs(
+        this IServiceCollection services,
+        Assembly assembly)
+    {
+        var jobInterfaceType = typeof(IJob<>);
+
+        var jobTypes = assembly.GetTypes()
+            .Where(t => t is { IsAbstract: false, IsClass: true }
+                && Array.Exists(t.GetInterfaces(), i =>
+                    i.IsGenericType && i.GetGenericTypeDefinition() == jobInterfaceType));
+
+        foreach (var jobType in jobTypes)
+        {
+            services.TryAddTransient(jobType);
+        }
+
+        return services;
+    }
+
+    /// <summary>
+    /// Registers an <see cref="IJobMigration{TOld,TNew}"/> implementation and its
+    /// associated <see cref="NexJob.Internal.MigrationDescriptor"/> so that
+    /// <see cref="NexJob.Internal.MigrationPipeline"/> can automatically upgrade
+    /// stored payloads when a job's input type changes between versions.
+    /// </summary>
+    /// <typeparam name="TOld">The previous (source) input type.</typeparam>
+    /// <typeparam name="TNew">The current (target) input type.</typeparam>
+    /// <typeparam name="TMigration">The migration implementation.</typeparam>
+    /// <param name="services">The service collection to configure.</param>
+    /// <returns>The original <paramref name="services"/> for chaining.</returns>
+    public static IServiceCollection AddJobMigration<TOld, TNew, TMigration>(
+        this IServiceCollection services)
+        where TMigration : class, IJobMigration<TOld, TNew>
+    {
+        services.AddTransient<IJobMigration<TOld, TNew>, TMigration>();
+        services.AddSingleton(new MigrationDescriptor(typeof(TOld), typeof(TNew)));
+        return services;
+    }
+
     // ── private helpers ───────────────────────────────────────────────────────
 
     private static NexJobOptions BuildFromConfiguration(IConfiguration configuration)
@@ -97,6 +144,8 @@ public static class NexJobServiceCollectionExtensions
         services.AddHostedService<JobDispatcherService>();
         services.AddHostedService<RecurringJobSchedulerService>();
         services.AddHostedService<OrphanedJobWatcherService>();
+        services.AddScoped<MigrationPipeline>();
+        services.AddScoped<NexJobHealthCheck>();
 
         return services;
     }
