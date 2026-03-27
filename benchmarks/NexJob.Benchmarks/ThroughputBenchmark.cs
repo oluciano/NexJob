@@ -92,14 +92,23 @@ public class ThroughputBenchmark
     [Benchmark]
     public void Hangfire_FireAndForget()
     {
-        var completed = 0;
         var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var completed = 0;
+
+        HangfireNoOpJob.SetCompletionCallback(() =>
+        {
+            if (Interlocked.Increment(ref completed) >= JobCount)
+            {
+                tcs.TrySetResult(true);
+            }
+        });
 
         for (var i = 0; i < JobCount; i++)
         {
-            _hangfireClient.Enqueue(() => HangfireNoOpJob.Execute(ref completed, tcs, JobCount));
+            _hangfireClient.Enqueue(() => HangfireNoOpJob.Execute());
         }
 
         tcs.Task.Wait(TimeSpan.FromSeconds(30));
+        HangfireNoOpJob.SetCompletionCallback(null);
     }
 }
