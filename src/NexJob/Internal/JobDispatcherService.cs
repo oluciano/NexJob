@@ -29,6 +29,7 @@ internal sealed class JobDispatcherService : BackgroundService
     private readonly IRuntimeSettingsStore _runtimeStore;
     private readonly NexJobOptions _options;
     private readonly ILogger<JobDispatcherService> _logger;
+    private int _activeJobCount;
 
     /// <summary>
     /// Initializes a new <see cref="JobDispatcherService"/>.
@@ -47,6 +48,34 @@ internal sealed class JobDispatcherService : BackgroundService
         _runtimeStore = runtimeStore;
         _options = options;
         _logger = logger;
+    }
+
+    /// <inheritdoc/>
+    public override async Task StopAsync(CancellationToken cancellationToken)
+    {
+        _logger.LogInformation(
+            "NexJob shutting down. Waiting for {Count} active job(s) to complete (timeout: {Timeout}s)...",
+            _activeJobCount, _options.ShutdownTimeout.TotalSeconds);
+
+        var deadline = Task.Delay(_options.ShutdownTimeout, CancellationToken.None);
+
+        while (_activeJobCount > 0 && !deadline.IsCompleted)
+        {
+            await Task.Delay(250, CancellationToken.None);
+        }
+
+        if (_activeJobCount > 0)
+        {
+            _logger.LogWarning(
+                "Shutdown timeout reached. {Count} job(s) still active — they will be requeued by the orphan watcher.",
+                _activeJobCount);
+        }
+        else
+        {
+            _logger.LogInformation("All active jobs completed cleanly.");
+        }
+
+        await base.StopAsync(cancellationToken);
     }
 
     /// <inheritdoc/>
@@ -108,16 +137,18 @@ internal sealed class JobDispatcherService : BackgroundService
                 continue;
             }
 
-            // Fire-and-forget: slot is released in the finally block inside the task
+            // Fire-and-forget: slot and active count are released in the finally block inside the task
+            Interlocked.Increment(ref _activeJobCount);
             _ = Task.Run(async () =>
             {
                 try
                 {
-                    await ExecuteJobAsync(job, stoppingToken);
+                    await ExecuteJobAsync(job);
                 }
                 finally
                 {
                     workerSlots.Release();
+                    Interlocked.Decrement(ref _activeJobCount);
                 }
             }, CancellationToken.None);
         }
@@ -153,12 +184,14 @@ internal sealed class JobDispatcherService : BackgroundService
 
     // ─── execution pipeline ──────────────────────────────────────────────────
 
-    private async Task ExecuteJobAsync(JobRecord job, CancellationToken stoppingToken)
+    private async Task ExecuteJobAsync(JobRecord job)
     {
         _logger.LogDebug("Executing job {JobId} ({JobType}), attempt {Attempt}/{Max}",
             job.Id, job.JobType, job.Attempts, job.MaxAttempts);
 
-        using var cts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+        // Do NOT link to stoppingToken — jobs should complete naturally on graceful shutdown.
+        // The orphan watcher handles jobs that are still running after ShutdownTimeout.
+        using var cts = new CancellationTokenSource();
         var heartbeatTask = RunHeartbeatAsync(job.Id, cts.Token);
 
         // Each job task has its own async context; the scope captures all log entries
@@ -195,13 +228,13 @@ internal sealed class JobDispatcherService : BackgroundService
             foreach (var attr in throttleAttrs)
             {
                 var sem = _throttleRegistry.GetOrCreate(attr.Resource, attr.MaxConcurrent);
-                await sem.WaitAsync(stoppingToken);
+                await sem.WaitAsync(cts.Token);
                 acquired.Add(sem);
             }
 
             try
             {
-                await invoker(jobInstance, input, stoppingToken);
+                await invoker(jobInstance, input, cts.Token);
             }
             finally
             {
@@ -228,11 +261,6 @@ internal sealed class JobDispatcherService : BackgroundService
 
             _logger.LogDebug("Job {JobId} completed successfully", job.Id);
         }
-        catch (OperationCanceledException ex) when (stoppingToken.IsCancellationRequested)
-        {
-            // Host is shutting down — do not retry; the orphan watcher will requeue
-            _logger.LogWarning(ex, "Job {JobId} was interrupted by host shutdown", job.Id);
-        }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Job {JobId} failed on attempt {Attempt}", job.Id, job.Attempts);
@@ -246,16 +274,34 @@ internal sealed class JobDispatcherService : BackgroundService
                 { "exception.stacktrace", ex.StackTrace },
             }));
 
+            // Resolve [Retry] attribute — may be null if job type failed to load earlier
+            var retryAttrForCatch = job.JobType is not null
+                ? Type.GetType(job.JobType)?.GetCustomAttribute<RetryAttribute>(inherit: true)
+                : null;
+            var effectiveMaxAttemptsForCatch = retryAttrForCatch is not null
+                ? retryAttrForCatch.Attempts
+                : job.MaxAttempts;
+
             DateTimeOffset? retryAt = null;
 
-            if (job.Attempts < job.MaxAttempts)
+            if (job.Attempts < effectiveMaxAttemptsForCatch)
             {
-                retryAt = DateTimeOffset.UtcNow + _options.RetryDelayFactory(job.Attempts);
+                TimeSpan retryDelay;
+                if (retryAttrForCatch?.InitialDelay is not null)
+                {
+                    retryDelay = retryAttrForCatch.ComputeDelay(job.Attempts);
+                }
+                else
+                {
+                    retryDelay = _options.RetryDelayFactory(job.Attempts);
+                }
+
+                retryAt = DateTimeOffset.UtcNow + retryDelay;
             }
             else
             {
                 _logger.LogError(ex, "Job {JobId} exhausted all {Max} attempts — moving to dead-letter",
-                    job.Id, job.MaxAttempts);
+                    job.Id, effectiveMaxAttemptsForCatch);
             }
 
             await _storage.SetFailedAsync(job.Id, ex, retryAt, CancellationToken.None);

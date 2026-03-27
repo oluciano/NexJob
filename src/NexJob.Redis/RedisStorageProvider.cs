@@ -604,6 +604,22 @@ public sealed class RedisStorageProvider : IStorageProvider
         await _db.HashSetAsync(JobKey(idStr), "executionLogs", json);
     }
 
+    /// <inheritdoc/>
+    public async Task<bool> TryAcquireRecurringJobLockAsync(
+        string recurringJobId, TimeSpan ttl, CancellationToken ct = default)
+    {
+        var key = (RedisKey)$"nexjob:lock:recurring:{recurringJobId}";
+        return await _db.StringSetAsync(key, "1", ttl, When.NotExists);
+    }
+
+    /// <inheritdoc/>
+    public async Task ReleaseRecurringJobLockAsync(
+        string recurringJobId, CancellationToken ct = default)
+    {
+        var key = (RedisKey)$"nexjob:lock:recurring:{recurringJobId}";
+        await _db.KeyDeleteAsync(key);
+    }
+
     // ── Private static helpers ────────────────────────────────────────────────
 
     private static string JobKey(string id) => $"nexjob:jobs:{id}";

@@ -214,4 +214,20 @@ public interface IStorageProvider
     /// Returns per-queue metrics (enqueued + processing counts) for all active queues.
     /// </summary>
     Task<IReadOnlyList<QueueMetrics>> GetQueueMetricsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Attempts to acquire an exclusive lock for scheduling a recurring job.
+    /// Returns <see langword="true"/> if the lock was acquired (caller should enqueue the job).
+    /// Returns <see langword="false"/> if another instance already holds the lock.
+    /// The lock expires automatically after <paramref name="ttl"/>.
+    /// </summary>
+    /// <param name="recurringJobId">The identifier of the recurring job to lock.</param>
+    /// <param name="ttl">How long the lock remains valid before expiring automatically.</param>
+    /// <param name="ct">Token to cancel the operation.</param>
+    Task<bool> TryAcquireRecurringJobLockAsync(string recurringJobId, TimeSpan ttl, CancellationToken ct = default);
+
+    /// <summary>Releases the recurring job scheduling lock.</summary>
+    /// <param name="recurringJobId">The identifier of the recurring job whose lock should be released.</param>
+    /// <param name="ct">Token to cancel the operation.</param>
+    Task ReleaseRecurringJobLockAsync(string recurringJobId, CancellationToken ct = default);
 }

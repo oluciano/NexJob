@@ -35,6 +35,9 @@ public sealed class NexJobSettings
     /// <summary>Per-queue configuration, including optional execution windows.</summary>
     public List<QueueSettings> Queues { get; set; } = [];
 
+    /// <summary>Maximum seconds to wait for jobs during graceful shutdown. Defaults to <c>30</c>.</summary>
+    public int ShutdownTimeoutSeconds { get; set; } = 30;
+
     /// <summary>Dashboard-specific settings.</summary>
     public DashboardSettings Dashboard { get; set; } = new();
 }

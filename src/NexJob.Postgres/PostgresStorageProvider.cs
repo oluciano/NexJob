@@ -16,8 +16,8 @@ public sealed class PostgresStorageProvider : IStorageProvider
     private readonly string _connectionString;
 
     /// <summary>
-    /// Initialises the provider and ensures the database schema exists.
-    /// Safe to call multiple times — all DDL statements use <c>IF NOT EXISTS</c>.
+    /// Initialises the provider and applies all pending schema migrations.
+    /// Acquires a PostgreSQL advisory lock so only one instance migrates at a time.
     /// </summary>
     public PostgresStorageProvider(string connectionString)
     {
@@ -25,7 +25,8 @@ public sealed class PostgresStorageProvider : IStorageProvider
         // Allow Dapper to match snake_case column names to PascalCase properties
         // (e.g., recurring_job_id → RecurringJobId, completed_at → CompletedAt)
         Dapper.DefaultTypeMap.MatchNamesWithUnderscores = true;
-        EnsureSchema();
+        // Sync-over-async is acceptable here: runs once at startup, before any requests are served.
+        new SchemaMigrator().MigrateAsync(connectionString).GetAwaiter().GetResult();
     }
 
     // ── EnqueueAsync ──────────────────────────────────────────────────────────
@@ -545,14 +546,36 @@ public sealed class PostgresStorageProvider : IStorageProvider
             new { Id = jobId.Value, Logs = JsonSerializer.Serialize(logs) });
     }
 
+    /// <inheritdoc/>
+    public async Task<bool> TryAcquireRecurringJobLockAsync(
+        string recurringJobId, TimeSpan ttl, CancellationToken ct = default)
+    {
+        await using var conn = Open();
+        await conn.OpenAsync(ct);
+        await conn.ExecuteAsync(
+            "DELETE FROM nexjob_recurring_locks WHERE expires_at < NOW()");
+        var rows = await conn.ExecuteAsync(
+            """
+            INSERT INTO nexjob_recurring_locks (recurring_job_id, expires_at)
+            VALUES (@id, NOW() + @ttl::interval)
+            ON CONFLICT (recurring_job_id) DO NOTHING
+            """,
+            new { id = recurringJobId, ttl = ttl.ToString() });
+        return rows > 0;
+    }
+
+    /// <inheritdoc/>
+    public async Task ReleaseRecurringJobLockAsync(
+        string recurringJobId, CancellationToken ct = default)
+    {
+        await using var conn = Open();
+        await conn.OpenAsync(ct);
+        await conn.ExecuteAsync(
+            "DELETE FROM nexjob_recurring_locks WHERE recurring_job_id = @id",
+            new { id = recurringJobId });
+    }
+
     // ── Schema ────────────────────────────────────────────────────────────────
 
     private NpgsqlConnection Open() => new(_connectionString);
-
-    private void EnsureSchema()
-    {
-        using var conn = Open();
-        conn.Open();
-        conn.Execute(SchemaSql.CreateTables);
-    }
 }

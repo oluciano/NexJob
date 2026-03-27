@@ -2,7 +2,8 @@ namespace NexJob.SqlServer;
 
 internal static class SqlServerSchemaSql
 {
-    internal const string CreateTables =
+    /// <summary>V1: Initial schema — nexjob_jobs table (including execution_logs), indexes, nexjob_recurring_jobs table.</summary>
+    internal const string V1CreateTables =
         """
         IF OBJECT_ID('nexjob_jobs', 'U') IS NULL
         CREATE TABLE nexjob_jobs (
@@ -61,13 +62,47 @@ internal static class SqlServerSchemaSql
             last_execution_error  NVARCHAR(MAX)    NULL,
             concurrency_policy    NVARCHAR(50)     NOT NULL DEFAULT 'SkipIfRunning',
             created_at            DATETIMEOFFSET   NOT NULL DEFAULT SYSUTCDATETIME(),
-            updated_at            DATETIMEOFFSET   NOT NULL DEFAULT SYSUTCDATETIME(),
-            cron_override         NVARCHAR(200)    NULL,
-            enabled               BIT              NOT NULL DEFAULT 1,
-            deleted_by_user       BIT              NOT NULL DEFAULT 0
+            updated_at            DATETIMEOFFSET   NOT NULL DEFAULT SYSUTCDATETIME()
         );
 
         IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'idx_nexjob_recurring_next' AND object_id = OBJECT_ID('nexjob_recurring_jobs'))
         CREATE INDEX idx_nexjob_recurring_next ON nexjob_recurring_jobs (next_execution);
         """;
+
+    /// <summary>V2: Add cron_override, enabled, and deleted_by_user columns to nexjob_recurring_jobs.</summary>
+    internal const string V2AlterRecurring =
+        """
+        IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('nexjob_recurring_jobs') AND name = 'cron_override')
+            ALTER TABLE nexjob_recurring_jobs ADD cron_override NVARCHAR(200) NULL;
+        IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('nexjob_recurring_jobs') AND name = 'enabled')
+            ALTER TABLE nexjob_recurring_jobs ADD enabled BIT NOT NULL DEFAULT 1;
+        IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('nexjob_recurring_jobs') AND name = 'deleted_by_user')
+            ALTER TABLE nexjob_recurring_jobs ADD deleted_by_user BIT NOT NULL DEFAULT 0;
+        """;
+
+    /// <summary>V3: Add trace_parent column to nexjob_jobs.</summary>
+    internal const string V3AddColumns =
+        """
+        IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('nexjob_jobs') AND name = 'trace_parent')
+            ALTER TABLE nexjob_jobs ADD trace_parent NVARCHAR(500) NULL;
+        """;
+
+    /// <summary>V4: Create nexjob_schema_version and nexjob_recurring_locks tables.</summary>
+    internal const string V4CreateVersionTable =
+        """
+        IF OBJECT_ID('nexjob_schema_version', 'U') IS NULL
+        CREATE TABLE nexjob_schema_version (
+            version     INT           PRIMARY KEY,
+            applied_at  DATETIME2     NOT NULL DEFAULT GETUTCDATE(),
+            description NVARCHAR(500) NOT NULL
+        );
+        IF OBJECT_ID('nexjob_recurring_locks', 'U') IS NULL
+        CREATE TABLE nexjob_recurring_locks (
+            recurring_job_id NVARCHAR(500) PRIMARY KEY,
+            expires_at       DATETIME2     NOT NULL
+        );
+        """;
+
+    /// <summary>Full initial schema — kept for backward compatibility. Prefer the versioned consts.</summary>
+    internal const string CreateTables = V1CreateTables;
 }
