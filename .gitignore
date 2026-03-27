@@ -25,4 +25,3 @@ TestResults/
 
 # BenchmarkDotNet
 BenchmarkDotNet.Artifacts/
-benchmarks/results/
