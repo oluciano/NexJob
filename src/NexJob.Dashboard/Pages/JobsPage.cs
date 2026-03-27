@@ -13,6 +13,7 @@ internal sealed class JobsPage : IComponent
     [Parameter] public string Title { get; set; } = "NexJob";
     [Parameter] public JobStatus? StatusFilter { get; set; }
     [Parameter] public string? Search { get; set; }
+    [Parameter] public string? TagFilter { get; set; }
     [Parameter] public int Page { get; set; } = 1;
 
     void IComponent.Attach(RenderHandle renderHandle) => _handle = renderHandle;
@@ -22,6 +23,23 @@ internal sealed class JobsPage : IComponent
         parameters.SetParameterProperties(this);
         var filter = new JobFilter { Status = StatusFilter, Search = Search };
         var result = await Storage.GetJobsAsync(filter, Page, 25);
+
+        // Apply in-memory tag filter (IStorageProvider.GetJobsByTagAsync returns all matches,
+        // but we need paged results, so filter client-side from the already-paged set here)
+        if (!string.IsNullOrWhiteSpace(TagFilter))
+        {
+            var taggedIds = (await Storage.GetJobsByTagAsync(TagFilter.Trim()))
+                .Select(j => j.Id)
+                .ToHashSet();
+            result = new PagedResult<JobRecord>
+            {
+                Items = result.Items.Where(j => taggedIds.Contains(j.Id)).ToList(),
+                TotalCount = result.TotalCount,
+                Page = result.Page,
+                PageSize = result.PageSize,
+            };
+        }
+
         _handle.Render(b => b.AddMarkupContent(0, BuildHtml(result)));
     }
 
@@ -43,10 +61,12 @@ internal sealed class JobsPage : IComponent
         }));
 
         var searchVal = System.Web.HttpUtility.HtmlAttributeEncode(Search ?? string.Empty);
+        var tagVal = System.Web.HttpUtility.HtmlAttributeEncode(TagFilter ?? string.Empty);
         var filters =
             $"<form method=\"get\" action=\"{PathPrefix}/jobs\" class=\"filters\">" +
-            $"<input type=\"text\" name=\"search\" placeholder=\"Search type or queue…\" value=\"{searchVal}\" />" +
+            $"<input type=\"text\" name=\"search\" placeholder=\"Search type or ID…\" value=\"{searchVal}\" />" +
             $"<select name=\"status\">{statusOptions}</select>" +
+            $"<input type=\"text\" name=\"tag\" placeholder=\"Filter by tag…\" value=\"{tagVal}\" style=\"min-width:160px\" />" +
             $"<button type=\"submit\" class=\"btn btn-primary btn-sm\">Filter</button>" +
             $"</form>";
 
@@ -67,6 +87,11 @@ internal sealed class JobsPage : IComponent
                 _ => "—",
             };
 
+            var tagBadges = j.Tags.Count > 0
+                ? string.Join(" ", j.Tags.Select(t =>
+                    $"<a href=\"{PathPrefix}/jobs?tag={Uri.EscapeDataString(t)}\" class=\"tag-badge\">{System.Web.HttpUtility.HtmlEncode(t)}</a>"))
+                : string.Empty;
+
             return $"<tr>" +
                    $"<td><a href=\"{PathPrefix}/jobs/{j.Id.Value}\">{j.Id.Value.ToString()[..8]}…</a></td>" +
                    $"<td>{Helpers.BadgeHtml(j.Status)}</td>" +
@@ -74,13 +99,14 @@ internal sealed class JobsPage : IComponent
                    $"<td>{System.Web.HttpUtility.HtmlEncode(j.Queue)}</td>" +
                    $"<td>{j.Priority}</td>" +
                    $"<td>{j.CreatedAt:MM/dd HH:mm}</td>" +
+                   $"<td>{tagBadges}</td>" +
                    $"<td>{timeCell}</td>" +
                    $"</tr>";
         }));
 
         var table = result.Items.Count == 0
             ? "<p style=\"color:var(--text-muted)\">No jobs found.</p>"
-            : $"<table><thead><tr><th>ID</th><th>Status</th><th>Type</th><th>Queue</th><th>Priority</th><th>Created</th><th>Runs At / Completed</th></tr></thead><tbody>{rows}</tbody></table>";
+            : $"<table><thead><tr><th>ID</th><th>Status</th><th>Type</th><th>Queue</th><th>Priority</th><th>Created</th><th>Tags</th><th>Runs At / Completed</th></tr></thead><tbody>{rows}</tbody></table>";
 
         var pagination = BuildPagination(result);
 
@@ -102,7 +128,7 @@ internal sealed class JobsPage : IComponent
             return string.Empty;
         }
 
-        var qs = $"?status={Uri.EscapeDataString(StatusFilter?.ToString() ?? string.Empty)}&search={Uri.EscapeDataString(Search ?? string.Empty)}";
+        var qs = $"?status={Uri.EscapeDataString(StatusFilter?.ToString() ?? string.Empty)}&search={Uri.EscapeDataString(Search ?? string.Empty)}&tag={Uri.EscapeDataString(TagFilter ?? string.Empty)}";
 
         var prev = result.Page > 1
             ? $"<a href=\"{PathPrefix}/jobs{qs}&page={result.Page - 1}\" class=\"btn btn-primary btn-sm\">← Prev</a>"

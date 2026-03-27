@@ -103,6 +103,17 @@ internal static class SqlServerSchemaSql
         );
         """;
 
+    /// <summary>V5: Add progress_percent, progress_message, and tags columns to nexjob_jobs.</summary>
+    internal const string V5AddProgressAndTags =
+        """
+        IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('nexjob_jobs') AND name = 'progress_percent')
+            ALTER TABLE nexjob_jobs ADD progress_percent INT NULL;
+        IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('nexjob_jobs') AND name = 'progress_message')
+            ALTER TABLE nexjob_jobs ADD progress_message NVARCHAR(MAX) NULL;
+        IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('nexjob_jobs') AND name = 'tags')
+            ALTER TABLE nexjob_jobs ADD tags NVARCHAR(MAX) NOT NULL DEFAULT '[]';
+        """;
+
     /// <summary>Full initial schema — kept for backward compatibility. Prefer the versioned consts.</summary>
     internal const string CreateTables = V1CreateTables;
 }

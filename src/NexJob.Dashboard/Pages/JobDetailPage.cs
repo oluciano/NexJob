@@ -49,6 +49,11 @@ internal sealed class JobDetailPage : IComponent
                 "<button type=\"submit\" class=\"btn btn-danger btn-sm\">Delete</button></form>";
         }
 
+        var tagsHtml = job.Tags.Count > 0
+            ? string.Join(" ", job.Tags.Select(t =>
+                $"<span class=\"tag-badge\">{System.Web.HttpUtility.HtmlEncode(t)}</span>"))
+            : "—";
+
         var rows = new[]
         {
             ("ID",          job.Id.Value.ToString()),
@@ -57,6 +62,7 @@ internal sealed class JobDetailPage : IComponent
             ("Queue",       System.Web.HttpUtility.HtmlEncode(job.Queue)),
             ("Priority",    job.Priority.ToString()),
             ("Attempts",    $"{job.Attempts} / {job.MaxAttempts}"),
+            ("Tags",        tagsHtml),
             ("Created",     job.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss UTC")),
             ("Scheduled",   job.ScheduledAt.HasValue
                                 ? $"{job.ScheduledAt.Value:yyyy-MM-dd HH:mm:ss UTC} &nbsp;·&nbsp; {Helpers.FormatCountdown(job.ScheduledAt.Value - now)}"
@@ -70,6 +76,21 @@ internal sealed class JobDetailPage : IComponent
 
         var detailGrid = string.Join(string.Empty,
             rows.Select(r => $"<div class=\"detail-label\">{r.Item1}</div><div class=\"detail-value\">{r.Item2}</div>"));
+
+        var progressSection = string.Empty;
+        if (job.ProgressPercent.HasValue)
+        {
+            var pct = job.ProgressPercent.Value;
+            var msg = job.ProgressMessage is not null
+                ? $"<span class=\"progress-label\">{System.Web.HttpUtility.HtmlEncode(job.ProgressMessage)}</span>"
+                : string.Empty;
+            progressSection =
+                "<h2 style=\"margin-top:20px\">Progress</h2>" +
+                $"<div class=\"progress-container\">" +
+                $"<div class=\"progress-bar\" style=\"width:{pct}%\"></div>" +
+                $"</div>" +
+                $"<div style=\"font-size:12px;color:var(--text-muted);margin-top:4px\">{pct}% {msg}</div>";
+        }
 
         var payloadSection =
             "<h2>Payload</h2>" +
@@ -133,6 +154,7 @@ internal sealed class JobDetailPage : IComponent
             $"<a href=\"{PathPrefix}/jobs\" style=\"color:var(--text-muted);font-size:12px\">← Back to Jobs</a>" +
             "<div style=\"margin-top:20px\">" +
             $"<div class=\"detail-grid\">{detailGrid}</div>" +
+            progressSection +
             payloadSection +
             errorSection +
             logsSection +

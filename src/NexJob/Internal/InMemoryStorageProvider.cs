@@ -514,6 +514,30 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
         return Task.CompletedTask;
     }
 
+    /// <inheritdoc/>
+    public Task ReportProgressAsync(JobId jobId, int percent, string? message, CancellationToken ct = default)
+    {
+        if (_jobs.TryGetValue(jobId.Value, out var job))
+        {
+            lock (job)
+            {
+                job.ProgressPercent = percent;
+                job.ProgressMessage = message;
+            }
+        }
+
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc/>
+    public Task<IReadOnlyList<JobRecord>> GetJobsByTagAsync(string tag, CancellationToken cancellationToken = default)
+    {
+        IReadOnlyList<JobRecord> result = _jobs.Values
+            .Where(j => j.Tags.Contains(tag, StringComparer.Ordinal))
+            .ToList();
+        return Task.FromResult(result);
+    }
+
     // ─── private helpers ─────────────────────────────────────────────────────
 
     private static int PriorityIndex(JobPriority priority) => priority switch

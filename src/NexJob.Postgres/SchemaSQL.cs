@@ -95,6 +95,14 @@ internal static class SchemaSql
         );
         """;
 
+    /// <summary>V5: Add progress_percent, progress_message, and tags columns to nexjob_jobs.</summary>
+    internal const string V5AddProgressAndTags =
+        """
+        ALTER TABLE nexjob_jobs ADD COLUMN IF NOT EXISTS progress_percent   INT   NULL;
+        ALTER TABLE nexjob_jobs ADD COLUMN IF NOT EXISTS progress_message   TEXT  NULL;
+        ALTER TABLE nexjob_jobs ADD COLUMN IF NOT EXISTS tags               TEXT[] NOT NULL DEFAULT '{}';
+        """;
+
     /// <summary>Full initial schema — kept for backward compatibility. Prefer the versioned consts.</summary>
     internal const string CreateTables = V1CreateTables;
 }

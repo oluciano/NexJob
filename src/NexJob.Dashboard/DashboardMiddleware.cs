@@ -434,6 +434,7 @@ public sealed class DashboardMiddleware
             var query = context.Request.Query;
             var status = query.TryGetValue("status", out var sv) && Enum.TryParse<JobStatus>(sv, out var s) ? (JobStatus?)s : null;
             var search = query.TryGetValue("search", out var sr) ? (string?)sr : null;
+            var tag = query.TryGetValue("tag", out var tg) && !string.IsNullOrWhiteSpace(tg) ? (string?)tg : null;
             var page = query.TryGetValue("page", out var pg) && int.TryParse(pg, out var p) ? p : 1;
 
             parameters = ParameterView.FromDictionary(new Dictionary<string, object?>
@@ -443,6 +444,7 @@ public sealed class DashboardMiddleware
                 ["Title"] = _options.Title,
                 ["StatusFilter"] = status,
                 ["Search"] = search,
+                ["TagFilter"] = tag,
                 ["Page"] = page,
             });
             return await RenderAsync<JobsPage>(renderer, parameters);

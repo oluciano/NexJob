@@ -107,4 +107,16 @@ public sealed class JobRecord
 
     /// <summary>Log entries captured during the last execution of this job.</summary>
     public IReadOnlyList<JobExecutionLog> ExecutionLogs { get; set; } = Array.Empty<JobExecutionLog>();
+
+    /// <summary>
+    /// Tags attached at enqueue time. Used for dashboard filtering and
+    /// programmatic lookup via <see cref="NexJob.Storage.IStorageProvider.GetJobsByTagAsync"/>.
+    /// </summary>
+    public IReadOnlyList<string> Tags { get; init; } = [];
+
+    /// <summary>Current execution progress percentage, 0–100. <see langword="null"/> when not reported.</summary>
+    public int? ProgressPercent { get; set; }
+
+    /// <summary>Last progress message reported by the job. <see langword="null"/> when not reported.</summary>
+    public string? ProgressMessage { get; set; }
 }

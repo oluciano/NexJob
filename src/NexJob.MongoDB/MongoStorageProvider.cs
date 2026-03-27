@@ -507,6 +507,25 @@ public sealed class MongoStorageProvider : IStorageProvider
             Builders<BsonDocument>.Filter.Eq("_id", recurringJobId), ct);
     }
 
+    /// <inheritdoc/>
+    public async Task ReportProgressAsync(
+        JobId jobId, int percent, string? message, CancellationToken ct = default)
+    {
+        var update = Builders<JobDocument>.Update
+            .Set(d => d.ProgressPercent, percent)
+            .Set(d => d.ProgressMessage, message);
+        await _jobs.UpdateOneAsync(ById(jobId), update, cancellationToken: ct);
+    }
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<JobRecord>> GetJobsByTagAsync(
+        string tag, CancellationToken cancellationToken = default)
+    {
+        var filter = Builders<JobDocument>.Filter.AnyEq(d => d.Tags, tag);
+        var docs = await _jobs.Find(filter).ToListAsync(cancellationToken);
+        return docs.Select(d => d.ToRecord()).ToList();
+    }
+
     // ── Private helpers ───────────────────────────────────────────────────────
 
     private static FilterDefinition<JobDocument> ById(JobId id) =>

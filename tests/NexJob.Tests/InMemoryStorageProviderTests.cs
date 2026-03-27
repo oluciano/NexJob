@@ -462,6 +462,125 @@ public sealed class InMemoryStorageProviderTests
            .Enabled.Should().BeFalse("upsert must preserve user-set Enabled=false");
     }
 
+    // ─── ReportProgressAsync ─────────────────────────────────────────────────
+
+    [Fact]
+    public async Task ReportProgressAsync_UpdatesPercentAndMessage()
+    {
+        var job = MakeJob();
+        await _sut.EnqueueAsync(job);
+        var fetched = (await _sut.FetchNextAsync(["default"]))!;
+
+        await _sut.ReportProgressAsync(fetched.Id, 42, "processing items");
+
+        var updated = await _sut.GetJobByIdAsync(fetched.Id);
+        updated!.ProgressPercent.Should().Be(42);
+        updated.ProgressMessage.Should().Be("processing items");
+    }
+
+    [Fact]
+    public async Task ReportProgressAsync_NullMessage_ClearsMessage()
+    {
+        var job = MakeJob();
+        await _sut.EnqueueAsync(job);
+        var fetched = (await _sut.FetchNextAsync(["default"]))!;
+        await _sut.ReportProgressAsync(fetched.Id, 50, "initial");
+
+        await _sut.ReportProgressAsync(fetched.Id, 75, null);
+
+        var updated = await _sut.GetJobByIdAsync(fetched.Id);
+        updated!.ProgressPercent.Should().Be(75);
+        updated.ProgressMessage.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ReportProgressAsync_100Percent_StoresCorrectly()
+    {
+        var job = MakeJob();
+        await _sut.EnqueueAsync(job);
+        var fetched = (await _sut.FetchNextAsync(["default"]))!;
+
+        await _sut.ReportProgressAsync(fetched.Id, 100, "done");
+
+        var updated = await _sut.GetJobByIdAsync(fetched.Id);
+        updated!.ProgressPercent.Should().Be(100);
+    }
+
+    [Fact]
+    public async Task ReportProgressAsync_UnknownJob_DoesNotThrow()
+    {
+        var act = async () => await _sut.ReportProgressAsync(new JobId(Guid.NewGuid()), 50, "msg");
+
+        await act.Should().NotThrowAsync();
+    }
+
+    // ─── Tags / GetJobsByTagAsync ─────────────────────────────────────────────
+
+    [Fact]
+    public async Task EnqueueAsync_WithTags_PersistsTags()
+    {
+        var job = MakeJobWithTags(["env:prod", "team:backend"]);
+
+        await _sut.EnqueueAsync(job);
+
+        var stored = await _sut.GetJobByIdAsync(job.Id);
+        stored!.Tags.Should().BeEquivalentTo("env:prod", "team:backend");
+    }
+
+    [Fact]
+    public async Task GetJobsByTagAsync_ReturnsMatchingJobs()
+    {
+        await _sut.EnqueueAsync(MakeJobWithTags(["env:prod"]));
+        await _sut.EnqueueAsync(MakeJobWithTags(["env:staging"]));
+        await _sut.EnqueueAsync(MakeJobWithTags(["env:prod", "region:us"]));
+
+        var results = await _sut.GetJobsByTagAsync("env:prod");
+
+        results.Should().HaveCount(2);
+        results.Should().AllSatisfy(j => j.Tags.Should().Contain("env:prod"));
+    }
+
+    [Fact]
+    public async Task GetJobsByTagAsync_NoMatch_ReturnsEmpty()
+    {
+        await _sut.EnqueueAsync(MakeJobWithTags(["env:prod"]));
+
+        var results = await _sut.GetJobsByTagAsync("env:nonexistent");
+
+        results.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GetJobsByTagAsync_ExactMatch_NotPartialMatch()
+    {
+        await _sut.EnqueueAsync(MakeJobWithTags(["env:production"]));
+
+        var results = await _sut.GetJobsByTagAsync("env:prod");
+
+        results.Should().BeEmpty("tag matching must be exact, not prefix-based");
+    }
+
+    [Fact]
+    public async Task GetJobsByTagAsync_NoTags_ReturnsEmpty()
+    {
+        await _sut.EnqueueAsync(MakeJob()); // no tags
+
+        var results = await _sut.GetJobsByTagAsync("env:prod");
+
+        results.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GetJobsByTagAsync_ViaScheduler_RoundTrip()
+    {
+        var job = MakeJobWithTags(["tenant:acme"]);
+        await _sut.EnqueueAsync(job);
+
+        var byTag = await _sut.GetJobsByTagAsync("tenant:acme");
+
+        byTag.Should().ContainSingle(j => j.Id == job.Id);
+    }
+
     // ─── helpers ─────────────────────────────────────────────────────────────
 
     private static JobRecord MakeJob(
@@ -507,6 +626,21 @@ public sealed class InMemoryStorageProviderTests
             CreatedAt = DateTimeOffset.UtcNow,
             MaxAttempts = 10,
             RecurringJobId = recurringJobId,
+        };
+
+    private static JobRecord MakeJobWithTags(IReadOnlyList<string> tags) =>
+        new()
+        {
+            Id = JobId.New(),
+            JobType = typeof(StubJob).AssemblyQualifiedName!,
+            InputType = typeof(string).AssemblyQualifiedName!,
+            InputJson = "\"test\"",
+            Queue = "default",
+            Priority = JobPriority.Normal,
+            Status = JobStatus.Enqueued,
+            CreatedAt = DateTimeOffset.UtcNow,
+            MaxAttempts = 10,
+            Tags = tags,
         };
 }
 

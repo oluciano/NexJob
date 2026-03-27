@@ -206,6 +206,10 @@ internal sealed class JobDispatcherService : BackgroundService
         {
             using var scope = _scopeFactory.CreateScope();
 
+            // Populate IJobContext for this execution before resolving the job instance
+            scope.ServiceProvider.GetRequiredService<IJobContextAccessor>().Context =
+                new JobContext(job, _storage);
+
             var jobType = Type.GetType(job.JobType, throwOnError: true)!;
             var inputType = Type.GetType(job.InputType, throwOnError: true)!;
 

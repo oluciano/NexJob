@@ -54,10 +54,10 @@ public sealed class SqlServerStorageProvider : IStorageProvider
             """
             INSERT INTO nexjob_jobs
                 (id, job_type, input_type, input_json, schema_version, queue, priority, status,
-                 idempotency_key, attempts, max_attempts, created_at, scheduled_at, parent_job_id, recurring_job_id)
+                 idempotency_key, attempts, max_attempts, created_at, scheduled_at, parent_job_id, recurring_job_id, tags)
             VALUES
                 (@Id, @JobType, @InputType, @InputJson, @SchemaVersion, @Queue, @Priority,
-                 @Status, @IdempotencyKey, @Attempts, @MaxAttempts, @CreatedAt, @ScheduledAt, @ParentJobId, @RecurringJobId)
+                 @Status, @IdempotencyKey, @Attempts, @MaxAttempts, @CreatedAt, @ScheduledAt, @ParentJobId, @RecurringJobId, @Tags)
             """,
             new
             {
@@ -76,6 +76,7 @@ public sealed class SqlServerStorageProvider : IStorageProvider
                 job.ScheduledAt,
                 ParentJobId = job.ParentJobId?.Value,
                 job.RecurringJobId,
+                Tags = System.Text.Json.JsonSerializer.Serialize(job.Tags),
             });
 
         return job.Id;
@@ -577,6 +578,30 @@ public sealed class SqlServerStorageProvider : IStorageProvider
         await conn.ExecuteAsync(
             "DELETE FROM nexjob_recurring_locks WHERE recurring_job_id = @id",
             new { id = recurringJobId });
+    }
+
+    /// <inheritdoc/>
+    public async Task ReportProgressAsync(
+        JobId jobId, int percent, string? message, CancellationToken ct = default)
+    {
+        await using var conn = Open();
+        await conn.OpenAsync(ct);
+        await conn.ExecuteAsync(
+            "UPDATE nexjob_jobs SET progress_percent = @p, progress_message = @m WHERE id = @id",
+            new { id = jobId.Value, p = percent, m = message });
+    }
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<JobRecord>> GetJobsByTagAsync(
+        string tag, CancellationToken cancellationToken = default)
+    {
+        await using var conn = Open();
+        await conn.OpenAsync(cancellationToken);
+        // tags is stored as JSON array string, e.g. '["tenant:acme","region:us"]'
+        var rows = await conn.QueryAsync<JobRow>(
+            "SELECT * FROM nexjob_jobs WHERE tags LIKE @pattern",
+            new { pattern = $"%\"{tag}\"%" });
+        return rows.Select(r => r.ToRecord()).ToList();
     }
 
     // ── Schema ────────────────────────────────────────────────────────────────
