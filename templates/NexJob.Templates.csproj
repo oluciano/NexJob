@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <PackageType>Template</PackageType>
+    <PackageId>NexJob.Templates</PackageId>
+    <Title>NexJob Project Templates</Title>
+    <Description>Project templates for NexJob — install, implement, run.</Description>
+    <PackageTags>nexjob;background-jobs;template;dotnet-new</PackageTags>
+    <Authors>Luciano Azevedo</Authors>
+    <RepositoryUrl>https://github.com/oluciano/NexJob</RepositoryUrl>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <IsPackable>true</IsPackable>
+    <IncludeContentInPack>true</IncludeContentInPack>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <ContentTargetFolders>content</ContentTargetFolders>
+    <NoDefaultExcludes>true</NoDefaultExcludes>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <PackageReadmeFile></PackageReadmeFile>
+    <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+    <!-- Template packages have no lib assets — suppress the NU5128 warning -->
+    <NoWarn>$(NoWarn);NU5128</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <Content Include="nexjob-starter\**\*"
+             Exclude="nexjob-starter\**\bin\**;nexjob-starter\**\obj\**" />
+    <!-- Exclude template source files from compilation — they reference NexJob via PackageReference
+         which is not available in this local repo context. -->
+    <Compile Remove="nexjob-starter\**\*.cs" />
+  </ItemGroup>
+</Project>

@@ -14,6 +14,8 @@
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="8.0.1" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.3" />
     <ProjectReference Include="..\..\src\NexJob\NexJob.csproj" />
+    <ProjectReference Include="..\..\src\NexJob.Postgres\NexJob.Postgres.csproj" />
+    <ProjectReference Include="..\..\src\NexJob.SqlServer\NexJob.SqlServer.csproj" />
     <PackageReference Include="FluentAssertions" Version="6.12.1" />
     <PackageReference Include="Microsoft.Extensions.Configuration" Version="8.0.0" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="8.0.2" />

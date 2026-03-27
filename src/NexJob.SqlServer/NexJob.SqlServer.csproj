@@ -2,9 +2,16 @@
 
   <PropertyGroup>
     <PackageId>NexJob.SqlServer</PackageId>
-    <IsPackable>false</IsPackable>
+    <IsPackable>true</IsPackable>
+    <PackageTags>background-jobs;scheduler;sqlserver;dapper;dotnet</PackageTags>
     <Description>SQL Server storage provider for NexJob.</Description>
   </PropertyGroup>
+
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>NexJob.Tests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\NexJob\NexJob.csproj" />

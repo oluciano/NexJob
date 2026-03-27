@@ -2,7 +2,8 @@
 
   <PropertyGroup>
     <PackageId>NexJob.Redis</PackageId>
-    <IsPackable>false</IsPackable>
+    <IsPackable>true</IsPackable>
+    <PackageTags>background-jobs;scheduler;redis;stackexchange;dotnet</PackageTags>
     <Description>Redis storage provider for NexJob.</Description>
   </PropertyGroup>
 

@@ -74,11 +74,15 @@ NexJob was built to solve all of that. MIT license, end to end. Every storage ad
 | All storage adapters free | ✅ | ❌ |
 | Resource throttling | ✅ | ❌ |
 | Job continuations (chaining) | ✅ | ❌ |
+| Per-job retry config (`[Retry]`) | ✅ | ❌ |
+| Schema auto-migrations | ✅ | ❌ |
+| Graceful shutdown | ✅ | ❌ |
+| Distributed recurring lock | ✅ | ❌ |
+| `appsettings.json` support | ✅ | ❌ |
+| Execution windows per queue | ✅ | ❌ |
+| Live config without restart | ✅ | ❌ |
 | OpenTelemetry built-in | 🔜 | ❌ |
 | Payload versioning | 🔜 | ❌ |
-| `appsettings.json` support | 🔜 | ❌ |
-| Execution windows per queue | 🔜 | ❌ |
-| Live config without restart | 🔜 | ❌ |
 
 ---
 
@@ -286,7 +290,58 @@ builder.Services.AddNexJob(opt =>
 });
 ```
 
-> 🔜 Per-job `[Retry(attempts: 3)]` attribute coming in v0.6.
+Per-job override with `[Retry]`:
+
+```csharp
+// Payment jobs: 5 retries, doubling delay from 30s up to 1h
+[Retry(5, InitialDelay = "00:00:30", Multiplier = 2.0, MaxDelay = "01:00:00")]
+public class PaymentJob : IJob<PaymentInput> { ... }
+
+// Webhook jobs: dead-letter immediately on first failure
+[Retry(0)]
+public class WebhookJob : IJob<WebhookInput> { ... }
+```
+
+---
+
+## Schema migrations
+
+NexJob automatically migrates its storage schema on startup. No manual SQL scripts, no deployment steps. Each migration runs in a transaction protected by a distributed advisory lock — safe when multiple instances start simultaneously.
+
+```csharp
+// Nothing to call — migrations run automatically when your app starts
+builder.Services.AddNexJob(builder.Configuration);
+```
+
+---
+
+## Graceful shutdown
+
+When your host receives SIGTERM (Kubernetes rolling deployments, scale-down), NexJob waits for active jobs to complete before stopping.
+
+```json
+{
+  "NexJob": {
+    "ShutdownTimeoutSeconds": 30
+  }
+}
+```
+
+Jobs still running after the timeout are requeued automatically by the orphan watcher.
+
+---
+
+## Quick start
+
+```bash
+# 1. Install
+dotnet add package NexJob
+dotnet add package NexJob.Dashboard
+
+# 2. Or scaffold a complete starter project
+dotnet new install NexJob.Templates
+dotnet new nexjob -n MyApp
+```
 
 ---
 
@@ -327,6 +382,9 @@ builder.Services.AddNexJob(opt =>
 
     // Retries
     opt.MaxAttempts = 5;
+
+    // Graceful shutdown
+    opt.ShutdownTimeout = TimeSpan.FromSeconds(30);
 });
 ```
 
@@ -339,8 +397,9 @@ v0.1  ✅ Core interfaces · in-memory provider · fire-and-forget
 v0.2  ✅ PostgreSQL + MongoDB providers · delayed jobs · cron · dashboard (Blazor SSR)
 v0.3  ✅ Priority queues · resource throttling ([Throttle]) · job continuations
 v0.4  ✅ Recurring job execution status · unit + integration tests · CI pipeline
-v0.5  ○ SQL Server · Redis · Oracle providers
-v0.6  ○ OpenTelemetry · payload versioning (IJobMigration) · [Retry] per-job
+v0.5  ✅ SQL Server · Redis · Oracle providers · runtime settings · execution windows
+v0.6  ✅ [Retry] per-job · graceful shutdown · schema migrations · distributed recurring lock
+v0.7  ○ OpenTelemetry (Activity spans per job) · IJobMigration<TOld,TNew> · SchemaVersion
 v1.0  ○ Stable API · production-ready · published to NuGet
 ```
 
