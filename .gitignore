@@ -22,3 +22,7 @@ Thumbs.db
 *.coverage
 *.coveragexml
 TestResults/
+
+# BenchmarkDotNet
+BenchmarkDotNet.Artifacts/
+benchmarks/results/

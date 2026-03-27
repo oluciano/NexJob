@@ -10,16 +10,17 @@ namespace NexJob.Postgres;
 /// </summary>
 internal sealed class SchemaMigrator
 {
-    // Arbitrary but stable numeric key for pg_advisory_lock: hash of 'nexjob'
-    private const long AdvisoryLockKey = 7_242_374_305L;
-
-    private static readonly IReadOnlyList<SchemaMigration> Migrations =
+    /// <summary>All versioned migrations in ascending version order.</summary>
+    internal static readonly IReadOnlyList<SchemaMigration> AllMigrations =
     [
         new(1, "initial schema", SchemaSql.V1CreateTables),
         new(2, "add recurring job config columns", SchemaSql.V2AlterRecurring),
         new(3, "add execution_logs and trace_parent columns", SchemaSql.V3AddColumns),
         new(4, "create schema_version and recurring_locks tables", SchemaSql.V4CreateVersionTable),
     ];
+
+    // Arbitrary but stable numeric key for pg_advisory_lock: hash of 'nexjob'
+    private const long AdvisoryLockKey = 7_242_374_305L;
 
     /// <summary>
     /// Runs all pending migrations against <paramref name="connectionString"/>.
@@ -51,7 +52,7 @@ internal sealed class SchemaMigrator
                 "SELECT version FROM nexjob_schema_version"))
                 .ToHashSet();
 
-            foreach (var migration in Migrations)
+            foreach (var migration in AllMigrations)
             {
                 if (applied.Contains(migration.Version))
                 {
@@ -80,4 +81,16 @@ internal sealed class SchemaMigrator
             await conn.ExecuteAsync($"SELECT pg_advisory_unlock({AdvisoryLockKey})");
         }
     }
+
+    /// <summary>
+    /// Returns the subset of <paramref name="all"/> whose version is not in <paramref name="applied"/>,
+    /// ordered by version ascending. Exposed for unit testing without a real database connection.
+    /// </summary>
+    /// <param name="all">Full ordered list of known migrations.</param>
+    /// <param name="applied">Set of already-applied version numbers.</param>
+    internal static IEnumerable<SchemaMigration> GetPendingMigrations(
+        IReadOnlyList<SchemaMigration> all,
+        IReadOnlySet<int> applied)
+        => all.Where(m => !applied.Contains(m.Version))
+              .OrderBy(m => m.Version);
 }

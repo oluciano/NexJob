@@ -10,7 +10,8 @@ namespace NexJob.SqlServer;
 /// </summary>
 internal sealed class SchemaMigrator
 {
-    private static readonly IReadOnlyList<SchemaMigration> Migrations =
+    /// <summary>All versioned migrations in ascending version order.</summary>
+    internal static readonly IReadOnlyList<SchemaMigration> AllMigrations =
     [
         new(1, "initial schema", SqlServerSchemaSql.V1CreateTables),
         new(2, "add recurring job config columns", SqlServerSchemaSql.V2AlterRecurring),
@@ -53,7 +54,7 @@ internal sealed class SchemaMigrator
                 "SELECT version FROM nexjob_schema_version", transaction: tx))
                 .ToHashSet();
 
-            foreach (var migration in Migrations)
+            foreach (var migration in AllMigrations)
             {
                 if (applied.Contains(migration.Version))
                 {
@@ -87,4 +88,16 @@ internal sealed class SchemaMigrator
             throw;
         }
     }
+
+    /// <summary>
+    /// Returns the subset of <paramref name="all"/> whose version is not in <paramref name="applied"/>,
+    /// ordered by version ascending. Exposed for unit testing without a real database connection.
+    /// </summary>
+    /// <param name="all">Full ordered list of known migrations.</param>
+    /// <param name="applied">Set of already-applied version numbers.</param>
+    internal static IEnumerable<SchemaMigration> GetPendingMigrations(
+        IReadOnlyList<SchemaMigration> all,
+        IReadOnlySet<int> applied)
+        => all.Where(m => !applied.Contains(m.Version))
+              .OrderBy(m => m.Version);
 }

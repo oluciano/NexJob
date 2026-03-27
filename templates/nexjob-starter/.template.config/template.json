@@ -1,0 +1,15 @@
+{
+  "$schema": "http://json.schemastore.org/template",
+  "author": "Luciano Azevedo",
+  "classifications": ["Web", "Background Jobs", "Worker"],
+  "identity": "NexJob.Starter",
+  "name": "NexJob Starter",
+  "shortName": "nexjob",
+  "description": "A starter project with NexJob background job processing configured and ready to run.",
+  "tags": {
+    "language": "C#",
+    "type": "project"
+  },
+  "sourceName": "NexJobStarter",
+  "preferNameDirectory": true
+}
