@@ -35,6 +35,10 @@ internal sealed class JobDocument
     [BsonElement("execution_logs")]
     public List<ExecutionLogEntry>? ExecutionLogs { get; set; }
 
+    public List<string> Tags { get; set; } = [];
+    public int? ProgressPercent { get; set; }
+    public string? ProgressMessage { get; set; }
+
     public static JobDocument FromRecord(JobRecord r) => new()
     {
         Id = r.Id,
@@ -66,6 +70,9 @@ internal sealed class JobDocument
                 Level = e.Level,
                 Message = e.Message,
             }).ToList(),
+        Tags = r.Tags.ToList(),
+        ProgressPercent = r.ProgressPercent,
+        ProgressMessage = r.ProgressMessage,
     };
 
     public JobRecord ToRecord() => new()
@@ -99,5 +106,8 @@ internal sealed class JobDocument
                 Level = e.Level,
                 Message = e.Message,
             }).ToList(),
+        Tags = Tags,
+        ProgressPercent = ProgressPercent,
+        ProgressMessage = ProgressMessage,
     };
 }

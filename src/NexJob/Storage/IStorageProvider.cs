@@ -230,4 +230,21 @@ public interface IStorageProvider
     /// <param name="recurringJobId">The identifier of the recurring job whose lock should be released.</param>
     /// <param name="ct">Token to cancel the operation.</param>
     Task ReleaseRecurringJobLockAsync(string recurringJobId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Records the current execution progress of a job.
+    /// Called by <see cref="IJobContext.ReportProgressAsync"/>.
+    /// </summary>
+    /// <param name="jobId">The job being tracked.</param>
+    /// <param name="percent">Progress percentage, 0–100.</param>
+    /// <param name="message">Optional human-readable status message.</param>
+    /// <param name="ct">Cancellation token.</param>
+    Task ReportProgressAsync(JobId jobId, int percent, string? message, CancellationToken ct = default);
+
+    /// <summary>
+    /// Returns all jobs that have the specified tag attached.
+    /// </summary>
+    /// <param name="tag">The tag to filter by.</param>
+    /// <param name="cancellationToken">Token to cancel the operation.</param>
+    Task<IReadOnlyList<JobRecord>> GetJobsByTagAsync(string tag, CancellationToken cancellationToken = default);
 }

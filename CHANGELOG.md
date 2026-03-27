@@ -6,7 +6,33 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-## [0.2.0] — TBD
+## [0.3.0] — March 2026
+
+### Added
+- **`IJobContext`** — injectable job runtime context providing `JobId`, `Attempt`, `Queue`,
+  `Tags`, and `ReportProgressAsync`. Scoped to each job execution via `IJobContextAccessor`,
+  mirroring the ASP.NET Core `IHttpContextAccessor` pattern.
+- **`WithProgress` extensions** — `IEnumerable<T>.WithProgress(context)` and
+  `IAsyncEnumerable<T>.WithProgress(context, ct)` report live progress percentages as items
+  are yielded. The `IEnumerable` overload uses fire-and-forget to avoid blocking iterator
+  threads; use the async overload when back-pressure or guaranteed delivery is required.
+- **Job progress tracking** — live progress bar in dashboard job detail page
+  (`.progress-container` / `.progress-bar` / `.progress-label`).
+- **Job tags** — enqueue jobs with `string[]` tags; filter by tag in the dashboard jobs list;
+  `GetJobsByTagAsync` added to `IStorageProvider` and all storage adapters
+  (InMemory, Postgres, MongoDB, SQL Server, Redis).
+- **`ReportProgressAsync`** added to `IStorageProvider` and all storage adapters.
+- **Schema migration V5** — adds `progress_percent`, `progress_message`, and `tags` columns
+  to Postgres and SQL Server schemas.
+- **Benchmark results** — NexJob is 2.87× faster (9.3 µs vs 26.6 µs) and uses 85% less
+  memory (1.67 KB vs 11.20 KB) than Hangfire per enqueue (Intel Xeon E5-2667 v4, .NET 8.0.25).
+
+### Fixed
+- `WithProgress<T>(IEnumerable<T>)` no longer calls `.GetAwaiter().GetResult()` inside the
+  iterator, eliminating potential thread-pool deadlocks under I/O-backed storage providers.
+- v0.2.0 release date corrected below.
+
+## [0.2.0] — February 2026
 
 ### Added
 - **Schema migrations** — versioned DDL with advisory locks (`pg_advisory_lock` for Postgres,
@@ -65,6 +91,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Recurring concurrency policy — `SkipIfRunning` (default) or `AllowConcurrent`
 - CI/CD pipeline (`ci.yml` + `publish.yml`) publishing all packages to NuGet on `v*` tag push
 
-[Unreleased]: https://github.com/oluciano/NexJob/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/oluciano/NexJob/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/oluciano/NexJob/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/oluciano/NexJob/compare/v0.1.0-alpha...v0.2.0
 [0.1.0-alpha]: https://github.com/oluciano/NexJob/releases/tag/v0.1.0-alpha

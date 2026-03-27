@@ -100,6 +100,15 @@ internal static class HtmlShell
         /* Page title */
         .page-title { font-size: 22px; font-weight: 700; margin-bottom: 24px; }
 
+        /* Progress bar */
+        .progress-container { background: var(--surface2); border-radius: 999px; height: 10px; overflow: hidden; margin-top: 8px; }
+        .progress-bar { height: 100%; background: var(--accent); border-radius: 999px; transition: width .3s; }
+        .progress-label { color: var(--text-muted); font-size: 12px; margin-left: 4px; }
+
+        /* Tag badges */
+        .tag-badge { display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 11px; font-weight: 500; background: #1e1040; color: var(--accent-light); border: 1px solid #3b1f8a; margin-right: 3px; white-space: nowrap; }
+        .tag-badge:hover { text-decoration: none; background: #2d1b60; }
+
         @media (max-width: 700px) {
             .layout { flex-direction: column; }
             .sidebar { width: 100%; border-right: none; border-bottom: 1px solid var(--border); }

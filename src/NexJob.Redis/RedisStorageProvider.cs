@@ -620,6 +620,43 @@ public sealed class RedisStorageProvider : IStorageProvider
         await _db.KeyDeleteAsync(key);
     }
 
+    /// <inheritdoc/>
+    public async Task ReportProgressAsync(
+        JobId jobId, int percent, string? message, CancellationToken ct = default)
+    {
+        var key = (RedisKey)JobKey(jobId.Value.ToString());
+        await _db.HashSetAsync(key,
+        [
+            new HashEntry("progressPercent", percent.ToString()),
+            new HashEntry("progressMessage", message ?? string.Empty),
+        ]);
+    }
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<JobRecord>> GetJobsByTagAsync(
+        string tag, CancellationToken cancellationToken = default)
+    {
+        var results = new List<JobRecord>();
+        await foreach (var key in ScanJobKeysAsync())
+        {
+            var hash = await _db.HashGetAllAsync(key);
+            if (hash.Length == 0)
+            {
+                continue;
+            }
+
+            var d = ParseHash(hash);
+            var tagsRaw = d.GetValueOrDefault("tags", string.Empty);
+            var tags = DeserializeTags(tagsRaw);
+            if (tags.Contains(tag, StringComparer.Ordinal))
+            {
+                results.Add(HashToRecord(d));
+            }
+        }
+
+        return results;
+    }
+
     // ── Private static helpers ────────────────────────────────────────────────
 
     private static string JobKey(string id) => $"nexjob:jobs:{id}";
@@ -695,6 +732,9 @@ public sealed class RedisStorageProvider : IStorageProvider
         new("parentJobId", job.ParentJobId?.Value.ToString() ?? string.Empty),
         new("recurringJobId", job.RecurringJobId ?? string.Empty),
         new("executionLogs", string.Empty),
+        new("tags", JsonSerializer.Serialize(job.Tags, JsonOpts)),
+        new("progressPercent", job.ProgressPercent?.ToString() ?? string.Empty),
+        new("progressMessage", job.ProgressMessage ?? string.Empty),
     ];
 
     private static Dictionary<string, string> ParseHash(HashEntry[] entries) =>
@@ -767,7 +807,20 @@ public sealed class RedisStorageProvider : IStorageProvider
             ParentJobId = Guid.TryParse(d.GetValueOrDefault("parentJobId"), out var pg) ? new JobId(pg) : null,
             RecurringJobId = NullIfEmpty(d.GetValueOrDefault("recurringJobId")),
             ExecutionLogs = logs,
+            Tags = DeserializeTags(d.GetValueOrDefault("tags", string.Empty)),
+            ProgressPercent = int.TryParse(d.GetValueOrDefault("progressPercent"), out var pp) ? pp : null,
+            ProgressMessage = NullIfEmpty(d.GetValueOrDefault("progressMessage")),
         };
+    }
+
+    private static IReadOnlyList<string> DeserializeTags(string json)
+    {
+        if (string.IsNullOrEmpty(json))
+        {
+            return [];
+        }
+
+        return JsonSerializer.Deserialize<List<string>>(json, JsonOpts) ?? [];
     }
 
     private static RecurringJobRecord HashToRecurring(Dictionary<string, string> d)

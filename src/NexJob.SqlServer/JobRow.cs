@@ -27,6 +27,9 @@ internal sealed class JobRow
     public Guid? ParentJobId { get; set; }
     public string? RecurringJobId { get; set; }
     public string? ExecutionLogs { get; set; }
+    public string? Tags { get; set; }
+    public int? ProgressPercent { get; set; }
+    public string? ProgressMessage { get; set; }
 
     public JobRecord ToRecord() => new()
     {
@@ -54,5 +57,10 @@ internal sealed class JobRow
         ExecutionLogs = string.IsNullOrEmpty(ExecutionLogs)
             ? Array.Empty<JobExecutionLog>()
             : (IReadOnlyList<JobExecutionLog>?)JsonSerializer.Deserialize<List<JobExecutionLog>>(ExecutionLogs) ?? Array.Empty<JobExecutionLog>(),
+        Tags = string.IsNullOrEmpty(Tags)
+            ? []
+            : (IReadOnlyList<string>?)JsonSerializer.Deserialize<List<string>>(Tags) ?? [],
+        ProgressPercent = ProgressPercent,
+        ProgressMessage = ProgressMessage,
     };
 }

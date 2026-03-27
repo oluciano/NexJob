@@ -146,6 +146,12 @@ public static class NexJobServiceCollectionExtensions
         services.AddHostedService<OrphanedJobWatcherService>();
         services.AddScoped<MigrationPipeline>();
         services.AddScoped<NexJobHealthCheck>();
+        services.AddScoped<IJobContextAccessor, JobContextAccessor>();
+        services.AddScoped<IJobContext>(sp =>
+            sp.GetRequiredService<IJobContextAccessor>().Context
+            ?? throw new InvalidOperationException(
+                "IJobContext is only available during job execution. " +
+                "Do not resolve it outside of an IJob<TInput>.ExecuteAsync call."));
 
         return services;
     }

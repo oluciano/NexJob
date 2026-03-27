@@ -32,11 +32,12 @@ internal sealed class DefaultScheduler : IScheduler
         string? queue = null,
         JobPriority priority = JobPriority.Normal,
         string? idempotencyKey = null,
+        IReadOnlyList<string>? tags = null,
         CancellationToken cancellationToken = default)
         where TJob : IJob<TInput>
     {
         var job = BuildJobRecord<TJob, TInput>(input, queue, priority, idempotencyKey,
-            status: JobStatus.Enqueued, scheduledAt: null);
+            status: JobStatus.Enqueued, scheduledAt: null, tags: tags);
 
         using var activity = NexJobActivitySource.StartEnqueue(typeof(TJob).FullName ?? typeof(TJob).Name, job.Queue);
 
@@ -143,6 +144,10 @@ internal sealed class DefaultScheduler : IScheduler
     public Task RemoveRecurringAsync(string recurringJobId, CancellationToken cancellationToken = default) =>
         _storage.DeleteRecurringJobAsync(recurringJobId, cancellationToken);
 
+    /// <inheritdoc/>
+    public Task<IReadOnlyList<JobRecord>> GetJobsByTagAsync(string tag, CancellationToken cancellationToken = default) =>
+        _storage.GetJobsByTagAsync(tag, cancellationToken);
+
     // ─── helpers ─────────────────────────────────────────────────────────────
 
     internal static CronExpression ParseCron(string cron)
@@ -164,7 +169,8 @@ internal sealed class DefaultScheduler : IScheduler
         JobPriority priority,
         string? idempotencyKey,
         JobStatus status,
-        DateTimeOffset? scheduledAt)
+        DateTimeOffset? scheduledAt,
+        IReadOnlyList<string>? tags = null)
     {
         return new JobRecord
         {
@@ -179,6 +185,7 @@ internal sealed class DefaultScheduler : IScheduler
             ScheduledAt = scheduledAt,
             CreatedAt = DateTimeOffset.UtcNow,
             MaxAttempts = _options.MaxAttempts,
+            Tags = tags ?? [],
         };
     }
 }

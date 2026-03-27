@@ -21,6 +21,11 @@ public interface IScheduler
     /// <see cref="JobStatus.Enqueued"/> or <see cref="JobStatus.Processing"/> state,
     /// the existing <see cref="JobId"/> is returned and no new job is created.
     /// </param>
+    /// <param name="tags">
+    /// Optional list of searchable tags attached to the job.
+    /// Tags can be used to filter jobs in the dashboard or via
+    /// <see cref="GetJobsByTagAsync"/>.
+    /// </param>
     /// <param name="cancellationToken">Token to cancel the operation.</param>
     /// <returns>The identifier of the enqueued (or existing, if idempotent) job.</returns>
     Task<JobId> EnqueueAsync<TJob, TInput>(
@@ -28,6 +33,7 @@ public interface IScheduler
         string? queue = null,
         JobPriority priority = JobPriority.Normal,
         string? idempotencyKey = null,
+        IReadOnlyList<string>? tags = null,
         CancellationToken cancellationToken = default)
         where TJob : IJob<TInput>;
 
@@ -125,5 +131,14 @@ public interface IScheduler
     /// <param name="cancellationToken">Token to cancel the operation.</param>
     Task RemoveRecurringAsync(
         string recurringJobId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Returns all jobs that have the specified tag attached.
+    /// </summary>
+    /// <param name="tag">The tag to search for.</param>
+    /// <param name="cancellationToken">Token to cancel the operation.</param>
+    Task<IReadOnlyList<JobRecord>> GetJobsByTagAsync(
+        string tag,
         CancellationToken cancellationToken = default);
 }

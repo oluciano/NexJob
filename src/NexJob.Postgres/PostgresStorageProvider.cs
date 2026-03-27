@@ -58,10 +58,10 @@ public sealed class PostgresStorageProvider : IStorageProvider
             """
             INSERT INTO nexjob_jobs
                 (id, job_type, input_type, input_json, schema_version, queue, priority, status,
-                 idempotency_key, attempts, max_attempts, created_at, scheduled_at, parent_job_id, recurring_job_id)
+                 idempotency_key, attempts, max_attempts, created_at, scheduled_at, parent_job_id, recurring_job_id, tags)
             VALUES
                 (@Id, @JobType, @InputType, @InputJson::jsonb, @SchemaVersion, @Queue, @Priority,
-                 @Status, @IdempotencyKey, @Attempts, @MaxAttempts, @CreatedAt, @ScheduledAt, @ParentJobId, @RecurringJobId)
+                 @Status, @IdempotencyKey, @Attempts, @MaxAttempts, @CreatedAt, @ScheduledAt, @ParentJobId, @RecurringJobId, @Tags)
             """,
             new
             {
@@ -80,6 +80,7 @@ public sealed class PostgresStorageProvider : IStorageProvider
                 job.ScheduledAt,
                 ParentJobId = job.ParentJobId?.Value,
                 job.RecurringJobId,
+                Tags = job.Tags.ToArray(),
             });
 
         return job.Id;
@@ -573,6 +574,29 @@ public sealed class PostgresStorageProvider : IStorageProvider
         await conn.ExecuteAsync(
             "DELETE FROM nexjob_recurring_locks WHERE recurring_job_id = @id",
             new { id = recurringJobId });
+    }
+
+    /// <inheritdoc/>
+    public async Task ReportProgressAsync(
+        JobId jobId, int percent, string? message, CancellationToken ct = default)
+    {
+        await using var conn = Open();
+        await conn.OpenAsync(ct);
+        await conn.ExecuteAsync(
+            "UPDATE nexjob_jobs SET progress_percent = @p, progress_message = @m WHERE id = @id",
+            new { id = jobId.Value, p = percent, m = message });
+    }
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<JobRecord>> GetJobsByTagAsync(
+        string tag, CancellationToken cancellationToken = default)
+    {
+        await using var conn = Open();
+        await conn.OpenAsync(cancellationToken);
+        var rows = await conn.QueryAsync<JobRow>(
+            "SELECT * FROM nexjob_jobs WHERE @tag = ANY(tags)",
+            new { tag });
+        return rows.Select(r => r.ToRecord()).ToList();
     }
 
     // ── Schema ────────────────────────────────────────────────────────────────
