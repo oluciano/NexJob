@@ -16,6 +16,7 @@ public sealed class MongoStorageProvider : IStorageProvider
 {
     private readonly IMongoCollection<JobDocument> _jobs;
     private readonly IMongoCollection<RecurringJobDocument> _recurringJobs;
+    private readonly IMongoCollection<BsonDocument> _recurringLocks;
 
     static MongoStorageProvider()
     {
@@ -36,6 +37,7 @@ public sealed class MongoStorageProvider : IStorageProvider
     {
         _jobs = database.GetCollection<JobDocument>("nexjob_jobs");
         _recurringJobs = database.GetCollection<RecurringJobDocument>("nexjob_recurring_jobs");
+        _recurringLocks = database.GetCollection<BsonDocument>("nexjob_recurring_locks");
 
         EnsureIndexes();
     }
@@ -470,6 +472,41 @@ public sealed class MongoStorageProvider : IStorageProvider
         await _jobs.UpdateOneAsync(ById(jobId), update, cancellationToken: cancellationToken);
     }
 
+    /// <inheritdoc/>
+    public async Task<bool> TryAcquireRecurringJobLockAsync(
+        string recurringJobId, TimeSpan ttl, CancellationToken ct = default)
+    {
+        var now = DateTime.UtcNow;
+        var expiry = now.Add(ttl);
+
+        // Delete expired lock first
+        await _recurringLocks.DeleteOneAsync(
+            Builders<BsonDocument>.Filter.And(
+                Builders<BsonDocument>.Filter.Eq("_id", recurringJobId),
+                Builders<BsonDocument>.Filter.Lt("expires_at", now)),
+            ct);
+
+        try
+        {
+            await _recurringLocks.InsertOneAsync(
+                new BsonDocument { ["_id"] = recurringJobId, ["expires_at"] = expiry },
+                cancellationToken: ct);
+            return true;
+        }
+        catch (MongoWriteException ex) when (ex.WriteError.Category == ServerErrorCategory.DuplicateKey)
+        {
+            return false;
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task ReleaseRecurringJobLockAsync(
+        string recurringJobId, CancellationToken ct = default)
+    {
+        await _recurringLocks.DeleteOneAsync(
+            Builders<BsonDocument>.Filter.Eq("_id", recurringJobId), ct);
+    }
+
     // ── Private helpers ───────────────────────────────────────────────────────
 
     private static FilterDefinition<JobDocument> ById(JobId id) =>
@@ -538,5 +575,10 @@ public sealed class MongoStorageProvider : IStorageProvider
             new CreateIndexOptions { Name = "next_execution" }));
 
         // RecurringJobId is [BsonId] — MongoDB already enforces unique on _id.
+
+        // TTL index on recurring locks — MongoDB removes expired documents automatically
+        _recurringLocks.Indexes.CreateOne(new CreateIndexModel<BsonDocument>(
+            Builders<BsonDocument>.IndexKeys.Ascending("expires_at"),
+            new CreateIndexOptions { ExpireAfter = TimeSpan.Zero }));
     }
 }

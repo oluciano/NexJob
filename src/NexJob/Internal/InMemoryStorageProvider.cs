@@ -16,6 +16,7 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
     private readonly ConcurrentDictionary<Guid, JobRecord> _jobs = new();
     private readonly ConcurrentDictionary<string, Guid> _idempotencyIndex = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, RecurringJobRecord> _recurringJobs = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, DateTimeOffset> _recurringLocks = new(StringComparer.Ordinal);
 
     // Indexed as: _queues[queueName][priorityIndex]
     // Priority indices: 0=Critical, 1=High, 2=Normal, 3=Low
@@ -488,6 +489,28 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
             }
         }
 
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc/>
+    public Task<bool> TryAcquireRecurringJobLockAsync(
+        string recurringJobId, TimeSpan ttl, CancellationToken ct = default)
+    {
+        var expiry = DateTimeOffset.UtcNow.Add(ttl);
+        _recurringLocks.TryGetValue(recurringJobId, out var existing);
+        if (existing > DateTimeOffset.UtcNow)
+        {
+            return Task.FromResult(false);
+        }
+
+        _recurringLocks[recurringJobId] = expiry;
+        return Task.FromResult(true);
+    }
+
+    /// <inheritdoc/>
+    public Task ReleaseRecurringJobLockAsync(string recurringJobId, CancellationToken ct = default)
+    {
+        _recurringLocks.TryRemove(recurringJobId, out _);
         return Task.CompletedTask;
     }
 

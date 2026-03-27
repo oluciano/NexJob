@@ -2,7 +2,8 @@ namespace NexJob.Postgres;
 
 internal static class SchemaSql
 {
-    internal const string CreateTables =
+    /// <summary>V1: Initial schema — nexjob_jobs table, indexes, nexjob_recurring_jobs table.</summary>
+    internal const string V1CreateTables =
         """
         CREATE TABLE IF NOT EXISTS nexjob_jobs (
             id                    UUID         PRIMARY KEY,
@@ -45,29 +46,55 @@ internal static class SchemaSql
             WHERE completed_at IS NOT NULL;
 
         CREATE TABLE IF NOT EXISTS nexjob_recurring_jobs (
-            recurring_job_id  TEXT        PRIMARY KEY,
-            job_type          TEXT        NOT NULL,
-            input_type        TEXT        NOT NULL,
-            input_json        JSONB       NOT NULL,
-            cron              TEXT        NOT NULL,
-            time_zone_id      TEXT        NOT NULL DEFAULT 'UTC',
-            queue             TEXT        NOT NULL DEFAULT 'default',
-            next_execution          TIMESTAMPTZ,
-            last_execution          TIMESTAMPTZ,
-            last_execution_status   TEXT,
-            last_execution_error    TEXT,
-            concurrency_policy      TEXT        NOT NULL DEFAULT 'SkipIfRunning',
-            created_at              TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            updated_at              TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            recurring_job_id      TEXT        PRIMARY KEY,
+            job_type              TEXT        NOT NULL,
+            input_type            TEXT        NOT NULL,
+            input_json            JSONB       NOT NULL,
+            cron                  TEXT        NOT NULL,
+            time_zone_id          TEXT        NOT NULL DEFAULT 'UTC',
+            queue                 TEXT        NOT NULL DEFAULT 'default',
+            next_execution        TIMESTAMPTZ,
+            last_execution        TIMESTAMPTZ,
+            last_execution_status TEXT,
+            last_execution_error  TEXT,
+            concurrency_policy    TEXT        NOT NULL DEFAULT 'SkipIfRunning',
+            created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at            TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
 
         CREATE INDEX IF NOT EXISTS idx_nexjob_recurring_next
             ON nexjob_recurring_jobs (next_execution);
+        """;
 
+    /// <summary>V2: Add cron_override, enabled, and deleted_by_user columns to nexjob_recurring_jobs.</summary>
+    internal const string V2AlterRecurring =
+        """
         ALTER TABLE nexjob_recurring_jobs ADD COLUMN IF NOT EXISTS cron_override TEXT NULL;
         ALTER TABLE nexjob_recurring_jobs ADD COLUMN IF NOT EXISTS enabled BOOLEAN NOT NULL DEFAULT TRUE;
         ALTER TABLE nexjob_recurring_jobs ADD COLUMN IF NOT EXISTS deleted_by_user BOOLEAN NOT NULL DEFAULT FALSE;
-
-        ALTER TABLE nexjob_jobs ADD COLUMN IF NOT EXISTS execution_logs JSONB NULL;
         """;
+
+    /// <summary>V3: Add execution_logs and trace_parent columns to nexjob_jobs.</summary>
+    internal const string V3AddColumns =
+        """
+        ALTER TABLE nexjob_jobs ADD COLUMN IF NOT EXISTS execution_logs JSONB NULL;
+        ALTER TABLE nexjob_jobs ADD COLUMN IF NOT EXISTS trace_parent TEXT NULL;
+        """;
+
+    /// <summary>V4: Create nexjob_schema_version and nexjob_recurring_locks tables.</summary>
+    internal const string V4CreateVersionTable =
+        """
+        CREATE TABLE IF NOT EXISTS nexjob_schema_version (
+            version     INT         PRIMARY KEY,
+            applied_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            description TEXT        NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS nexjob_recurring_locks (
+            recurring_job_id TEXT        PRIMARY KEY,
+            expires_at       TIMESTAMPTZ NOT NULL
+        );
+        """;
+
+    /// <summary>Full initial schema — kept for backward compatibility. Prefer the versioned consts.</summary>
+    internal const string CreateTables = V1CreateTables;
 }

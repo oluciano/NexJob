@@ -39,6 +39,13 @@ public sealed class NexJobOptions
     public TimeSpan HeartbeatTimeout { get; set; } = TimeSpan.FromMinutes(5);
 
     /// <summary>
+    /// Maximum time to wait for active jobs to complete during graceful shutdown.
+    /// Jobs still running after this timeout are left for the orphan watcher to requeue.
+    /// Defaults to 30 seconds.
+    /// </summary>
+    public TimeSpan ShutdownTimeout { get; set; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
     /// Ordered list of queue names that workers on this host will poll.
     /// Queues are drained in the order specified. Defaults to <c>["default"]</c>.
     /// </summary>
@@ -81,6 +88,11 @@ public sealed class NexJobOptions
         if (s.Queues.Count > 0)
         {
             Queues = s.Queues.Select(q => q.Name).ToArray();
+        }
+
+        if (s.ShutdownTimeoutSeconds > 0)
+        {
+            ShutdownTimeout = TimeSpan.FromSeconds(s.ShutdownTimeoutSeconds);
         }
     }
 }

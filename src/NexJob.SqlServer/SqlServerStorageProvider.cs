@@ -15,14 +15,15 @@ public sealed class SqlServerStorageProvider : IStorageProvider
     private readonly string _connectionString;
 
     /// <summary>
-    /// Initialises the provider and ensures the database schema exists.
-    /// Safe to call multiple times — all DDL statements use existence checks.
+    /// Initialises the provider and applies all pending schema migrations.
+    /// Acquires an application-level lock via <c>sp_getapplock</c> so only one instance migrates at a time.
     /// </summary>
     public SqlServerStorageProvider(string connectionString)
     {
         _connectionString = connectionString;
         Dapper.DefaultTypeMap.MatchNamesWithUnderscores = true;
-        EnsureSchema();
+        // Sync-over-async is acceptable here: runs once at startup, before any requests are served.
+        new SchemaMigrator().MigrateAsync(_connectionString).GetAwaiter().GetResult();
     }
 
     // ── EnqueueAsync ──────────────────────────────────────────────────────────
@@ -542,14 +543,43 @@ public sealed class SqlServerStorageProvider : IStorageProvider
             new { Id = jobId.Value, Logs = JsonSerializer.Serialize(logs) });
     }
 
+    /// <inheritdoc/>
+    public async Task<bool> TryAcquireRecurringJobLockAsync(
+        string recurringJobId, TimeSpan ttl, CancellationToken ct = default)
+    {
+        await using var conn = Open();
+        await conn.OpenAsync(ct);
+        await conn.ExecuteAsync(
+            "DELETE FROM nexjob_recurring_locks WHERE expires_at < SYSUTCDATETIME()");
+        try
+        {
+            await conn.ExecuteAsync(
+                """
+                INSERT INTO nexjob_recurring_locks (recurring_job_id, expires_at)
+                VALUES (@id, DATEADD(MILLISECOND, @ms, SYSUTCDATETIME()))
+                """,
+                new { id = recurringJobId, ms = (long)ttl.TotalMilliseconds });
+            return true;
+        }
+        catch (SqlException ex) when (ex.Number == 2627 || ex.Number == 2601)
+        {
+            // Primary key / unique constraint violation — lock already held
+            return false;
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task ReleaseRecurringJobLockAsync(
+        string recurringJobId, CancellationToken ct = default)
+    {
+        await using var conn = Open();
+        await conn.OpenAsync(ct);
+        await conn.ExecuteAsync(
+            "DELETE FROM nexjob_recurring_locks WHERE recurring_job_id = @id",
+            new { id = recurringJobId });
+    }
+
     // ── Schema ────────────────────────────────────────────────────────────────
 
     private SqlConnection Open() => new(_connectionString);
-
-    private void EnsureSchema()
-    {
-        using var conn = Open();
-        conn.Open();
-        conn.Execute(SqlServerSchemaSql.CreateTables);
-    }
 }
