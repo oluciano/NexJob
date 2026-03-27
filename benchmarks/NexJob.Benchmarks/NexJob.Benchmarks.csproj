@@ -11,6 +11,8 @@
     <PackageReference Include="Hangfire.Core" Version="1.8.*" />
     <PackageReference Include="Hangfire.InMemory" Version="0.9.*" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="8.0.1" />
+    <!-- Pin transitive Newtonsoft.Json to a non-vulnerable version (Hangfire.InMemory pulls 11.0.1) -->
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
     <ProjectReference Include="..\..\src\NexJob\NexJob.csproj" />
   </ItemGroup>
 </Project>

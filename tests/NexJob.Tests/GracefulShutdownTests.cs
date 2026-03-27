@@ -190,7 +190,7 @@ internal sealed class ListLoggerProvider : ILoggerProvider
         {
             lock (_messages)
             {
-                return [.._messages];
+                return [.. _messages];
             }
         }
     }
