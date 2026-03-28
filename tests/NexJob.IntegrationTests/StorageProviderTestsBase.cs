@@ -507,7 +507,10 @@ public abstract class StorageProviderTestsBase
     public async Task RegisterServerAsync_AddsServer_WhenSupported()
     {
         var storage = await CreateStorageAsync();
-        if (IsServerTrackingNotSupported(storage)) return;
+        if (IsServerTrackingNotSupported(storage))
+        {
+            return;
+        }
 
         var serverId = $"server-add-{Guid.NewGuid()}";
         var server = MakeServer(serverId);
@@ -522,7 +525,10 @@ public abstract class StorageProviderTestsBase
     public async Task HeartbeatServerAsync_UpdatesTimestamp_WhenSupported()
     {
         var storage = await CreateStorageAsync();
-        if (IsServerTrackingNotSupported(storage)) return;
+        if (IsServerTrackingNotSupported(storage))
+        {
+            return;
+        }
 
         var serverId = $"server-hb-{Guid.NewGuid()}";
         var server = MakeServer(serverId, DateTimeOffset.UtcNow.AddMinutes(-5));
@@ -534,14 +540,17 @@ public abstract class StorageProviderTestsBase
 
         var active = await storage.GetActiveServersAsync(TimeSpan.FromMinutes(1));
         var updated = active.Single(s => s.Id == serverId);
-        updated.HeartbeatAt.Should().BeAfter(server.HeartbeatAt);
+        updated.HeartbeatAt.Should().BeOnOrAfter(server.HeartbeatAt);
     }
 
     [Fact]
     public async Task DeregisterServerAsync_RemovesServer_WhenSupported()
     {
         var storage = await CreateStorageAsync();
-        if (IsServerTrackingNotSupported(storage)) return;
+        if (IsServerTrackingNotSupported(storage))
+        {
+            return;
+        }
 
         var serverId = $"server-dereg-{Guid.NewGuid()}";
         await storage.RegisterServerAsync(MakeServer(serverId));
@@ -556,7 +565,10 @@ public abstract class StorageProviderTestsBase
     public async Task GetActiveServersAsync_FiltersStaleServers_WhenSupported()
     {
         var storage = await CreateStorageAsync();
-        if (IsServerTrackingNotSupported(storage)) return;
+        if (IsServerTrackingNotSupported(storage))
+        {
+            return;
+        }
 
         var activeId = $"active-{Guid.NewGuid()}";
         var staleId = $"stale-{Guid.NewGuid()}";

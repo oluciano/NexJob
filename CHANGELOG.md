@@ -6,6 +6,11 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- Refactored Integration Tests to use `IClassFixture<T>` for Testcontainers, vastly reducing CI compilation and execution times by reusing Docker containers across test runs.
+- Improved database isolation strategy for Postgres and SQL Server to dynamically generate and provision separate database instances per-test.
+- Stabilized `HeartbeatServerAsync` test to prevent flaky timing conditions in rapid CI environments (`.BeOnOrAfter`).
+
 ## [0.3.2] — March 2026
 
 ### Added

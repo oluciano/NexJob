@@ -10,20 +10,33 @@ namespace NexJob.IntegrationTests;
 /// PostgreSQL instance spun up via Testcontainers.
 /// Requires Docker to be available on the host.
 /// </summary>
-public sealed class PostgresStorageProviderTests : StorageProviderTestsBase, IAsyncLifetime
+public sealed class PostgresStorageProviderTests : StorageProviderTestsBase, IClassFixture<PostgresFixture>
 {
-    private readonly PostgreSqlContainer _container = new PostgreSqlBuilder()
-        .WithImage("postgres:16-alpine")
-        .WithDatabase("nexjob_test")
-        .WithUsername("nexjob")
-        .WithPassword("nexjob_pw")
-        .Build();
+    private readonly PostgresFixture _fixture;
 
-    public async Task InitializeAsync() => await _container.StartAsync();
+    public PostgresStorageProviderTests(PostgresFixture fixture)
+    {
+        _fixture = fixture;
+    }
 
-    public async Task DisposeAsync() => await _container.DisposeAsync();
+    protected override async Task<IStorageProvider> CreateStorageAsync()
+    {
+        var baseConn = _fixture.Container.GetConnectionString();
+        var dbName = $"nexjob_{Guid.NewGuid():N}";
 
-    protected override Task<IStorageProvider> CreateStorageAsync() =>
-        Task.FromResult<IStorageProvider>(
-            new PostgresStorageProvider(_container.GetConnectionString()));
+        using var conn = new Npgsql.NpgsqlConnection(baseConn);
+        await conn.OpenAsync();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = $"CREATE DATABASE {dbName};";
+        await cmd.ExecuteNonQueryAsync();
+
+        var builder = new Npgsql.NpgsqlConnectionStringBuilder(baseConn)
+        {
+            Database = dbName,
+        };
+
+        var provider = new PostgresStorageProvider(builder.ConnectionString);
+
+        return provider;
+    }
 }

@@ -33,6 +33,32 @@ Also reads as "Next Job" — always knowing what runs next.
 
 ---
 
+## Non-Negotiables (Mandatory for every PR/Iteration)
+
+To maintain high code quality and library reliability, the following rules are strictly enforced:
+
+1.  **Zero `NotImplementedException`:** No stubs or placeholders in merged code. Features must be fully functional or not present.
+2.  **Zero Compiler Warnings:** `dotnet build --configuration Release` must result in 0 warnings.
+3.  **Public API Documentation:** Every public type and member **must** have XML documentation (`///`).
+4.  **Testing Coverage:** Every new behavior, bug fix, or feature must be accompanied by corresponding unit or integration tests.
+5.  **Strict Async/Await:** * No `.Result` or `.Wait()`. Use `async/await` throughout the entire call stack.
+    * `CancellationToken` must always be propagated; never ignored.
+6.  **Sealed by Default:** All classes must be marked as `sealed` unless explicit inheritance is part of the architectural design.
+7.  **Documentation Sync:** * `README.md` must be updated to remove any "coming soon" symbols (🔜) for features that are now implemented.
+    * `CLAUDE.md` must be updated with any new architectural decisions or pattern changes.
+
+## Coding Conventions
+
+- **Language:** C# 12, .NET 8, `<Nullable>enable</Nullable>`, `<ImplicitUsings>enable</ImplicitUsings>`
+- **Warnings:** `<TreatWarningsAsErrors>true</TreatWarningsAsErrors>`
+- **Private fields:** `_camelCase` with underscore prefix
+- **Async:** every public method that does I/O must be `async Task` or `async Task<T>`
+- **CancellationToken:** always propagate, never ignore
+- **Internal classes:** go in `src/NexJob/Internal/`, not public API
+- **No static state** except `ThrottleRegistry` (singleton service) and invoker cache in `JobDispatcherService`
+- **XML docs** on all public types and members
+- **Tests:** xUnit + FluentAssertions, one test class per production class
+
 ## Repository Structure
 
 ```
@@ -201,20 +227,6 @@ Bulk actions (trigger/delete/requeue) via HTML form POST with checkbox selection
 
 ---
 
-## Coding Conventions
-
-- **Language:** C# 12, .NET 8, `<Nullable>enable</Nullable>`, `<ImplicitUsings>enable</ImplicitUsings>`
-- **Warnings:** `<TreatWarningsAsErrors>true</TreatWarningsAsErrors>`
-- **Private fields:** `_camelCase` with underscore prefix
-- **Async:** every public method that does I/O must be `async Task` or `async Task<T>`
-- **CancellationToken:** always propagate, never ignore
-- **Internal classes:** go in `src/NexJob/Internal/`, not public API
-- **No static state** except `ThrottleRegistry` (singleton service) and invoker cache in `JobDispatcherService`
-- **XML docs** on all public types and members
-- **Tests:** xUnit + FluentAssertions, one test class per production class
-
----
-
 ## NuGet Package Split
 
 | Package | Contains | Status |
@@ -245,6 +257,26 @@ v1.0  ○ Stable API · production-ready · published to NuGet.org
 **Current:** between v0.4 and v0.5 — core is solid, focusing on quality and additional providers.
 
 ---
+
+## Testing Strategy
+
+### Integration Tests Isolation
+To ensure test reliability and prevent "flaky" results in both local environments (Ubuntu/Docker) and GitHub Actions, we follow a **Strict Physical Isolation** strategy for database providers:
+
+- **Database-per-Test (SQL Server & Postgres):**
+  - **Problem:** Shared databases suffer from identity cache issues, transaction locks, and leftover data, causing count mismatches (e.g., "Expected 5, found 12").
+  - **Solution:** Every test execution must create a unique database using `Guid.NewGuid()`.
+  - **Implementation:** Override `CreateStorageAsync` in the test class to generate a dynamic `InitialCatalog`, execute `CREATE DATABASE` on the master node, and then initialize the provider pointing to this new instance.
+
+- **Database-per-Class (MongoDB):**
+  - **Solution:** Use `client.DropDatabase("nexjob_test")` in the constructor to ensure a clean slate. Since Mongo handles dynamic collection creation gracefully, dropping the entire database is the most reliable reset.
+
+- **In-Memory Reset (Redis):**
+  - **Solution:** Execute `FLUSHDB` via `redis-cli` or the C# driver at the start of each test suite to clear all keys and metadata.
+
+### Test Environment Requirements
+- **Docker:** Required for all integration tests via `Testcontainers`.
+- **Hardware:** Tests are optimized for high-concurrency environments but designed to pass in resource-constrained CI environments (GitHub Actions) due to the physical isolation of databases.
 
 ## Developer Contact
 

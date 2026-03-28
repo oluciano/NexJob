@@ -10,20 +10,22 @@ namespace NexJob.IntegrationTests;
 /// Redis instance spun up via Testcontainers.
 /// Requires Docker to be available on the host.
 /// </summary>
-public sealed class RedisStorageProviderTests : StorageProviderTestsBase, IAsyncLifetime
+public sealed class RedisStorageProviderTests : StorageProviderTestsBase, IClassFixture<RedisFixture>
 {
-    private readonly RedisContainer _container = new RedisBuilder()
-        .WithImage("redis:7-alpine")
-        .Build();
+    private readonly RedisFixture _fixture;
 
-    public async Task InitializeAsync() => await _container.StartAsync();
+    public RedisStorageProviderTests(RedisFixture fixture)
+    {
+        _fixture = fixture;
 
-    public async Task DisposeAsync() => await _container.DisposeAsync();
+        var connection = StackExchange.Redis.ConnectionMultiplexer.Connect(_fixture.Container.GetConnectionString());
+        connection.GetDatabase().Execute("FLUSHDB");
+    }
 
     protected override Task<IStorageProvider> CreateStorageAsync() =>
         Task.FromResult<IStorageProvider>(
             new RedisStorageProvider(
                 StackExchange.Redis.ConnectionMultiplexer
-                    .Connect(_container.GetConnectionString())
+                    .Connect(_fixture.Container.GetConnectionString())
                     .GetDatabase()));
 }

@@ -11,19 +11,25 @@ namespace NexJob.IntegrationTests;
 /// MongoDB instance spun up via Testcontainers.
 /// Requires Docker to be available on the host.
 /// </summary>
-public sealed class MongoStorageProviderTests : StorageProviderTestsBase, IAsyncLifetime
+public sealed class MongoStorageProviderTests : StorageProviderTestsBase, IClassFixture<MongoFixture>
 {
-    private readonly MongoDbContainer _container = new MongoDbBuilder()
-        .WithImage("mongo:7")
-        .Build();
+    private readonly MongoFixture _fixture;
 
-    public async Task InitializeAsync() => await _container.StartAsync();
+    public MongoStorageProviderTests(MongoFixture fixture)
+    {
+        _fixture = fixture;
 
-    public async Task DisposeAsync() => await _container.DisposeAsync();
+        var client = new MongoClient(_fixture.Container.GetConnectionString());
+
+        client.DropDatabase("nexjob_test");
+
+        var database = client.GetDatabase("nexjob_test");
+        _ = new NexJob.MongoDB.MongoStorageProvider(database);
+    }
 
     protected override Task<IStorageProvider> CreateStorageAsync()
     {
-        var client = new MongoClient(_container.GetConnectionString());
+        var client = new MongoClient(_fixture.Container.GetConnectionString());
         var database = client.GetDatabase("nexjob_test");
         return Task.FromResult<IStorageProvider>(new MongoStorageProvider(database));
     }

@@ -10,17 +10,35 @@ namespace NexJob.IntegrationTests;
 /// SQL Server instance spun up via Testcontainers.
 /// Requires Docker to be available on the host.
 /// </summary>
-public sealed class SqlServerStorageProviderTests : StorageProviderTestsBase, IAsyncLifetime
+public sealed class SqlServerStorageProviderTests : StorageProviderTestsBase, IClassFixture<SqlServerFixture>
 {
-    private readonly MsSqlContainer _container = new MsSqlBuilder()
-        .WithImage("mcr.microsoft.com/mssql/server:2022-latest")
-        .Build();
+    private readonly SqlServerFixture _fixture;
 
-    public async Task InitializeAsync() => await _container.StartAsync();
+    public SqlServerStorageProviderTests(SqlServerFixture fixture)
+    {
+        _fixture = fixture;
+    }
 
-    public async Task DisposeAsync() => await _container.DisposeAsync();
+    // SOBRESCREVA o método que cria o storage para usar um BANCO ÚNICO por teste
+    protected override async Task<IStorageProvider> CreateStorageAsync()
+    {
+        var baseConn = _fixture.Container.GetConnectionString();
+        // Criamos um nome de banco totalmente aleatório para CADA método de teste [Fact]
+        var dbName = $"NexJob_{Guid.NewGuid():N}";
 
-    protected override Task<IStorageProvider> CreateStorageAsync() =>
-        Task.FromResult<IStorageProvider>(
-            new SqlServerStorageProvider(_container.GetConnectionString()));
+        using var conn = new Microsoft.Data.SqlClient.SqlConnection(baseConn);
+        await conn.OpenAsync();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = $"CREATE DATABASE [{dbName}];";
+        await cmd.ExecuteNonQueryAsync();
+
+        var builder = new Microsoft.Data.SqlClient.SqlConnectionStringBuilder(baseConn)
+        {
+            InitialCatalog = dbName,
+        };
+
+        var provider = new SqlServerStorageProvider(builder.ConnectionString);
+        // O próprio provider deve criar as tabelas no banco novo
+        return provider;
+    }
 }
