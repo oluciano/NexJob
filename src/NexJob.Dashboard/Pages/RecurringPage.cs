@@ -64,8 +64,8 @@ internal sealed class RecurringPage : IComponent
                 var statusColor = r.LastExecutionStatus switch
                 {
                     JobStatus.Succeeded => "var(--success)",
-                    JobStatus.Failed    => "var(--danger)",
-                    _                   => "var(--text-3)",
+                    JobStatus.Failed => "var(--danger)",
+                    _ => "var(--text-3)",
                 };
                 var statusIcon = r.LastExecutionStatus == JobStatus.Failed ? "✗" : "✓";
                 var title = r.LastExecutionStatus == JobStatus.Failed && r.LastExecutionError is not null

@@ -13,24 +13,24 @@ internal static class Helpers
 
     internal static string BadgeHtml(JobStatus s) => s switch
     {
-        JobStatus.Enqueued            => "<span class=\"badge badge-enqueued\">Enqueued</span>",
-        JobStatus.Processing          => "<span class=\"badge badge-processing\">Processing</span>",
-        JobStatus.Succeeded           => "<span class=\"badge badge-succeeded\">Succeeded</span>",
-        JobStatus.Failed              => "<span class=\"badge badge-failed\">Failed</span>",
-        JobStatus.Scheduled           => "<span class=\"badge badge-scheduled\">Scheduled</span>",
+        JobStatus.Enqueued => "<span class=\"badge badge-enqueued\">Enqueued</span>",
+        JobStatus.Processing => "<span class=\"badge badge-processing\">Processing</span>",
+        JobStatus.Succeeded => "<span class=\"badge badge-succeeded\">Succeeded</span>",
+        JobStatus.Failed => "<span class=\"badge badge-failed\">Failed</span>",
+        JobStatus.Scheduled => "<span class=\"badge badge-scheduled\">Scheduled</span>",
         JobStatus.AwaitingContinuation => "<span class=\"badge badge-awaiting\">Awaiting</span>",
-        _                             => $"<span class=\"badge\">{s}</span>",
+        _ => $"<span class=\"badge\">{s}</span>",
     };
 
     internal static string StatusDot(JobStatus status) => status switch
     {
-        JobStatus.Processing          => "<span class=\"dot dot-processing\"></span>",
-        JobStatus.Succeeded           => "<span class=\"dot dot-succeeded\"></span>",
-        JobStatus.Failed              => "<span class=\"dot dot-failed\"></span>",
-        JobStatus.Scheduled           => "<span class=\"dot dot-scheduled\"></span>",
-        JobStatus.Enqueued            => "<span class=\"dot dot-enqueued\"></span>",
+        JobStatus.Processing => "<span class=\"dot dot-processing\"></span>",
+        JobStatus.Succeeded => "<span class=\"dot dot-succeeded\"></span>",
+        JobStatus.Failed => "<span class=\"dot dot-failed\"></span>",
+        JobStatus.Scheduled => "<span class=\"dot dot-scheduled\"></span>",
+        JobStatus.Enqueued => "<span class=\"dot dot-enqueued\"></span>",
         JobStatus.AwaitingContinuation => "<span class=\"dot dot-awaiting\"></span>",
-        _                             => "<span class=\"dot dot-default\"></span>",
+        _ => "<span class=\"dot dot-default\"></span>",
     };
 
     internal static string Truncate(string? s, int max)
@@ -138,9 +138,9 @@ internal static class Helpers
         dt is null ? "—" :
         (now - dt.Value) switch
         {
-            var d when d.TotalSeconds < 60  => $"{(int)d.TotalSeconds}s ago",
-            var d when d.TotalMinutes < 60  => $"{(int)d.TotalMinutes}m ago",
-            var d when d.TotalHours   < 24  => $"{(int)d.TotalHours}h ago",
-            var d                           => $"{(int)d.TotalDays}d ago",
+            var d when d.TotalSeconds < 60 => $"{(int)d.TotalSeconds}s ago",
+            var d when d.TotalMinutes < 60 => $"{(int)d.TotalMinutes}m ago",
+            var d when d.TotalHours < 24 => $"{(int)d.TotalHours}h ago",
+            var d => $"{(int)d.TotalDays}d ago",
         };
 }

@@ -6,6 +6,33 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.1] — March 2026
+
+### Changed
+- **Dashboard complete visual redesign** — Linear-inspired dark UI replacing the
+  generic 2021 aesthetic:
+  - New design system: deep blue-black palette (`#080810`), indigo accent (`#6366f1`),
+    proper typographic hierarchy, Inter font with optical variants
+  - NexJob SVG hexagon logo replacing the `⚡` emoji
+  - Overview: metric cards with status-colored top borders and animated pulse dot,
+    120px throughput chart with hover tooltips, failure list as cards
+  - Jobs: card-row layout replacing HTML table, status pill filters,
+    inline progress bar for active jobs, tag badges with click-to-filter
+  - Job detail: grouped property sections (Timeline / Configuration / Relationships),
+    JSON payload with syntax highlighting (no external library),
+    terminal-style execution log with level colors
+  - Queues: utilization bar cards showing `processing / total` ratio,
+    paused/window badges
+  - Recurring: countdown display ("in 17h 43m"), cron in `<code>` element,
+    concurrent/paused/deleted badges
+  - Failed: warning banner, bulk Requeue All / Delete All actions in header
+  - Settings: toggle switches for queue pause/resume, section cards
+  - Responsive: mobile sidebar collapses to icon-only nav,
+    2-column grid on tablet
+  - `Helpers.StatusDot`, `Helpers.RelativeTime`, `Helpers.CountdownFriendly`,
+    `Helpers.ColorizeJson` added
+  - SSE stream extended to include active job progress for live progress bar updates
+
 ## [0.3.0] — March 2026
 
 ### Added
@@ -91,7 +118,8 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Recurring concurrency policy — `SkipIfRunning` (default) or `AllowConcurrent`
 - CI/CD pipeline (`ci.yml` + `publish.yml`) publishing all packages to NuGet on `v*` tag push
 
-[Unreleased]: https://github.com/oluciano/NexJob/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/oluciano/NexJob/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/oluciano/NexJob/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/oluciano/NexJob/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/oluciano/NexJob/compare/v0.1.0-alpha...v0.2.0
 [0.1.0-alpha]: https://github.com/oluciano/NexJob/releases/tag/v0.1.0-alpha

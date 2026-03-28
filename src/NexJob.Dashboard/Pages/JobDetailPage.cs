@@ -169,10 +169,10 @@ internal sealed class JobDetailPage : IComponent
             {
                 var color = entry.Level switch
                 {
-                    "Warning"             => "#fbbf24",
+                    "Warning" => "#fbbf24",
                     "Error" or "Critical" => "#f87171",
-                    "Debug" or "Trace"    => "#6b7280",
-                    _                     => "#e5e7eb",
+                    "Debug" or "Trace" => "#6b7280",
+                    _ => "#e5e7eb",
                 };
                 var ts = entry.Timestamp.ToString("yyyy-MM-dd HH:mm:ss.fff");
                 var msg = System.Web.HttpUtility.HtmlEncode(entry.Message).Replace("\n", "&#10;");

@@ -420,7 +420,7 @@ internal static class HtmlShell
                     </ul>
                 </div>
                 <div class="sidebar-footer">
-                    <span>v0.3.0</span>
+                    <span>v0.3.1</span>
                     <a href="https://github.com/oluciano/NexJob" style="color:var(--text-3);font-size:11px">GitHub ↗</a>
                 </div>
             </nav>
