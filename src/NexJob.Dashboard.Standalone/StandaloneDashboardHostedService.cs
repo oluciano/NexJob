@@ -52,7 +52,6 @@ internal sealed class StandaloneDashboardHostedService : IHostedService
         builder.Services.AddSingleton(
             _rootProvider.GetRequiredService<NexJob.Configuration.IRuntimeSettingsStore>());
 
-
         _app = builder.Build();
         _app.UseNexJobDashboard(_options.Path, opt =>
         {
