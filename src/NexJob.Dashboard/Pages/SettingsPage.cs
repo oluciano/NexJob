@@ -57,74 +57,94 @@ internal sealed class SettingsPage : ComponentBase
             },
         }, PrettyPrint);
 
-        var body = $"""
-            <h1 class="page-title">Live Settings</h1>
+        var hasOverrides = Runtime.Workers.HasValue || Runtime.PollingInterval.HasValue || Runtime.PausedQueues.Count > 0;
 
-            <div class="section">
-              <h2>Workers</h2>
-              <form method="post" action="{PathPrefix}/settings/workers">
-                <div style="display:flex;gap:10px;align-items:center">
-                  <input type="number" name="workers" value="{effectiveWorkers}" min="1" max="200"
-                         style="width:100px;padding:6px 10px;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text)"/>
-                  <button class="btn btn-primary" type="submit">Apply</button>
-                  {(Runtime.Workers.HasValue ? $"<span style='color:var(--warning);font-size:12px'>⚠ Runtime override active (baseline: {Options.Workers})</span>" : $"<span style='color:var(--text-muted);font-size:12px'>Baseline from config: {Options.Workers}</span>")}
-                </div>
-              </form>
-            </div>
+        var body =
+            "<div class=\"page-header\"><div>" +
+            "<h1 class=\"page-title\">Settings</h1>" +
+            "<p class=\"page-subtitle\">Live runtime configuration — changes apply immediately</p>" +
+            "</div></div>" +
 
-            <div class="section">
-              <h2>Polling Interval</h2>
-              <form method="post" action="{PathPrefix}/settings/polling">
-                <div style="display:flex;gap:10px;align-items:center">
-                  <input type="number" name="seconds" value="{(int)effectivePolling}" min="1" max="300"
-                         style="width:100px;padding:6px 10px;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text)"/>
-                  <span style="color:var(--text-muted)">seconds</span>
-                  <button class="btn btn-primary" type="submit">Apply</button>
-                  {(Runtime.PollingInterval.HasValue ? $"<span style='color:var(--warning);font-size:12px'>⚠ Runtime override active (baseline: {Options.PollingInterval.TotalSeconds}s)</span>" : string.Empty)}
-                </div>
-              </form>
-            </div>
+            // Workers card
+            "<div class=\"settings-card\">" +
+            "<div class=\"settings-card-header\">Workers</div>" +
+            "<div class=\"settings-card-body\">" +
+            "<div class=\"settings-row\">" +
+            "<div class=\"settings-row-label\"><div>Active workers</div>" +
+            $"<div class=\"settings-row-sub\">Baseline from config: {Options.Workers}</div></div>" +
+            $"<form method=\"post\" action=\"{PathPrefix}/settings/workers\" style=\"display:flex;gap:8px;align-items:center\">" +
+            $"<input type=\"number\" name=\"workers\" value=\"{effectiveWorkers}\" min=\"1\" max=\"200\" " +
+            $"style=\"width:80px;padding:5px 8px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px\"/>" +
+            "<button class=\"btn btn-primary btn-sm\" type=\"submit\">Apply</button>" +
+            "</form>" +
+            "</div>" +
+            (Runtime.Workers.HasValue
+                ? "<div class=\"settings-row\"><div class=\"alert alert-warning\" style=\"margin:0;flex:1\">⚠ Runtime override active — differs from appsettings baseline</div></div>"
+                : string.Empty) +
+            "</div></div>" +
 
-            <div class="section">
-              <h2>Queues</h2>
-              <table>
-                <thead><tr><th>Queue</th><th>Status</th><th>Action</th></tr></thead>
-                <tbody>
-                  {BuildQueueRows()}
-                </tbody>
-              </table>
-            </div>
+            // Polling card
+            "<div class=\"settings-card\">" +
+            "<div class=\"settings-card-header\">Polling Interval</div>" +
+            "<div class=\"settings-card-body\">" +
+            "<div class=\"settings-row\">" +
+            "<div class=\"settings-row-label\"><div>Polling interval (seconds)</div>" +
+            $"<div class=\"settings-row-sub\">Baseline from config: {Options.PollingInterval.TotalSeconds}s</div></div>" +
+            $"<form method=\"post\" action=\"{PathPrefix}/settings/polling\" style=\"display:flex;gap:8px;align-items:center\">" +
+            $"<input type=\"number\" name=\"seconds\" value=\"{(int)effectivePolling}\" min=\"1\" max=\"300\" " +
+            $"style=\"width:80px;padding:5px 8px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px\"/>" +
+            "<span style=\"font-size:12px;color:var(--text-3)\">s</span>" +
+            "<button class=\"btn btn-primary btn-sm\" type=\"submit\">Apply</button>" +
+            "</form>" +
+            "</div></div></div>" +
 
-            <div class="section">
-              <h2>Recurring Jobs</h2>
-              <div style="display:flex;gap:10px;align-items:center">
-                {(Runtime.RecurringJobsPaused
-                    ? $"<span class='badge badge-failed'>Paused</span><form method='post' action='{PathPrefix}/recurring/resume-all'><button class='btn btn-primary btn-sm' type='submit'>Resume All</button></form>"
-                    : $"<span class='badge badge-succeeded'>Active</span><form method='post' action='{PathPrefix}/recurring/pause-all'><button class='btn btn-danger btn-sm' type='submit'>Pause All</button></form>")}
-              </div>
-            </div>
+            // Queues card
+            "<div class=\"settings-card\">" +
+            "<div class=\"settings-card-header\">Queues</div>" +
+            "<div class=\"settings-card-body\">" +
+            BuildQueueRows() +
+            "</div></div>" +
 
-            <div class="section">
-              <h2>Effective Configuration</h2>
-              <pre>{System.Web.HttpUtility.HtmlEncode(effectiveJson)}</pre>
-            </div>
+            // Recurring jobs card
+            "<div class=\"settings-card\">" +
+            "<div class=\"settings-card-header\">Recurring Jobs</div>" +
+            "<div class=\"settings-card-body\">" +
+            "<div class=\"settings-row\">" +
+            "<div class=\"settings-row-label\">" +
+            $"<div>Recurring jobs</div><div class=\"settings-row-sub\">{(Runtime.RecurringJobsPaused ? "Currently paused — no new executions will fire" : "All recurring jobs are running normally")}</div>" +
+            "</div>" +
+            (Runtime.RecurringJobsPaused
+                ? $"<span class=\"badge badge-processing\" style=\"margin-right:8px\">Paused</span><form method=\"post\" action=\"{PathPrefix}/recurring/resume-all\" style=\"display:inline\"><button class=\"btn btn-primary btn-sm\" type=\"submit\">Resume All</button></form>"
+                : $"<span class=\"badge badge-succeeded\" style=\"margin-right:8px\">Active</span><form method=\"post\" action=\"{PathPrefix}/recurring/pause-all\" style=\"display:inline\"><button class=\"btn btn-danger btn-sm\" type=\"submit\">Pause All</button></form>") +
+            "</div></div></div>" +
 
-            <div class="section">
-              <form method="post" action="{PathPrefix}/settings/reset">
-                <button class="btn btn-danger" type="submit"
-                        onclick="return confirm('Reset all runtime overrides to baseline?')">
-                  Reset All Runtime Overrides
-                </button>
-              </form>
-            </div>
-            """;
+            // Effective configuration
+            "<div class=\"settings-card\">" +
+            "<div class=\"settings-card-header\">Effective Configuration</div>" +
+            "<div class=\"settings-card-body\" style=\"padding:16px\">" +
+            $"<pre style=\"margin:0\">{System.Web.HttpUtility.HtmlEncode(effectiveJson)}</pre>" +
+            "</div></div>" +
+
+            // Reset overrides
+            (hasOverrides
+                ? "<div style=\"margin-top:8px\">" +
+                  $"<form method=\"post\" action=\"{PathPrefix}/settings/reset\">" +
+                  "<button class=\"btn btn-danger\" type=\"submit\" onclick=\"return confirm('Reset all runtime overrides to baseline config?')\">" +
+                  "Reset All Runtime Overrides</button>" +
+                  "</form></div>"
+                : string.Empty);
 
         builder.AddMarkupContent(0, HtmlShell.Wrap(Title, PathPrefix, "settings", body));
     }
 
     private string BuildQueueRows()
     {
-        var rows = new System.Text.StringBuilder();
+        if (Options.Queues.Count == 0)
+        {
+            return "<div class=\"settings-row\"><span style=\"color:var(--text-3);font-size:12px\">No queues configured.</span></div>";
+        }
+
+        var sb = new System.Text.StringBuilder();
         var now = DateTimeOffset.UtcNow;
 
         foreach (var q in Options.Queues)
@@ -133,27 +153,39 @@ internal sealed class SettingsPage : ComponentBase
             var windowSetting = Options.QueueSettings.Find(qs => qs.Name == q);
             var inWindow = windowSetting?.ExecutionWindow?.IsWithinWindow(now) ?? true;
 
-            string status;
+            string statusBadge;
             if (isPaused)
             {
-                status = "<span class='badge badge-failed'>Paused</span>";
+                statusBadge = "<span class=\"badge badge-processing\">Paused</span>";
             }
             else if (!inWindow)
             {
-                status = "<span class='badge badge-scheduled'>Outside Window</span>";
+                statusBadge = "<span class=\"badge badge-scheduled\">Outside Window</span>";
             }
             else
             {
-                status = "<span class='badge badge-succeeded'>Active</span>";
+                statusBadge = "<span class=\"badge badge-succeeded\">Active</span>";
             }
 
             var toggleAction = isPaused
-                ? $"<form method='post' action='{PathPrefix}/queues/{q}/resume' style='display:inline'><button class='btn btn-primary btn-sm'>Resume</button></form>"
-                : $"<form method='post' action='{PathPrefix}/queues/{q}/pause' style='display:inline'><button class='btn btn-danger btn-sm'>Pause</button></form>";
+                ? $"{PathPrefix}/queues/{Uri.EscapeDataString(q)}/resume"
+                : $"{PathPrefix}/queues/{Uri.EscapeDataString(q)}/pause";
+            var toggleChecked = !isPaused ? " checked" : string.Empty;
 
-            rows.AppendLine($"<tr><td>{q}</td><td>{status}</td><td>{toggleAction}</td></tr>");
+            sb.Append(
+                $"<div class=\"settings-row\">" +
+                $"<div class=\"settings-row-label\">" +
+                $"<div>{System.Web.HttpUtility.HtmlEncode(q)}</div>" +
+                $"</div>" +
+                $"{statusBadge}" +
+                $"<form method=\"post\" action=\"{toggleAction}\" style=\"display:inline;margin-left:8px\">" +
+                $"<label class=\"toggle\" title=\"{(isPaused ? "Resume" : "Pause")} queue\">" +
+                $"<input type=\"checkbox\"{toggleChecked} onchange=\"this.form.submit()\" />" +
+                $"<span class=\"toggle-thumb\"></span>" +
+                $"</label></form>" +
+                $"</div>");
         }
 
-        return rows.ToString();
+        return sb.ToString();
     }
 }

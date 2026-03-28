@@ -20,7 +20,8 @@ internal static class DashboardStreamEndpoint
 
     /// <summary>
     /// Streams <see cref="JobMetrics"/> snapshots as SSE events until the request is aborted.
-    /// Each event carries a compact JSON object with the six numeric counters.
+    /// Each event carries a compact JSON object with counters, hourly throughput,
+    /// and active job progress updates for live progress bars on the job detail page.
     /// </summary>
     internal static async Task HandleAsync(HttpContext context, IStorageProvider storage)
     {
@@ -36,6 +37,9 @@ internal static class DashboardStreamEndpoint
             {
                 var metrics = await storage.GetMetricsAsync(ct);
 
+                var activeResult = await storage.GetJobsAsync(
+                    new JobFilter { Status = JobStatus.Processing }, 1, 20, ct);
+
                 var payload = JsonSerializer.Serialize(new
                 {
                     metrics.Enqueued,
@@ -44,6 +48,13 @@ internal static class DashboardStreamEndpoint
                     metrics.Failed,
                     metrics.Scheduled,
                     metrics.Recurring,
+                    HourlyThroughput = metrics.HourlyThroughput.Select(h => new { h.Hour, h.Count }),
+                    ActiveJobs = activeResult.Items.Select(j => new
+                    {
+                        Id = j.Id.Value,
+                        j.ProgressPercent,
+                        j.ProgressMessage,
+                    }),
                 }, JsonOptions);
 
                 await context.Response.WriteAsync($"data: {payload}\n\n", ct);
