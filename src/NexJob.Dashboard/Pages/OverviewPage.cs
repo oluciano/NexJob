@@ -74,7 +74,7 @@ internal sealed class OverviewPage : IComponent
                 : "<div class=\"empty-state\" style=\"padding:24px 0\"><p>No completed jobs in the last 24 hours.</p></div>") +
             "</div>" +
 
-            "<div class=\"section\">" +
+            "<div class=\"section\" id=\"overview-recent-failures\" data-refresh=\"true\">" +
             "<div class=\"section-title\">Recent Failures</div>" +
             "<div class=\"job-list\">" + failCards + "</div>" +
             (m.RecentFailures.Count > 0

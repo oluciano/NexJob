@@ -223,7 +223,10 @@ call `AddNexJobPostgres(...)` or `AddNexJobMongoDB(...)` **before** `AddNexJob()
 Pure C# `IComponent` implementations (no .razor files) rendered via `HtmlRenderer`.
 Mounted via `app.UseNexJobDashboard(pathPrefix)`. Default prefix: `/dashboard`.
 Supports: overview, queues, jobs (paginated/filtered), job detail, recurring, failed.
-Bulk actions (trigger/delete/requeue) via HTML form POST with checkbox selection.
+Bulk actions (trigger/delete/requeue) via HTML form POST.
+Real-time updates are achieved through a hybrid zero-dependency approach:
+- **Server-Sent Events (SSE):** For high-frequency numeric counters and progress bars (`OverviewPage`, `JobDetailPage`).
+- **HTMX-style DOM Swapping (Vanilla JS):** A global polling script in `HtmlShell.cs` fetches the current URL every 5s, parses HTML via `DOMParser`, and seamlessly replaces `innerHTML` of any container marked with `data-refresh="true"`. We explicitly avoid pulling in Blazor Server/WebAssembly or SignalR to keep the library dependencies strictly at zero.
 
 ---
 
@@ -250,7 +253,7 @@ v0.3  ✅ Priority queues · resource throttling · continuations · bulk action
 v0.4  ✅ MongoDB provider · integration tests (Testcontainers) · CONTRIBUTING.md
 v0.5  ○ Active Servers & Workers mapping · SQL Server · Redis · Oracle providers
 v0.6  ○ OpenTelemetry (Activity spans per job) · IJobMigration<TOld,TNew> · SchemaVersion migration
-v0.7  ○ Dashboard real-time updates (SSE or SignalR) · NuGet packaging · CI publishing
+v0.7  ✅ Dashboard real-time updates (SSE & Vanilla JS DOM Swap) · ○ NuGet packaging · ○ CI publishing
 v1.0  ○ Stable API · production-ready · published to NuGet.org
 ```
 

@@ -87,6 +87,7 @@ internal sealed class ServersPage : IComponent
         var totalWorkers = servers.Sum(s => s.WorkerCount);
 
         var body =
+            "<div id=\"servers-page-content\" data-refresh=\"true\">" +
             "<div class=\"page-header\"><div>" +
             "<h1 class=\"page-title\">Servers</h1>" +
             $"<p class=\"page-subtitle\">{servers.Count} active node{(servers.Count == 1 ? string.Empty : "s")} processing {totalWorkers} concurrent jobs</p>" +
@@ -101,7 +102,8 @@ internal sealed class ServersPage : IComponent
             "<th style=\"width:15%\">Heartbeat</th>" +
             "</tr></thead>" +
             $"<tbody>{tableBody}</tbody>" +
-            "</table></div>";
+            "</table></div>" +
+            "</div>";
 
         return HtmlShell.Wrap(Title, PathPrefix, "servers", body);
     }

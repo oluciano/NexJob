@@ -247,6 +247,7 @@ internal sealed class RecurringJobDetailPage : IComponent
 
         var body =
             $"<a href=\"{PathPrefix}/recurring\" style=\"color:var(--text-muted);font-size:12px\">← Back to Recurring Jobs</a>" +
+            $"<div id=\"auto-refresh-container\" data-refresh=\"true\">" +
             $"<div style=\"display:flex;align-items:center;gap:12px;margin-top:16px;margin-bottom:8px\">" +
             $"<h1 class=\"page-title\" style=\"margin-bottom:0\">{encodedId}</h1>" +
             $"{stateBadge}{lastExecBadge}" +
@@ -256,6 +257,7 @@ internal sealed class RecurringJobDetailPage : IComponent
             $"</div>" +
             $"<div style=\"margin-top:20px\">{actionsHtml}</div>" +
             executionsSection +
+            $"</div>" +
             modalHtml;
 
         return HtmlShell.Wrap(Title, PathPrefix, "recurring", body);

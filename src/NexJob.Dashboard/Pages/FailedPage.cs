@@ -43,8 +43,10 @@ internal sealed class FailedPage : IComponent
         if (result.Items.Count == 0)
         {
             var emptyBody =
+                "<div id=\"failed-page-content\" data-refresh=\"true\">" +
                 "<div class=\"page-header\"><div><h1 class=\"page-title\">Failed Jobs</h1><p class=\"page-subtitle\">Dead-letter queue</p></div></div>" +
-                "<div class=\"empty-state\"><svg width=\"40\" height=\"40\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1\"><circle cx=\"12\" cy=\"12\" r=\"9\"/><line x1=\"9\" y1=\"9\" x2=\"15\" y2=\"15\"/><line x1=\"15\" y1=\"9\" x2=\"9\" y2=\"15\"/></svg><p>No failed jobs. Looking good.</p></div>";
+                "<div class=\"empty-state\"><svg width=\"40\" height=\"40\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1\"><circle cx=\"12\" cy=\"12\" r=\"9\"/><line x1=\"9\" y1=\"9\" x2=\"15\" y2=\"15\"/><line x1=\"15\" y1=\"9\" x2=\"9\" y2=\"15\"/></svg><p>No failed jobs. Looking good.</p></div>" +
+                "</div>";
             return HtmlShell.Wrap(Title, PathPrefix, "failed", emptyBody);
         }
 
@@ -72,6 +74,7 @@ internal sealed class FailedPage : IComponent
         }));
 
         var body =
+            "<div id=\"failed-page-content\" data-refresh=\"true\">" +
             "<div class=\"page-header\">" +
             "<div>" +
             "<h1 class=\"page-title\">Failed Jobs</h1>" +
@@ -82,6 +85,7 @@ internal sealed class FailedPage : IComponent
             banner +
             "<div class=\"section\">" +
             "<div class=\"job-list\">" + rows + "</div>" +
+            "</div>" +
             "</div>";
 
         return HtmlShell.Wrap(Title, PathPrefix, "failed", body);

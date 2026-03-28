@@ -431,6 +431,33 @@ internal static class HtmlShell
                 {{body}}
             </main>
         </div>
+        <script>
+        (function(){
+            async function nexJobPoll() {
+                setTimeout(nexJobPoll, 5000);
+                var isInput = document.activeElement && ['INPUT','SELECT','TEXTAREA'].includes(document.activeElement.tagName);
+                var isModal = document.querySelector('dialog[open]') !== null;
+                if (isInput || isModal) return;
+                var targets = document.querySelectorAll('[data-refresh="true"]');
+                if (targets.length === 0) return;
+                try {
+                    var res = await fetch(window.location.href, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+                    if (!res.ok) return;
+                    var text = await res.text();
+                    var doc = new DOMParser().parseFromString(text, 'text/html');
+                    targets.forEach(function(el) {
+                        if (el.id) {
+                            var newEl = doc.getElementById(el.id);
+                            if (newEl && el.innerHTML !== newEl.innerHTML) {
+                                el.innerHTML = newEl.innerHTML;
+                            }
+                        }
+                    });
+                } catch(e) {}
+            }
+            setTimeout(nexJobPoll, 5000);
+        })();
+        </script>
         </body>
         </html>
         """;
