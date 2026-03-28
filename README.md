@@ -83,6 +83,7 @@ NexJob was built to solve all of that.
 | In-memory for testing | ✅ | ✅ |
 | Cron / recurring jobs | ✅ | ✅ |
 | Dashboard | ✅ dark mode | ✅ legacy |
+| Worker Service / Console dashboard | ✅ | ❌ |
 
 > `Job progress tracking`, `IJobContext`, and `Job tags` are new in v0.3.
 
@@ -116,13 +117,63 @@ dotnet add package NexJob.Redis
 dotnet add package NexJob.MongoDB
 dotnet add package NexJob.Oracle
 
-# Optional dashboard
+# For Web APIs
 dotnet add package NexJob.Dashboard
+
+# For Worker Services and Console Apps
+dotnet add package NexJob.Dashboard.Standalone
 
 # Or scaffold a complete starter project
 dotnet new install NexJob.Templates
 dotnet new nexjob -n MyApp
 ```
+
+---
+
+## Worker Services & Console Apps
+
+NexJob works in any .NET host — not just Web APIs.
+For Worker Services and Console Applications that don't have an HTTP pipeline,
+install `NexJob.Dashboard.Standalone` to get the full dashboard without any extra
+project or infrastructure.
+
+```bash
+dotnet add package NexJob.Dashboard.Standalone
+```
+
+```csharp
+// Worker Service — Program.cs
+var builder = Host.CreateApplicationBuilder(args);
+
+builder.Services
+    .AddNexJob(builder.Configuration)
+    .AddNexJobJobs(typeof(Program).Assembly);
+
+builder.Services.AddNexJobStandaloneDashboard(builder.Configuration);
+
+await builder.Build().RunAsync();
+// Dashboard: http://localhost:5005/dashboard
+```
+
+Configure the port and path in appsettings.json:
+
+```json
+{
+  "NexJob": {
+    "Dashboard": {
+      "Port": 5005,
+      "Path": "/dashboard",
+      "Title": "My Worker Jobs",
+      "LocalhostOnly": true
+    }
+  }
+}
+```
+
+| Scenario | Package | Registration |
+|---|---|---|
+| Web API / ASP.NET Core | `NexJob.Dashboard` | `app.UseNexJobDashboard()` |
+| Worker Service / Console App | `NexJob.Dashboard.Standalone` | `services.AddNexJobStandaloneDashboard()` |
 
 ---
 
@@ -200,11 +251,18 @@ await scheduler.EnqueueAsync<SendInvoiceJob, SendInvoiceInput>(
 
 ### 4 — Dashboard
 
+**Web API / ASP.NET Core:**
 ```csharp
-app.UseNexJobDashboard("/jobs");
+app.UseNexJobDashboard("/dashboard");
 ```
 
-Open `/jobs` to see every queue, every job state, every retry — live.
+**Worker Service / Console App:**
+```csharp
+services.AddNexJobStandaloneDashboard(configuration);
+// Dashboard available at http://localhost:5005/dashboard
+```
+
+Open `/dashboard` to see every queue, every job state, every retry — live.
 
 ---
 
@@ -237,7 +295,7 @@ Every NexJob setting can live in `appsettings.json`. No code changes to tune beh
       { "Name": "low", "Workers": 1 }
     ],
     "Dashboard": {
-      "Path": "/jobs",
+      "Path": "/dashboard",
       "Title": "MyApp Jobs",
       "RequireAuth": false,
       "PollIntervalSeconds": 3
