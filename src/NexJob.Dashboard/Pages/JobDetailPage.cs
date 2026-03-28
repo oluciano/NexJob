@@ -26,12 +26,15 @@ internal sealed class JobDetailPage : IComponent
     {
         if (job is null)
         {
-            return HtmlShell.Wrap(Title, PathPrefix, "jobs",
-                "<h2>Job not found</h2><p><a href=\"" + PathPrefix + "/jobs\">← Back to Jobs</a></p>");
+            var notFoundHtml =
+                "<div class=\"empty-state\"><svg width=\"40\" height=\"40\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1\"><circle cx=\"12\" cy=\"12\" r=\"9\"/><line x1=\"12\" y1=\"8\" x2=\"12\" y2=\"12\"/><line x1=\"12\" y1=\"16\" x2=\"12.01\" y2=\"16\"/></svg><p>Job not found</p></div>" +
+                $"<div style=\"text-align:center;margin-top:12px\"><a href=\"{PathPrefix}/jobs\" class=\"btn btn-ghost btn-sm\">← Back to Jobs</a></div>";
+            return HtmlShell.Wrap(Title, PathPrefix, "jobs", notFoundHtml);
         }
 
         var now = DateTimeOffset.UtcNow;
 
+        // Action buttons
         var actions = string.Empty;
         if (job.Status == JobStatus.Scheduled)
         {
@@ -44,58 +47,92 @@ internal sealed class JobDetailPage : IComponent
         {
             actions +=
                 $"<form method=\"post\" action=\"{PathPrefix}/jobs/{job.Id.Value}/requeue\" style=\"display:inline\">" +
-                "<button type=\"submit\" class=\"btn btn-primary btn-sm\">Requeue</button></form> " +
+                "<button type=\"submit\" class=\"btn btn-primary btn-sm\">↺ Requeue</button></form> " +
                 $"<form method=\"post\" action=\"{PathPrefix}/jobs/{job.Id.Value}/delete\" style=\"display:inline\">" +
-                "<button type=\"submit\" class=\"btn btn-danger btn-sm\">Delete</button></form>";
+                "<button type=\"submit\" class=\"btn btn-danger btn-sm\" onclick=\"return confirm('Delete this job?')\">Delete</button></form>";
         }
 
+        // Tags
         var tagsHtml = job.Tags.Count > 0
             ? string.Join(" ", job.Tags.Select(t =>
                 $"<span class=\"tag-badge\">{System.Web.HttpUtility.HtmlEncode(t)}</span>"))
             : "—";
 
-        var rows = new[]
-        {
-            ("ID",          job.Id.Value.ToString()),
-            ("Status",      Helpers.BadgeHtml(job.Status)),
-            ("Type",        System.Web.HttpUtility.HtmlEncode(job.JobType)),
-            ("Queue",       System.Web.HttpUtility.HtmlEncode(job.Queue)),
-            ("Priority",    job.Priority.ToString()),
-            ("Attempts",    $"{job.Attempts} / {job.MaxAttempts}"),
-            ("Tags",        tagsHtml),
-            ("Created",     job.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss UTC")),
-            ("Scheduled",   job.ScheduledAt.HasValue
-                                ? $"{job.ScheduledAt.Value:yyyy-MM-dd HH:mm:ss UTC} &nbsp;·&nbsp; {Helpers.FormatCountdown(job.ScheduledAt.Value - now)}"
-                                : "—"),
-            ("Started",     job.ProcessingStartedAt?.ToString("yyyy-MM-dd HH:mm:ss UTC") ?? "—"),
-            ("Completed",   job.CompletedAt?.ToString("yyyy-MM-dd HH:mm:ss UTC") ?? "—"),
-            ("Retry At",    job.RetryAt?.ToString("yyyy-MM-dd HH:mm:ss UTC") ?? "—"),
-            ("Idempotency", job.IdempotencyKey is null ? "—" : System.Web.HttpUtility.HtmlEncode(job.IdempotencyKey)),
-            ("Parent Job",  job.ParentJobId.HasValue ? $"<a href=\"{PathPrefix}/jobs/{job.ParentJobId.Value.Value}\">{job.ParentJobId.Value.Value}</a>" : "—"),
-        };
+        // Header
+        var header =
+            $"<div style=\"display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:8px;flex-wrap:wrap\">" +
+            $"<div>" +
+            $"<a href=\"{PathPrefix}/jobs\" style=\"font-size:12px;color:var(--text-3)\">← Jobs</a>" +
+            $"<h1 class=\"page-title\" style=\"margin-top:6px;margin-bottom:2px\">{System.Web.HttpUtility.HtmlEncode(Helpers.ShortType(job.JobType))}</h1>" +
+            $"<div style=\"font-family:monospace;font-size:12px;color:var(--text-3);margin-bottom:8px\">{job.Id.Value}</div>" +
+            $"<div style=\"display:flex;align-items:center;gap:10px\">{Helpers.BadgeHtml(job.Status)}" +
+            $"<span style=\"font-size:12px;color:var(--text-2)\">attempt {job.Attempts}/{job.MaxAttempts}</span></div>" +
+            $"</div>" +
+            (actions.Length > 0
+                ? $"<div style=\"display:flex;gap:8px;align-items:center;flex-wrap:wrap\">{actions}</div>"
+                : string.Empty) +
+            $"</div>" +
+            $"<div style=\"border-bottom:1px solid var(--border);margin-bottom:24px\"></div>";
 
-        var detailGrid = string.Join(string.Empty,
-            rows.Select(r => $"<div class=\"detail-label\">{r.Item1}</div><div class=\"detail-value\">{r.Item2}</div>"));
-
+        // Progress bar
         var progressSection = string.Empty;
         if (job.ProgressPercent.HasValue)
         {
             var pct = job.ProgressPercent.Value;
-            var msg = job.ProgressMessage is not null
-                ? $"<span class=\"progress-label\">{System.Web.HttpUtility.HtmlEncode(job.ProgressMessage)}</span>"
+            var msgHtml = job.ProgressMessage is not null
+                ? System.Web.HttpUtility.HtmlEncode(job.ProgressMessage)
                 : string.Empty;
             progressSection =
-                "<h2 style=\"margin-top:20px\">Progress</h2>" +
-                $"<div class=\"progress-container\">" +
-                $"<div class=\"progress-bar\" style=\"width:{pct}%\"></div>" +
+                $"<div class=\"progress-wrap\">" +
+                $"<div class=\"progress-bar-track\">" +
+                $"<div id=\"progress-bar-fill\" class=\"progress-bar-fill\" style=\"width:{pct}%\"></div>" +
                 $"</div>" +
-                $"<div style=\"font-size:12px;color:var(--text-muted);margin-top:4px\">{pct}% {msg}</div>";
+                $"<div class=\"progress-info\">" +
+                $"<span id=\"progress-pct\" class=\"progress-pct\">{pct}%</span>" +
+                $"<span id=\"progress-msg\">{msgHtml}</span>" +
+                $"</div>" +
+                $"</div>";
         }
 
-        var payloadSection =
-            "<h2>Payload</h2>" +
-            $"<pre>{Helpers.FormatJson(job.InputJson)}</pre>";
+        // Detail sections — Timeline, Configuration, Relationships
+        var timeline =
+            "<div class=\"detail-section\">" +
+            "<div class=\"detail-section-header\">Timeline</div>" +
+            "<div class=\"detail-grid\">" +
+            $"<div class=\"detail-label\">Created</div><div class=\"detail-value\">{job.CreatedAt:yyyy-MM-dd HH:mm:ss UTC} <span style=\"color:var(--text-3);font-size:11px\">({Helpers.RelativeTime(job.CreatedAt, now)})</span></div>" +
+            $"<div class=\"detail-label\">Scheduled</div><div class=\"detail-value\">{(job.ScheduledAt.HasValue ? $"{job.ScheduledAt.Value:yyyy-MM-dd HH:mm:ss UTC} <span style=\"color:var(--text-3);font-size:11px\">({Helpers.CountdownFriendly(job.ScheduledAt.Value - now)})</span>" : "—")}</div>" +
+            $"<div class=\"detail-label\">Started</div><div class=\"detail-value\">{(job.ProcessingStartedAt.HasValue ? $"{job.ProcessingStartedAt.Value:yyyy-MM-dd HH:mm:ss UTC}" : "—")}</div>" +
+            $"<div class=\"detail-label\">Completed</div><div class=\"detail-value\">{(job.CompletedAt.HasValue ? $"{job.CompletedAt.Value:yyyy-MM-dd HH:mm:ss UTC}" : "—")}</div>" +
+            $"<div class=\"detail-label\">Retry At</div><div class=\"detail-value\">{(job.RetryAt.HasValue ? $"{job.RetryAt.Value:yyyy-MM-dd HH:mm:ss UTC}" : "—")}</div>" +
+            "</div></div>";
 
+        var configuration =
+            "<div class=\"detail-section\">" +
+            "<div class=\"detail-section-header\">Configuration</div>" +
+            "<div class=\"detail-grid\">" +
+            $"<div class=\"detail-label\">Queue</div><div class=\"detail-value\">{System.Web.HttpUtility.HtmlEncode(job.Queue)}</div>" +
+            $"<div class=\"detail-label\">Priority</div><div class=\"detail-value\">{job.Priority}</div>" +
+            $"<div class=\"detail-label\">Max Attempts</div><div class=\"detail-value\">{job.MaxAttempts}</div>" +
+            $"<div class=\"detail-label\">Idempotency</div><div class=\"detail-value\">{(job.IdempotencyKey is null ? "—" : System.Web.HttpUtility.HtmlEncode(job.IdempotencyKey))}</div>" +
+            $"<div class=\"detail-label\">Tags</div><div class=\"detail-value\">{tagsHtml}</div>" +
+            "</div></div>";
+
+        var relationships =
+            "<div class=\"detail-section\">" +
+            "<div class=\"detail-section-header\">Relationships</div>" +
+            "<div class=\"detail-grid\">" +
+            $"<div class=\"detail-label\">Parent Job</div><div class=\"detail-value\">{(job.ParentJobId.HasValue ? $"<a href=\"{PathPrefix}/jobs/{job.ParentJobId.Value.Value}\">{job.ParentJobId.Value.Value}</a>" : "—")}</div>" +
+            $"<div class=\"detail-label\">Recurring</div><div class=\"detail-value\">{(job.RecurringJobId is not null ? $"<a href=\"{PathPrefix}/recurring/{Uri.EscapeDataString(job.RecurringJobId)}\">{System.Web.HttpUtility.HtmlEncode(job.RecurringJobId)}</a>" : "—")}</div>" +
+            "</div></div>";
+
+        // Payload with JSON syntax highlight
+        var payloadSection =
+            "<div style=\"margin-bottom:24px\">" +
+            "<div class=\"section-title\" style=\"margin-bottom:8px\">Payload</div>" +
+            $"<pre>{Helpers.FormatJson(job.InputJson)}</pre>" +
+            "</div>";
+
+        // Error section
         string errorSection;
         if (job.LastErrorMessage is null)
         {
@@ -105,21 +142,26 @@ internal sealed class JobDetailPage : IComponent
         {
             var stackTrace = job.LastErrorStackTrace is null
                 ? string.Empty
-                : "<h2 style=\"color:var(--danger);margin-top:12px\">Stack Trace</h2>" +
-                  $"<pre style=\"border-color:var(--danger)\">{System.Web.HttpUtility.HtmlEncode(job.LastErrorStackTrace)}</pre>";
+                : "<div class=\"section-title\" style=\"color:var(--danger);margin-bottom:8px;margin-top:16px\">Stack Trace</div>" +
+                  $"<pre style=\"border-color:rgba(248,113,113,.2);background:#0e0808\">{System.Web.HttpUtility.HtmlEncode(job.LastErrorStackTrace)}</pre>";
 
             errorSection =
-                "<h2 style=\"color:var(--danger);margin-top:20px\">Last Error</h2>" +
-                $"<pre style=\"border-color:var(--danger)\">{System.Web.HttpUtility.HtmlEncode(job.LastErrorMessage)}</pre>" +
-                stackTrace;
+                "<div style=\"margin-bottom:24px\">" +
+                "<div class=\"section-title\" style=\"color:var(--danger);margin-bottom:8px\">Last Error</div>" +
+                $"<pre style=\"border-color:rgba(248,113,113,.2);background:#0e0808\">{System.Web.HttpUtility.HtmlEncode(job.LastErrorMessage)}</pre>" +
+                stackTrace +
+                "</div>";
         }
 
+        // Execution logs — terminal style
         string logsSection;
         if (job.ExecutionLogs.Count == 0)
         {
             logsSection =
-                "<h2 style=\"margin-top:20px\">Execution Logs</h2>" +
-                "<p style=\"color:var(--text-muted);font-size:13px\">No logs captured for this execution.</p>";
+                "<div style=\"margin-bottom:24px\">" +
+                "<div class=\"section-title\" style=\"margin-bottom:8px\">Execution Logs</div>" +
+                "<p style=\"color:var(--text-3);font-size:13px\">No logs captured for this execution.</p>" +
+                "</div>";
         }
         else
         {
@@ -127,10 +169,10 @@ internal sealed class JobDetailPage : IComponent
             {
                 var color = entry.Level switch
                 {
-                    "Warning" => "#fbbf24",
+                    "Warning"             => "#fbbf24",
                     "Error" or "Critical" => "#f87171",
-                    "Debug" or "Trace" => "#6b7280",
-                    _ => "#e5e7eb",
+                    "Debug" or "Trace"    => "#6b7280",
+                    _                     => "#e5e7eb",
                 };
                 var ts = entry.Timestamp.ToString("yyyy-MM-dd HH:mm:ss.fff");
                 var msg = System.Web.HttpUtility.HtmlEncode(entry.Message).Replace("\n", "&#10;");
@@ -138,27 +180,45 @@ internal sealed class JobDetailPage : IComponent
             }));
 
             logsSection =
-                "<h2 style=\"margin-top:20px\">Execution Logs</h2>" +
-                "<pre style=\"background:#111827;color:#e5e7eb;border:1px solid #374151;" +
-                "border-radius:6px;padding:12px 16px;font-family:monospace;font-size:12px;" +
-                "line-height:1.6;overflow-x:auto;white-space:pre-wrap;word-break:break-all\">" +
-                logLines +
-                "</pre>";
+                "<div style=\"margin-bottom:24px\">" +
+                $"<div class=\"section-title\" style=\"margin-bottom:8px\">Execution Logs " +
+                $"<span style=\"color:var(--text-3);font-weight:400;text-transform:none;letter-spacing:0\">({job.ExecutionLogs.Count} entries)</span></div>" +
+                $"<div class=\"log-terminal\">{logLines}</div>" +
+                "</div>";
         }
 
+        // SSE for live progress on active jobs
+        var sseScript =
+            $"<script>(function(){{" +
+            $"var jobId='{job.Id.Value}';" +
+            $"var fill=document.getElementById('progress-bar-fill');" +
+            $"var pctEl=document.getElementById('progress-pct');" +
+            $"var msgEl=document.getElementById('progress-msg');" +
+            $"if(!fill)return;" +
+            $"var es=new EventSource('{PathPrefix}/stream');" +
+            $"es.onmessage=function(e){{" +
+            $"var d=JSON.parse(e.data);" +
+            $"var jobs=d.activeJobs||[];" +
+            $"var j=jobs.find(function(x){{return x.id===jobId;}});" +
+            $"if(j&&j.progressPercent!==null&&j.progressPercent!==undefined){{" +
+            $"fill.style.width=j.progressPercent+'%';" +
+            $"if(pctEl)pctEl.textContent=j.progressPercent+'%';" +
+            $"if(msgEl&&j.progressMessage)msgEl.textContent=j.progressMessage;" +
+            $"}}}};es.onerror=function(){{es.close();}};" +
+            $"}})();</script>";
+
         var body =
-            $"<div style=\"display:flex;align-items:center;gap:16px;margin-bottom:24px\">" +
-            $"<h1 class=\"page-title\" style=\"margin-bottom:0\">Job Detail</h1>" +
-            $"{actions}" +
-            $"</div>" +
-            $"<a href=\"{PathPrefix}/jobs\" style=\"color:var(--text-muted);font-size:12px\">← Back to Jobs</a>" +
-            "<div style=\"margin-top:20px\">" +
-            $"<div class=\"detail-grid\">{detailGrid}</div>" +
+            header +
             progressSection +
+            "<div class=\"detail-sections\">" +
+            timeline +
+            configuration +
+            relationships +
+            "</div>" +
             payloadSection +
             errorSection +
             logsSection +
-            "</div>";
+            sseScript;
 
         return HtmlShell.Wrap(Title, PathPrefix, "jobs", body);
     }
