@@ -138,6 +138,7 @@ internal sealed class JobsPage : IComponent
         var pagination = BuildPagination(result);
 
         var body =
+            "<div id=\"jobs-page-content\" data-refresh=\"true\">" +
             "<div class=\"page-header\"><div>" +
             "<h1 class=\"page-title\">Jobs</h1>" +
             $"<p class=\"page-subtitle\">{result.TotalCount} job{(result.TotalCount == 1 ? string.Empty : "s")} total</p>" +
@@ -146,6 +147,7 @@ internal sealed class JobsPage : IComponent
             "<div class=\"section\">" +
             list +
             pagination +
+            "</div>" +
             "</div>";
 
         return HtmlShell.Wrap(Title, PathPrefix, "jobs", body);

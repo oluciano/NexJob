@@ -59,11 +59,13 @@ internal sealed class QueuesPage : IComponent
         }));
 
         var body =
+            "<div id=\"queues-page-content\" data-refresh=\"true\">" +
             "<div class=\"page-header\"><div>" +
             "<h1 class=\"page-title\">Queues</h1>" +
             $"<p class=\"page-subtitle\">{queues.Count} queue{(queues.Count == 1 ? string.Empty : "s")} active</p>" +
             "</div></div>" +
-            $"<div class=\"queue-grid\">{cards}</div>";
+            $"<div class=\"queue-grid\">{cards}</div>" +
+            "</div>";
 
         return HtmlShell.Wrap(Title, PathPrefix, "queues", body);
     }

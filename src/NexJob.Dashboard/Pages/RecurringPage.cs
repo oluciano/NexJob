@@ -142,11 +142,13 @@ internal sealed class RecurringPage : IComponent
         }));
 
         var body =
+            "<div id=\"recurring-page-content\" data-refresh=\"true\">" +
             "<div class=\"page-header\"><div>" +
             "<h1 class=\"page-title\">Recurring Jobs</h1>" +
             $"<p class=\"page-subtitle\">{jobs.Count} job{(jobs.Count == 1 ? string.Empty : "s")} registered</p>" +
             "</div></div>" +
-            "<div class=\"recurring-list\">" + cards + "</div>";
+            "<div class=\"recurring-list\">" + cards + "</div>" +
+            "</div>";
 
         return HtmlShell.Wrap(Title, PathPrefix, "recurring", body);
     }

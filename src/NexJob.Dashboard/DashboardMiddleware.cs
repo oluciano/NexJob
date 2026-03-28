@@ -223,6 +223,25 @@ public sealed class DashboardMiddleware
             if (existing is not null)
             {
                 await storage.UpdateRecurringJobConfigAsync(recurringId, cronOverride, existing.Enabled, context.RequestAborted);
+
+                // Recalculate next execution immediately so changes take effect
+                var effectiveCron = cronOverride ?? existing.Cron;
+                if (existing.Enabled && !existing.DeletedByUser)
+                {
+                    CronExpression? expression = null;
+                    try { expression = CronExpression.Parse(effectiveCron, CronFormat.IncludeSeconds); }
+                    catch (CronFormatException) { expression = CronExpression.Parse(effectiveCron, CronFormat.Standard); }
+
+                    var timeZone = existing.TimeZoneId is not null
+                        ? TimeZoneInfo.FindSystemTimeZoneById(existing.TimeZoneId)
+                        : TimeZoneInfo.Utc;
+
+                    var next = expression.GetNextOccurrence(DateTimeOffset.UtcNow, timeZone);
+                    if (next.HasValue)
+                    {
+                        await storage.SetRecurringJobNextExecutionAsync(recurringId, next.Value, context.RequestAborted);
+                    }
+                }
             }
 
             context.Response.Redirect($"{_pathPrefix}/recurring/{Uri.EscapeDataString(recurringId)}");

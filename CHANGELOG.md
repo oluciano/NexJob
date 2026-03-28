@@ -6,6 +6,9 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **Dashboard Live Updates** — The entire NexJob Dashboard is now fully reactive. A universal vanilla JavaScript polling engine (`HTMX`-style) seamlessly replaces the DOM using `data-refresh` annotations, keeping lists and pages up to date every 5 seconds without full page reloads, closing open modals, or interrupting text inputs. *(Architecture Note: This zero-dependency approach was chosen over SignalR to guarantee real-time reactivity without forcing consumers to configure WebSockets, Load Balancers, or Redis backplanes, keeping the library strictly lightweight and plug-and-play).*
+
 ### Changed
 - Refactored Integration Tests to use `IClassFixture<T>` for Testcontainers, vastly reducing CI compilation and execution times by reusing Docker containers across test runs.
 - Improved database isolation strategy for Postgres and SQL Server to dynamically generate and provision separate database instances per-test.
