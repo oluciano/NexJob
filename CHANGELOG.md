@@ -6,6 +6,27 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.2] — March 2026
+
+### Added
+- **`NexJob.Dashboard.Standalone`** — embedded dashboard server for Worker Services
+  and Console Applications. Install one package, call `AddNexJobStandaloneDashboard()`,
+  and the full dashboard is available at `http://localhost:{Port}/dashboard` without
+  any HTTP pipeline in the host project.
+- **`StandaloneDashboardOptions`** — configurable via `NexJob:Dashboard` in
+  appsettings.json: `Port` (default 5005), `Path` (default `/dashboard`),
+  `Title`, `LocalhostOnly`.
+- **`samples/NexJob.Sample.WorkerService`** — runnable Worker Service sample
+  demonstrating standalone dashboard, `IJobContext`, progress reporting, and tags.
+
+### Changed
+- Default dashboard path changed from `/jobs` to `/dashboard` in both
+  `DashboardSettings` and `UseNexJobDashboard()` to avoid conflicts with
+  common REST API route conventions (`/jobs` is a frequent API route).
+
+### Fixed
+- `DashboardSettings.Path` default corrected to `/dashboard`.
+
 ## [0.3.1] — March 2026
 
 ### Changed

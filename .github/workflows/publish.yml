@@ -37,6 +37,7 @@ jobs:
           dotnet pack src/NexJob.Postgres/NexJob.Postgres.csproj --no-build --configuration Release --output ./nupkg
           dotnet pack src/NexJob.MongoDB/NexJob.MongoDB.csproj --no-build --configuration Release --output ./nupkg
           dotnet pack src/NexJob.Dashboard/NexJob.Dashboard.csproj --no-build --configuration Release --output ./nupkg
+          dotnet pack src/NexJob.Dashboard.Standalone/NexJob.Dashboard.Standalone.csproj --no-build --configuration Release --output ./nupkg
           dotnet pack src/NexJob.SqlServer/NexJob.SqlServer.csproj --no-build --configuration Release --output ./nupkg
           dotnet pack src/NexJob.Redis/NexJob.Redis.csproj --no-build --configuration Release --output ./nupkg
           dotnet pack src/NexJob.Oracle/NexJob.Oracle.csproj --no-build --configuration Release --output ./nupkg

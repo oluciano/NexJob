@@ -15,7 +15,7 @@ public static class DashboardApplicationBuilderExtensions
     /// <param name="configure">Optional delegate to customise <see cref="DashboardOptions"/>.</param>
     public static IApplicationBuilder UseNexJobDashboard(
         this IApplicationBuilder app,
-        string pathPrefix = "/jobs",
+        string pathPrefix = "/dashboard",
         Action<DashboardOptions>? configure = null)
     {
         var options = new DashboardOptions();
