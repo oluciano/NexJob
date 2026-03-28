@@ -405,6 +405,73 @@ public sealed class PostgresStorageProvider : IStorageProvider
             new { parentId = parentJobId.Value });
     }
 
+    // ── Server / Worker node tracking ─────────────────────────────────────────
+
+    /// <inheritdoc/>
+    public async Task RegisterServerAsync(ServerRecord server, CancellationToken cancellationToken = default)
+    {
+        await using var conn = Open();
+        await conn.OpenAsync(cancellationToken);
+        await conn.ExecuteAsync(
+            """
+            INSERT INTO nexjob_servers (id, worker_count, queues, started_at, heartbeat_at)
+            VALUES (@Id, @WorkerCount, @Queues, @StartedAt, @HeartbeatAt)
+            ON CONFLICT (id) DO UPDATE 
+            SET worker_count = EXCLUDED.worker_count,
+                queues       = EXCLUDED.queues,
+                heartbeat_at = EXCLUDED.heartbeat_at
+            """,
+            new
+            {
+                server.Id,
+                server.WorkerCount,
+                Queues = server.Queues.ToArray(),
+                server.StartedAt,
+                server.HeartbeatAt,
+            });
+    }
+
+    /// <inheritdoc/>
+    public async Task HeartbeatServerAsync(string serverId, CancellationToken cancellationToken = default)
+    {
+        await using var conn = Open();
+        await conn.OpenAsync(cancellationToken);
+        await conn.ExecuteAsync(
+            "UPDATE nexjob_servers SET heartbeat_at = NOW() WHERE id = @Id",
+            new { Id = serverId });
+    }
+
+    /// <inheritdoc/>
+    public async Task DeregisterServerAsync(string serverId, CancellationToken cancellationToken = default)
+    {
+        await using var conn = Open();
+        await conn.OpenAsync(cancellationToken);
+        await conn.ExecuteAsync(
+            "DELETE FROM nexjob_servers WHERE id = @Id",
+            new { Id = serverId });
+    }
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<ServerRecord>> GetActiveServersAsync(TimeSpan activeTimeout, CancellationToken cancellationToken = default)
+    {
+        var cutoff = DateTimeOffset.UtcNow - activeTimeout;
+        await using var conn = Open();
+        await conn.OpenAsync(cancellationToken);
+
+        var rows = await conn.QueryAsync(
+            "SELECT id, worker_count, queues, started_at, heartbeat_at FROM nexjob_servers WHERE heartbeat_at >= @Cutoff ORDER BY id",
+            new { Cutoff = cutoff });
+
+        return rows.Select(r => new ServerRecord
+        {
+            Id = r.id,
+            WorkerCount = r.worker_count,
+            Queues = (string[])r.queues,
+            StartedAt = r.started_at,
+            HeartbeatAt = r.heartbeat_at,
+        }).ToList();
+    }
+
     // ── Dashboard support ─────────────────────────────────────────────────────
 
     /// <inheritdoc/>

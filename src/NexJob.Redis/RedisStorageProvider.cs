@@ -657,6 +657,24 @@ public sealed class RedisStorageProvider : IStorageProvider
         return results;
     }
 
+    // ── Server / Worker node tracking ─────────────────────────────────────────
+
+    /// <inheritdoc/>
+    public Task RegisterServerAsync(ServerRecord server, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("Server tracking is not yet supported in Redis.");
+
+    /// <inheritdoc/>
+    public Task HeartbeatServerAsync(string serverId, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("Server tracking is not yet supported in Redis.");
+
+    /// <inheritdoc/>
+    public Task DeregisterServerAsync(string serverId, CancellationToken cancellationToken = default) =>
+        Task.CompletedTask; // safe
+
+    /// <inheritdoc/>
+    public Task<IReadOnlyList<ServerRecord>> GetActiveServersAsync(TimeSpan activeTimeout, CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyList<ServerRecord>>([]);
+
     // ── Private static helpers ────────────────────────────────────────────────
 
     private static string JobKey(string id) => $"nexjob:jobs:{id}";

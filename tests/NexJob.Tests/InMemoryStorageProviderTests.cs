@@ -581,6 +581,100 @@ public sealed class InMemoryStorageProviderTests
         byTag.Should().ContainSingle(j => j.Id == job.Id);
     }
 
+    // ─── Server Tracking ──────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task RegisterServerAsync_AddsServer()
+    {
+        var server = new ServerRecord
+        {
+            Id = "server-1",
+            WorkerCount = 5,
+            Queues = ["default"],
+            StartedAt = DateTimeOffset.UtcNow,
+            HeartbeatAt = DateTimeOffset.UtcNow,
+        };
+
+        await _sut.RegisterServerAsync(server);
+
+        var active = await _sut.GetActiveServersAsync(TimeSpan.FromMinutes(1));
+        active.Should().ContainSingle(s => s.Id == "server-1");
+    }
+
+    [Fact]
+    public async Task HeartbeatServerAsync_UpdatesTimestamp()
+    {
+        var server = new ServerRecord
+        {
+            Id = "server-hb",
+            WorkerCount = 5,
+            Queues = ["default"],
+            StartedAt = DateTimeOffset.UtcNow,
+            HeartbeatAt = DateTimeOffset.UtcNow.AddMinutes(-5),
+        };
+
+        var initialHeartbeat = server.HeartbeatAt;
+
+        await _sut.RegisterServerAsync(server);
+        await Task.Delay(50); // Advance time slightly
+
+        await _sut.HeartbeatServerAsync("server-hb");
+
+        var active = await _sut.GetActiveServersAsync(TimeSpan.FromMinutes(1));
+        var updatedServer = active.Single(s => s.Id == "server-hb");
+        updatedServer.HeartbeatAt.Should().BeAfter(initialHeartbeat);
+    }
+
+    [Fact]
+    public async Task DeregisterServerAsync_RemovesServer()
+    {
+        var server = new ServerRecord
+        {
+            Id = "server-dereg",
+            WorkerCount = 5,
+            Queues = ["default"],
+            StartedAt = DateTimeOffset.UtcNow,
+            HeartbeatAt = DateTimeOffset.UtcNow,
+        };
+
+        await _sut.RegisterServerAsync(server);
+        await _sut.DeregisterServerAsync("server-dereg");
+
+        var active = await _sut.GetActiveServersAsync(TimeSpan.FromMinutes(1));
+        active.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GetActiveServersAsync_RemovesStaleServers()
+    {
+        var activeServer = new ServerRecord
+        {
+            Id = "server-active",
+            WorkerCount = 5,
+            Queues = ["default"],
+            StartedAt = DateTimeOffset.UtcNow,
+            HeartbeatAt = DateTimeOffset.UtcNow,
+        };
+
+        var staleServer = new ServerRecord
+        {
+            Id = "server-stale",
+            WorkerCount = 5,
+            Queues = ["default"],
+            StartedAt = DateTimeOffset.UtcNow.AddHours(-1),
+            HeartbeatAt = DateTimeOffset.UtcNow.AddMinutes(-10), // Extremely stale
+        };
+
+        await _sut.RegisterServerAsync(activeServer);
+        await _sut.RegisterServerAsync(staleServer);
+
+        // Fetch using a 1-minute active timeout
+        var active = await _sut.GetActiveServersAsync(TimeSpan.FromMinutes(1));
+
+        active.Should().ContainSingle(s => s.Id == "server-active");
+        active.Should().NotContain(s => s.Id == "server-stale");
+    }
+
     // ─── helpers ─────────────────────────────────────────────────────────────
 
     private static JobRecord MakeJob(

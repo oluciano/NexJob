@@ -165,6 +165,9 @@ Workers update `HeartbeatAt` every `HeartbeatInterval` (default 30s).
 `OrphanedJobWatcherService` runs periodically and requeues jobs where
 `HeartbeatAt < now - HeartbeatTimeout` (default 5min) and status = Processing.
 
+### Active Server Tracking
+`ServerHeartbeatService` (an internal `IHostedService`) registers the worker node on startup, updates its node heartbeat (`heartbeat_at`) every 15 seconds, and deregisters upon graceful shutdown. The dashboard aggregates these active servers mapping.
+
 ### Recurring jobs
 Use `Cronos` NuGet package for cron parsing and next-execution calculation.
 `RecurringJobSchedulerService` polls storage for due jobs (`NextExecution <= utcNow`)
@@ -233,7 +236,7 @@ v0.1  ✅ Core interfaces · in-memory provider · fire-and-forget
 v0.2  ✅ PostgreSQL provider · delayed jobs · recurring (cron) · dashboard (Blazor SSR)
 v0.3  ✅ Priority queues · resource throttling · continuations · bulk actions
 v0.4  ✅ MongoDB provider · integration tests (Testcontainers) · CONTRIBUTING.md
-v0.5  ○ SQL Server · Redis · Oracle providers (stubs exist, need implementation)
+v0.5  ○ Active Servers & Workers mapping · SQL Server · Redis · Oracle providers
 v0.6  ○ OpenTelemetry (Activity spans per job) · IJobMigration<TOld,TNew> · SchemaVersion migration
 v0.7  ○ Dashboard real-time updates (SSE or SignalR) · NuGet packaging · CI publishing
 v1.0  ○ Stable API · production-ready · published to NuGet.org

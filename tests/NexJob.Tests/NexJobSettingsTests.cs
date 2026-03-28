@@ -54,7 +54,8 @@ public sealed class NexJobSettingsTests
         var options = new NexJobOptions();
         var settings = new NexJobSettings
         {
-            Queues =
+            Queues = ["critical", "default"],
+            QueueSettings =
             [
                 new QueueSettings { Name = "critical" },
                 new QueueSettings { Name = "default" },

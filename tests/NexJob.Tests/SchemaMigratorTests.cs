@@ -17,7 +17,7 @@ public sealed class SchemaMigratorTests
     [Fact]
     public void Postgres_GetPending_AllApplied_ReturnsEmpty()
     {
-        var applied = new HashSet<int> { 1, 2, 3, 4, 5 };
+        var applied = new HashSet<int> { 1, 2, 3, 4, 5, 6 };
 
         var pending = NexJob.Postgres.SchemaMigrator
             .GetPendingMigrations(NexJob.Postgres.SchemaMigrator.AllMigrations, applied);
@@ -45,8 +45,8 @@ public sealed class SchemaMigratorTests
             .GetPendingMigrations(NexJob.Postgres.SchemaMigrator.AllMigrations, applied)
             .ToList();
 
-        pending.Should().HaveCount(3);
-        pending.Select(m => m.Version).Should().Equal(3, 4, 5);
+        pending.Should().HaveCount(4);
+        pending.Select(m => m.Version).Should().Equal(3, 4, 5, 6);
     }
 
     [Fact]
@@ -59,7 +59,7 @@ public sealed class SchemaMigratorTests
             .GetPendingMigrations(NexJob.Postgres.SchemaMigrator.AllMigrations, applied)
             .ToList();
 
-        pending.Select(m => m.Version).Should().Equal(2, 4, 5);
+        pending.Select(m => m.Version).Should().Equal(2, 4, 5, 6);
     }
 
     [Fact]

@@ -429,6 +429,17 @@ public sealed class DashboardMiddleware
             return await RenderAsync<QueuesPage>(renderer, parameters);
         }
 
+        if (subPath == "servers")
+        {
+            parameters = ParameterView.FromDictionary(new Dictionary<string, object?>
+            {
+                ["Storage"] = storage,
+                ["PathPrefix"] = _pathPrefix,
+                ["Title"] = _options.Title,
+            });
+            return await RenderAsync<ServersPage>(renderer, parameters);
+        }
+
         if (subPath == "jobs" || subPath.StartsWith("jobs?"))
         {
             var query = context.Request.Query;

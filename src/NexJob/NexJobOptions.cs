@@ -15,6 +15,11 @@ public sealed class NexJobOptions
     public int Workers { get; set; } = 10;
 
     /// <summary>
+    /// Optional identifier for the server/node. If null, MachineName + Guid is used.
+    /// </summary>
+    public string? ServerId { get; set; }
+
+    /// <summary>
     /// Maximum number of execution attempts before a job is moved to the dead-letter
     /// (failed) state. Defaults to <c>10</c>.
     /// </summary>
@@ -31,6 +36,12 @@ public sealed class NexJobOptions
     /// Defaults to <c>30 seconds</c>.
     /// </summary>
     public TimeSpan HeartbeatInterval { get; set; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// How often the server node refreshes its own global heartbeat.
+    /// Defaults to <c>15 seconds</c>.
+    /// </summary>
+    public TimeSpan ServerHeartbeatInterval { get; set; } = TimeSpan.FromSeconds(15);
 
     /// <summary>
     /// Maximum time allowed between heartbeat updates before a job is considered
@@ -83,11 +94,13 @@ public sealed class NexJobOptions
         MaxJobLogLines = s.MaxJobLogLines;
         PollingInterval = s.PollingInterval;
         HeartbeatInterval = s.HeartbeatInterval;
+        ServerHeartbeatInterval = s.ServerHeartbeatInterval;
         HeartbeatTimeout = s.HeartbeatTimeout;
-        QueueSettings = s.Queues;
-        if (s.Queues.Count > 0)
+        ServerId = s.ServerId;
+        QueueSettings = s.QueueSettings;
+        if (s.Queues.Length > 0)
         {
-            Queues = s.Queues.Select(q => q.Name).ToArray();
+            Queues = s.Queues;
         }
 
         if (s.ShutdownTimeoutSeconds > 0)
