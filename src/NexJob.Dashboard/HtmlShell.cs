@@ -405,6 +405,9 @@ internal static class HtmlShell
                         <li><a href="{{pathPrefix}}/queues" class="nav-link {{Active(activeRoute, "queues")}}">
                             <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="10" width="14" height="4" rx="1"/><rect x="1" y="6" width="14" height="3" rx="1" opacity=".6"/><rect x="1" y="2" width="14" height="3" rx="1" opacity=".35"/></svg>
                             <span class="nav-label">Queues</span></a></li>
+                        <li><a href="{{pathPrefix}}/servers" class="nav-link {{Active(activeRoute, "servers")}}">
+                            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="12" height="4" rx="1"/><rect x="2" y="10" width="12" height="4" rx="1"/><line x1="5" y1="4" x2="5.01" y2="4"/><line x1="5" y1="12" x2="5.01" y2="12"/></svg>
+                            <span class="nav-label">Servers</span></a></li>
                         <li><a href="{{pathPrefix}}/jobs" class="nav-link {{Active(activeRoute, "jobs")}}">
                             <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="3" y1="4" x2="13" y2="4"/><line x1="3" y1="8" x2="13" y2="8"/><line x1="3" y1="12" x2="9" y2="12"/></svg>
                             <span class="nav-label">Jobs</span></a></li>

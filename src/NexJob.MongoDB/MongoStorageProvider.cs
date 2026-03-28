@@ -17,6 +17,7 @@ public sealed class MongoStorageProvider : IStorageProvider
     private readonly IMongoCollection<JobDocument> _jobs;
     private readonly IMongoCollection<RecurringJobDocument> _recurringJobs;
     private readonly IMongoCollection<BsonDocument> _recurringLocks;
+    private readonly IMongoCollection<ServerDocument> _servers;
 
     static MongoStorageProvider()
     {
@@ -38,6 +39,7 @@ public sealed class MongoStorageProvider : IStorageProvider
         _jobs = database.GetCollection<JobDocument>("nexjob_jobs");
         _recurringJobs = database.GetCollection<RecurringJobDocument>("nexjob_recurring_jobs");
         _recurringLocks = database.GetCollection<BsonDocument>("nexjob_recurring_locks");
+        _servers = database.GetCollection<ServerDocument>("nexjob_servers");
 
         EnsureIndexes();
     }
@@ -306,6 +308,49 @@ public sealed class MongoStorageProvider : IStorageProvider
             .Set(d => d.Status, JobStatus.Enqueued);
 
         await _jobs.UpdateManyAsync(filter, update, cancellationToken: cancellationToken);
+    }
+
+    // ── Server / Worker node tracking ─────────────────────────────────────────
+
+    /// <inheritdoc/>
+    public async Task RegisterServerAsync(ServerRecord server, CancellationToken cancellationToken = default)
+    {
+        var filter = Builders<ServerDocument>.Filter.Eq(d => d.Id, server.Id);
+
+        var update = Builders<ServerDocument>.Update
+            .Set(d => d.WorkerCount, server.WorkerCount)
+            .Set(d => d.Queues, server.Queues)
+            .Set(d => d.HeartbeatAt, server.HeartbeatAt)
+            .SetOnInsert(d => d.StartedAt, server.StartedAt);
+
+        var options = new UpdateOptions { IsUpsert = true };
+        await _servers.UpdateOneAsync(filter, update, options, cancellationToken);
+    }
+
+    /// <inheritdoc/>
+    public async Task HeartbeatServerAsync(string serverId, CancellationToken cancellationToken = default)
+    {
+        var filter = Builders<ServerDocument>.Filter.Eq(d => d.Id, serverId);
+        var update = Builders<ServerDocument>.Update.Set(d => d.HeartbeatAt, DateTimeOffset.UtcNow);
+        await _servers.UpdateOneAsync(filter, update, cancellationToken: cancellationToken);
+    }
+
+    /// <inheritdoc/>
+    public async Task DeregisterServerAsync(string serverId, CancellationToken cancellationToken = default)
+    {
+        var filter = Builders<ServerDocument>.Filter.Eq(d => d.Id, serverId);
+        await _servers.DeleteOneAsync(filter, cancellationToken);
+    }
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<ServerRecord>> GetActiveServersAsync(TimeSpan activeTimeout, CancellationToken cancellationToken = default)
+    {
+        var cutoff = DateTimeOffset.UtcNow - activeTimeout;
+        var filter = Builders<ServerDocument>.Filter.Gte(d => d.HeartbeatAt, cutoff);
+        var sort = Builders<ServerDocument>.Sort.Ascending(d => d.Id);
+
+        var docs = await _servers.Find(filter).Sort(sort).ToListAsync(cancellationToken);
+        return docs.Select(d => d.ToRecord()).ToList();
     }
 
     // ── Dashboard support ─────────────────────────────────────────────────────
@@ -599,5 +644,10 @@ public sealed class MongoStorageProvider : IStorageProvider
         _recurringLocks.Indexes.CreateOne(new CreateIndexModel<BsonDocument>(
             Builders<BsonDocument>.IndexKeys.Ascending("expires_at"),
             new CreateIndexOptions { ExpireAfter = TimeSpan.Zero }));
+
+        // TTL index for orphaned servers (expires 1 hour after last heartbeat)
+        _servers.Indexes.CreateOne(new CreateIndexModel<ServerDocument>(
+            Builders<ServerDocument>.IndexKeys.Ascending(d => d.HeartbeatAt),
+            new CreateIndexOptions { Name = "heartbeat_ttl", ExpireAfter = TimeSpan.FromHours(1) }));
     }
 }

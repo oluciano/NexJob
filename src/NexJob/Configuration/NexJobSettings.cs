@@ -14,6 +14,9 @@ public sealed class NexJobSettings
     /// <summary>Maximum number of concurrent workers. Defaults to <c>10</c>.</summary>
     public int Workers { get; set; } = 10;
 
+    /// <summary>Optional identifier for the server/node. If null, MachineName + Guid is used.</summary>
+    public string? ServerId { get; set; }
+
     /// <summary>Maximum number of execution attempts before dead-lettering. Defaults to <c>10</c>.</summary>
     public int MaxAttempts { get; set; } = 10;
 
@@ -26,14 +29,20 @@ public sealed class NexJobSettings
     /// <summary>How often workers refresh their heartbeat. Defaults to <c>30 seconds</c>.</summary>
     public TimeSpan HeartbeatInterval { get; set; } = TimeSpan.FromSeconds(30);
 
+    /// <summary>How often the server node refreshes its own global heartbeat. Defaults to <c>15 seconds</c>.</summary>
+    public TimeSpan ServerHeartbeatInterval { get; set; } = TimeSpan.FromSeconds(15);
+
     /// <summary>Time after which a Processing job with a stale heartbeat is re-enqueued. Defaults to <c>5 minutes</c>.</summary>
     public TimeSpan HeartbeatTimeout { get; set; } = TimeSpan.FromMinutes(5);
 
     /// <summary>Maximum number of log lines captured per job execution. Defaults to <c>200</c>.</summary>
     public int MaxJobLogLines { get; set; } = 200;
 
+    /// <summary>Prioritized list of queue names.</summary>
+    public string[] Queues { get; set; } = [];
+
     /// <summary>Per-queue configuration, including optional execution windows.</summary>
-    public List<QueueSettings> Queues { get; set; } = [];
+    public List<QueueSettings> QueueSettings { get; set; } = [];
 
     /// <summary>Maximum seconds to wait for jobs during graceful shutdown. Defaults to <c>30</c>.</summary>
     public int ShutdownTimeoutSeconds { get; set; } = 30;

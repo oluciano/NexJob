@@ -6,9 +6,21 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- Refactored Integration Tests to use `IClassFixture<T>` for Testcontainers, vastly reducing CI compilation and execution times by reusing Docker containers across test runs.
+- Improved database isolation strategy for Postgres and SQL Server to dynamically generate and provision separate database instances per-test.
+- Stabilized `HeartbeatServerAsync` test to prevent flaky timing conditions in rapid CI environments (`.BeOnOrAfter`).
+
 ## [0.3.2] — March 2026
 
 ### Added
+- **Active Server Tracking** — Cluster-wide visibility into running NexJob instances (e.g., PCF, Kubernetes) with real-time heartbeat monitoring. Each node registers its ID, processed queues and worker pool capacity upon startup, and deregisters gracefully upon shutdown. Added a new **Servers** tab to the Dashboard to visualize overall cluster health.
+- `IStorageProvider`: Added `RegisterServerAsync`, `HeartbeatServerAsync`, `DeregisterServerAsync`, and `GetActiveServersAsync`.
+- Storage implementions: 
+  - `InMemoryStorageProvider` handles server pruning via memory dictionaries natively.
+  - `PostgresStorageProvider` introduces Migration V6 adding the `nexjob_servers` table functionality mapped via Dapper.
+  - `MongoStorageProvider` introduces `ServerDocument` mapping with a TTL index ensuring stale orphaned servers are pruned automatically.
+- `NexJobOptions.ServerId` and `NexJobOptions.ServerHeartbeatInterval` for explicit cluster instance naming and ping intervals. Defaults identifier to `MachineName:ProcessId:Guid`.
 - **`NexJob.Dashboard.Standalone`** — embedded dashboard server for Worker Services
   and Console Applications. Install one package, call `AddNexJobStandaloneDashboard()`,
   and the full dashboard is available at `http://localhost:{Port}/dashboard` without

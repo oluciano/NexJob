@@ -51,6 +51,7 @@ public sealed class JobDispatcherServiceTests
         await scheduler.EnqueueAsync<QuickSuccessJob, QuickInput>(new());
 
         await tcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await Task.Delay(50); // let the dispatcher mark job as Succeeded in the database
 
         var storage = (InMemoryStorageProvider)host.Services.GetRequiredService<NexJob.Storage.IStorageProvider>();
         var metrics = await storage.GetMetricsAsync();

@@ -168,6 +168,37 @@ public interface IStorageProvider
     /// <param name="cancellationToken">Token to cancel the operation.</param>
     Task EnqueueContinuationsAsync(JobId parentJobId, CancellationToken cancellationToken = default);
 
+    // ── Server / Worker node tracking ─────────────────────────────────────────
+
+    /// <summary>
+    /// Registers or updates an active worker node in the cluster.
+    /// </summary>
+    /// <param name="server">The server details to register or update.</param>
+    /// <param name="cancellationToken">Token to cancel the operation.</param>
+    Task RegisterServerAsync(ServerRecord server, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Refreshes the heartbeat timestamp of the specified server node.
+    /// </summary>
+    /// <param name="serverId">The identifier of the server.</param>
+    /// <param name="cancellationToken">Token to cancel the operation.</param>
+    Task HeartbeatServerAsync(string serverId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gracefully removes the specified server node from the active registry.
+    /// </summary>
+    /// <param name="serverId">The identifier of the server to remove.</param>
+    /// <param name="cancellationToken">Token to cancel the operation.</param>
+    Task DeregisterServerAsync(string serverId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Retrieves a list of all active server nodes that have sent a heartbeat
+    /// within the last <paramref name="activeTimeout"/> period.
+    /// </summary>
+    /// <param name="activeTimeout">The threshold defining when a server is considered offline.</param>
+    /// <param name="cancellationToken">Token to cancel the operation.</param>
+    Task<IReadOnlyList<ServerRecord>> GetActiveServersAsync(TimeSpan activeTimeout, CancellationToken cancellationToken = default);
+
     // ── Dashboard support ─────────────────────────────────────────────────────
 
     /// <summary>

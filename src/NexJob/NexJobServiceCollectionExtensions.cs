@@ -143,6 +143,7 @@ public static class NexJobServiceCollectionExtensions
         services.AddSingleton<ILoggerProvider>(sp => sp.GetRequiredService<JobCaptureLoggerProvider>());
         services.AddHostedService<JobDispatcherService>();
         services.AddHostedService<RecurringJobSchedulerService>();
+        services.AddHostedService<ServerHeartbeatService>();
         services.AddHostedService<OrphanedJobWatcherService>();
         services.AddScoped<MigrationPipeline>();
         services.AddScoped<NexJobHealthCheck>();

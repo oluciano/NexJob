@@ -17,6 +17,7 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
     private readonly ConcurrentDictionary<string, Guid> _idempotencyIndex = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, RecurringJobRecord> _recurringJobs = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, DateTimeOffset> _recurringLocks = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, ServerRecord> _servers = new(StringComparer.Ordinal);
 
     // Indexed as: _queues[queueName][priorityIndex]
     // Priority indices: 0=Critical, 1=High, 2=Normal, 3=Low
@@ -339,6 +340,44 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
         }
 
         return Task.CompletedTask;
+    }
+
+    // ─── Server / Worker node tracking ────────────────────────────────────────
+
+    /// <inheritdoc/>
+    public Task RegisterServerAsync(ServerRecord server, CancellationToken cancellationToken = default)
+    {
+        _servers[server.Id] = server;
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc/>
+    public Task HeartbeatServerAsync(string serverId, CancellationToken cancellationToken = default)
+    {
+        if (_servers.TryGetValue(serverId, out var server))
+        {
+            server.HeartbeatAt = DateTimeOffset.UtcNow;
+        }
+
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc/>
+    public Task DeregisterServerAsync(string serverId, CancellationToken cancellationToken = default)
+    {
+        _servers.TryRemove(serverId, out _);
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc/>
+    public Task<IReadOnlyList<ServerRecord>> GetActiveServersAsync(TimeSpan activeTimeout, CancellationToken cancellationToken = default)
+    {
+        var cutoff = DateTimeOffset.UtcNow - activeTimeout;
+        IReadOnlyList<ServerRecord> active = _servers.Values
+            .Where(s => s.HeartbeatAt >= cutoff)
+            .ToList();
+
+        return Task.FromResult(active);
     }
 
     // ─── Dashboard support ────────────────────────────────────────────────────

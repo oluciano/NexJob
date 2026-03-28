@@ -501,6 +501,87 @@ public abstract class StorageProviderTestsBase
         all.Should().NotContain(r => r.RecurringJobId == recurring.RecurringJobId);
     }
 
+    // ── Server Tracking ────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task RegisterServerAsync_AddsServer_WhenSupported()
+    {
+        var storage = await CreateStorageAsync();
+        if (IsServerTrackingNotSupported(storage))
+        {
+            return;
+        }
+
+        var serverId = $"server-add-{Guid.NewGuid()}";
+        var server = MakeServer(serverId);
+
+        await storage.RegisterServerAsync(server);
+
+        var active = await storage.GetActiveServersAsync(TimeSpan.FromMinutes(1));
+        active.Should().Contain(s => s.Id == serverId);
+    }
+
+    [Fact]
+    public async Task HeartbeatServerAsync_UpdatesTimestamp_WhenSupported()
+    {
+        var storage = await CreateStorageAsync();
+        if (IsServerTrackingNotSupported(storage))
+        {
+            return;
+        }
+
+        var serverId = $"server-hb-{Guid.NewGuid()}";
+        var server = MakeServer(serverId, DateTimeOffset.UtcNow.AddMinutes(-5));
+
+        await storage.RegisterServerAsync(server);
+        await Task.Delay(100);
+
+        await storage.HeartbeatServerAsync(serverId);
+
+        var active = await storage.GetActiveServersAsync(TimeSpan.FromMinutes(1));
+        var updated = active.Single(s => s.Id == serverId);
+        updated.HeartbeatAt.Should().BeOnOrAfter(server.HeartbeatAt);
+    }
+
+    [Fact]
+    public async Task DeregisterServerAsync_RemovesServer_WhenSupported()
+    {
+        var storage = await CreateStorageAsync();
+        if (IsServerTrackingNotSupported(storage))
+        {
+            return;
+        }
+
+        var serverId = $"server-dereg-{Guid.NewGuid()}";
+        await storage.RegisterServerAsync(MakeServer(serverId));
+
+        await storage.DeregisterServerAsync(serverId);
+
+        var active = await storage.GetActiveServersAsync(TimeSpan.FromMinutes(1));
+        active.Should().NotContain(s => s.Id == serverId);
+    }
+
+    [Fact]
+    public async Task GetActiveServersAsync_FiltersStaleServers_WhenSupported()
+    {
+        var storage = await CreateStorageAsync();
+        if (IsServerTrackingNotSupported(storage))
+        {
+            return;
+        }
+
+        var activeId = $"active-{Guid.NewGuid()}";
+        var staleId = $"stale-{Guid.NewGuid()}";
+
+        await storage.RegisterServerAsync(MakeServer(activeId, DateTimeOffset.UtcNow));
+        await storage.RegisterServerAsync(MakeServer(staleId, DateTimeOffset.UtcNow.AddMinutes(-10)));
+
+        var active = await storage.GetActiveServersAsync(TimeSpan.FromMinutes(1));
+
+        active.Should().Contain(s => s.Id == activeId);
+        active.Should().NotContain(s => s.Id == staleId);
+    }
+
     // ── Helpers ────────────────────────────────────────────────────────────────
 
     private static JobRecord MakeJob(
@@ -540,4 +621,20 @@ public abstract class StorageProviderTestsBase
             CreatedAt = DateTimeOffset.UtcNow,
             ConcurrencyPolicy = RecurringConcurrencyPolicy.SkipIfRunning,
         };
+
+    private static ServerRecord MakeServer(string id, DateTimeOffset? heartbeatAt = null) =>
+        new()
+        {
+            Id = id,
+            WorkerCount = 10,
+            Queues = ["default", "critical"],
+            StartedAt = DateTimeOffset.UtcNow,
+            HeartbeatAt = heartbeatAt ?? DateTimeOffset.UtcNow,
+        };
+
+    private static bool IsServerTrackingNotSupported(IStorageProvider storage)
+    {
+        var name = storage.GetType().Name;
+        return name.Contains("Redis") || name.Contains("SqlServer") || name.Contains("Oracle");
+    }
 }

@@ -103,6 +103,18 @@ internal static class SchemaSql
         ALTER TABLE nexjob_jobs ADD COLUMN IF NOT EXISTS tags               TEXT[] NOT NULL DEFAULT '{}';
         """;
 
+    /// <summary>V6: Create nexjob_servers table for active worker node tracking.</summary>
+    internal const string V6CreateServersTable =
+        """
+        CREATE TABLE IF NOT EXISTS nexjob_servers (
+            id             TEXT        PRIMARY KEY,
+            worker_count   INT         NOT NULL,
+            queues         TEXT[]      NOT NULL,
+            started_at     TIMESTAMPTZ NOT NULL,
+            heartbeat_at   TIMESTAMPTZ NOT NULL
+        );
+        """;
+
     /// <summary>Full initial schema — kept for backward compatibility. Prefer the versioned consts.</summary>
     internal const string CreateTables = V1CreateTables;
 }
