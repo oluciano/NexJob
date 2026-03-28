@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
@@ -13,7 +13,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\NexJob.Dashboard\NexJob.Dashboard.csproj" />
-    <PackageReference Include="Microsoft.AspNetCore" Version="2.3.*" />
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
   
 </Project>
