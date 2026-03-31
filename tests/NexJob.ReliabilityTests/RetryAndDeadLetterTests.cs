@@ -1,0 +1,173 @@
+using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
+using NexJob;
+using Xunit;
+
+namespace NexJob.ReliabilityTests;
+
+/// <summary>
+/// Reliability tests for retry behavior and dead-letter handler invocation.
+/// Tests real retry execution, handler invocation on permanent failure,
+/// and handler exception resilience.
+///
+/// Trait: Reliability
+/// </summary>
+[Trait("Category", "Reliability")]
+public sealed class RetryAndDeadLetterTests : ReliabilityTestBase
+{
+    [Fact]
+    public async Task RetryExecutesCorrectlyAfterFailure()
+    {
+        ResetTestState();
+
+        using var host = BuildHost(s =>
+        {
+            s.AddTransient<FailOnceThenSucceedJob>();
+        }, workers: 1);
+
+        await host.StartAsync();
+
+        var scheduler = host.Services.GetRequiredService<IScheduler>();
+        var jobId = await scheduler.EnqueueAsync<FailOnceThenSucceedJob>();
+
+        // Wait for job to succeed (should retry after first failure)
+        var job = await WaitForJobStatus(host, jobId, JobStatus.Succeeded, TimeSpan.FromSeconds(10));
+
+        job.Should().NotBeNull("job should eventually succeed after retry");
+        job!.Attempts.Should().Be(2, "job should have attempted twice");
+        FailOnceThenSucceedJob.ExecutionCount.Should().Be(2, "job should execute twice (fail then succeed)");
+
+        await host.StopAsync();
+    }
+
+    [Fact]
+    public async Task DeadLetterHandlerInvokedAfterMaxAttemptsExhausted()
+    {
+        ResetTestState();
+        RecordingDeadLetterHandler<AlwaysFailJob>.Reset();
+
+        using var host = BuildHost(s =>
+        {
+            s.AddTransient<AlwaysFailJob>();
+            s.AddTransient<IDeadLetterHandler<AlwaysFailJob>, RecordingDeadLetterHandler<AlwaysFailJob>>();
+        }, workers: 1);
+
+        await host.StartAsync();
+
+        var scheduler = host.Services.GetRequiredService<IScheduler>();
+        var jobId = await scheduler.EnqueueAsync<AlwaysFailJob>();
+
+        // Wait for handler to be invoked
+        var maxWait = 0;
+        while (RecordingDeadLetterHandler<AlwaysFailJob>.InvocationCount == 0 && maxWait < 50)
+        {
+            await Task.Delay(100);
+            maxWait++;
+        }
+
+        RecordingDeadLetterHandler<AlwaysFailJob>.InvocationCount.Should().Be(1, "handler should be invoked exactly once");
+        RecordingDeadLetterHandler<AlwaysFailJob>.LastFailedJob.Should().NotBeNull();
+        RecordingDeadLetterHandler<AlwaysFailJob>.LastFailedJob!.Id.Should().Be(jobId);
+        RecordingDeadLetterHandler<AlwaysFailJob>.LastException.Should().NotBeNull();
+
+        // Verify job is marked as dead-letter (no longer scheduled for retry)
+        var job = await WaitForJobStatus(host, jobId, JobStatus.Failed, TimeSpan.FromSeconds(5));
+        job.Should().NotBeNull("job should be in Failed terminal state");
+        job!.RetryAt.Should().BeNull("job should not be scheduled for retry");
+
+        await host.StopAsync();
+    }
+
+    [Fact]
+    public async Task DeadLetterHandlerReceivesCorrectJobContext()
+    {
+        ResetTestState();
+        RecordingDeadLetterHandler<AlwaysFailJob>.Reset();
+
+        using var host = BuildHost(s =>
+        {
+            s.AddTransient<AlwaysFailJob>();
+            s.AddTransient<IDeadLetterHandler<AlwaysFailJob>, RecordingDeadLetterHandler<AlwaysFailJob>>();
+        }, workers: 1);
+
+        await host.StartAsync();
+
+        var scheduler = host.Services.GetRequiredService<IScheduler>();
+        var jobId = await scheduler.EnqueueAsync<AlwaysFailJob>();
+
+        // Wait for handler
+        await Task.Delay(3000);
+
+        var recordedJob = RecordingDeadLetterHandler<AlwaysFailJob>.LastFailedJob;
+        recordedJob.Should().NotBeNull();
+        recordedJob!.Id.Should().Be(jobId);
+        recordedJob.Status.Should().Be(JobStatus.Failed);
+        recordedJob.Attempts.Should().BeGreaterThanOrEqualTo(1);
+        recordedJob.JobType.Should().Contain("AlwaysFailJob");
+
+        var exception = RecordingDeadLetterHandler<AlwaysFailJob>.LastException;
+        exception.Should().NotBeNull();
+        exception!.Message.Should().Contain("intentionally failed");
+
+        await host.StopAsync();
+    }
+
+    [Fact]
+    public async Task DeadLetterHandlerExceptionDoesNotCrashDispatcher()
+    {
+        ResetTestState();
+
+        using var host = BuildHost(s =>
+        {
+            s.AddTransient<AlwaysFailJob>();
+            s.AddTransient<IDeadLetterHandler<AlwaysFailJob>, ThrowingDeadLetterHandler<AlwaysFailJob>>();
+        }, workers: 1);
+
+        await host.StartAsync();
+
+        var scheduler = host.Services.GetRequiredService<IScheduler>();
+        var jobId = await scheduler.EnqueueAsync<AlwaysFailJob>();
+
+        // Wait for job to fail and handler to be invoked (and throw)
+        await Task.Delay(3000);
+
+        // Job should still be in storage despite handler throwing
+        var job = await WaitForJobStatus(host, jobId, JobStatus.Failed, TimeSpan.FromSeconds(2));
+        job.Should().NotBeNull("job should be persisted despite handler exception");
+
+        // Should be able to enqueue more jobs
+        var jobId2 = await scheduler.EnqueueAsync<SuccessJob>();
+        var successJob = await WaitForJobStatus(host, jobId2, JobStatus.Succeeded, TimeSpan.FromSeconds(5));
+        successJob.Should().NotBeNull("dispatcher should continue processing after handler exception");
+
+        await host.StopAsync();
+    }
+
+    [Fact]
+    public async Task MultipleFailuresProgressThroughRetries()
+    {
+        ResetTestState();
+
+        using var host = BuildHost(s =>
+        {
+            s.AddTransient<AlwaysFailJob>();
+        }, workers: 1);
+
+        await host.StartAsync();
+
+        var scheduler = host.Services.GetRequiredService<IScheduler>();
+        var jobId = await scheduler.EnqueueAsync<AlwaysFailJob>();
+
+        // Allow time for multiple retry attempts
+        await Task.Delay(2000);
+
+        var storage = host.Services.GetRequiredService<Storage.IStorageProvider>();
+        var job = await storage.GetJobByIdAsync(jobId);
+
+        // Should have attempted multiple times
+        job.Should().NotBeNull();
+        job!.Attempts.Should().BeGreaterThanOrEqualTo(2, "job should attempt multiple times");
+
+        await host.StopAsync();
+    }
+}
