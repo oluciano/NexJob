@@ -71,6 +71,11 @@ public sealed class NexJobOptions
         TimeSpan.FromSeconds(Math.Pow(attempt, 4) + 15 + (Random.Shared.Next(30) * (attempt + 1)));
 
     /// <summary>
+    /// Dashboard-specific settings.
+    /// </summary>
+    public DashboardSettings Dashboard { get; set; } = new();
+
+    /// <summary>
     /// Maximum number of log lines captured per job execution. Defaults to <c>200</c>.
     /// </summary>
     public int MaxJobLogLines { get; set; } = 200;
@@ -80,6 +85,12 @@ public sealed class NexJobOptions
     /// Populated by <see cref="ApplySettings"/>.
     /// </summary>
     public List<QueueSettings> QueueSettings { get; set; } = [];
+
+    /// <summary>
+    /// Recurring job settings loaded from <c>appsettings.json</c>.
+    /// Populated by <see cref="ApplySettings"/>.
+    /// </summary>
+    public List<RecurringJobSettings> RecurringJobs { get; set; } = [];
 
     /// <summary>
     /// Internal flag indicating whether a storage provider has been explicitly configured.
@@ -113,6 +124,7 @@ public sealed class NexJobOptions
         HeartbeatTimeout = s.HeartbeatTimeout;
         ServerId = s.ServerId;
         QueueSettings = s.QueueSettings;
+        RecurringJobs = s.RecurringJobs;
         if (s.Queues.Length > 0)
         {
             Queues = s.Queues;
@@ -122,5 +134,7 @@ public sealed class NexJobOptions
         {
             ShutdownTimeout = TimeSpan.FromSeconds(s.ShutdownTimeoutSeconds);
         }
+
+        Dashboard = s.Dashboard;
     }
 }

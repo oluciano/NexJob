@@ -313,6 +313,13 @@ public sealed class RedisStorageProvider : IStorageProvider
     public async Task<RecurringJobRecord?> GetRecurringJobByIdAsync(
         string recurringJobId, CancellationToken cancellationToken = default)
     {
+        return await GetRecurringJobAsync(recurringJobId, cancellationToken);
+    }
+
+    /// <inheritdoc/>
+    public async Task<RecurringJobRecord?> GetRecurringJobAsync(
+        string recurringJobId, CancellationToken cancellationToken = default)
+    {
         var hash = await _db.HashGetAllAsync(RecurringKey(recurringJobId));
         return hash.Length == 0 ? null : HashToRecurring(ParseHash(hash));
     }

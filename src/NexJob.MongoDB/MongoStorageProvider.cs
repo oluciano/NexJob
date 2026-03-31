@@ -242,6 +242,12 @@ public sealed class MongoStorageProvider : IStorageProvider
     /// <inheritdoc/>
     public async Task<RecurringJobRecord?> GetRecurringJobByIdAsync(string recurringJobId, CancellationToken cancellationToken = default)
     {
+        return await GetRecurringJobAsync(recurringJobId, cancellationToken);
+    }
+
+    /// <inheritdoc/>
+    public async Task<RecurringJobRecord?> GetRecurringJobAsync(string recurringJobId, CancellationToken cancellationToken = default)
+    {
         var filter = Builders<RecurringJobDocument>.Filter.Eq(d => d.RecurringJobId, recurringJobId);
         var doc = await _recurringJobs.Find(filter).FirstOrDefaultAsync(cancellationToken);
         return doc?.ToRecord();

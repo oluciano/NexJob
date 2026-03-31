@@ -245,6 +245,42 @@ internal sealed class DefaultScheduler : IScheduler
     }
 
     /// <inheritdoc/>
+    public async Task RecurringAsync<TJob>(
+        string recurringJobId,
+        string cron,
+        TimeZoneInfo? timeZone = null,
+        string? queue = null,
+        RecurringConcurrencyPolicy concurrencyPolicy = RecurringConcurrencyPolicy.SkipIfRunning,
+        CancellationToken cancellationToken = default)
+        where TJob : IJob
+    {
+        var tz = timeZone ?? TimeZoneInfo.Utc;
+        var cronExpression = ParseCron(cron);
+        var nextExecution = cronExpression.GetNextOccurrence(DateTimeOffset.UtcNow, tz);
+
+        var record = new RecurringJobRecord
+        {
+            RecurringJobId = recurringJobId,
+            JobType = typeof(TJob).AssemblyQualifiedName!,
+            InputType = typeof(NoInput).AssemblyQualifiedName!,
+            InputJson = JsonSerializer.Serialize(NoInput.Instance),
+            Cron = cron,
+            TimeZoneId = timeZone?.Id,
+            Queue = queue ?? "default",
+            NextExecution = nextExecution,
+            CreatedAt = DateTimeOffset.UtcNow,
+            ConcurrencyPolicy = concurrencyPolicy,
+        };
+
+        using var activity = NexJobActivitySource.StartRecurring(typeof(TJob).FullName ?? typeof(TJob).Name, recurringJobId);
+        await _storage.UpsertRecurringJobAsync(record, cancellationToken);
+
+        activity?.SetTag("nexjob.queue", record.Queue);
+        activity?.SetTag("nexjob.cron", cron);
+        activity?.SetTag("nexjob.next_execution", nextExecution?.ToString("o"));
+    }
+
+    /// <inheritdoc/>
     public async Task<JobId> ContinueWithAsync<TJob, TInput>(
         JobId parentJobId,
         TInput input,
