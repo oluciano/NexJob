@@ -145,6 +145,17 @@ public sealed class MongoStorageProvider : IStorageProvider
         await _jobs.UpdateOneAsync(ById(jobId), update, cancellationToken: cancellationToken);
     }
 
+    /// <inheritdoc/>
+    public async Task SetExpiredAsync(JobId jobId, CancellationToken cancellationToken = default)
+    {
+        var update = Builders<JobDocument>.Update
+            .Set(d => d.Status, JobStatus.Expired)
+            .Set(d => d.CompletedAt, DateTimeOffset.UtcNow)
+            .Unset(d => d.HeartbeatAt);
+
+        await _jobs.UpdateOneAsync(ById(jobId), update, cancellationToken: cancellationToken);
+    }
+
     // ── UpdateHeartbeatAsync ──────────────────────────────────────────────────
 
     /// <inheritdoc/>

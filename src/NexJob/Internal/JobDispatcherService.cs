@@ -28,6 +28,7 @@ internal sealed class JobDispatcherService : BackgroundService
     private readonly ThrottleRegistry _throttleRegistry;
     private readonly IRuntimeSettingsStore _runtimeStore;
     private readonly NexJobOptions _options;
+    private readonly JobWakeUpChannel _wakeUp;
     private readonly ILogger<JobDispatcherService> _logger;
     private int _activeJobCount;
 
@@ -40,6 +41,7 @@ internal sealed class JobDispatcherService : BackgroundService
         ThrottleRegistry throttleRegistry,
         IRuntimeSettingsStore runtimeStore,
         NexJobOptions options,
+        JobWakeUpChannel wakeUp,
         ILogger<JobDispatcherService> logger)
     {
         _storage = storage;
@@ -47,6 +49,7 @@ internal sealed class JobDispatcherService : BackgroundService
         _throttleRegistry = throttleRegistry;
         _runtimeStore = runtimeStore;
         _options = options;
+        _wakeUp = wakeUp;
         _logger = logger;
     }
 
@@ -132,8 +135,11 @@ internal sealed class JobDispatcherService : BackgroundService
             if (job is null)
             {
                 workerSlots.Release();
-                // FetchNextAsync already introduced a small delay; add the configured polling
-                // interval only when we know the queues are truly empty
+
+                var pollingInterval = runtime.PollingInterval ?? _options.PollingInterval;
+
+                await _wakeUp.WaitAsync(pollingInterval, stoppingToken);
+
                 continue;
             }
 
@@ -208,6 +214,21 @@ internal sealed class JobDispatcherService : BackgroundService
 
     private async Task ExecuteJobAsync(JobRecord job)
     {
+        // Check if job has expired before execution begins
+        if (job.ExpiresAt.HasValue && DateTimeOffset.UtcNow > job.ExpiresAt.Value)
+        {
+            _logger.LogInformation(
+                "Job {JobId} ({JobType}) expired at {ExpiresAt} — discarding",
+                job.Id, job.JobType, job.ExpiresAt.Value);
+
+            await _storage.SetExpiredAsync(job.Id, CancellationToken.None);
+
+            NexJobMetrics.JobsExpired.Add(1,
+                new TagList { { "nexjob.job_type", job.JobType } });
+
+            return;
+        }
+
         _logger.LogDebug("Executing job {JobId} ({JobType}), attempt {Attempt}/{Max}",
             job.Id, job.JobType, job.Attempts, job.MaxAttempts);
 
@@ -232,8 +253,10 @@ internal sealed class JobDispatcherService : BackgroundService
             scope.ServiceProvider.GetRequiredService<IJobContextAccessor>().Context =
                 new JobContext(job, _storage);
 
-            var jobType = Type.GetType(job.JobType, throwOnError: true)!;
-            var inputType = Type.GetType(job.InputType, throwOnError: true)!;
+            var jobType = JobTypeResolver.ResolveJobType(job.JobType)
+                          ?? throw new InvalidOperationException($"Cannot load job type: {job.JobType}");
+            var inputType = JobTypeResolver.ResolveInputType(job.InputType)
+                           ?? throw new InvalidOperationException($"Cannot load input type: {job.InputType}");
 
             // Apply migration pipeline if payload schema version is outdated
             var currentVersion = jobType.GetCustomAttribute<SchemaVersionAttribute>()?.Version ?? 1;
@@ -338,11 +361,63 @@ internal sealed class JobDispatcherService : BackgroundService
                 await _storage.SetRecurringJobLastExecutionResultAsync(
                     job.RecurringJobId, JobStatus.Failed, ex.Message, CancellationToken.None);
             }
+
+            // Invoke dead-letter handler if job has permanently failed (no retry scheduled)
+            if (retryAt is null)
+            {
+                await InvokeDeadLetterHandlerAsync(job, ex, CancellationToken.None);
+            }
         }
         finally
         {
             await cts.CancelAsync();
             await heartbeatTask;
+        }
+    }
+
+    // ─── dead-letter handling ─────────────────────────────────────────────────
+
+    private async Task InvokeDeadLetterHandlerAsync(
+        JobRecord job,
+        Exception lastException,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var jobType = JobTypeResolver.ResolveJobType(job.JobType);
+            if (jobType is null)
+            {
+                _logger.LogDebug(
+                    "Cannot resolve job type {JobType} for dead-letter handler — handler skipped",
+                    job.JobType);
+                return;
+            }
+
+            using var scope = _scopeFactory.CreateScope();
+
+            var handlerType = typeof(IDeadLetterHandler<>).MakeGenericType(jobType);
+            var handler = scope.ServiceProvider.GetService(handlerType);
+            if (handler is null)
+            {
+                return;
+            }
+
+            var method = handlerType.GetMethod(nameof(IDeadLetterHandler<object>.HandleAsync))
+                        ?? throw new InvalidOperationException($"Cannot find HandleAsync method on {handlerType.Name}");
+
+            var task = (Task)method.Invoke(handler, new object[] { job, lastException, cancellationToken })!;
+            await task;
+
+            _logger.LogDebug(
+                "Dead-letter handler {Handler} invoked for job {JobId}",
+                handlerType.Name, job.Id);
+        }
+        catch (Exception handlerEx)
+        {
+            _logger.LogError(
+                handlerEx,
+                "Dead-letter handler threw for job {JobId} — handler errors are swallowed",
+                job.Id);
         }
     }
 

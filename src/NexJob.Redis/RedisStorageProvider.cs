@@ -166,6 +166,21 @@ public sealed class RedisStorageProvider : IStorageProvider
     }
 
     /// <inheritdoc/>
+    public async Task SetExpiredAsync(JobId jobId, CancellationToken cancellationToken = default)
+    {
+        var id = jobId.Value.ToString();
+        var now = DateTimeOffset.UtcNow;
+
+        await _db.HashDeleteAsync(ProcessingKey, id);
+        await _db.HashSetAsync(JobKey(id), new[]
+        {
+            new HashEntry("status", "Expired"),
+            new HashEntry("completedAt", now.ToString("O", CultureInfo.InvariantCulture)),
+            new HashEntry("heartbeatAt", string.Empty),
+        });
+    }
+
+    /// <inheritdoc/>
     public async Task UpdateHeartbeatAsync(JobId jobId, CancellationToken cancellationToken = default)
     {
         var id = jobId.Value.ToString();

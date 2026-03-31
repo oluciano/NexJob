@@ -61,6 +61,13 @@ public sealed class JobRecord
     /// </summary>
     public DateTimeOffset? ScheduledAt { get; init; }
 
+    /// <summary>
+    /// UTC deadline for this job. If the job has not started executing by this time,
+    /// it is marked as <see cref="JobStatus.Expired"/> and skipped.
+    /// <see langword="null"/> means no deadline.
+    /// </summary>
+    public DateTimeOffset? ExpiresAt { get; init; }
+
     /// <summary>UTC timestamp when a worker last claimed this job.</summary>
     public DateTimeOffset? ProcessingStartedAt { get; set; }
 

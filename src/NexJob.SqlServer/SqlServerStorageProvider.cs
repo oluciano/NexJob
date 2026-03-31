@@ -181,6 +181,21 @@ public sealed class SqlServerStorageProvider : IStorageProvider
         }
     }
 
+    /// <inheritdoc/>
+    public async Task SetExpiredAsync(JobId jobId, CancellationToken cancellationToken = default)
+    {
+        await using var conn = Open();
+        await conn.OpenAsync(cancellationToken);
+
+        await conn.ExecuteAsync(
+            """
+            UPDATE nexjob_jobs
+            SET status = 'Expired', completed_at = SYSUTCDATETIME(), heartbeat_at = NULL
+            WHERE id = @id
+            """,
+            new { id = jobId.Value });
+    }
+
     // ── UpdateHeartbeatAsync ──────────────────────────────────────────────────
 
     /// <inheritdoc/>

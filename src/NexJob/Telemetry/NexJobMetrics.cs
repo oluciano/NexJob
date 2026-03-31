@@ -27,6 +27,10 @@ public static class NexJobMetrics
     internal static readonly Counter<long> JobsFailed =
         Meter.CreateCounter<long>("nexjob.jobs.failed", "jobs", "Number of jobs that failed.");
 
+    /// <summary>Counts jobs discarded because their deadline passed before execution.</summary>
+    internal static readonly Counter<long> JobsExpired =
+        Meter.CreateCounter<long>("nexjob.jobs.expired", "jobs", "Number of jobs discarded because their deadline passed before execution.");
+
     /// <summary>Records job execution duration in milliseconds.</summary>
     internal static readonly Histogram<double> JobDuration =
         Meter.CreateHistogram<double>("nexjob.job.duration", "ms", "Job execution duration in milliseconds.");

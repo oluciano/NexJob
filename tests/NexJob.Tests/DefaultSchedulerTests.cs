@@ -8,11 +8,12 @@ namespace NexJob.Tests;
 public sealed class DefaultSchedulerTests
 {
     private readonly InMemoryStorageProvider _storage = new();
+    private readonly JobWakeUpChannel _wakeUp = new();
     private readonly DefaultScheduler _sut;
 
     public DefaultSchedulerTests()
     {
-        _sut = new DefaultScheduler(_storage, new NexJobOptions());
+        _sut = new DefaultScheduler(_storage, new NexJobOptions(), _wakeUp);
     }
 
     // ─── EnqueueAsync ─────────────────────────────────────────────────────────

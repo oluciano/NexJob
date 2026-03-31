@@ -18,6 +18,9 @@ public sealed class JobMetrics
     /// <summary>Jobs scheduled to run at a future time.</summary>
     public int Scheduled { get; init; }
 
+    /// <summary>Jobs that were not executed before their deadline.</summary>
+    public int Expired { get; init; }
+
     /// <summary>Number of registered recurring job definitions.</summary>
     public int Recurring { get; init; }
 

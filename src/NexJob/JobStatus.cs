@@ -25,4 +25,7 @@ public enum JobStatus
 
     /// <summary>The job is waiting for its parent job to complete.</summary>
     AwaitingContinuation,
+
+    /// <summary>The job was not executed before its deadline and was discarded.</summary>
+    Expired,
 }

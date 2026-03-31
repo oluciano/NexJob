@@ -146,6 +146,21 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
     }
 
     /// <inheritdoc/>
+    public Task SetExpiredAsync(JobId jobId, CancellationToken cancellationToken = default)
+    {
+        if (_jobs.TryGetValue(jobId.Value, out var job))
+        {
+            lock (job)
+            {
+                job.Status = JobStatus.Expired;
+                job.CompletedAt = DateTimeOffset.UtcNow;
+            }
+        }
+
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc/>
     public Task UpdateHeartbeatAsync(JobId jobId, CancellationToken cancellationToken = default)
     {
         if (_jobs.TryGetValue(jobId.Value, out var job))
@@ -412,6 +427,7 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
             Succeeded = jobs.Count(j => j.Status == JobStatus.Succeeded),
             Failed = jobs.Count(j => j.Status == JobStatus.Failed),
             Scheduled = jobs.Count(j => j.Status == JobStatus.Scheduled),
+            Expired = jobs.Count(j => j.Status == JobStatus.Expired),
             Recurring = _recurringJobs.Count,
             HourlyThroughput = throughput,
             RecentFailures = recentFailures,

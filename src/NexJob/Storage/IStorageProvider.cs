@@ -56,6 +56,14 @@ public interface IStorageProvider
     Task SetFailedAsync(JobId jobId, Exception exception, DateTimeOffset? retryAt, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Marks a job as <see cref="JobStatus.Expired"/> because its deadline passed
+    /// before execution began.
+    /// </summary>
+    /// <param name="jobId">The identifier of the expired job.</param>
+    /// <param name="cancellationToken">Token to cancel the operation.</param>
+    Task SetExpiredAsync(JobId jobId, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Updates the heartbeat timestamp for a job that is currently being processed.
     /// Workers call this periodically so that the orphan watcher can distinguish
     /// active workers from crashed ones.
