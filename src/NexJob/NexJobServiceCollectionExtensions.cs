@@ -71,7 +71,7 @@ public static class NexJobServiceCollectionExtensions
 
     /// <summary>
     /// Scans <paramref name="assembly"/> for all non-abstract classes implementing
-    /// <see cref="IJob{TInput}"/> and registers each one as <c>Transient</c>.
+    /// <see cref="IJob{TInput}"/> or <see cref="IJob"/> and registers each one as <c>Transient</c>.
     /// </summary>
     /// <param name="services">The service collection to configure.</param>
     /// <param name="assembly">The assembly to scan.</param>
@@ -80,12 +80,19 @@ public static class NexJobServiceCollectionExtensions
         this IServiceCollection services,
         Assembly assembly)
     {
-        var jobInterfaceType = typeof(IJob<>);
+        var jobGenericInterface = typeof(IJob<>);
+        var jobSimpleInterface = typeof(IJob);
 
         var jobTypes = assembly.GetTypes()
             .Where(t => t is { IsAbstract: false, IsClass: true }
-                && Array.Exists(t.GetInterfaces(), i =>
-                    i.IsGenericType && i.GetGenericTypeDefinition() == jobInterfaceType));
+                && (
+                    // IJob<TInput>
+                    Array.Exists(t.GetInterfaces(), i =>
+                        i.IsGenericType && i.GetGenericTypeDefinition() == jobGenericInterface)
+                    ||
+                    // IJob (no-input)
+                    Array.Exists(t.GetInterfaces(), i => i == jobSimpleInterface)
+                ));
 
         foreach (var jobType in jobTypes)
         {

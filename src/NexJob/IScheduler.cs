@@ -7,6 +7,34 @@ namespace NexJob;
 public interface IScheduler
 {
     /// <summary>
+    /// Immediately enqueues a no-input job for background execution.
+    /// </summary>
+    /// <typeparam name="TJob">The <see cref="IJob"/> implementation to execute.</typeparam>
+    /// <param name="queue">
+    /// Target queue name. Uses the default queue when <see langword="null"/>.
+    /// </param>
+    /// <param name="priority">Execution priority within the queue.</param>
+    /// <param name="idempotencyKey">
+    /// Optional deduplication key. If a job with this key already exists in
+    /// <see cref="JobStatus.Enqueued"/> or <see cref="JobStatus.Processing"/> state,
+    /// the existing <see cref="JobId"/> is returned and no new job is created.
+    /// </param>
+    /// <param name="tags">
+    /// Optional list of searchable tags attached to the job.
+    /// Tags can be used to filter jobs in the dashboard or via
+    /// <see cref="GetJobsByTagAsync"/>.
+    /// </param>
+    /// <param name="cancellationToken">Token to cancel the operation.</param>
+    /// <returns>The identifier of the enqueued (or existing, if idempotent) job.</returns>
+    Task<JobId> EnqueueAsync<TJob>(
+        string? queue = null,
+        JobPriority priority = JobPriority.Normal,
+        string? idempotencyKey = null,
+        IReadOnlyList<string>? tags = null,
+        CancellationToken cancellationToken = default)
+        where TJob : IJob;
+
+    /// <summary>
     /// Immediately enqueues a job for background execution.
     /// </summary>
     /// <typeparam name="TJob">The <see cref="IJob{TInput}"/> implementation to execute.</typeparam>
@@ -38,6 +66,22 @@ public interface IScheduler
         where TJob : IJob<TInput>;
 
     /// <summary>
+    /// Schedules a no-input job to execute after the specified delay.
+    /// </summary>
+    /// <typeparam name="TJob">The <see cref="IJob"/> implementation to execute.</typeparam>
+    /// <param name="delay">How long to wait before the job becomes eligible for execution.</param>
+    /// <param name="queue">Target queue name. Uses the default queue when <see langword="null"/>.</param>
+    /// <param name="idempotencyKey">Optional deduplication key.</param>
+    /// <param name="cancellationToken">Token to cancel the operation.</param>
+    /// <returns>The identifier of the scheduled job.</returns>
+    Task<JobId> ScheduleAsync<TJob>(
+        TimeSpan delay,
+        string? queue = null,
+        string? idempotencyKey = null,
+        CancellationToken cancellationToken = default)
+        where TJob : IJob;
+
+    /// <summary>
     /// Schedules a job to execute after the specified delay.
     /// </summary>
     /// <typeparam name="TJob">The <see cref="IJob{TInput}"/> implementation to execute.</typeparam>
@@ -55,6 +99,22 @@ public interface IScheduler
         string? idempotencyKey = null,
         CancellationToken cancellationToken = default)
         where TJob : IJob<TInput>;
+
+    /// <summary>
+    /// Schedules a no-input job to execute at a specific point in time.
+    /// </summary>
+    /// <typeparam name="TJob">The <see cref="IJob"/> implementation to execute.</typeparam>
+    /// <param name="runAt">The UTC instant at which the job becomes eligible for execution.</param>
+    /// <param name="queue">Target queue name. Uses the default queue when <see langword="null"/>.</param>
+    /// <param name="idempotencyKey">Optional deduplication key.</param>
+    /// <param name="cancellationToken">Token to cancel the operation.</param>
+    /// <returns>The identifier of the scheduled job.</returns>
+    Task<JobId> ScheduleAtAsync<TJob>(
+        DateTimeOffset runAt,
+        string? queue = null,
+        string? idempotencyKey = null,
+        CancellationToken cancellationToken = default)
+        where TJob : IJob;
 
     /// <summary>
     /// Schedules a job to execute at a specific point in time.

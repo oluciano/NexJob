@@ -82,6 +82,21 @@ public sealed class NexJobOptions
     public List<QueueSettings> QueueSettings { get; set; } = [];
 
     /// <summary>
+    /// Internal flag indicating whether a storage provider has been explicitly configured.
+    /// </summary>
+    internal bool StorageConfigured { get; set; }
+
+    /// <summary>
+    /// Marks the in-memory storage provider as explicitly configured, enabling fluent chaining.
+    /// </summary>
+    /// <returns>This options instance for method chaining.</returns>
+    public NexJobOptions UseInMemory()
+    {
+        StorageConfigured = true;
+        return this;
+    }
+
+    /// <summary>
     /// Applies values from a <see cref="NexJobSettings"/> instance (typically loaded from
     /// <c>appsettings.json</c>) onto this options object.
     /// <see cref="RetryDelayFactory"/> is intentionally not overwritten — it can only be

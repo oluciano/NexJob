@@ -18,6 +18,7 @@ internal sealed class SchemaMigrator
         new(3, "add execution_logs and trace_parent columns", SqlServerSchemaSql.V3AddColumns),
         new(4, "create schema_version and recurring_locks tables", SqlServerSchemaSql.V4CreateVersionTable),
         new(5, "add progress_percent, progress_message, tags columns", SqlServerSchemaSql.V5AddProgressAndTags),
+        new(6, "add nexjob_servers table for active server tracking", SqlServerSchemaSql.V6CreateServersTable),
     ];
 
     /// <summary>

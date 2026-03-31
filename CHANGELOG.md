@@ -14,6 +14,25 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Improved database isolation strategy for Postgres and SQL Server to dynamically generate and provision separate database instances per-test.
 - Stabilized `HeartbeatServerAsync` test to prevent flaky timing conditions in rapid CI environments (`.BeOnOrAfter`).
 
+## [0.3.3] — March 2026
+
+### Added
+- **`IJob` (no-input interface)** — Jobs that don't need input data no longer require a dummy DTO. Implement `IJob` instead of `IJob<TInput>` for cleanup tasks, maintenance jobs, and triggers:
+  ```csharp
+  public sealed class CleanupJob : IJob
+  {
+      public async Task ExecuteAsync(CancellationToken ct) => await _db.Cleanup(ct);
+  }
+  ```
+  Enqueue with `await scheduler.EnqueueAsync<CleanupJob>()`.
+  `AddNexJobJobs()` discovers both `IJob` and `IJob<TInput>` automatically.
+- **`NexJobOptions.UseInMemory()`** — Explicit opt-in method for the in-memory storage provider. The in-memory provider was already the default; this method makes the intent explicit and matches the documented API in the README.
+
+### Fixed
+- `services.AddNexJob(opt => opt.UseInMemory())` now compiles — method was documented in README but missing from `NexJobOptions`.
+- `AddNexJobJobs()` now discovers classes implementing `IJob` (no-input) in addition to `IJob<TInput>`.
+- `JobDispatcherService` execution pipeline handles `IJob` (single-parameter `ExecuteAsync`) without throwing `MethodNotFoundException` at runtime.
+
 ## [0.3.2] — March 2026
 
 ### Added

@@ -1,6 +1,22 @@
 namespace NexJob;
 
 /// <summary>
+/// Defines a background job that requires no input.
+/// Implement this interface to create a simple NexJob job.
+/// </summary>
+public interface IJob
+{
+    /// <summary>
+    /// Executes the background job without any input.
+    /// </summary>
+    /// <param name="cancellationToken">
+    /// Token that is cancelled when the host is shutting down. Implementations should
+    /// propagate this token to all async I/O calls.
+    /// </param>
+    Task ExecuteAsync(CancellationToken cancellationToken);
+}
+
+/// <summary>
 /// Defines a background job that processes a strongly-typed input.
 /// Implement this interface to create a NexJob job.
 /// </summary>
