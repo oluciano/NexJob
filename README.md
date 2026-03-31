@@ -67,6 +67,7 @@ NexJob was built to solve all of that.
 | Resource throttling (`[Throttle]`) | ✅ | ❌ |
 | Per-job retry config (`[Retry]`) | ✅ | ❌ |
 | Idempotency keys | ✅ | ❌ |
+| `IJob` (no-input interface) | ✅ | ❌ |
 | Job continuations (chaining) | ✅ | ❌ |
 | `appsettings.json` support | ✅ | ❌ |
 | Execution windows per queue | ✅ | ❌ |
@@ -249,7 +250,29 @@ await scheduler.EnqueueAsync<SendInvoiceJob, SendInvoiceInput>(
     tags: ["tenant:acme", $"invoice:{invoiceId}"]);
 ```
 
-### 4 — Dashboard
+### 4 — Jobs without input
+
+For cleanup tasks, maintenance, triggers — jobs that don't need input — skip the DTO entirely:
+
+```csharp
+public sealed class NightlyCleanupJob : IJob
+{
+    private readonly IDbContext _db;
+    public NightlyCleanupJob(IDbContext db) => _db = db;
+
+    public async Task ExecuteAsync(CancellationToken ct)
+        => await _db.DeleteExpiredSessionsAsync(ct);
+}
+
+// Enqueue — no input required:
+await scheduler.EnqueueAsync<NightlyCleanupJob>();
+
+// Recurring — same interface, same simplicity:
+await scheduler.RecurringAsync<NightlyCleanupJob>(
+    id: "nightly-cleanup", cron: "0 2 * * *");
+```
+
+### 5 — Dashboard
 
 **Web API / ASP.NET Core:**
 ```csharp
@@ -583,9 +606,13 @@ builder.Services.AddHealthChecks()
 
 ## Testing
 
-The in-memory provider requires zero setup.
+The in-memory provider is the default — no extra configuration needed:
 
 ```csharp
+// InMemory is automatic when no other provider is registered
+services.AddNexJob();
+
+// Or make it explicit (same behavior, clearer intent):
 services.AddNexJob(opt => opt.UseInMemory());
 ```
 
@@ -619,7 +646,7 @@ builder.Services.AddNexJob(builder.Configuration, opt =>
     opt.UseRedis(connectionString);
     opt.UseMongoDB(connectionString, databaseName: "nexjob");
     opt.UseOracle(connectionString);
-    opt.UseInMemory();                                    // dev/tests
+    opt.UseInMemory();  // default — explicit for clarity, dev/tests only
 
     // Workers & queues (override appsettings)
     opt.Workers = 10;

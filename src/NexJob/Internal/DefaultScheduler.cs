@@ -49,6 +49,40 @@ internal sealed class DefaultScheduler : IScheduler
         return jobId;
     }
 
+    public async Task<JobId> EnqueueAsync<TJob>(
+        string? queue = null,
+        JobPriority priority = JobPriority.Normal,
+        string? idempotencyKey = null,
+        IReadOnlyList<string>? tags = null,
+        CancellationToken cancellationToken = default)
+        where TJob : IJob
+    {
+        var job = new JobRecord
+        {
+            Id = JobId.New(),
+            JobType = typeof(TJob).AssemblyQualifiedName!,
+            InputType = typeof(NoInput).AssemblyQualifiedName!,
+            InputJson = JsonSerializer.Serialize(NoInput.Instance),
+            Queue = queue ?? "default",
+            Priority = priority,
+            Status = JobStatus.Enqueued,
+            IdempotencyKey = idempotencyKey,
+            ScheduledAt = null,
+            CreatedAt = DateTimeOffset.UtcNow,
+            MaxAttempts = _options.MaxAttempts,
+            Tags = tags ?? [],
+        };
+
+        using var activity = NexJobActivitySource.StartEnqueue(typeof(TJob).FullName ?? typeof(TJob).Name, job.Queue);
+
+        var jobId = await _storage.EnqueueAsync(job, cancellationToken);
+
+        activity?.SetTag("nexjob.job_id", jobId.Value.ToString());
+        NexJobMetrics.JobsEnqueued.Add(1, new TagList { { "nexjob.job_type", typeof(TJob).Name }, { "nexjob.queue", job.Queue } });
+
+        return jobId;
+    }
+
     /// <inheritdoc/>
     public async Task<JobId> ScheduleAsync<TJob, TInput>(
         TInput input,
@@ -72,6 +106,40 @@ internal sealed class DefaultScheduler : IScheduler
         return jobId;
     }
 
+    public async Task<JobId> ScheduleAsync<TJob>(
+        TimeSpan delay,
+        string? queue = null,
+        string? idempotencyKey = null,
+        CancellationToken cancellationToken = default)
+        where TJob : IJob
+    {
+        var scheduledAt = DateTimeOffset.UtcNow + delay;
+        var job = new JobRecord
+        {
+            Id = JobId.New(),
+            JobType = typeof(TJob).AssemblyQualifiedName!,
+            InputType = typeof(NoInput).AssemblyQualifiedName!,
+            InputJson = JsonSerializer.Serialize(NoInput.Instance),
+            Queue = queue ?? "default",
+            Priority = JobPriority.Normal,
+            Status = JobStatus.Scheduled,
+            IdempotencyKey = idempotencyKey,
+            ScheduledAt = scheduledAt,
+            CreatedAt = DateTimeOffset.UtcNow,
+            MaxAttempts = _options.MaxAttempts,
+            Tags = [],
+        };
+
+        using var activity = NexJobActivitySource.StartEnqueue(typeof(TJob).FullName ?? typeof(TJob).Name, job.Queue);
+        var jobId = await _storage.EnqueueAsync(job, cancellationToken);
+
+        activity?.SetTag("nexjob.job_id", jobId.Value.ToString());
+        activity?.SetTag("nexjob.delay_seconds", delay.TotalSeconds);
+        NexJobMetrics.JobsEnqueued.Add(1, new TagList { { "nexjob.job_type", typeof(TJob).Name }, { "nexjob.queue", job.Queue }, { "nexjob.scheduled", "true" } });
+
+        return jobId;
+    }
+
     /// <inheritdoc/>
     public async Task<JobId> ScheduleAtAsync<TJob, TInput>(
         TInput input,
@@ -83,6 +151,39 @@ internal sealed class DefaultScheduler : IScheduler
     {
         var job = BuildJobRecord<TJob, TInput>(input, queue, JobPriority.Normal, idempotencyKey,
             status: JobStatus.Scheduled, scheduledAt: runAt);
+
+        using var activity = NexJobActivitySource.StartEnqueue(typeof(TJob).FullName ?? typeof(TJob).Name, job.Queue);
+        var jobId = await _storage.EnqueueAsync(job, cancellationToken);
+
+        activity?.SetTag("nexjob.job_id", jobId.Value.ToString());
+        activity?.SetTag("nexjob.scheduled_at", runAt.ToString("o"));
+        NexJobMetrics.JobsEnqueued.Add(1, new TagList { { "nexjob.job_type", typeof(TJob).Name }, { "nexjob.queue", job.Queue }, { "nexjob.scheduled", "true" } });
+
+        return jobId;
+    }
+
+    public async Task<JobId> ScheduleAtAsync<TJob>(
+        DateTimeOffset runAt,
+        string? queue = null,
+        string? idempotencyKey = null,
+        CancellationToken cancellationToken = default)
+        where TJob : IJob
+    {
+        var job = new JobRecord
+        {
+            Id = JobId.New(),
+            JobType = typeof(TJob).AssemblyQualifiedName!,
+            InputType = typeof(NoInput).AssemblyQualifiedName!,
+            InputJson = JsonSerializer.Serialize(NoInput.Instance),
+            Queue = queue ?? "default",
+            Priority = JobPriority.Normal,
+            Status = JobStatus.Scheduled,
+            IdempotencyKey = idempotencyKey,
+            ScheduledAt = runAt,
+            CreatedAt = DateTimeOffset.UtcNow,
+            MaxAttempts = _options.MaxAttempts,
+            Tags = [],
+        };
 
         using var activity = NexJobActivitySource.StartEnqueue(typeof(TJob).FullName ?? typeof(TJob).Name, job.Queue);
         var jobId = await _storage.EnqueueAsync(job, cancellationToken);

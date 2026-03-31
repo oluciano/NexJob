@@ -164,21 +164,43 @@ internal sealed class JobDispatcherService : BackgroundService
         return InvokerCache.GetOrAdd((jobType, inputType), static key =>
         {
             var (jt, it) = key;
+
+            // IJob (no-input) — sentinel NoInput, single-parameter ExecuteAsync
+            if (it == typeof(NoInput))
+            {
+                var noInputMethod = jt.GetMethod(
+                    nameof(IJob.ExecuteAsync),
+                    [typeof(CancellationToken)])!;
+
+                var jobParam = Expression.Parameter(typeof(object), "job");
+                var inputParam = Expression.Parameter(typeof(object), "input"); // ignored
+                var ctParam = Expression.Parameter(typeof(CancellationToken), "ct");
+
+                var call = Expression.Call(
+                    Expression.Convert(jobParam, jt),
+                    noInputMethod,
+                    ctParam);
+
+                return Expression.Lambda<Func<object, object, CancellationToken, Task>>(
+                    call, jobParam, inputParam, ctParam).Compile();
+            }
+
+            // IJob<TInput> — original path
             var method = jt.GetMethod(nameof(IJob<object>.ExecuteAsync),
                 [it, typeof(CancellationToken)])!;
 
-            var jobParam = Expression.Parameter(typeof(object), "job");
-            var inputParam = Expression.Parameter(typeof(object), "input");
-            var ctParam = Expression.Parameter(typeof(CancellationToken), "ct");
+            var jp = Expression.Parameter(typeof(object), "job");
+            var ip = Expression.Parameter(typeof(object), "input");
+            var ct = Expression.Parameter(typeof(CancellationToken), "ct");
 
-            var call = Expression.Call(
-                Expression.Convert(jobParam, jt),
+            var callTyped = Expression.Call(
+                Expression.Convert(jp, jt),
                 method,
-                Expression.Convert(inputParam, it),
-                ctParam);
+                Expression.Convert(ip, it),
+                ct);
 
             return Expression.Lambda<Func<object, object, CancellationToken, Task>>(
-                call, jobParam, inputParam, ctParam).Compile();
+                callTyped, jp, ip, ct).Compile();
         });
     }
 
