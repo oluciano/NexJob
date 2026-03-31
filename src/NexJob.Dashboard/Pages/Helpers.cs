@@ -19,6 +19,7 @@ internal static class Helpers
         JobStatus.Failed => "<span class=\"badge badge-failed\">Failed</span>",
         JobStatus.Scheduled => "<span class=\"badge badge-scheduled\">Scheduled</span>",
         JobStatus.AwaitingContinuation => "<span class=\"badge badge-awaiting\">Awaiting</span>",
+        JobStatus.Expired => "<span class=\"badge badge-expired\">Expired</span>",
         _ => $"<span class=\"badge\">{s}</span>",
     };
 
@@ -30,6 +31,7 @@ internal static class Helpers
         JobStatus.Scheduled => "<span class=\"dot dot-scheduled\"></span>",
         JobStatus.Enqueued => "<span class=\"dot dot-enqueued\"></span>",
         JobStatus.AwaitingContinuation => "<span class=\"dot dot-awaiting\"></span>",
+        JobStatus.Expired => "<span class=\"dot dot-expired\"></span>",
         _ => "<span class=\"dot dot-default\"></span>",
     };
 
