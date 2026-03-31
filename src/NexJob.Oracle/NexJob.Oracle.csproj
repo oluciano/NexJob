@@ -2,9 +2,9 @@
 
   <PropertyGroup>
     <PackageId>NexJob.Oracle</PackageId>
-    <IsPackable>true</IsPackable>
+    <IsPackable>false</IsPackable>
     <PackageTags>background-jobs;scheduler;oracle;dotnet</PackageTags>
-    <Description>Oracle storage provider for NexJob.</Description>
+    <Description>Oracle storage provider for NexJob (planned).</Description>
   </PropertyGroup>
 
   <ItemGroup>
