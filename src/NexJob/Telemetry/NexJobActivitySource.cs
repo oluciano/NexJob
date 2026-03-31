@@ -58,4 +58,21 @@ public static class NexJobActivitySource
                 new("nexjob.queue", queue),
             ]);
     }
+
+    /// <summary>
+    /// Starts a new <see cref="Activity"/> for a recurring job registration operation.
+    /// Returns <see langword="null"/> when no listener is subscribed.
+    /// </summary>
+    /// <param name="jobType">The fully-qualified job type name.</param>
+    /// <param name="recurringJobId">The unique identifier for the recurring job definition.</param>
+    internal static Activity? StartRecurring(string jobType, string recurringJobId) =>
+        Source.StartActivity(
+            "nexjob.recurring.register",
+            ActivityKind.Internal,
+            parentContext: default,
+            tags:
+            [
+                new("nexjob.job_type", jobType),
+                new("nexjob.recurring_job_id", recurringJobId),
+            ]);
 }

@@ -114,6 +114,23 @@ internal static class SqlServerSchemaSql
             ALTER TABLE nexjob_jobs ADD tags NVARCHAR(MAX) NOT NULL DEFAULT '[]';
         """;
 
+    /// <summary>V6: Add nexjob_servers table for active server tracking.</summary>
+    internal const string V6CreateServersTable =
+        """
+        IF OBJECT_ID('nexjob_servers', 'U') IS NULL
+        CREATE TABLE nexjob_servers (
+            id            NVARCHAR(500) NOT NULL PRIMARY KEY,
+            worker_count  INT NOT NULL DEFAULT 1,
+            queues        NVARCHAR(MAX) NOT NULL DEFAULT '[]',
+            started_at    DATETIMEOFFSET NOT NULL DEFAULT SYSUTCDATETIME(),
+            heartbeat_at  DATETIMEOFFSET NOT NULL DEFAULT SYSUTCDATETIME()
+        );
+
+        IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'idx_nexjob_servers_heartbeat' AND object_id = OBJECT_ID('nexjob_servers'))
+        CREATE INDEX idx_nexjob_servers_heartbeat ON nexjob_servers (heartbeat_at)
+            WHERE heartbeat_at IS NOT NULL;
+        """;
+
     /// <summary>Full initial schema — kept for backward compatibility. Prefer the versioned consts.</summary>
     internal const string CreateTables = V1CreateTables;
 }

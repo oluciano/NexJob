@@ -50,7 +50,7 @@ internal sealed class DefaultScheduler : IScheduler
     }
 
     /// <inheritdoc/>
-    public Task<JobId> ScheduleAsync<TJob, TInput>(
+    public async Task<JobId> ScheduleAsync<TJob, TInput>(
         TInput input,
         TimeSpan delay,
         string? queue = null,
@@ -62,11 +62,18 @@ internal sealed class DefaultScheduler : IScheduler
         var job = BuildJobRecord<TJob, TInput>(input, queue, JobPriority.Normal, idempotencyKey,
             status: JobStatus.Scheduled, scheduledAt: scheduledAt);
 
-        return _storage.EnqueueAsync(job, cancellationToken);
+        using var activity = NexJobActivitySource.StartEnqueue(typeof(TJob).FullName ?? typeof(TJob).Name, job.Queue);
+        var jobId = await _storage.EnqueueAsync(job, cancellationToken);
+
+        activity?.SetTag("nexjob.job_id", jobId.Value.ToString());
+        activity?.SetTag("nexjob.delay_seconds", delay.TotalSeconds);
+        NexJobMetrics.JobsEnqueued.Add(1, new TagList { { "nexjob.job_type", typeof(TJob).Name }, { "nexjob.queue", job.Queue }, { "nexjob.scheduled", "true" } });
+
+        return jobId;
     }
 
     /// <inheritdoc/>
-    public Task<JobId> ScheduleAtAsync<TJob, TInput>(
+    public async Task<JobId> ScheduleAtAsync<TJob, TInput>(
         TInput input,
         DateTimeOffset runAt,
         string? queue = null,
@@ -77,11 +84,18 @@ internal sealed class DefaultScheduler : IScheduler
         var job = BuildJobRecord<TJob, TInput>(input, queue, JobPriority.Normal, idempotencyKey,
             status: JobStatus.Scheduled, scheduledAt: runAt);
 
-        return _storage.EnqueueAsync(job, cancellationToken);
+        using var activity = NexJobActivitySource.StartEnqueue(typeof(TJob).FullName ?? typeof(TJob).Name, job.Queue);
+        var jobId = await _storage.EnqueueAsync(job, cancellationToken);
+
+        activity?.SetTag("nexjob.job_id", jobId.Value.ToString());
+        activity?.SetTag("nexjob.scheduled_at", runAt.ToString("o"));
+        NexJobMetrics.JobsEnqueued.Add(1, new TagList { { "nexjob.job_type", typeof(TJob).Name }, { "nexjob.queue", job.Queue }, { "nexjob.scheduled", "true" } });
+
+        return jobId;
     }
 
     /// <inheritdoc/>
-    public Task RecurringAsync<TJob, TInput>(
+    public async Task RecurringAsync<TJob, TInput>(
         string recurringJobId,
         TInput input,
         string cron,
@@ -109,7 +123,12 @@ internal sealed class DefaultScheduler : IScheduler
             ConcurrencyPolicy = concurrencyPolicy,
         };
 
-        return _storage.UpsertRecurringJobAsync(record, cancellationToken);
+        using var activity = NexJobActivitySource.StartRecurring(typeof(TJob).FullName ?? typeof(TJob).Name, recurringJobId);
+        await _storage.UpsertRecurringJobAsync(record, cancellationToken);
+
+        activity?.SetTag("nexjob.queue", record.Queue);
+        activity?.SetTag("nexjob.cron", cron);
+        activity?.SetTag("nexjob.next_execution", nextExecution?.ToString("o"));
     }
 
     /// <inheritdoc/>
@@ -137,7 +156,14 @@ internal sealed class DefaultScheduler : IScheduler
             TraceParent = traceParent,
         };
 
-        return await _storage.EnqueueAsync(job, cancellationToken);
+        using var activity = NexJobActivitySource.StartEnqueue(typeof(TJob).FullName ?? typeof(TJob).Name, job.Queue);
+        var jobId = await _storage.EnqueueAsync(job, cancellationToken);
+
+        activity?.SetTag("nexjob.job_id", jobId.Value.ToString());
+        activity?.SetTag("nexjob.parent_job_id", parentJobId.Value.ToString());
+        NexJobMetrics.JobsEnqueued.Add(1, new TagList { { "nexjob.job_type", typeof(TJob).Name }, { "nexjob.queue", job.Queue }, { "nexjob.continuation", "true" } });
+
+        return jobId;
     }
 
     /// <inheritdoc/>

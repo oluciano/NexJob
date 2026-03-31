@@ -16,6 +16,7 @@ public sealed class RedisStorageProvider : IStorageProvider
     private const string ScheduledKey = "nexjob:scheduled";
     private const string RecurringAllKey = "nexjob:recurring:all";
     private const string ThroughputKey = "nexjob:throughput";
+    private const string ServersAllKey = "nexjob:servers:all";
 
     private static readonly JsonSerializerOptions JsonOpts = new();
 
@@ -660,20 +661,83 @@ public sealed class RedisStorageProvider : IStorageProvider
     // ── Server / Worker node tracking ─────────────────────────────────────────
 
     /// <inheritdoc/>
-    public Task RegisterServerAsync(ServerRecord server, CancellationToken cancellationToken = default) =>
-        throw new NotSupportedException("Server tracking is not yet supported in Redis.");
+    public async Task RegisterServerAsync(ServerRecord server, CancellationToken cancellationToken = default)
+    {
+        var key = ServerKey(server.Id);
+        var fields = new HashEntry[]
+        {
+            new("id", server.Id),
+            new("workerCount", server.WorkerCount.ToString()),
+            new("queues", JsonSerializer.Serialize(server.Queues, JsonOpts)),
+            new("startedAt", server.StartedAt.ToString("O", CultureInfo.InvariantCulture)),
+            new("heartbeatAt", server.HeartbeatAt.ToString("O", CultureInfo.InvariantCulture)),
+        };
+
+        await _db.HashSetAsync(key, fields);
+        await _db.SetAddAsync(ServersAllKey, server.Id);
+    }
 
     /// <inheritdoc/>
-    public Task HeartbeatServerAsync(string serverId, CancellationToken cancellationToken = default) =>
-        throw new NotSupportedException("Server tracking is not yet supported in Redis.");
+    public async Task HeartbeatServerAsync(string serverId, CancellationToken cancellationToken = default)
+    {
+        var now = DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture);
+        await _db.HashSetAsync(ServerKey(serverId), "heartbeatAt", now);
+    }
 
     /// <inheritdoc/>
-    public Task DeregisterServerAsync(string serverId, CancellationToken cancellationToken = default) =>
-        Task.CompletedTask; // safe
+    public async Task DeregisterServerAsync(string serverId, CancellationToken cancellationToken = default)
+    {
+        await _db.KeyDeleteAsync(ServerKey(serverId));
+        await _db.SetRemoveAsync(ServersAllKey, serverId);
+    }
 
     /// <inheritdoc/>
-    public Task<IReadOnlyList<ServerRecord>> GetActiveServersAsync(TimeSpan activeTimeout, CancellationToken cancellationToken = default) =>
-        Task.FromResult<IReadOnlyList<ServerRecord>>([]);
+    public async Task<IReadOnlyList<ServerRecord>> GetActiveServersAsync(TimeSpan activeTimeout, CancellationToken cancellationToken = default)
+    {
+        var cutoff = DateTimeOffset.UtcNow - activeTimeout;
+        var allIds = await _db.SetMembersAsync(ServersAllKey);
+        var result = new List<ServerRecord>();
+
+        foreach (var idVal in allIds)
+        {
+            var id = idVal.ToString();
+            var hash = await _db.HashGetAllAsync(ServerKey(id));
+            if (hash.Length == 0)
+            {
+                continue;
+            }
+
+            var dict = ParseHash(hash);
+            var heartbeatStr = dict.GetValueOrDefault("heartbeatAt", string.Empty);
+            if (!DateTimeOffset.TryParse(heartbeatStr, CultureInfo.InvariantCulture,
+                    DateTimeStyles.RoundtripKind, out var heartbeat))
+            {
+                continue;
+            }
+
+            if (heartbeat < cutoff)
+            {
+                continue;
+            }
+
+            var queuesRaw = dict.GetValueOrDefault("queues", string.Empty);
+            var queues = string.IsNullOrEmpty(queuesRaw)
+                ? Array.Empty<string>()
+                : JsonSerializer.Deserialize<string[]>(queuesRaw, JsonOpts) ?? Array.Empty<string>();
+
+            result.Add(new ServerRecord
+            {
+                Id = id,
+                WorkerCount = int.TryParse(dict.GetValueOrDefault("workerCount", "1"), out var wc) ? wc : 1,
+                Queues = queues,
+                StartedAt = DateTimeOffset.TryParse(dict.GetValueOrDefault("startedAt"), CultureInfo.InvariantCulture,
+                    DateTimeStyles.RoundtripKind, out var sa) ? sa : DateTimeOffset.UtcNow,
+                HeartbeatAt = heartbeat,
+            });
+        }
+
+        return result.OrderBy(s => s.Id).ToList();
+    }
 
     // ── Private static helpers ────────────────────────────────────────────────
 
@@ -688,6 +752,8 @@ public sealed class RedisStorageProvider : IStorageProvider
     private static string LogsKey(string id) => $"nexjob:logs:{id}";
 
     private static string ContinuationSetKey(Guid parentId) => $"nexjob:continuations:{parentId}";
+
+    private static string ServerKey(string id) => $"nexjob:servers:{id}";
 
     // priority (1-4) * 10^13 + ticks — lower score = higher priority
     private static double QueueScore(int priority, DateTimeOffset createdAt) =>
