@@ -110,7 +110,6 @@ dotnet add package NexJob.Postgres
 dotnet add package NexJob.SqlServer
 dotnet add package NexJob.Redis
 dotnet add package NexJob.MongoDB
-dotnet add package NexJob.Oracle
 
 # For Web APIs
 dotnet add package NexJob.Dashboard
@@ -141,18 +140,19 @@ Or without input:
 ```csharp
 public class NightlyCleanupJob : IJob
 {
+    private readonly ISessionRepository _sessions;
+    public NightlyCleanupJob(ISessionRepository sessions) => _sessions = sessions;
+
     public async Task ExecuteAsync(CancellationToken ct)
-        => await _db.DeleteExpiredSessionsAsync(ct);
+        => await _sessions.DeleteExpiredAsync(ct);
 }
 ```
 
-### 2 — Register
+### 2 — Register services
 
 ```csharp
 builder.Services.AddNexJob(builder.Configuration)
                 .AddNexJobJobs(typeof(Program).Assembly);
-
-app.UseNexJobDashboard("/dashboard");
 ```
 
 ### 3 — Enqueue
@@ -166,12 +166,14 @@ await scheduler.EnqueueAsync<SendInvoiceJob, SendInvoiceInput>(
 await scheduler.ScheduleAsync<SendInvoiceJob, SendInvoiceInput>(
     new(orderId, email), delay: TimeSpan.FromMinutes(5));
 
-// Recurring (cron)
-await scheduler.RecurringAsync<NightlyCleanupJob>(
-    id: "nightly", cron: "0 2 * * *");
+// Recurring (cron) — for IJob<T> jobs
+await scheduler.RecurringAsync<ReportJob, ReportInput>(
+    id: "monthly-report",
+    input: new(DateTime.UtcNow.Month),
+    cron: "0 2 1 * *");
 ```
 
-### 4 — Dashboard
+### 4 — Add dashboard
 
 **Web API / ASP.NET Core:**
 ```csharp
@@ -548,14 +550,14 @@ Change NexJob behavior at runtime via the dashboard settings page — no restart
 
 All open-source. No license walls. Ever.
 
-| Package | Storage | Notes |
+| Package | Storage | Status |
 |---|---|---|
-| `NexJob` | In-memory | Dev and testing only |
-| `NexJob.Postgres` | PostgreSQL 14+ | `SELECT FOR UPDATE SKIP LOCKED` + auto-migrations |
-| `NexJob.SqlServer` | SQL Server 2019+ | `UPDLOCK READPAST` + auto-migrations |
-| `NexJob.Redis` | Redis 7+ | Lua scripts for atomicity |
-| `NexJob.MongoDB` | MongoDB 6+ | Atomic `findAndModify` |
-| `NexJob.Oracle` | Oracle 19c+ | `SKIP LOCKED` |
+| `NexJob` | In-memory | Production ready |
+| `NexJob.Postgres` | PostgreSQL 14+ | Production ready (`SELECT FOR UPDATE SKIP LOCKED` + auto-migrations) |
+| `NexJob.SqlServer` | SQL Server 2019+ | Production ready (`UPDLOCK READPAST` + auto-migrations) |
+| `NexJob.Redis` | Redis 7+ | Production ready (Lua scripts for atomicity) |
+| `NexJob.MongoDB` | MongoDB 6+ | Production ready (atomic `findAndModify`) |
+| `NexJob.Oracle` | Oracle 19c+ | Planned |
 
 Bring your own? Implement `IStorageProvider` — fully documented.
 
