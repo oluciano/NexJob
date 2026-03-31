@@ -178,6 +178,36 @@ public interface IScheduler
         where TJob : IJob<TInput>;
 
     /// <summary>
+    /// Creates or updates a recurring job that fires on a cron schedule.
+    /// Use this overload for jobs implementing <see cref="IJob"/> (no input required).
+    /// </summary>
+    /// <typeparam name="TJob">The <see cref="IJob"/> implementation to execute.</typeparam>
+    /// <param name="recurringJobId">
+    /// Unique identifier for this recurring job definition. Calling this method again
+    /// with the same ID updates the existing definition.
+    /// </param>
+    /// <param name="cron">A valid cron expression (5-field or 6-field with seconds).</param>
+    /// <param name="timeZone">
+    /// Time zone used to evaluate the cron expression. Defaults to UTC.
+    /// </param>
+    /// <param name="queue">Target queue name. Uses the default queue when <see langword="null"/>.</param>
+    /// <param name="concurrencyPolicy">
+    /// Controls what happens when a new cron firing occurs while a previous instance is still
+    /// running. <see cref="RecurringConcurrencyPolicy.SkipIfRunning"/> (default) silently skips
+    /// the new firing; <see cref="RecurringConcurrencyPolicy.AllowConcurrent"/> always enqueues
+    /// a new instance, enabling parallel execution of the same job.
+    /// </param>
+    /// <param name="cancellationToken">Token to cancel the operation.</param>
+    Task RecurringAsync<TJob>(
+        string recurringJobId,
+        string cron,
+        TimeZoneInfo? timeZone = null,
+        string? queue = null,
+        RecurringConcurrencyPolicy concurrencyPolicy = RecurringConcurrencyPolicy.SkipIfRunning,
+        CancellationToken cancellationToken = default)
+        where TJob : IJob;
+
+    /// <summary>
     /// Schedules a job to execute immediately after the specified parent job succeeds.
     /// </summary>
     /// <typeparam name="TJob">The <see cref="IJob{TInput}"/> implementation to execute.</typeparam>

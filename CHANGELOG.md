@@ -7,6 +7,26 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Automatic RecurringJob binding from `appsettings.json`** — Define recurring jobs directly in configuration without code:
+  ```json
+  {
+    "NexJob": {
+      "RecurringJobs": [
+        {
+          "Id": "daily-email",
+          "JobType": "MyApp.Jobs.EmailJob, MyApp",
+          "InputType": "MyApp.Jobs.EmailInput, MyApp",
+          "InputJson": "{ \"to\": \"admin@example.com\" }",
+          "Cron": "0 9 * * *",
+          "TimeZoneId": "America/New_York",
+          "Queue": "email",
+          "Enabled": true
+        }
+      ]
+    }
+  }
+  ```
+  Full validation at startup: type resolution, cron syntax, input deserialization. All validation errors logged with job ID for easy troubleshooting. Graceful error handling — invalid jobs skipped, valid jobs registered and immediately queued for execution.
 
 ### Changed
 

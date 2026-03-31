@@ -153,6 +153,12 @@ public static class NexJobServiceCollectionExtensions
         services.AddHostedService<RecurringJobSchedulerService>();
         services.AddHostedService<ServerHeartbeatService>();
         services.AddHostedService<OrphanedJobWatcherService>();
+        services.AddSingleton<RecurringJobRegistrar>();
+        services.AddHostedService(provider =>
+            new RecurringJobRegistrationService(
+                provider.GetRequiredService<NexJobOptions>(),
+                provider.GetRequiredService<RecurringJobRegistrar>(),
+                provider.GetRequiredService<ILogger<RecurringJobRegistrationService>>()));
         services.AddScoped<MigrationPipeline>();
         services.AddScoped<NexJobHealthCheck>();
         services.AddScoped<IJobContextAccessor, JobContextAccessor>();

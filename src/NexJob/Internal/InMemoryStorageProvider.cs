@@ -289,6 +289,12 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
     /// <inheritdoc/>
     public Task<RecurringJobRecord?> GetRecurringJobByIdAsync(string recurringJobId, CancellationToken cancellationToken = default)
     {
+        return GetRecurringJobAsync(recurringJobId, cancellationToken);
+    }
+
+    /// <inheritdoc/>
+    public Task<RecurringJobRecord?> GetRecurringJobAsync(string recurringJobId, CancellationToken cancellationToken = default)
+    {
         _recurringJobs.TryGetValue(recurringJobId, out var record);
         return Task.FromResult(record);
     }

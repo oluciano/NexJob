@@ -328,6 +328,12 @@ public sealed class PostgresStorageProvider : IStorageProvider
     /// <inheritdoc/>
     public async Task<RecurringJobRecord?> GetRecurringJobByIdAsync(string recurringJobId, CancellationToken cancellationToken = default)
     {
+        return await GetRecurringJobAsync(recurringJobId, cancellationToken);
+    }
+
+    /// <inheritdoc/>
+    public async Task<RecurringJobRecord?> GetRecurringJobAsync(string recurringJobId, CancellationToken cancellationToken = default)
+    {
         await using var conn = Open();
         await conn.OpenAsync(cancellationToken);
         var row = await conn.QuerySingleOrDefaultAsync<RecurringJobRow>(

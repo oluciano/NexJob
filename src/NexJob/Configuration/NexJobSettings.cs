@@ -49,4 +49,7 @@ public sealed class NexJobSettings
 
     /// <summary>Dashboard-specific settings.</summary>
     public DashboardSettings Dashboard { get; set; } = new();
+
+    /// <summary>Recurring job definitions from configuration.</summary>
+    public List<RecurringJobSettings> RecurringJobs { get; set; } = [];
 }
