@@ -93,6 +93,18 @@ NexJob is a production-oriented background job processing library.
 
 These rules MUST be followed by any generated or modified code.
 
+**BEFORE WRITING CODE:**
+1. Read this entire section (yes, all of it)
+2. Check `NEXJOB_AI_CONTEXT_MINIMAL.md` for core rules
+3. Check `ARCHITECTURE.md` for design patterns
+4. Review `CONTRIBUTING.md` for engineering standards
+5. Review the "Code Style" section below — StyleCop violations will **fail the build**
+
+**DURING CODE GENERATION:**
+- Apply StyleCop rules **immediately** (not as a separate refactor step)
+- Compile locally before committing (`dotnet build --configuration Release`)
+- Zero warnings is a requirement, not a nice-to-have
+
 ### Code Quality
 
 * No `NotImplementedException`
@@ -119,6 +131,63 @@ These rules MUST be followed by any generated or modified code.
 ### Public API
 
 * All public types and members must have XML documentation (`///`)
+
+### Code Style (StyleCop Compliance)
+
+These are **ENFORCED** at build time with `<TreatWarningsAsErrors>true</TreatWarningsAsErrors>`.
+Fix them **during code generation**, not after.
+
+**Member Ordering (SA1202, SA1204)**
+- Public members first
+- Then static members
+- Then instance methods
+- Pattern: public → static helpers → private/internal instance methods
+
+Example:
+```csharp
+public sealed class MyClass
+{
+    public string Property { get; set; }           // public first
+    
+    private static void HelperMethod() { }        // static next
+    
+    private async Task PrivateMethodAsync() { }   // instance last
+}
+```
+
+**Trailing Commas (SA1413)**
+- Multi-line initializers, parameter lists, argument lists MUST end with trailing comma
+```csharp
+var obj = new MyClass
+{
+    Prop1 = value1,
+    Prop2 = value2,  // ← trailing comma required
+};
+```
+
+**Blank Lines (SA1508)**
+- No blank lines before closing brace
+```csharp
+public void Method()
+{
+    DoSomething();
+}  // ← no blank line before this
+```
+
+**Variable Usage (S1481 / Sonar)**
+- No unused local variables
+- Use `_` if deliberately unused, or remove the variable entirely
+
+**Exception Handling (S2139 / Sonar)**
+- When catching exceptions, always log or rethrow with context
+- Never silently swallow exceptions
+```csharp
+catch (Exception ex)
+{
+    _logger.LogError(ex, "Context about what failed");
+    throw new SpecificException("Message with context", ex);  // rethrow with info
+}
+```
 
 ### Architecture Compliance
 
