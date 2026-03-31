@@ -25,107 +25,19 @@
 
 ---
 
-## The Why
+## What is NexJob?
 
-Every .NET developer has used Hangfire. Every .NET developer has hit the same walls:
+**NexJob** is a modern, open-source background job framework for .NET built for predictable execution, time-sensitive workflows, and explicit failure handling.
 
-- The Redis adapter costs money. So does the MongoDB one.
-- `async/await` is bolted on — Hangfire serializes `Task`, it doesn't await it.
-- The dashboard looks like it was designed in 2014. Because it was.
-- There's no concept of priority queues, resource throttling, or payload versioning.
-- You can't change workers or pause a queue without restarting the server.
-- Schema migrations don't exist — add a column and deployments break.
-- The license is LGPL for the core and paid for anything production-worthy.
+Unlike Hangfire — which relies on serialization magic and delayed async — NexJob is **async/await native**, **fully type-safe**, and **stateless**. Jobs run in isolated DI scopes with zero hidden state. Storage is the source of truth. Failures are explicit.
 
-NexJob was built to solve all of that.
+---
+
+## ⚡ 30-Second Quick Start
+
+### 1. Define a job
 
 ```csharp
-public class WelcomeEmailJob : IJob<WelcomeEmailInput>
-{
-    public async Task ExecuteAsync(WelcomeEmailInput input, CancellationToken ct)
-        => await _email.SendAsync(input.UserId, ct);
-}
-```
-
-Install the package, implement one interface, add two lines of config — done.
-
----
-
-## At a glance
-
-| | NexJob | Hangfire |
-|---|:---:|:---:|
-| License | MIT | LGPL / paid Pro |
-| `async/await` native | ✅ | ❌ |
-| Priority queues | ✅ | ❌ |
-| Resource throttling (`[Throttle]`) | ✅ | ❌ |
-| Per-job retry config (`[Retry]`) | ✅ | ❌ |
-| Idempotency keys | ✅ | ❌ |
-| `IJob` (no-input interface) | ✅ | ❌ |
-| Job continuations (chaining) | ✅ | ❌ |
-| `appsettings.json` support | ✅ | ❌ |
-| Execution windows per queue | ✅ | ❌ |
-| Live config without restart | ✅ | ❌ |
-| Schema migrations (auto) | ✅ | ❌ |
-| Graceful shutdown | ✅ | ❌ |
-| Distributed recurring lock | ✅ | ❌ |
-| OpenTelemetry built-in | ✅ | ❌ |
-| Payload versioning (`IJobMigration`) | ✅ | ❌ |
-| Job progress tracking | ✅ | ✅ paid |
-| Job context (`IJobContext`) | ✅ | ✅ |
-| Job tags | ✅ | ❌ |
-| All storage adapters free | ✅ | ❌ |
-| In-memory for testing | ✅ | ✅ |
-| Cron / recurring jobs | ✅ | ✅ |
-| Dashboard | ✅ dark mode | ✅ legacy |
-| Worker Service / Console dashboard | ✅ | ❌ |
-
----
-
-## Benchmarks
-
-> Measured on Intel Xeon E5-2667 v4 3.20GHz, 16 logical cores, .NET 8.0.25, March 2026.
-> Run `dotnet run -c Release --project benchmarks/NexJob.Benchmarks -- --filter '*' --job Short` to reproduce.
-> Full raw results in [benchmarks/results/README.md](benchmarks/results/README.md).
-
-### Enqueue latency — single job, in-memory storage
-
-| | NexJob | Hangfire | Difference |
-|---|---|---|---|
-| Mean latency | 9.28 μs | 26.63 μs | **NexJob is 2.87x faster** |
-| Allocated memory | 1.67 KB | 11.2 KB | **NexJob uses 85% less memory** |
-
----
-
-# Quick Start
-
-## Installation
-
-```bash
-# Core (includes in-memory provider for dev/tests)
-dotnet add package NexJob
-
-# Pick your storage — all free, all open-source
-dotnet add package NexJob.Postgres
-dotnet add package NexJob.SqlServer
-dotnet add package NexJob.Redis
-dotnet add package NexJob.MongoDB
-dotnet add package NexJob.Oracle
-
-# For Web APIs
-dotnet add package NexJob.Dashboard
-
-# For Worker Services and Console Apps
-dotnet add package NexJob.Dashboard.Standalone
-```
-
-## 5-minute setup
-
-### 1 — Define your job
-
-```csharp
-public record SendInvoiceInput(Guid OrderId, string Email);
-
 public class SendInvoiceJob : IJob<SendInvoiceInput>
 {
     private readonly IEmailService _email;
@@ -136,164 +48,146 @@ public class SendInvoiceJob : IJob<SendInvoiceInput>
 }
 ```
 
-Or without input:
-
-```csharp
-public class NightlyCleanupJob : IJob
-{
-    public async Task ExecuteAsync(CancellationToken ct)
-        => await _db.DeleteExpiredSessionsAsync(ct);
-}
-```
-
-### 2 — Register
+### 2. Register
 
 ```csharp
 builder.Services.AddNexJob(builder.Configuration)
                 .AddNexJobJobs(typeof(Program).Assembly);
-
-app.UseNexJobDashboard("/dashboard");
 ```
 
-### 3 — Enqueue
+### 3. Enqueue
 
 ```csharp
-// Fire and forget
 await scheduler.EnqueueAsync<SendInvoiceJob, SendInvoiceInput>(
     new(orderId, email));
-
-// Delayed
-await scheduler.ScheduleAsync<SendInvoiceJob, SendInvoiceInput>(
-    new(orderId, email), delay: TimeSpan.FromMinutes(5));
-
-// Recurring (cron)
-await scheduler.RecurringAsync<NightlyCleanupJob>(
-    id: "nightly", cron: "0 2 * * *");
 ```
 
-### 4 — Dashboard
-
-**Web API / ASP.NET Core:**
-```csharp
-app.UseNexJobDashboard("/dashboard");
-```
-
-**Worker Service / Console App:**
-```csharp
-services.AddNexJobStandaloneDashboard(configuration);
-// Available at http://localhost:5005/dashboard
-```
-
-### 5 — Configure (optional)
-
-```json
-{
-  "NexJob": {
-    "Workers": 10,
-    "DefaultQueue": "default",
-    "PollingInterval": "00:00:05"
-  }
-}
-```
-
-For complete examples, see [/samples](samples/).
+Done. The job executes immediately on an available worker.
 
 ---
 
-# Features
+## 🔥 Why NexJob?
 
-## Scheduling in depth
+| Feature | Benefit |
+|---------|---------|
+| **Predictable execution** | No serialization magic, no hidden state. Jobs run in isolated DI scopes. |
+| **Deadline support** (`deadlineAfter`) | Mark jobs expired if not started in time — essential for time-sensitive operations. |
+| **Automatic dead-letter handling** | Failed jobs trigger explicit handlers for alerts, compensation, or cleanup. |
+| **Low-latency dispatch** | Wake-up signaling eliminates polling delay on local enqueue. 2.87× faster than Hangfire. |
+| **All storage free** | PostgreSQL, SQL Server, Redis, MongoDB — no paid adapters or license walls. |
+| **Async/await native** | True async from the ground up. No serialization hacks. |
+| **Live config** | Pause queues, adjust workers, change polling — all at runtime without restart. |
+| **Schema migrations** | Auto-migrations on startup. No manual SQL. No deployment breakage. |
 
-### Fire and forget
+---
 
-Enqueue a job to run ASAP — no scheduling involved.
+## ⚔️ NexJob vs Hangfire
 
-```csharp
-await scheduler.EnqueueAsync<SendInvoiceJob, SendInvoiceInput>(
-    new(orderId, email));
+| | NexJob | Hangfire |
+|---|:---:|:---:|
+| **License** | MIT | LGPL / paid Pro |
+| **Async/await native** | ✅ | ❌ serialization-based |
+| **Deadline support** | ✅ `deadlineAfter` | ❌ |
+| **Dead-letter handlers** | ✅ DI-based | ❌ |
+| **Priority queues** | ✅ | ❌ |
+| **Resource throttling** | ✅ `[Throttle]` | ❌ |
+| **Per-job retry config** | ✅ `[Retry]` | ❌ |
+| **Execution windows** | ✅ | ❌ |
+| **Live config** | ✅ | ❌ |
+| **Schema migrations** | ✅ auto | ❌ |
+| **Graceful shutdown** | ✅ | ❌ |
+| **OpenTelemetry** | ✅ built-in | ❌ |
+| **Payload versioning** | ✅ `IJobMigration` | ❌ |
+| **All adapters free** | ✅ | ❌ Redis/MongoDB paid |
+| **Storage providers** | 5 (all open-source) | 3 |
+| **Enqueue latency** | 9.28 μs | 26.63 μs |
+
+---
+
+## 📦 Installation
+
+```bash
+# Core
+dotnet add package NexJob
+
+# Storage (pick one — all free)
+dotnet add package NexJob.Postgres
+dotnet add package NexJob.SqlServer
+dotnet add package NexJob.Redis
+dotnet add package NexJob.MongoDB
+
+# Dashboard
+dotnet add package NexJob.Dashboard
 ```
 
-### Delayed jobs
+---
 
-Schedule a job to run after a delay.
+# Features in Depth
 
+## Scheduling
+
+### Fire and forget
+```csharp
+await scheduler.EnqueueAsync<SendInvoiceJob, SendInvoiceInput>(new(orderId, email));
+```
+
+### Delayed
 ```csharp
 await scheduler.ScheduleAsync<SendInvoiceJob, SendInvoiceInput>(
     new(orderId, email), 
     delay: TimeSpan.FromMinutes(5));
 ```
 
-Or at a specific time:
-
+### Recurring (cron)
 ```csharp
-await scheduler.ScheduleAtAsync<SendInvoiceJob, SendInvoiceInput>(
-    new(orderId, email),
-    runAt: DateTimeOffset.UtcNow.AddHours(2));
-```
-
-### Recurring jobs (cron)
-
-Run a job on a schedule — NexJob handles the cron parsing and distributed lock.
-
-```csharp
-await scheduler.RecurringAsync<MonthlyReportJob, ReportInput>(
-    id: "monthly-report",
+await scheduler.RecurringAsync<ReportJob, ReportInput>(
+    id: "monthly",
     input: new(DateTime.UtcNow.Month),
-    cron: "0 9 1 * *",  // 9 AM on the 1st of each month
-    timeZone: TimeZoneInfo.FindSystemTimeZoneById("America/Sao_Paulo"));
+    cron: "0 9 1 * *");
 ```
 
-Remove it anytime:
-
-```csharp
-await scheduler.RemoveRecurringAsync("monthly-report");
-```
-
-### Continuations
-
-Chain jobs — the next job only runs if the parent succeeds.
-
+### Continuations (chaining)
 ```csharp
 var paymentId = await scheduler.EnqueueAsync<ProcessPaymentJob, PaymentInput>(input);
 await scheduler.ContinueWithAsync<SendReceiptJob, ReceiptInput>(paymentId, receiptInput);
 ```
 
-### Idempotency keys
+---
 
-Safe to call multiple times — NexJob deduplicates based on the key.
+## Reliability
 
-```csharp
-await scheduler.EnqueueAsync<SendInvoiceJob, SendInvoiceInput>(
-    new(orderId, email),
-    idempotencyKey: $"invoice-{orderId}");
+### Global retry policy
+By default, jobs retry with exponential backoff. Configure via `appsettings.json`:
+```json
+{ "NexJob": { "MaxAttempts": 5 } }
 ```
 
-### Job tags
-
-Tag jobs with searchable metadata — visible in dashboard and queryable.
-
+### Per-job retry
 ```csharp
-await scheduler.EnqueueAsync<SendInvoiceJob, SendInvoiceInput>(
-    new(orderId, email),
-    tags: ["tenant:acme", $"invoice:{invoiceId}", "region:us-east"]);
-
-// Query by tag
-var jobs = await scheduler.GetJobsByTagAsync("tenant:acme");
+[Retry(5, InitialDelay = "00:00:30", Multiplier = 2.0, MaxDelay = "01:00:00")]
+public class PaymentJob : IJob<PaymentInput> { ... }
 ```
 
-### Priority queues
-
-Critical jobs jump the queue.
-
+### Dead-letter handler
+Automatically handle jobs that exhaust retries:
 ```csharp
-await scheduler.EnqueueAsync<AlertJob, AlertInput>(
-    input, 
-    priority: JobPriority.Critical);  // Critical → High → Normal → Low
+public class PaymentDeadLetterHandler : IDeadLetterHandler<PaymentJob>
+{
+    public async Task HandleAsync(JobRecord failedJob, Exception lastException, CancellationToken ct)
+        => await _alerts.SendAsync($"Payment failed", ct);
+}
+
+builder.Services.AddTransient<IDeadLetterHandler<PaymentJob>, PaymentDeadLetterHandler>();
 ```
 
-### Deadlines (WithDeadlineAfter)
+### Graceful shutdown
+Jobs complete naturally on SIGTERM. Strays are requeued by orphan watcher.
 
-If a job is not executed within the specified window, it is marked as `Expired` and skipped. Useful for time-sensitive operations.
+---
+
+## Deadlines
+
+Jobs not executed within the deadline are marked `Expired` and skipped:
 
 ```csharp
 await scheduler.EnqueueAsync<PaymentJob, PaymentInput>(
@@ -303,95 +197,54 @@ await scheduler.EnqueueAsync<PaymentJob, PaymentInput>(
 
 ---
 
-## Reliability
+## Observability
 
-### Retry policy (global)
-
-By default, jobs retry with exponential backoff. After `MaxAttempts`, they move to dead-letter.
-
-| Attempt | Delay |
-|:---:|---|
-| 1 | ~16 seconds |
-| 2 | ~1 minute |
-| 3 | ~5 minutes |
-| 4 | ~17 minutes |
-| 5 | ~42 minutes |
-
-Override in `appsettings.json`:
-
-```json
-{ "NexJob": { "MaxAttempts": 7 } }
+### OpenTelemetry (zero config)
+```csharp
+builder.Services.AddOpenTelemetry()
+    .WithTracing(t => t.AddSource("NexJob"))
+    .WithMetrics(m => m.AddMeter("NexJob"));
 ```
 
-### Per-job retry configuration
+Metrics: `nexjob.jobs.enqueued`, `nexjob.jobs.succeeded`, `nexjob.jobs.failed`, `nexjob.jobs.expired`, `nexjob.job.duration`.
 
-Override the global policy per job type.
-
+### Job context
 ```csharp
-[Retry(0)]  // Dead-letter immediately
-public class WebhookJob : IJob<WebhookInput> { ... }
-
-[Retry(5, InitialDelay = "00:00:30", Multiplier = 2.0, MaxDelay = "01:00:00")]
-public class PaymentJob : IJob<PaymentInput> { ... }
-```
-
-### Dead-letter handler
-
-Automatically handle jobs that exhaust all retries.
-
-```csharp
-public class PaymentDeadLetterHandler : IDeadLetterHandler<PaymentJob>
+public class ImportJob : IJob<ImportInput>
 {
-    public async Task HandleAsync(JobRecord failedJob, Exception lastException,
-        CancellationToken ct)
+    private readonly IJobContext _ctx;
+    public ImportJob(IJobContext ctx) => _ctx = ctx;
+
+    public async Task ExecuteAsync(ImportInput input, CancellationToken ct)
     {
-        await _alerts.SendAsync($"Payment failed permanently", ct);
+        await _ctx.ReportProgressAsync(0, "Starting...", ct);
+        // ... do work ...
+        await _ctx.ReportProgressAsync(100, "Done.", ct);
     }
 }
-
-// Register
-builder.Services.AddTransient<IDeadLetterHandler<PaymentJob>, PaymentDeadLetterHandler>();
 ```
 
-Handler errors are swallowed — they never crash the dispatcher.
+### Job tags
+```csharp
+await scheduler.EnqueueAsync<SendInvoiceJob, SendInvoiceInput>(
+    input,
+    tags: ["tenant:acme", $"invoice:{invoiceId}"]);
 
-### Graceful shutdown
-
-When your host receives SIGTERM (Kubernetes rolling deployments, scale-down), NexJob waits for active jobs to complete before stopping.
-
-```json
-{
-  "NexJob": {
-    "ShutdownTimeoutSeconds": 30
-  }
-}
+var jobs = await scheduler.GetJobsByTagAsync("tenant:acme");
 ```
-
-Jobs still running after the timeout are requeued by the orphan watcher.
-
-### Orphan watcher
-
-Detect and requeue jobs that crashed unexpectedly. Workers send heartbeats every 30 seconds; if a job doesn't update for 5 minutes, it's assumed dead and requeued.
 
 ---
 
-## Concurrency & throttling
+## Concurrency & Throttling
 
 ### Resource throttling
-
-Declare a limit once — NexJob enforces it across all workers globally.
-
 ```csharp
 [Throttle(resource: "stripe", maxConcurrent: 3)]
 public class ChargeCardJob : IJob<ChargeInput> { ... }
 ```
 
-All jobs sharing the same resource name share the same concurrency slot.
-
 ### Execution windows
-
-Restrict queues to specific time windows.
-
+Restrict queues to specific times:
 ```json
 {
   "NexJob": {
@@ -410,252 +263,96 @@ Restrict queues to specific time windows.
 }
 ```
 
-The `reports` queue only processes jobs between 10 PM and 6 AM São Paulo time.
-
 ---
 
-## Job context & progress
+## Payload Versioning
 
-### IJobContext
-
-Inject `IJobContext` to access runtime information inside any job.
-
-```csharp
-public class ImportCsvJob : IJob<ImportCsvInput>
-{
-    private readonly IJobContext _ctx;
-
-    public ImportCsvJob(IJobContext ctx) => _ctx = ctx;
-
-    public async Task ExecuteAsync(ImportCsvInput input, CancellationToken ct)
-    {
-        await _ctx.ReportProgressAsync(0, "Starting...", ct);
-        // ... do work ...
-        await _ctx.ReportProgressAsync(100, "Done.", ct);
-    }
-}
-```
-
-Exposes: `JobId`, `Attempt`, `MaxAttempts`, `Queue`, `RecurringJobId`, `Tags`.
-
-### WithProgress
-
-Automatically report progress as you iterate.
-
-```csharp
-// With IAsyncEnumerable
-await foreach (var record in dbReader.ReadAllAsync(ct).WithProgress(_ctx, ct))
-{
-    await ImportAsync(record, ct);
-}
-
-// With IEnumerable
-foreach (var item in items.WithProgress(_ctx))
-{
-    await ProcessAsync(item, ct);
-}
-```
-
-The dashboard shows a live progress bar updated in real-time via SSE.
-
----
-
-## Observability
-
-NexJob emits OpenTelemetry spans and metrics for every job — zero extra configuration.
-
-```csharp
-builder.Services.AddOpenTelemetry()
-    .WithTracing(t => t.AddSource("NexJob"))
-    .WithMetrics(m => m.AddMeter("NexJob"));
-```
-
-Metrics: `nexjob.jobs.enqueued`, `nexjob.jobs.succeeded`, `nexjob.jobs.failed`, `nexjob.jobs.expired`, `nexjob.job.duration`.
-
----
-
-## Payload versioning
-
-Your job inputs will change. NexJob handles it gracefully.
+Handle evolving job inputs gracefully:
 
 ```csharp
 [SchemaVersion(2)]
 public class SendInvoiceJob : IJob<SendInvoiceInputV2> { ... }
 
-public class SendInvoiceMigration : IJobMigration<SendInvoiceInputV1, SendInvoiceInputV2>
+public class Migration : IJobMigration<SendInvoiceInputV1, SendInvoiceInputV2>
 {
     public SendInvoiceInputV2 Migrate(SendInvoiceInputV1 old)
         => new(old.OrderId, old.Email, Language: "en-US");
 }
 
-// Register
-builder.Services.AddJobMigration<SendInvoiceInputV1, SendInvoiceInputV2, SendInvoiceMigration>();
+builder.Services.AddJobMigration<SendInvoiceInputV1, SendInvoiceInputV2, Migration>();
+```
+
+---
+
+## Dashboard
+
+**Web API:**
+```csharp
+app.UseNexJobDashboard("/dashboard");
+```
+
+**Worker Service / Console App:**
+```csharp
+services.AddNexJobStandaloneDashboard(configuration);
+// Dashboard at http://localhost:5005/dashboard
 ```
 
 ---
 
 # Configuration
 
-## appsettings.json reference
+## appsettings.json
 
 ```json
 {
   "NexJob": {
     "Workers": 10,
-    "DefaultQueue": "default",
     "MaxAttempts": 5,
-    "ShutdownTimeoutSeconds": 30,
     "PollingInterval": "00:00:05",
-    "HeartbeatInterval": "00:00:30",
-    "HeartbeatTimeout": "00:05:00",
+    "ShutdownTimeoutSeconds": 30,
+    "DefaultQueue": "default",
     "Queues": [
       { "Name": "critical", "Workers": 3 },
-      { "Name": "default",  "Workers": 5 },
-      {
-        "Name": "reports",
-        "Workers": 2,
-        "ExecutionWindow": {
-          "StartTime": "22:00",
-          "EndTime": "06:00",
-          "TimeZone": "America/Sao_Paulo"
-        }
-      },
-      { "Name": "low", "Workers": 1 }
-    ],
-    "Dashboard": {
-      "Path": "/dashboard",
-      "Title": "MyApp Jobs",
-      "RequireAuth": false,
-      "PollIntervalSeconds": 3
-    }
+      { "Name": "default",  "Workers": 5 }
+    ]
   }
 }
 ```
 
-## Live configuration
-
-Change NexJob behavior at runtime via the dashboard settings page — no restarts needed.
-
-- **Adjust workers** — slider applied instantly
-- **Pause a queue** — toggle on/off
-- **Pause all recurring jobs** — one click
-- **Change polling interval** — tune live
-- **Reset to appsettings** — clear all runtime overrides
-
----
-
-## Storage providers
-
-All open-source. No license walls. Ever.
-
-| Package | Storage | Notes |
-|---|---|---|
-| `NexJob` | In-memory | Dev and testing only |
-| `NexJob.Postgres` | PostgreSQL 14+ | `SELECT FOR UPDATE SKIP LOCKED` + auto-migrations |
-| `NexJob.SqlServer` | SQL Server 2019+ | `UPDLOCK READPAST` + auto-migrations |
-| `NexJob.Redis` | Redis 7+ | Lua scripts for atomicity |
-| `NexJob.MongoDB` | MongoDB 6+ | Atomic `findAndModify` |
-| `NexJob.Oracle` | Oracle 19c+ | `SKIP LOCKED` |
-
-Bring your own? Implement `IStorageProvider` — fully documented.
-
----
-
-## Configuration reference (code)
+## Code configuration
 
 ```csharp
 builder.Services.AddNexJob(builder.Configuration, opt =>
 {
-    // Storage — pick one
     opt.UsePostgres(connectionString);
-    opt.UseSqlServer(connectionString);
-    opt.UseRedis(connectionString);
-    opt.UseMongoDB(connectionString, databaseName: "nexjob");
-    opt.UseOracle(connectionString);
-    opt.UseInMemory();  // default
-
-    // Workers & queues (override appsettings)
     opt.Workers = 10;
-    opt.Queues = ["critical", "default", "low"];
-    opt.DefaultQueue = "default";
-
-    // Timing
-    opt.PollingInterval   = TimeSpan.FromSeconds(5);
-    opt.HeartbeatInterval = TimeSpan.FromSeconds(30);
-    opt.HeartbeatTimeout  = TimeSpan.FromMinutes(5);
-    opt.ShutdownTimeout   = TimeSpan.FromSeconds(30);
-
-    // Retries
     opt.MaxAttempts = 5;
 });
 ```
 
 ---
 
+## Storage Providers
+
+All open-source. No license walls.
+
+| Package | Storage | Status |
+|---|---|---|
+| `NexJob` | In-memory | Production ready |
+| `NexJob.Postgres` | PostgreSQL 14+ | Production ready |
+| `NexJob.SqlServer` | SQL Server 2019+ | Production ready |
+| `NexJob.Redis` | Redis 7+ | Production ready |
+| `NexJob.MongoDB` | MongoDB 6+ | Production ready |
+| `NexJob.Oracle` | Oracle 19c+ | Planned |
+
+---
+
 ## Testing
 
-The in-memory provider is the default:
+The in-memory provider is built-in:
 
 ```csharp
-services.AddNexJob();  // InMemory is automatic
-
-// Or explicit
-services.AddNexJob(opt => opt.UseInMemory());
-```
-
----
-
-## Health checks
-
-```csharp
-builder.Services.AddHealthChecks()
-                .AddNexJob()                        // Healthy / Degraded / Unhealthy
-                .AddNexJob(failureThreshold: 100);  // Degraded if > 100 dead-letter jobs
-```
-
----
-
-## Schema migrations
-
-NexJob automatically migrates its storage schema on startup. No manual SQL scripts, no deployment steps.
-
-```csharp
-// Nothing to call — migrations run automatically when your app starts
-builder.Services.AddNexJob(builder.Configuration);
-```
-
----
-
-## Worker Services & Console Apps
-
-NexJob works in any .NET host — not just Web APIs. For applications without HTTP, use the standalone dashboard:
-
-```csharp
-var builder = Host.CreateApplicationBuilder(args);
-
-builder.Services
-    .AddNexJob(builder.Configuration)
-    .AddNexJobJobs(typeof(Program).Assembly);
-
-builder.Services.AddNexJobStandaloneDashboard(builder.Configuration);
-
-await builder.Build().RunAsync();
-// Dashboard: http://localhost:5005/dashboard
-```
-
-Configure in appsettings.json:
-
-```json
-{
-  "NexJob": {
-    "Dashboard": {
-      "Port": 5005,
-      "Path": "/dashboard",
-      "Title": "My Worker Jobs",
-      "LocalhostOnly": true
-    }
-  }
-}
+services.AddNexJob();  // InMemory by default
 ```
 
 ---
@@ -665,27 +362,20 @@ Configure in appsettings.json:
 ## Roadmap
 
 ```
-v0.1.0-alpha  ◆ Core · all storage providers · dashboard · 55 tests
-v0.2.0        ◆ Schema migrations · graceful shutdown · [Retry] · distributed lock · 130 tests
-v0.3.0        ◆ IJobContext · progress tracking · job tags
-v0.4.0        ◆ Wake-up channel · WithDeadlineAfter · IDeadLetterHandler · README reorganized
-v1.0.0        ○ Stable API · production-ready
+v0.4.0  ✅ Wake-up channel · Deadlines · Dead-letter handlers · README updated
+v1.0.0  ○ Stable API · production-ready
 ```
 
 ## Contributing
 
-NexJob is built in the open. Issues, ideas, and PRs are welcome.
+NexJob is open-source. Issues, PRs, and ideas welcome.
 
 ```bash
 git clone git@github.com:oluciano/NexJob.git
-cd NexJob
-dotnet restore
-dotnet test
+cd NexJob && dotnet test
 ```
 
-Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a PR.
-
----
+See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
 
 ## License
 

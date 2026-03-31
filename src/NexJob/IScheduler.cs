@@ -24,6 +24,10 @@ public interface IScheduler
     /// Tags can be used to filter jobs in the dashboard or via
     /// <see cref="GetJobsByTagAsync"/>.
     /// </param>
+    /// <param name="deadlineAfter">
+    /// Optional deadline for execution. If specified, the job must start executing
+    /// within this duration from enqueue time, or it will be marked as <see cref="JobStatus.Expired"/>.
+    /// </param>
     /// <param name="cancellationToken">Token to cancel the operation.</param>
     /// <returns>The identifier of the enqueued (or existing, if idempotent) job.</returns>
     Task<JobId> EnqueueAsync<TJob>(
@@ -31,6 +35,7 @@ public interface IScheduler
         JobPriority priority = JobPriority.Normal,
         string? idempotencyKey = null,
         IReadOnlyList<string>? tags = null,
+        TimeSpan? deadlineAfter = null,
         CancellationToken cancellationToken = default)
         where TJob : IJob;
 
@@ -54,6 +59,10 @@ public interface IScheduler
     /// Tags can be used to filter jobs in the dashboard or via
     /// <see cref="GetJobsByTagAsync"/>.
     /// </param>
+    /// <param name="deadlineAfter">
+    /// Optional deadline for execution. If specified, the job must start executing
+    /// within this duration from enqueue time, or it will be marked as <see cref="JobStatus.Expired"/>.
+    /// </param>
     /// <param name="cancellationToken">Token to cancel the operation.</param>
     /// <returns>The identifier of the enqueued (or existing, if idempotent) job.</returns>
     Task<JobId> EnqueueAsync<TJob, TInput>(
@@ -62,6 +71,7 @@ public interface IScheduler
         JobPriority priority = JobPriority.Normal,
         string? idempotencyKey = null,
         IReadOnlyList<string>? tags = null,
+        TimeSpan? deadlineAfter = null,
         CancellationToken cancellationToken = default)
         where TJob : IJob<TInput>;
 

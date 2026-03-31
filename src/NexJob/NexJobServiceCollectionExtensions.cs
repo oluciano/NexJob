@@ -144,6 +144,7 @@ public static class NexJobServiceCollectionExtensions
         services.AddSingleton(options);
         services.TryAddSingleton<IStorageProvider, InMemoryStorageProvider>();
         services.TryAddSingleton<IRuntimeSettingsStore, InMemoryRuntimeSettingsStore>();
+        services.AddSingleton<JobWakeUpChannel>();
         services.AddSingleton<IScheduler, DefaultScheduler>();
         services.AddSingleton<ThrottleRegistry>();
         services.AddSingleton<JobCaptureLoggerProvider>();

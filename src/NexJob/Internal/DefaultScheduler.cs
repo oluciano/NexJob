@@ -14,16 +14,19 @@ internal sealed class DefaultScheduler : IScheduler
 {
     private readonly IStorageProvider _storage;
     private readonly NexJobOptions _options;
+    private readonly JobWakeUpChannel _wakeUp;
 
     /// <summary>
     /// Initializes a new <see cref="DefaultScheduler"/>.
     /// </summary>
     /// <param name="storage">The storage provider used to persist job records.</param>
     /// <param name="options">Global NexJob configuration options.</param>
-    public DefaultScheduler(IStorageProvider storage, NexJobOptions options)
+    /// <param name="wakeUp">The wake-up channel for signaling the dispatcher.</param>
+    public DefaultScheduler(IStorageProvider storage, NexJobOptions options, JobWakeUpChannel wakeUp)
     {
         _storage = storage;
         _options = options;
+        _wakeUp = wakeUp;
     }
 
     /// <inheritdoc/>
@@ -33,11 +36,13 @@ internal sealed class DefaultScheduler : IScheduler
         JobPriority priority = JobPriority.Normal,
         string? idempotencyKey = null,
         IReadOnlyList<string>? tags = null,
+        TimeSpan? deadlineAfter = null,
         CancellationToken cancellationToken = default)
         where TJob : IJob<TInput>
     {
         var job = BuildJobRecord<TJob, TInput>(input, queue, priority, idempotencyKey,
-            status: JobStatus.Enqueued, scheduledAt: null, tags: tags);
+            status: JobStatus.Enqueued, scheduledAt: null, tags: tags,
+            expiresAt: deadlineAfter.HasValue ? DateTimeOffset.UtcNow + deadlineAfter.Value : null);
 
         using var activity = NexJobActivitySource.StartEnqueue(typeof(TJob).FullName ?? typeof(TJob).Name, job.Queue);
 
@@ -45,6 +50,8 @@ internal sealed class DefaultScheduler : IScheduler
 
         activity?.SetTag("nexjob.job_id", jobId.Value.ToString());
         NexJobMetrics.JobsEnqueued.Add(1, new TagList { { "nexjob.job_type", typeof(TJob).Name }, { "nexjob.queue", job.Queue } });
+
+        _wakeUp.Signal();
 
         return jobId;
     }
@@ -54,9 +61,11 @@ internal sealed class DefaultScheduler : IScheduler
         JobPriority priority = JobPriority.Normal,
         string? idempotencyKey = null,
         IReadOnlyList<string>? tags = null,
+        TimeSpan? deadlineAfter = null,
         CancellationToken cancellationToken = default)
         where TJob : IJob
     {
+        var now = DateTimeOffset.UtcNow;
         var job = new JobRecord
         {
             Id = JobId.New(),
@@ -68,7 +77,8 @@ internal sealed class DefaultScheduler : IScheduler
             Status = JobStatus.Enqueued,
             IdempotencyKey = idempotencyKey,
             ScheduledAt = null,
-            CreatedAt = DateTimeOffset.UtcNow,
+            ExpiresAt = deadlineAfter.HasValue ? now + deadlineAfter.Value : null,
+            CreatedAt = now,
             MaxAttempts = _options.MaxAttempts,
             Tags = tags ?? [],
         };
@@ -79,6 +89,8 @@ internal sealed class DefaultScheduler : IScheduler
 
         activity?.SetTag("nexjob.job_id", jobId.Value.ToString());
         NexJobMetrics.JobsEnqueued.Add(1, new TagList { { "nexjob.job_type", typeof(TJob).Name }, { "nexjob.queue", job.Queue } });
+
+        _wakeUp.Signal();
 
         return jobId;
     }
@@ -297,7 +309,8 @@ internal sealed class DefaultScheduler : IScheduler
         string? idempotencyKey,
         JobStatus status,
         DateTimeOffset? scheduledAt,
-        IReadOnlyList<string>? tags = null)
+        IReadOnlyList<string>? tags = null,
+        DateTimeOffset? expiresAt = null)
     {
         return new JobRecord
         {
@@ -310,6 +323,7 @@ internal sealed class DefaultScheduler : IScheduler
             Status = status,
             IdempotencyKey = idempotencyKey,
             ScheduledAt = scheduledAt,
+            ExpiresAt = expiresAt,
             CreatedAt = DateTimeOffset.UtcNow,
             MaxAttempts = _options.MaxAttempts,
             Tags = tags ?? [],

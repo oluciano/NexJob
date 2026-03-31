@@ -14,6 +14,42 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Improved database isolation strategy for Postgres and SQL Server to dynamically generate and provision separate database instances per-test.
 - Stabilized `HeartbeatServerAsync` test to prevent flaky timing conditions in rapid CI environments (`.BeOnOrAfter`).
 
+## [0.4.0] — April 2026
+
+### Added
+- **Wake-up channel** — Local job enqueues trigger immediate dispatcher wake-up instead of waiting for the next polling interval. Non-blocking signal with capacity=1 prevents latency spikes. Polling fallback preserved for distributed scenarios. Integrated into `JobDispatcherService` and `DefaultScheduler`.
+- **`deadlineAfter` — jobs expire if not executed in time** — Add deadline constraint to immediate enqueues:
+  ```csharp
+  await scheduler.EnqueueAsync<PaymentJob, PaymentInput>(
+      input,
+      deadlineAfter: TimeSpan.FromMinutes(5));
+  ```
+  Jobs not started within the deadline are marked `Expired` and skipped. New `JobStatus.Expired` terminal state. Deadline checked immediately after fetch, before execution begins. Deadline only applies to immediate enqueues; scheduled/delayed jobs cannot have deadlines.
+- **`IDeadLetterHandler<TJob>` — automatic fallback on permanent failure** — Handle jobs that exhaust all retry attempts:
+  ```csharp
+  public class PaymentDeadLetterHandler : IDeadLetterHandler<PaymentJob>
+  {
+      public async Task HandleAsync(JobRecord failedJob, Exception lastException, CancellationToken ct)
+          => await _alerts.SendAsync($"Payment failed: {lastException.Message}", ct);
+  }
+  
+  // Register
+  builder.Services.AddTransient<IDeadLetterHandler<PaymentJob>, PaymentDeadLetterHandler>();
+  ```
+  Handler invoked only after all retries exhausted. Resolved via DI. Handler exceptions are logged and swallowed — never crash the dispatcher. Works for both `IJob` and `IJob<T>`.
+- **`nexjob.jobs.expired` metric** — OpenTelemetry counter for jobs expired due to deadline. Added to existing metrics: `nexjob.jobs.enqueued`, `nexjob.jobs.succeeded`, `nexjob.jobs.failed`, `nexjob.job.duration`.
+- **`JobRecord.ExpiresAt` property** — stores calculated deadline timestamp. Null if no deadline specified.
+- **`IStorageProvider.SetExpiredAsync(JobId, CancellationToken)`** — implemented in all five storage providers (InMemory, Postgres, SQL Server, Redis, MongoDB).
+- **Internal `JobTypeResolver` helper** — centralizes runtime job type resolution for handler invocation and execution pipeline. Returns null on failure instead of throwing.
+
+### Changed
+- **README reorganized** — Quick Start and Features sections separated. Registration step now shows only service configuration (no dashboard middleware mixed in). Dashboard setup moved to dedicated step. Example code updated to use correct recurring job API (`RecurringAsync<TJob, TInput>` with input parameter). No-input job example now self-contained with constructor.
+- **Storage providers table** — clarified implementation status: four providers marked "Production ready" (In-memory, Postgres, SQL Server, Redis, MongoDB); Oracle marked "Planned".
+
+### Fixed
+- Recurring job examples in README now match actual `IScheduler` API (requires `TInput` parameter).
+- No-input job example in README now shows complete, copy-paste-friendly code with DI dependencies declared.
+
 ## [0.3.3] — March 2026
 
 ### Added
