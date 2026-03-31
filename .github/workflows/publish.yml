@@ -40,8 +40,8 @@ jobs:
           dotnet pack src/NexJob.Dashboard.Standalone/NexJob.Dashboard.Standalone.csproj --no-build --configuration Release --output ./nupkg
           dotnet pack src/NexJob.SqlServer/NexJob.SqlServer.csproj --no-build --configuration Release --output ./nupkg
           dotnet pack src/NexJob.Redis/NexJob.Redis.csproj --no-build --configuration Release --output ./nupkg
-          dotnet pack src/NexJob.Oracle/NexJob.Oracle.csproj --no-build --configuration Release --output ./nupkg
           dotnet pack templates/NexJob.Templates.csproj --configuration Release --output ./nupkg
+          # NexJob.Oracle intentionally skipped — marked as non-packable pending implementation
       - name: Push to NuGet.org
         env:
           NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
