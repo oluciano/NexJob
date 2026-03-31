@@ -435,19 +435,27 @@ internal static class HtmlShell
         .timeline-section { margin-bottom: 28px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,.2), inset 0 1px 0 rgba(255,255,255,.02); }
         .timeline { position: relative; padding: 8px 0; }
         .timeline-item { display: flex; align-items: flex-start; gap: 16px; position: relative; }
-        .timeline-item:not(:last-child) { margin-bottom: 20px; }
-        .timeline-node { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; margin-top: 5px; border: 2px solid var(--border); }
+        .timeline-item:not(:last-child) { margin-bottom: 22px; }
+        .timeline-node { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; margin-top: 5px; border: 2px solid var(--border); transition: all .2s ease; }
+        .timeline-node:hover { transform: scale(1.25); }
         .timeline-node-neutral { background: var(--text-3); border-color: var(--text-3); }
-        .timeline-node-active { background: var(--warning); border-color: var(--warning); box-shadow: 0 0 8px rgba(251,191,36,.4); }
+        .timeline-node-active { background: var(--warning); border-color: var(--warning); box-shadow: 0 0 10px rgba(251,191,36,.5); animation: timeline-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
         .timeline-node-success { background: var(--success); border-color: var(--success); box-shadow: 0 0 8px rgba(52,211,153,.4); }
         .timeline-node-error { background: var(--danger); border-color: var(--danger); box-shadow: 0 0 8px rgba(248,113,113,.4); }
         .timeline-node-warning { background: var(--warning); border-color: var(--warning); box-shadow: 0 0 8px rgba(251,191,36,.3); }
         .timeline-node-muted { background: var(--text-3); border-color: var(--text-3); opacity: .5; }
+        .timeline-node-final { width: 16px; height: 16px; margin-top: 2px; box-shadow: 0 0 16px currentColor, inset 0 0 4px rgba(255,255,255,.1); }
+        .timeline-node-final.timeline-node-success { box-shadow: 0 0 16px rgba(52,211,153,.6), inset 0 0 4px rgba(255,255,255,.1); }
+        .timeline-node-final.timeline-node-error { box-shadow: 0 0 16px rgba(248,113,113,.6), inset 0 0 4px rgba(255,255,255,.1); }
+        .timeline-node-final.timeline-node-warning { box-shadow: 0 0 16px rgba(251,191,36,.5), inset 0 0 4px rgba(255,255,255,.1); }
+        .timeline-node-final.timeline-node-muted { box-shadow: 0 0 10px rgba(71,85,105,.4), inset 0 0 4px rgba(255,255,255,.05); }
         .timeline-content { flex: 1; min-width: 0; }
         .timeline-label { font-size: 13px; font-weight: 600; color: var(--text); }
+        .timeline-metadata { font-size: 11px; color: var(--text-3); margin-top: 2px; font-style: italic; }
         .timeline-time { font-size: 12px; color: var(--text-2); font-family: monospace; margin-top: 2px; }
         .timeline-relative { font-size: 11px; color: var(--text-3); margin-top: 2px; }
-        .timeline-line { position: absolute; left: 5px; top: 17px; width: 2px; height: 20px; background: linear-gradient(to bottom, var(--border), transparent); }
+        .timeline-line { position: absolute; left: 5px; top: 17px; width: 2px; height: 22px; background: linear-gradient(to bottom, var(--border), transparent); }
+        @keyframes timeline-pulse { 0%, 100% { box-shadow: 0 0 10px rgba(251,191,36,.5); } 50% { box-shadow: 0 0 20px rgba(251,191,36,.8); } }
 
         /* Pagination */
         .pagination { display: flex; gap: 6px; margin-top: 16px; align-items: center; }

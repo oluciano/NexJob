@@ -485,14 +485,15 @@ internal static class HtmlFragments
     /// <summary>Renders a visual execution flow timeline.</summary>
     internal static string ExecutionTimeline(JobRecord job, DateTimeOffset now)
     {
-        var items = new List<(string Status, DateTimeOffset? Time)>();
+        var items = new List<(string Status, DateTimeOffset? Time, string? Metadata, string FinalState)>();
 
         // Build timeline from job state
-        items.Add(("Enqueued", job.CreatedAt));
+        var finalState = GetFinalState(job);
+        items.Add(("Enqueued", job.CreatedAt, null, finalState));
 
         if (job.ProcessingStartedAt.HasValue)
         {
-            items.Add(("Processing", job.ProcessingStartedAt.Value));
+            items.Add(("Processing", job.ProcessingStartedAt.Value, null, finalState));
         }
 
         if (job.Status == JobStatus.Failed || job.Status == JobStatus.Succeeded || job.Status == JobStatus.Expired)
@@ -506,12 +507,16 @@ internal static class HtmlFragments
                     JobStatus.Expired => "Expired",
                     _ => "Completed",
                 };
-                items.Add((statusLabel, job.CompletedAt.Value));
+                var metadata = job.Status == JobStatus.Failed && !string.IsNullOrEmpty(job.LastErrorMessage)
+                    ? Helpers.Truncate(job.LastErrorMessage, 50)
+                    : null;
+                items.Add((statusLabel, job.CompletedAt.Value, metadata, finalState));
             }
 
             if (job.Status == JobStatus.Failed && job.Attempts > 1)
             {
-                items.Add(("Retry #" + (job.Attempts - 1), job.RetryAt));
+                var retryMetadata = $"attempt {job.Attempts}";
+                items.Add(("Retry", job.RetryAt, retryMetadata, finalState));
             }
         }
 
@@ -520,20 +525,26 @@ internal static class HtmlFragments
 
         for (int i = 0; i < items.Count; i++)
         {
-            var (status, time) = items[i];
+            var (status, time, metadata, finalState2) = items[i];
             var isLast = i == items.Count - 1;
-            var nodeClass = GetTimelineNodeClass(status);
+            var nodeClass = GetTimelineNodeClass(status, isLast);
+            var lineGradient = GetLineGradient(status, isLast ? finalState2 : GetNextStateClass(items, i));
             var timeStr = time.HasValue ? $"{time.Value:HH:mm:ss}" : "—";
             var relativeStr = time.HasValue ? Helpers.RelativeTime(time.Value, now) : string.Empty;
 
             sb.Append($"<div class=\"timeline-item\">");
-            sb.Append($"<div class=\"timeline-node {nodeClass}\"></div>");
+            sb.Append($"<div class=\"timeline-node {nodeClass}\" data-status=\"{status.ToLowerInvariant()}\"></div>");
             sb.Append($"<div class=\"timeline-content\">");
             sb.Append($"<div class=\"timeline-label\">{HtmlEncode(status)}</div>");
+            if (!string.IsNullOrEmpty(metadata))
+            {
+                sb.Append($"<div class=\"timeline-metadata\">{HtmlEncode(metadata)}</div>");
+            }
+
             sb.Append($"<div class=\"timeline-time\">{timeStr}</div>");
             if (!string.IsNullOrEmpty(relativeStr))
             {
-                    sb.Append($"<div class=\"timeline-relative\">{relativeStr}</div>");
+                sb.Append($"<div class=\"timeline-relative\">{relativeStr}</div>");
             }
 
             sb.Append($"</div>");
@@ -541,7 +552,7 @@ internal static class HtmlFragments
 
             if (!isLast)
             {
-                sb.Append($"<div class=\"timeline-line\"></div>");
+                sb.Append($"<div class=\"timeline-line\" style=\"{lineGradient}\"></div>");
             }
         }
 
@@ -550,14 +561,52 @@ internal static class HtmlFragments
         return sb.ToString();
     }
 
-    private static string GetTimelineNodeClass(string status) =>
+    private static string GetFinalState(JobRecord job) =>
+        job.Status switch
+        {
+            JobStatus.Succeeded => "success",
+            JobStatus.Failed => "error",
+            JobStatus.Expired => "muted",
+            _ => "neutral",
+        };
+
+    private static string GetNextStateClass(List<(string Status, DateTimeOffset? Time, string? Metadata, string FinalState)> items, int currentIndex)
+    {
+        if (currentIndex + 1 < items.Count)
+        {
+            var nextStatus = items[currentIndex + 1].Status;
+            return GetTimelineNodeClass(nextStatus, false).Replace("timeline-node-", string.Empty);
+        }
+
+        return items[currentIndex].FinalState;
+    }
+
+    private static string GetLineGradient(string currentStatus, string nextStatus)
+    {
+        var currentColor = GetStatusColor(currentStatus);
+        var nextColor = GetStatusColor(nextStatus);
+        return $"background: linear-gradient(to bottom, {currentColor}, {nextColor});";
+    }
+
+    private static string GetStatusColor(string status) =>
         status switch
         {
-            "Succeeded" => "timeline-node-success",
-            "Failed" => "timeline-node-error",
-            "Expired" => "timeline-node-muted",
+            "success" => "rgba(52,211,153,.8)",
+            "error" => "rgba(248,113,113,.8)",
+            "muted" => "rgba(71,85,105,.5)",
+            "warning" => "rgba(251,191,36,.8)",
+            "active" => "rgba(251,191,36,.8)",
+            _ => "rgba(148,163,184,.4)",
+        };
+
+    private static string GetTimelineNodeClass(string status, bool isFinal) =>
+        status switch
+        {
+            "Succeeded" => isFinal ? "timeline-node-success timeline-node-final" : "timeline-node-success",
+            "Failed" => isFinal ? "timeline-node-error timeline-node-final" : "timeline-node-error",
+            "Expired" => isFinal ? "timeline-node-muted timeline-node-final" : "timeline-node-muted",
             "Processing" => "timeline-node-active",
-            var s when s.StartsWith("Retry") => "timeline-node-warning",
+            "Retry" => isFinal ? "timeline-node-warning timeline-node-final" : "timeline-node-warning",
             _ => "timeline-node-neutral",
         };
 
