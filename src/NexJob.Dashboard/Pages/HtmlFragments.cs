@@ -216,7 +216,9 @@ internal static class HtmlFragments
     internal static string ProgressBar(int? percentage, string? message = null)
     {
         if (!percentage.HasValue)
+        {
             return string.Empty;
+        }
 
         var pct = percentage.Value;
         var msgHtml = message is not null ? HtmlEncode(message) : string.Empty;
@@ -237,7 +239,9 @@ internal static class HtmlFragments
     internal static string ErrorSection(string? errorMessage, string? stackTrace = null)
     {
         if (string.IsNullOrWhiteSpace(errorMessage))
+        {
             return string.Empty;
+        }
 
         var stackTraceHtml = !string.IsNullOrWhiteSpace(stackTrace)
             ? $"<div class=\"section-title\" style=\"color:var(--danger);margin-bottom:8px;margin-top:16px\">Stack Trace</div>" +
