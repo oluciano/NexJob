@@ -6,9 +6,9 @@ Thank you for your interest in NexJob. Contributions of any kind are welcome —
 
 ## Before you start
 
-- Search [existing issues](https://github.com/oluciano/NexJob/issues) before opening a new one.
-- For significant changes (new features, architectural decisions, new storage providers), open an issue first to discuss the approach.
-- All contributions must be compatible with the **MIT license**.
+* Search existing issues before opening a new one
+* For significant changes, open an issue first
+* All contributions must be compatible with the MIT license
 
 ---
 
@@ -22,9 +22,10 @@ dotnet build
 dotnet test
 ```
 
-Requirements:
-- .NET 8 SDK or later
-- Docker (for integration tests with Testcontainers — optional, skip if unavailable)
+### Requirements
+
+* .NET 8 SDK or later
+* Docker (optional, for integration tests via Testcontainers)
 
 ---
 
@@ -32,118 +33,131 @@ Requirements:
 
 ```
 src/
-  NexJob/                 ← Core interfaces, models, in-memory provider
-  NexJob.Postgres/        ← PostgreSQL storage adapter
-  NexJob.MongoDB/         ← MongoDB storage adapter
-  NexJob.Dashboard/       ← Blazor SSR dashboard middleware
-  NexJob.Redis/                    ← Redis storage adapter
-  NexJob.SqlServer/                ← SQL Server storage adapter
-  NexJob.Oracle/                   ← Oracle adapter (stub)
+  NexJob/
+  NexJob.Postgres/
+  NexJob.MongoDB/
+  NexJob.Redis/
+  NexJob.SqlServer/
+  NexJob.Oracle/
+  NexJob.Dashboard/
 
 tests/
-  NexJob.Tests/           ← Unit tests (no external dependencies)
-  NexJob.IntegrationTests/← Contract tests via Testcontainers (requires Docker)
+  NexJob.Tests/
+  NexJob.IntegrationTests/
 
 samples/
-  NexJob.Sample.WebApi/   ← Minimal API demonstrating all features
+  NexJob.Sample.WebApi/
 ```
-
----
-
-## Coding conventions
-
-- **C# 12**, .NET 8, `<Nullable>enable</Nullable>`, `<ImplicitUsings>enable</ImplicitUsings>`
-- `<TreatWarningsAsErrors>true</TreatWarningsAsErrors>` — PRs must build with zero warnings
-- Private fields: `_camelCase` with underscore prefix
-- Every public type and member must have XML documentation (`///`)
-- `async/await` for all I/O — never `.Result` or `.Wait()`
-- Always propagate `CancellationToken` — never ignore it
-- Internal implementation classes go in `src/NexJob/Internal/`
-
----
-
-## Adding a storage provider
-
-1. Create `src/NexJob.{Name}/` with its own `.csproj`
-2. Implement `IStorageProvider` — all methods, including the dashboard ones
-3. Use an atomic dequeue strategy:
-   - PostgreSQL/SQL Server: `SELECT FOR UPDATE SKIP LOCKED`
-   - MongoDB: `findOneAndUpdate` with a filter on `status = Enqueued`
-   - Redis: Lua scripts
-4. Add `AddNexJob{Name}(this IServiceCollection, string connectionString)` extension method
-5. Add the project to `NexJob.sln`
-6. Your implementation will automatically be exercised by `StorageProviderTestsBase` — add a test class:
-
-```csharp
-public sealed class MyProviderTests : StorageProviderTestsBase, IAsyncLifetime
-{
-    // spin up container, return provider
-}
-```
-
----
-
-## Branch workflow
-
-`main` is protected — all changes must go through a PR and pass CI before merging.
-
-```
-feat/short-description      ← new feature
-fix/short-description        ← bug fix
-docs/short-description       ← documentation only
-chore/short-description      ← build, deps, tooling
-test/short-description       ← tests only
-```
-
-```bash
-git checkout -b feat/my-feature
-# … make changes …
-git push -u origin feat/my-feature
-gh pr create
-```
-
-CI runs both **Unit Tests** and **Integration Tests (Docker)** on every PR.
-Both jobs must be green before the PR can be merged.
 
 ---
 
 ## Running tests
 
 ```bash
-# Unit tests only (no Docker required)
+# Unit tests
 dotnet test tests/NexJob.Tests/
 
-# Full contract tests via Testcontainers (requires Docker)
+# Integration tests (requires Docker)
 dotnet test tests/NexJob.IntegrationTests/
 
-# Everything
+# All tests
 dotnet test
+```
+
+---
+
+## Adding a storage provider
+
+1. Create `src/NexJob.{Name}/`
+2. Implement `IStorageProvider`
+3. Ensure atomic dequeue strategy
+4. Add DI extension
+5. Add to solution
+6. Add integration tests
+
+---
+
+## Branch workflow
+
+```
+feat/...
+fix/...
+docs/...
+chore/...
+test/...
+```
+
+```bash
+git checkout -b feat/my-feature
+git push -u origin feat/my-feature
+gh pr create
 ```
 
 ---
 
 ## Pull request checklist
 
-- [ ] `dotnet build` passes with **0 warnings**
-- [ ] `dotnet test` passes — no regressions
-- [ ] New behaviour is covered by tests
-- [ ] Public API has XML documentation
-- [ ] Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/):
-  `feat:`, `fix:`, `docs:`, `chore:`, `test:`, `refactor:`
+* [ ] Build passes with 0 warnings
+* [ ] Tests pass
+* [ ] Feature covered by tests
+* [ ] Public API documented
+* [ ] Commit messages follow Conventional Commits
 
 ---
 
 ## Commit message format
 
 ```
-feat: add execution window support per queue
-fix: prevent double-dequeue on concurrent workers
-docs: update README with appsettings example
-test: add contract tests for SetFailedAsync
+feat: add execution window support
+fix: prevent double-dequeue
+docs: update README
+test: add tests
 ```
+
+---
+
+## Non-Negotiables (Mandatory for every PR/Iteration)
+
+1. Zero `NotImplementedException`
+2. Zero compiler warnings
+3. Public API must have XML docs
+4. All changes must have tests
+5. Strict async/await usage
+6. Classes must be sealed by default
+7. Documentation must be updated
+
+---
+
+## Coding Conventions
+
+* C# 12 / .NET 8
+* Nullable enabled
+* Treat warnings as errors
+* `_camelCase` private fields
+* Async everywhere for I/O
+* Always propagate `CancellationToken`
+* Internal code → `Internal/`
+* No static state (except allowed cases)
+* Tests: xUnit + FluentAssertions
+
+---
+
+## Testing Strategy
+
+### Isolation
+
+* SQL: database-per-test
+* Mongo: drop database
+* Redis: flush DB
+
+### Requirements
+
+* Docker required for integration tests
+* Testcontainers used for all providers
 
 ---
 
 ## License
 
-By contributing, you agree that your contribution will be licensed under the [MIT License](LICENSE).
+MIT License applies to all contributions
+

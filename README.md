@@ -25,25 +25,9 @@
 
 ---
 
-NexJob is the background job library that .NET deserved from day one.
+## The Why
 
-No expression trees. No lock-in. No paid tiers for Redis. No wrestling with serialization. Just a clean interface, two lines of configuration, and a scheduler that handles the hard parts — retries, concurrency, cron, observability — while you focus on what your job actually does.
-
-```csharp
-public class WelcomeEmailJob : IJob<WelcomeEmailInput>
-{
-    public async Task ExecuteAsync(WelcomeEmailInput input, CancellationToken ct)
-        => await _email.SendAsync(input.UserId, ct);
-}
-```
-
-That's your entire job. NexJob handles the rest.
-
----
-
-## Why NexJob exists
-
-Every .NET developer has used Hangfire. And every .NET developer has hit the same walls:
+Every .NET developer has used Hangfire. Every .NET developer has hit the same walls:
 
 - The Redis adapter costs money. So does the MongoDB one.
 - `async/await` is bolted on — Hangfire serializes `Task`, it doesn't await it.
@@ -54,6 +38,16 @@ Every .NET developer has used Hangfire. And every .NET developer has hit the sam
 - The license is LGPL for the core and paid for anything production-worthy.
 
 NexJob was built to solve all of that.
+
+```csharp
+public class WelcomeEmailJob : IJob<WelcomeEmailInput>
+{
+    public async Task ExecuteAsync(WelcomeEmailInput input, CancellationToken ct)
+        => await _email.SendAsync(input.UserId, ct);
+}
+```
+
+Install the package, implement one interface, add two lines of config — done.
 
 ---
 
@@ -86,8 +80,6 @@ NexJob was built to solve all of that.
 | Dashboard | ✅ dark mode | ✅ legacy |
 | Worker Service / Console dashboard | ✅ | ❌ |
 
-> `Job progress tracking`, `IJobContext`, and `Job tags` are new in v0.3.
-
 ---
 
 ## Benchmarks
@@ -104,6 +96,8 @@ NexJob was built to solve all of that.
 | Allocated memory | 1.67 KB | 11.2 KB | **NexJob uses 85% less memory** |
 
 ---
+
+# Quick Start
 
 ## Installation
 
@@ -123,156 +117,61 @@ dotnet add package NexJob.Dashboard
 
 # For Worker Services and Console Apps
 dotnet add package NexJob.Dashboard.Standalone
-
-# Or scaffold a complete starter project
-dotnet new install NexJob.Templates
-dotnet new nexjob -n MyApp
 ```
 
----
-
-## Worker Services & Console Apps
-
-NexJob works in any .NET host — not just Web APIs.
-For Worker Services and Console Applications that don't have an HTTP pipeline,
-install `NexJob.Dashboard.Standalone` to get the full dashboard without any extra
-project or infrastructure.
-
-```bash
-dotnet add package NexJob.Dashboard.Standalone
-```
-
-```csharp
-// Worker Service — Program.cs
-var builder = Host.CreateApplicationBuilder(args);
-
-builder.Services
-    .AddNexJob(builder.Configuration)
-    .AddNexJobJobs(typeof(Program).Assembly);
-
-builder.Services.AddNexJobStandaloneDashboard(builder.Configuration);
-
-await builder.Build().RunAsync();
-// Dashboard: http://localhost:5005/dashboard
-```
-
-Configure the port and path in appsettings.json:
-
-```json
-{
-  "NexJob": {
-    "Dashboard": {
-      "Port": 5005,
-      "Path": "/dashboard",
-      "Title": "My Worker Jobs",
-      "LocalhostOnly": true
-    }
-  }
-}
-```
-
-| Scenario | Package | Registration |
-|---|---|---|
-| Web API / ASP.NET Core | `NexJob.Dashboard` | `app.UseNexJobDashboard()` |
-| Worker Service / Console App | `NexJob.Dashboard.Standalone` | `services.AddNexJobStandaloneDashboard()` |
-
----
-
-## Getting started
+## 5-minute setup
 
 ### 1 — Define your job
 
 ```csharp
-public record SendInvoiceInput(Guid OrderId, string CustomerEmail);
+public record SendInvoiceInput(Guid OrderId, string Email);
 
 public class SendInvoiceJob : IJob<SendInvoiceInput>
 {
-    private readonly IInvoiceService _invoices;
     private readonly IEmailService _email;
-
-    public SendInvoiceJob(IInvoiceService invoices, IEmailService email)
-    {
-        _invoices = invoices;
-        _email = email;
-    }
+    public SendInvoiceJob(IEmailService email) => _email = email;
 
     public async Task ExecuteAsync(SendInvoiceInput input, CancellationToken ct)
-    {
-        var pdf = await _invoices.GenerateAsync(input.OrderId, ct);
-        await _email.SendAsync(input.CustomerEmail, pdf, ct);
-    }
+        => await _email.SendAsync(input.Email, "Invoice attached", ct);
+}
+```
+
+Or without input:
+
+```csharp
+public class NightlyCleanupJob : IJob
+{
+    public async Task ExecuteAsync(CancellationToken ct)
+        => await _db.DeleteExpiredSessionsAsync(ct);
 }
 ```
 
 ### 2 — Register
 
 ```csharp
-// From appsettings.json (recommended)
 builder.Services.AddNexJob(builder.Configuration)
                 .AddNexJobJobs(typeof(Program).Assembly);
 
-// Or fluent
-builder.Services.AddNexJob(opt =>
-{
-    opt.UsePostgres(connectionString);
-    opt.Workers = 10;
-});
+app.UseNexJobDashboard("/dashboard");
 ```
 
-### 3 — Schedule
+### 3 — Enqueue
 
 ```csharp
 // Fire and forget
-await scheduler.EnqueueAsync<SendInvoiceJob, SendInvoiceInput>(new(orderId, email));
+await scheduler.EnqueueAsync<SendInvoiceJob, SendInvoiceInput>(
+    new(orderId, email));
 
 // Delayed
 await scheduler.ScheduleAsync<SendInvoiceJob, SendInvoiceInput>(
     new(orderId, email), delay: TimeSpan.FromMinutes(5));
 
 // Recurring (cron)
-await scheduler.RecurringAsync<MonthlyReportJob, MonthlyReportInput>(
-    id: "monthly-report",
-    input: new(DateTime.UtcNow.Month),
-    cron: "0 9 1 * *");
-
-// Continuation — runs only after parent succeeds
-var jobId = await scheduler.EnqueueAsync<ProcessPaymentJob, PaymentInput>(paymentInput);
-await scheduler.ContinueWithAsync<SendReceiptJob, ReceiptInput>(jobId, receiptInput);
-
-// With idempotency key — safe to call multiple times
-await scheduler.EnqueueAsync<SendInvoiceJob, SendInvoiceInput>(
-    new(orderId, email),
-    idempotencyKey: $"invoice-{orderId}");
-
-// With tags — searchable metadata
-await scheduler.EnqueueAsync<SendInvoiceJob, SendInvoiceInput>(
-    new(orderId, email),
-    tags: ["tenant:acme", $"invoice:{invoiceId}"]);
-```
-
-### 4 — Jobs without input
-
-For cleanup tasks, maintenance, triggers — jobs that don't need input — skip the DTO entirely:
-
-```csharp
-public sealed class NightlyCleanupJob : IJob
-{
-    private readonly IDbContext _db;
-    public NightlyCleanupJob(IDbContext db) => _db = db;
-
-    public async Task ExecuteAsync(CancellationToken ct)
-        => await _db.DeleteExpiredSessionsAsync(ct);
-}
-
-// Enqueue — no input required:
-await scheduler.EnqueueAsync<NightlyCleanupJob>();
-
-// Recurring — same interface, same simplicity:
 await scheduler.RecurringAsync<NightlyCleanupJob>(
-    id: "nightly-cleanup", cron: "0 2 * * *");
+    id: "nightly", cron: "0 2 * * *");
 ```
 
-### 5 — Dashboard
+### 4 — Dashboard
 
 **Web API / ASP.NET Core:**
 ```csharp
@@ -282,16 +181,322 @@ app.UseNexJobDashboard("/dashboard");
 **Worker Service / Console App:**
 ```csharp
 services.AddNexJobStandaloneDashboard(configuration);
-// Dashboard available at http://localhost:5005/dashboard
+// Available at http://localhost:5005/dashboard
 ```
 
-Open `/dashboard` to see every queue, every job state, every retry — live.
+### 5 — Configure (optional)
+
+```json
+{
+  "NexJob": {
+    "Workers": 10,
+    "DefaultQueue": "default",
+    "PollingInterval": "00:00:05"
+  }
+}
+```
+
+For complete examples, see [/samples](samples/).
 
 ---
 
-## Configuration via appsettings.json
+# Features
 
-Every NexJob setting can live in `appsettings.json`. No code changes to tune behavior across environments.
+## Scheduling in depth
+
+### Fire and forget
+
+Enqueue a job to run ASAP — no scheduling involved.
+
+```csharp
+await scheduler.EnqueueAsync<SendInvoiceJob, SendInvoiceInput>(
+    new(orderId, email));
+```
+
+### Delayed jobs
+
+Schedule a job to run after a delay.
+
+```csharp
+await scheduler.ScheduleAsync<SendInvoiceJob, SendInvoiceInput>(
+    new(orderId, email), 
+    delay: TimeSpan.FromMinutes(5));
+```
+
+Or at a specific time:
+
+```csharp
+await scheduler.ScheduleAtAsync<SendInvoiceJob, SendInvoiceInput>(
+    new(orderId, email),
+    runAt: DateTimeOffset.UtcNow.AddHours(2));
+```
+
+### Recurring jobs (cron)
+
+Run a job on a schedule — NexJob handles the cron parsing and distributed lock.
+
+```csharp
+await scheduler.RecurringAsync<MonthlyReportJob, ReportInput>(
+    id: "monthly-report",
+    input: new(DateTime.UtcNow.Month),
+    cron: "0 9 1 * *",  // 9 AM on the 1st of each month
+    timeZone: TimeZoneInfo.FindSystemTimeZoneById("America/Sao_Paulo"));
+```
+
+Remove it anytime:
+
+```csharp
+await scheduler.RemoveRecurringAsync("monthly-report");
+```
+
+### Continuations
+
+Chain jobs — the next job only runs if the parent succeeds.
+
+```csharp
+var paymentId = await scheduler.EnqueueAsync<ProcessPaymentJob, PaymentInput>(input);
+await scheduler.ContinueWithAsync<SendReceiptJob, ReceiptInput>(paymentId, receiptInput);
+```
+
+### Idempotency keys
+
+Safe to call multiple times — NexJob deduplicates based on the key.
+
+```csharp
+await scheduler.EnqueueAsync<SendInvoiceJob, SendInvoiceInput>(
+    new(orderId, email),
+    idempotencyKey: $"invoice-{orderId}");
+```
+
+### Job tags
+
+Tag jobs with searchable metadata — visible in dashboard and queryable.
+
+```csharp
+await scheduler.EnqueueAsync<SendInvoiceJob, SendInvoiceInput>(
+    new(orderId, email),
+    tags: ["tenant:acme", $"invoice:{invoiceId}", "region:us-east"]);
+
+// Query by tag
+var jobs = await scheduler.GetJobsByTagAsync("tenant:acme");
+```
+
+### Priority queues
+
+Critical jobs jump the queue.
+
+```csharp
+await scheduler.EnqueueAsync<AlertJob, AlertInput>(
+    input, 
+    priority: JobPriority.Critical);  // Critical → High → Normal → Low
+```
+
+### Deadlines (WithDeadlineAfter)
+
+If a job is not executed within the specified window, it is marked as `Expired` and skipped. Useful for time-sensitive operations.
+
+```csharp
+await scheduler.EnqueueAsync<PaymentJob, PaymentInput>(
+    input,
+    deadlineAfter: TimeSpan.FromMinutes(5));
+```
+
+---
+
+## Reliability
+
+### Retry policy (global)
+
+By default, jobs retry with exponential backoff. After `MaxAttempts`, they move to dead-letter.
+
+| Attempt | Delay |
+|:---:|---|
+| 1 | ~16 seconds |
+| 2 | ~1 minute |
+| 3 | ~5 minutes |
+| 4 | ~17 minutes |
+| 5 | ~42 minutes |
+
+Override in `appsettings.json`:
+
+```json
+{ "NexJob": { "MaxAttempts": 7 } }
+```
+
+### Per-job retry configuration
+
+Override the global policy per job type.
+
+```csharp
+[Retry(0)]  // Dead-letter immediately
+public class WebhookJob : IJob<WebhookInput> { ... }
+
+[Retry(5, InitialDelay = "00:00:30", Multiplier = 2.0, MaxDelay = "01:00:00")]
+public class PaymentJob : IJob<PaymentInput> { ... }
+```
+
+### Dead-letter handler
+
+Automatically handle jobs that exhaust all retries.
+
+```csharp
+public class PaymentDeadLetterHandler : IDeadLetterHandler<PaymentJob>
+{
+    public async Task HandleAsync(JobRecord failedJob, Exception lastException,
+        CancellationToken ct)
+    {
+        await _alerts.SendAsync($"Payment failed permanently", ct);
+    }
+}
+
+// Register
+builder.Services.AddTransient<IDeadLetterHandler<PaymentJob>, PaymentDeadLetterHandler>();
+```
+
+Handler errors are swallowed — they never crash the dispatcher.
+
+### Graceful shutdown
+
+When your host receives SIGTERM (Kubernetes rolling deployments, scale-down), NexJob waits for active jobs to complete before stopping.
+
+```json
+{
+  "NexJob": {
+    "ShutdownTimeoutSeconds": 30
+  }
+}
+```
+
+Jobs still running after the timeout are requeued by the orphan watcher.
+
+### Orphan watcher
+
+Detect and requeue jobs that crashed unexpectedly. Workers send heartbeats every 30 seconds; if a job doesn't update for 5 minutes, it's assumed dead and requeued.
+
+---
+
+## Concurrency & throttling
+
+### Resource throttling
+
+Declare a limit once — NexJob enforces it across all workers globally.
+
+```csharp
+[Throttle(resource: "stripe", maxConcurrent: 3)]
+public class ChargeCardJob : IJob<ChargeInput> { ... }
+```
+
+All jobs sharing the same resource name share the same concurrency slot.
+
+### Execution windows
+
+Restrict queues to specific time windows.
+
+```json
+{
+  "NexJob": {
+    "Queues": [
+      {
+        "Name": "reports",
+        "Workers": 2,
+        "ExecutionWindow": {
+          "StartTime": "22:00",
+          "EndTime": "06:00",
+          "TimeZone": "America/Sao_Paulo"
+        }
+      }
+    ]
+  }
+}
+```
+
+The `reports` queue only processes jobs between 10 PM and 6 AM São Paulo time.
+
+---
+
+## Job context & progress
+
+### IJobContext
+
+Inject `IJobContext` to access runtime information inside any job.
+
+```csharp
+public class ImportCsvJob : IJob<ImportCsvInput>
+{
+    private readonly IJobContext _ctx;
+
+    public ImportCsvJob(IJobContext ctx) => _ctx = ctx;
+
+    public async Task ExecuteAsync(ImportCsvInput input, CancellationToken ct)
+    {
+        await _ctx.ReportProgressAsync(0, "Starting...", ct);
+        // ... do work ...
+        await _ctx.ReportProgressAsync(100, "Done.", ct);
+    }
+}
+```
+
+Exposes: `JobId`, `Attempt`, `MaxAttempts`, `Queue`, `RecurringJobId`, `Tags`.
+
+### WithProgress
+
+Automatically report progress as you iterate.
+
+```csharp
+// With IAsyncEnumerable
+await foreach (var record in dbReader.ReadAllAsync(ct).WithProgress(_ctx, ct))
+{
+    await ImportAsync(record, ct);
+}
+
+// With IEnumerable
+foreach (var item in items.WithProgress(_ctx))
+{
+    await ProcessAsync(item, ct);
+}
+```
+
+The dashboard shows a live progress bar updated in real-time via SSE.
+
+---
+
+## Observability
+
+NexJob emits OpenTelemetry spans and metrics for every job — zero extra configuration.
+
+```csharp
+builder.Services.AddOpenTelemetry()
+    .WithTracing(t => t.AddSource("NexJob"))
+    .WithMetrics(m => m.AddMeter("NexJob"));
+```
+
+Metrics: `nexjob.jobs.enqueued`, `nexjob.jobs.succeeded`, `nexjob.jobs.failed`, `nexjob.jobs.expired`, `nexjob.job.duration`.
+
+---
+
+## Payload versioning
+
+Your job inputs will change. NexJob handles it gracefully.
+
+```csharp
+[SchemaVersion(2)]
+public class SendInvoiceJob : IJob<SendInvoiceInputV2> { ... }
+
+public class SendInvoiceMigration : IJobMigration<SendInvoiceInputV1, SendInvoiceInputV2>
+{
+    public SendInvoiceInputV2 Migrate(SendInvoiceInputV1 old)
+        => new(old.OrderId, old.Email, Language: "en-US");
+}
+
+// Register
+builder.Services.AddJobMigration<SendInvoiceInputV1, SendInvoiceInputV2, SendInvoiceMigration>();
+```
+
+---
+
+# Configuration
+
+## appsettings.json reference
 
 ```json
 {
@@ -327,294 +532,15 @@ Every NexJob setting can live in `appsettings.json`. No code changes to tune beh
 }
 ```
 
-Use different files per environment — no code changes needed:
+## Live configuration
 
-```json
-// appsettings.Development.json
-{ "NexJob": { "Workers": 2, "PollingInterval": "00:00:01" } }
-```
+Change NexJob behavior at runtime via the dashboard settings page — no restarts needed.
 
----
-
-## Execution windows
-
-Restrict queues to specific time windows — without touching a single cron expression.
-
-```json
-{
-  "NexJob": {
-    "Queues": [
-      {
-        "Name": "reports",
-        "ExecutionWindow": {
-          "StartTime": "22:00",
-          "EndTime": "06:00",
-          "TimeZone": "America/Sao_Paulo"
-        }
-      }
-    ]
-  }
-}
-```
-
-The `reports` queue only processes jobs between 10 PM and 6 AM São Paulo time.
-Windows that cross midnight work naturally: `22:00 → 06:00` runs after 10 PM **or** before 6 AM.
-
----
-
-## Live configuration via dashboard
-
-Change NexJob behavior at runtime — no restarts, no redeployments.
-
-Open `/jobs/settings` in the dashboard to:
-
-- **Adjust workers** — drag a slider, applied instantly across all instances
-- **Pause a queue** — toggle any queue on/off without touching code
-- **Pause all recurring jobs** — one click to freeze all cron-based jobs
+- **Adjust workers** — slider applied instantly
+- **Pause a queue** — toggle on/off
+- **Pause all recurring jobs** — one click
 - **Change polling interval** — tune live
-- **View effective config** — see the merged result of appsettings + runtime overrides
-- **Reset to appsettings** — clear all runtime overrides in one click
-
----
-
-## Priority queues
-
-Jobs with `Critical` priority jump the queue. No workarounds, no separate deployments.
-
-```csharp
-await scheduler.EnqueueAsync<AlertJob, AlertInput>(
-    input, priority: JobPriority.Critical);  // Critical → High → Normal → Low
-```
-
----
-
-## Resource throttling
-
-Don't overwhelm external APIs. Declare a limit once, NexJob enforces it across all workers.
-
-```csharp
-[Throttle(resource: "stripe", maxConcurrent: 3)]
-public class ChargeCardJob : IJob<ChargeInput> { ... }
-
-[Throttle(resource: "sendgrid", maxConcurrent: 5)]
-public class BulkEmailJob : IJob<EmailInput> { ... }
-```
-
-All jobs sharing the same `resource` name share the same concurrency slot — globally, across all server instances.
-
----
-
-## Per-job retry configuration
-
-Override the global retry policy per job type.
-
-```csharp
-// 5 retries, doubling delay from 30s up to 1h
-[Retry(5, InitialDelay = "00:00:30", Multiplier = 2.0, MaxDelay = "01:00:00")]
-public class PaymentJob : IJob<PaymentInput> { ... }
-
-// Dead-letter immediately on first failure — no retries
-[Retry(0)]
-public class WebhookJob : IJob<WebhookInput> { ... }
-```
-
-Global default (when no `[Retry]` is applied):
-
-| Attempt | Delay |
-|:---:|---|
-| 1 | ~16 seconds |
-| 2 | ~1 minute |
-| 3 | ~5 minutes |
-| 4 | ~17 minutes |
-| 5 | ~42 minutes |
-
----
-
-## Job context
-
-Inject `IJobContext` via DI to access runtime information inside any job — no changes to the `IJob<TInput>` interface required.
-
-```csharp
-public class ImportCsvJob : IJob<ImportCsvInput>
-{
-    private readonly IJobContext _ctx;
-    private readonly ILogger<ImportCsvJob> _logger;
-
-    public ImportCsvJob(IJobContext ctx, ILogger<ImportCsvJob> logger)
-    {
-        _ctx = ctx;
-        _logger = logger;
-    }
-
-    public async Task ExecuteAsync(ImportCsvInput input, CancellationToken ct)
-    {
-        _logger.LogInformation(
-            "Job {JobId} — attempt {Attempt}/{Max} — queue {Queue}",
-            _ctx.JobId, _ctx.Attempt, _ctx.MaxAttempts, _ctx.Queue);
-
-        await _ctx.ReportProgressAsync(0, "Starting import...", ct);
-
-        var rows = await LoadRowsAsync(input.FilePath, ct);
-
-        await foreach (var row in rows.WithProgress(_ctx, ct))
-        {
-            await ProcessRowAsync(row, ct);
-        }
-
-        await _ctx.ReportProgressAsync(100, "Done.", ct);
-    }
-}
-```
-
-`IJobContext` exposes:
-
-- `JobId` — the current job's identifier
-- `Attempt` — current attempt number (1-based)
-- `MaxAttempts` — total attempts allowed
-- `Queue` — queue the job was fetched from
-- `RecurringJobId` — set when the job was fired by a recurring definition
-- `Tags` — tags attached at enqueue time
-- `ReportProgressAsync(int percent, string? message, CancellationToken)` — updates the dashboard live
-
----
-
-## Job progress tracking
-
-`WithProgress` automatically reports progress as you iterate — no manual calls needed.
-
-```csharp
-// Works with IAsyncEnumerable
-await foreach (var record in dbReader.ReadAllAsync(ct).WithProgress(_ctx, ct))
-{
-    await ImportAsync(record, ct);
-}
-
-// Works with IEnumerable
-foreach (var item in items.WithProgress(_ctx))
-{
-    await ProcessAsync(item, ct);
-}
-```
-
-The dashboard shows a live progress bar for any job that reports progress, updated in real time via SSE — no polling, no page refresh.
-
----
-
-## Job tags
-
-Tag jobs at enqueue time to add searchable metadata:
-
-```csharp
-await scheduler.EnqueueAsync<SendInvoiceJob, SendInvoiceInput>(
-    input,
-    tags: ["tenant:acme", $"order:{orderId}", "region:us-east"]);
-```
-
-Filter by tag in the dashboard or query programmatically:
-
-```csharp
-var jobs = await scheduler.GetJobsByTagAsync("tenant:acme");
-```
-
----
-
-## Schema migrations
-
-NexJob automatically migrates its storage schema on startup. No manual SQL scripts, no deployment steps. Each migration runs in a transaction protected by a distributed advisory lock — safe when multiple instances start simultaneously.
-
-```csharp
-// Nothing to call — migrations run automatically when your app starts
-builder.Services.AddNexJob(builder.Configuration);
-```
-
----
-
-## Graceful shutdown
-
-When your host receives SIGTERM (Kubernetes rolling deployments, scale-down), NexJob waits for active jobs to complete before stopping.
-
-```json
-{
-  "NexJob": {
-    "ShutdownTimeoutSeconds": 30
-  }
-}
-```
-
-Jobs still running after the timeout are requeued automatically by the orphan watcher.
-
----
-
-## Observability
-
-NexJob emits OpenTelemetry spans and metrics for every job — enqueue, execute, retry, fail. Zero extra configuration if you already have OTEL wired up.
-
-```csharp
-builder.Services.AddOpenTelemetry()
-    .WithTracing(t => t.AddSource("NexJob"))
-    .WithMetrics(m => m.AddMeter("NexJob"));
-```
-
-Every execution span carries:
-
-```
-nexjob.job_id       = "3f2a8c1d-..."
-nexjob.job_type     = "SendInvoiceJob"
-nexjob.queue        = "default"
-nexjob.attempt      = 1
-nexjob.status       = "succeeded"
-nexjob.duration_ms  = 142
-```
-
-Metrics: `nexjob.jobs.enqueued`, `nexjob.jobs.succeeded`, `nexjob.jobs.failed`, `nexjob.job.duration`.
-
----
-
-## Payload versioning
-
-Your job inputs will change. NexJob handles it gracefully — no data loss, no broken jobs stuck in the queue.
-
-```csharp
-[SchemaVersion(2)]
-public class SendInvoiceJob : IJob<SendInvoiceInputV2> { ... }
-
-// Migration — discovered and applied automatically before execution
-public class SendInvoiceMigration : IJobMigration<SendInvoiceInputV1, SendInvoiceInputV2>
-{
-    public SendInvoiceInputV2 Migrate(SendInvoiceInputV1 old)
-        => new(old.OrderId, old.Email, Language: "en-US");
-}
-```
-
-Register the migration at startup:
-
-```csharp
-builder.Services.AddJobMigration<SendInvoiceInputV1, SendInvoiceInputV2, SendInvoiceMigration>();
-```
-
----
-
-## Health checks
-
-```csharp
-builder.Services.AddHealthChecks()
-                .AddNexJob()                        // Healthy / Degraded / Unhealthy
-                .AddNexJob(failureThreshold: 100);  // Degraded if > 100 dead-letter jobs
-```
-
----
-
-## Testing
-
-The in-memory provider is the default — no extra configuration needed:
-
-```csharp
-// InMemory is automatic when no other provider is registered
-services.AddNexJob();
-
-// Or make it explicit (same behavior, clearer intent):
-services.AddNexJob(opt => opt.UseInMemory());
-```
+- **Reset to appsettings** — clear all runtime overrides
 
 ---
 
@@ -631,11 +557,11 @@ All open-source. No license walls. Ever.
 | `NexJob.MongoDB` | MongoDB 6+ | Atomic `findAndModify` |
 | `NexJob.Oracle` | Oracle 19c+ | `SKIP LOCKED` |
 
-Bring your own? Implement `IStorageProvider` — one interface, full XML docs on every method.
+Bring your own? Implement `IStorageProvider` — fully documented.
 
 ---
 
-## Configuration reference
+## Configuration reference (code)
 
 ```csharp
 builder.Services.AddNexJob(builder.Configuration, opt =>
@@ -646,7 +572,7 @@ builder.Services.AddNexJob(builder.Configuration, opt =>
     opt.UseRedis(connectionString);
     opt.UseMongoDB(connectionString, databaseName: "nexjob");
     opt.UseOracle(connectionString);
-    opt.UseInMemory();  // default — explicit for clarity, dev/tests only
+    opt.UseInMemory();  // default
 
     // Workers & queues (override appsettings)
     opt.Workers = 10;
@@ -666,16 +592,85 @@ builder.Services.AddNexJob(builder.Configuration, opt =>
 
 ---
 
+## Testing
+
+The in-memory provider is the default:
+
+```csharp
+services.AddNexJob();  // InMemory is automatic
+
+// Or explicit
+services.AddNexJob(opt => opt.UseInMemory());
+```
+
+---
+
+## Health checks
+
+```csharp
+builder.Services.AddHealthChecks()
+                .AddNexJob()                        // Healthy / Degraded / Unhealthy
+                .AddNexJob(failureThreshold: 100);  // Degraded if > 100 dead-letter jobs
+```
+
+---
+
+## Schema migrations
+
+NexJob automatically migrates its storage schema on startup. No manual SQL scripts, no deployment steps.
+
+```csharp
+// Nothing to call — migrations run automatically when your app starts
+builder.Services.AddNexJob(builder.Configuration);
+```
+
+---
+
+## Worker Services & Console Apps
+
+NexJob works in any .NET host — not just Web APIs. For applications without HTTP, use the standalone dashboard:
+
+```csharp
+var builder = Host.CreateApplicationBuilder(args);
+
+builder.Services
+    .AddNexJob(builder.Configuration)
+    .AddNexJobJobs(typeof(Program).Assembly);
+
+builder.Services.AddNexJobStandaloneDashboard(builder.Configuration);
+
+await builder.Build().RunAsync();
+// Dashboard: http://localhost:5005/dashboard
+```
+
+Configure in appsettings.json:
+
+```json
+{
+  "NexJob": {
+    "Dashboard": {
+      "Port": 5005,
+      "Path": "/dashboard",
+      "Title": "My Worker Jobs",
+      "LocalhostOnly": true
+    }
+  }
+}
+```
+
+---
+
+# Project
+
 ## Roadmap
 
 ```
 v0.1.0-alpha  ◆ Core · all storage providers · dashboard · 55 tests
 v0.2.0        ◆ Schema migrations · graceful shutdown · [Retry] · distributed lock · 130 tests
 v0.3.0        ◆ IJobContext · progress tracking · job tags
+v0.4.0        ◆ Wake-up channel · WithDeadlineAfter · IDeadLetterHandler · README reorganized
 v1.0.0        ○ Stable API · production-ready
 ```
-
----
 
 ## Contributing
 
