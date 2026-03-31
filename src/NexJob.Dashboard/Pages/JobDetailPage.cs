@@ -13,6 +13,7 @@ internal sealed class JobDetailPage : IComponent
     [Parameter] public string PathPrefix { get; set; } = "/dashboard";
     [Parameter] public string Title { get; set; } = "NexJob";
     [Parameter] public JobId JobId { get; set; }
+    [Parameter] public bool IsReadOnly { get; set; }
 
     void IComponent.Attach(RenderHandle renderHandle) => _handle = renderHandle;
 
@@ -38,20 +39,23 @@ internal sealed class JobDetailPage : IComponent
 
         // Action buttons
         var actions = string.Empty;
-        if (job.Status == JobStatus.Scheduled)
+        if (!IsReadOnly)
         {
-            actions +=
-                $"<form method=\"post\" action=\"{PathPrefix}/jobs/{job.Id.Value}/runnow\" style=\"display:inline\">" +
-                "<button type=\"submit\" class=\"btn btn-primary btn-sm\">▶ Run Now</button></form> ";
-        }
+            if (job.Status == JobStatus.Scheduled)
+            {
+                actions +=
+                    $"<form method=\"post\" action=\"{PathPrefix}/jobs/{job.Id.Value}/runnow\" style=\"display:inline\">" +
+                    "<button type=\"submit\" class=\"btn btn-primary btn-sm\">▶ Run Now</button></form> ";
+            }
 
-        if (job.Status == JobStatus.Failed)
-        {
-            actions +=
-                $"<form method=\"post\" action=\"{PathPrefix}/jobs/{job.Id.Value}/requeue\" style=\"display:inline\">" +
-                "<button type=\"submit\" class=\"btn btn-primary btn-sm\">↺ Requeue</button></form> " +
-                $"<form method=\"post\" action=\"{PathPrefix}/jobs/{job.Id.Value}/delete\" style=\"display:inline\">" +
-                "<button type=\"submit\" class=\"btn btn-danger btn-sm\" onclick=\"return confirm('Delete this job?')\">Delete</button></form>";
+            if (job.Status == JobStatus.Failed)
+            {
+                actions +=
+                    $"<form method=\"post\" action=\"{PathPrefix}/jobs/{job.Id.Value}/requeue\" style=\"display:inline\">" +
+                    "<button type=\"submit\" class=\"btn btn-primary btn-sm\" onclick=\"return confirm('Requeue this job?')\">↺ Requeue</button></form> " +
+                    $"<form method=\"post\" action=\"{PathPrefix}/jobs/{job.Id.Value}/delete\" style=\"display:inline\">" +
+                    "<button type=\"submit\" class=\"btn btn-danger btn-sm\" onclick=\"return confirm('Delete this job?')\">Delete</button></form>";
+            }
         }
 
         // Tags HTML
@@ -62,31 +66,43 @@ internal sealed class JobDetailPage : IComponent
 
         // Header
         var header =
-            $"<div style=\"display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:8px;flex-wrap:wrap\">" +
-            $"<div>" +
-            $"<a href=\"{PathPrefix}/jobs\" style=\"font-size:12px;color:var(--text-3)\">← Jobs</a>" +
-            $"<h1 class=\"page-title\" style=\"margin-top:6px;margin-bottom:2px\">{HttpUtility.HtmlEncode(vm.ShortType)}</h1>" +
-            $"<div style=\"font-family:monospace;font-size:12px;color:var(--text-3);margin-bottom:8px\">{job.Id.Value}</div>" +
-            $"<div style=\"display:flex;align-items:center;gap:10px\">{Helpers.BadgeHtml(job.Status)}" +
-            $"<span style=\"font-size:12px;color:var(--text-2)\">attempt {job.Attempts}/{job.MaxAttempts}</span></div>" +
+            $"<div style=\"display:flex;align-items:flex-start;justify-content:space-between;gap:20px;margin-bottom:20px;flex-wrap:wrap\">" +
+            $"<div style=\"flex:1\">" +
+            $"<a href=\"{PathPrefix}/jobs\" style=\"font-size:12px;color:var(--text-3);display:inline-block;margin-bottom:8px\">← Back</a>" +
+            $"<h1 class=\"page-title\" style=\"margin-bottom:4px\">{HttpUtility.HtmlEncode(vm.ShortType)}</h1>" +
+            $"<div style=\"font-family:monospace;font-size:12px;color:var(--text-3);margin-bottom:12px;letter-spacing:0.02em\">{job.Id.Value}</div>" +
+            $"<div style=\"display:flex;align-items:center;gap:12px;flex-wrap:wrap\">{Helpers.BadgeHtml(job.Status)}" +
+            $"<span style=\"font-size:12px;color:var(--text-3);border-left:1px solid var(--border);padding-left:12px\">attempt {job.Attempts}/{job.MaxAttempts}</span></div>" +
             $"</div>" +
             (actions.Length > 0
-                ? $"<div style=\"display:flex;gap:8px;align-items:center;flex-wrap:wrap\">{actions}</div>"
+                ? $"<div style=\"display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap;flex-shrink:0\">{actions}</div>"
                 : string.Empty) +
             $"</div>" +
-            $"<div style=\"border-bottom:1px solid var(--border);margin-bottom:24px\"></div>";
+            $"<div style=\"border-bottom:1px solid var(--border);margin-bottom:28px\"></div>";
 
         // Progress bar
         var progressSection = HtmlFragments.ProgressBar(job.ProgressPercent, job.ProgressMessage);
 
+        // Visual execution flow timeline
+        var executionTimeline = HtmlFragments.ExecutionTimeline(job, now);
+
         // Detail sections
-        var timelineRows = new List<(string Label, string Value)>
+        var timingRows = new List<(string Label, string Value)>();
+
+        // Add timing rows if available
+        if (job.ProcessingStartedAt.HasValue)
         {
-            ("Created", $"{job.CreatedAt:yyyy-MM-dd HH:mm:ss UTC} <span style=\"color:var(--text-3);font-size:11px\">({Helpers.RelativeTime(job.CreatedAt, now)})</span>"),
-            ("Scheduled", job.ScheduledAt.HasValue ? $"{job.ScheduledAt.Value:yyyy-MM-dd HH:mm:ss UTC} <span style=\"color:var(--text-3);font-size:11px\">({Helpers.CountdownFriendly(job.ScheduledAt.Value - now)})</span>" : "—"),
-            ("Started", job.ProcessingStartedAt.HasValue ? $"{job.ProcessingStartedAt.Value:yyyy-MM-dd HH:mm:ss UTC}" : "—"),
-            ("Completed", job.CompletedAt.HasValue ? $"{job.CompletedAt.Value:yyyy-MM-dd HH:mm:ss UTC}" : "—"),
-        };
+            var enqueueLag = job.ProcessingStartedAt.Value - job.CreatedAt;
+            timingRows.Add(("Enqueue → Start", Helpers.FormatCountdown(enqueueLag)));
+        }
+
+        if (job.ProcessingStartedAt.HasValue && job.CompletedAt.HasValue)
+        {
+            var duration = job.CompletedAt.Value - job.ProcessingStartedAt.Value;
+            timingRows.Add(("Duration", Helpers.FormatCountdown(duration)));
+        }
+
+        timingRows.Add(("Total Age", Helpers.FormatCountdown(now - job.CreatedAt)));
 
         // Add expiration info only if deadline exists
         if (job.ExpiresAt.HasValue)
@@ -100,12 +116,12 @@ internal sealed class JobDetailPage : IComponent
                 expirationColor = "color:var(--warning)";
             }
 
-            timelineRows.Add(("Expires At", $"<span style=\"{expirationColor}\">{job.ExpiresAt.Value:yyyy-MM-dd HH:mm:ss UTC}</span>"));
+            timingRows.Add(("Expires At", $"<span style=\"{expirationColor}\">{job.ExpiresAt.Value:yyyy-MM-dd HH:mm:ss UTC}</span>"));
         }
 
-        timelineRows.Add(("Retry At", job.RetryAt.HasValue ? $"{job.RetryAt.Value:yyyy-MM-dd HH:mm:ss UTC}" : "—"));
+        timingRows.Add(("Retry At", job.RetryAt.HasValue ? $"{job.RetryAt.Value:yyyy-MM-dd HH:mm:ss UTC}" : "—"));
 
-        var timeline = HtmlFragments.DetailSection("Timeline", timelineRows.ToArray());
+        var timingSection = HtmlFragments.DetailSection("Timing", timingRows.ToArray());
 
         var configuration =
             HtmlFragments.DetailSection("Configuration",
@@ -122,9 +138,9 @@ internal sealed class JobDetailPage : IComponent
 
         // Payload
         var payloadSection =
-            "<div style=\"margin-bottom:24px\">" +
-            "<div class=\"section-title\" style=\"margin-bottom:8px\">Payload</div>" +
-            $"<pre>{Helpers.FormatJson(job.InputJson)}</pre>" +
+            "<div style=\"margin-bottom:28px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:16px;box-shadow:0 1px 3px rgba(0,0,0,.2), inset 0 1px 0 rgba(255,255,255,.02)\">" +
+            "<div class=\"section-title\" style=\"margin-bottom:12px\">Payload</div>" +
+            $"<pre style=\"margin:0;border:none;background:var(--surface2);padding:12px;border-radius:6px;font-size:12px\">{Helpers.FormatJson(job.InputJson)}</pre>" +
             "</div>";
 
         // Error section
@@ -154,10 +170,14 @@ internal sealed class JobDetailPage : IComponent
             $"}})();</script>";
 
         var body =
+            (IsReadOnly ? HtmlFragments.ReadOnlyBanner() : string.Empty) +
             header +
             progressSection +
+            "<div class=\"timeline-section\">" +
+            executionTimeline +
+            "</div>" +
             "<div class=\"detail-sections\">" +
-            timeline +
+            timingSection +
             configuration +
             relationships +
             "</div>" +

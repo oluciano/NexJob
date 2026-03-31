@@ -6,6 +6,15 @@ namespace NexJob.Dashboard.Pages;
 /// <summary>Reusable HTML fragment builders for dashboard pages.</summary>
 internal static class HtmlFragments
 {
+    /// <summary>Read-only mode warning banner HTML.</summary>
+    private const string ReadOnlyBannerHtml =
+        """
+        <div class="alert alert-warning" style="margin-bottom:16px">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" style="vertical-align:middle;margin-right:6px"><path d="M8 1L15 14H1L8 1z"/><line x1="8" y1="6" x2="8" y2="9"/><circle cx="8" cy="12" r=".5" fill="currentColor"/></svg>
+            Read-only mode — administrative actions are disabled.
+        </div>
+        """;
+
     /// <summary>Renders a page header with title, subtitle, and optional action buttons.</summary>
     internal static string PageHeader(string title, string subtitle, string? actionsHtml = null) =>
         $"""
@@ -469,6 +478,88 @@ internal static class HtmlFragments
             next +
             "</div>";
     }
+
+    /// <summary>Returns the read-only mode warning banner HTML.</summary>
+    internal static string ReadOnlyBanner() => ReadOnlyBannerHtml;
+
+    /// <summary>Renders a visual execution flow timeline.</summary>
+    internal static string ExecutionTimeline(JobRecord job, DateTimeOffset now)
+    {
+        var items = new List<(string Status, DateTimeOffset? Time)>();
+
+        // Build timeline from job state
+        items.Add(("Enqueued", job.CreatedAt));
+
+        if (job.ProcessingStartedAt.HasValue)
+        {
+            items.Add(("Processing", job.ProcessingStartedAt.Value));
+        }
+
+        if (job.Status == JobStatus.Failed || job.Status == JobStatus.Succeeded || job.Status == JobStatus.Expired)
+        {
+            if (job.CompletedAt.HasValue)
+            {
+                var statusLabel = job.Status switch
+                {
+                    JobStatus.Failed => "Failed",
+                    JobStatus.Succeeded => "Succeeded",
+                    JobStatus.Expired => "Expired",
+                    _ => "Completed",
+                };
+                items.Add((statusLabel, job.CompletedAt.Value));
+            }
+
+            if (job.Status == JobStatus.Failed && job.Attempts > 1)
+            {
+                items.Add(("Retry #" + (job.Attempts - 1), job.RetryAt));
+            }
+        }
+
+        var sb = new System.Text.StringBuilder();
+        sb.Append("<div class=\"timeline\">");
+
+        for (int i = 0; i < items.Count; i++)
+        {
+            var (status, time) = items[i];
+            var isLast = i == items.Count - 1;
+            var nodeClass = GetTimelineNodeClass(status);
+            var timeStr = time.HasValue ? $"{time.Value:HH:mm:ss}" : "—";
+            var relativeStr = time.HasValue ? Helpers.RelativeTime(time.Value, now) : string.Empty;
+
+            sb.Append($"<div class=\"timeline-item\">");
+            sb.Append($"<div class=\"timeline-node {nodeClass}\"></div>");
+            sb.Append($"<div class=\"timeline-content\">");
+            sb.Append($"<div class=\"timeline-label\">{HtmlEncode(status)}</div>");
+            sb.Append($"<div class=\"timeline-time\">{timeStr}</div>");
+            if (!string.IsNullOrEmpty(relativeStr))
+            {
+                    sb.Append($"<div class=\"timeline-relative\">{relativeStr}</div>");
+            }
+
+            sb.Append($"</div>");
+            sb.Append($"</div>");
+
+            if (!isLast)
+            {
+                sb.Append($"<div class=\"timeline-line\"></div>");
+            }
+        }
+
+        sb.Append("</div>");
+
+        return sb.ToString();
+    }
+
+    private static string GetTimelineNodeClass(string status) =>
+        status switch
+        {
+            "Succeeded" => "timeline-node-success",
+            "Failed" => "timeline-node-error",
+            "Expired" => "timeline-node-muted",
+            "Processing" => "timeline-node-active",
+            var s when s.StartsWith("Retry") => "timeline-node-warning",
+            _ => "timeline-node-neutral",
+        };
 
     private static string HtmlEncode(string? text) => HttpUtility.HtmlEncode(text ?? string.Empty);
 }
