@@ -10,7 +10,16 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
-## [0.5.0] — April 2026
+## [0.5.2] — April 2026
+
+### Fixed
+- **IJob (no-input) recurring jobs from appsettings.json** — Fixed critical regression where configuration-driven recurring jobs implementing `IJob` (without input parameter) failed with `"Cannot load input type: "` error. The `InputType` is now correctly set to the `NoInput` sentinel type when no input is specified, matching the behavior of code-registered recurring jobs.
+
+### Internal
+- Added regression test `RecurringJob_AppsettingsNoInput_ExecutesEndToEnd` that verifies end-to-end execution of `IJob` recurring jobs loaded from configuration. This test ensures the bug does not resurface in future changes.
+- **NexJob.Sample.ConfiguredRecurring** — New WebAPI sample demonstrating configuration-driven recurring jobs with automatic binding from `appsettings.json`. Shows practical example of `IJob` (no-input) implementation with dashboard monitoring.
+
+## [0.5.1] — April 2026
 
 ### Added
 - **Dashboard visual timeline** — Execution timeline showing every job's lifecycle: Enqueued, Processing, Succeeded, Failed, Dead-letter, Expired. See state transitions, retry attempts, and exact timing at a glance. Built for operational clarity and instant system visibility.
@@ -250,7 +259,8 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Recurring concurrency policy — `SkipIfRunning` (default) or `AllowConcurrent`
 - CI/CD pipeline (`ci.yml` + `publish.yml`) publishing all packages to NuGet on `v*` tag push
 
-[Unreleased]: https://github.com/oluciano/NexJob/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/oluciano/NexJob/compare/v0.5.2...HEAD
+[0.5.2]: https://github.com/oluciano/NexJob/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/oluciano/NexJob/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/oluciano/NexJob/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/oluciano/NexJob/compare/v0.3.2...v0.4.0
