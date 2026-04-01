@@ -429,6 +429,58 @@ public sealed class RecurringNoInputJobTests
         nightly.Cron.Should().Be("0 2 * * *");
         nightly.TimeZoneId.Should().Be("UTC");
     }
+
+    /// <summary>
+    /// Integration test: verifies that a recurring IJob (no-input) loaded from appsettings
+    /// executes end-to-end without errors. This covers the critical path where
+    /// InputType must resolve to NoInput, not empty string.
+    /// Regression test for: https://github.com/oluciano/NexJob/issues/XXXXX
+    /// </summary>
+    [Fact]
+    public async Task RecurringJob_AppsettingsNoInput_ExecutesEndToEnd()
+    {
+        RecurringAppsettingsExecutionTestJob.ResetCount();
+
+        // Build configuration with recurring IJob (no-input) definition
+        var configData = new Dictionary<string, string?>
+        {
+            ["NexJob:Workers"] = "1",
+            ["NexJob:PollingIntervalMs"] = "200",  // Fast polling for test
+            ["NexJob:RecurringJobs:0:Id"] = "e2e-appsettings",
+            ["NexJob:RecurringJobs:0:JobType"] = typeof(RecurringAppsettingsExecutionTestJob).AssemblyQualifiedName,
+            ["NexJob:RecurringJobs:0:Cron"] = "* * * * *",  // every minute
+            ["NexJob:RecurringJobs:0:Queue"] = "default",
+            ["NexJob:RecurringJobs:0:Enabled"] = "true",
+            // Note: NO InputType specified (IJob has no input)
+        };
+
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(configData)
+            .Build();
+
+        using var host = Host.CreateDefaultBuilder()
+            .ConfigureServices(services =>
+            {
+                services.AddNexJob(configuration, opt =>
+                {
+                    opt.PollingInterval = TimeSpan.FromMilliseconds(100);
+                });
+                services.AddTransient<RecurringAppsettingsExecutionTestJob>();
+            })
+            .Build();
+
+        await host.StartAsync();
+
+        // Wait for registration service + scheduler + dispatcher to run and execute the job
+        // Give enough time for registration (50ms) + first cron check (1s) + execution
+        await Task.Delay(TimeSpan.FromSeconds(3));
+
+        await host.StopAsync();
+
+        // Verify job executed at least once (critical: proves NoInput was correctly set)
+        RecurringAppsettingsExecutionTestJob.ExecutionCount.Should().BeGreaterThanOrEqualTo(1,
+            "recurring job from appsettings should execute successfully with IJob (no-input) signature");
+    }
 }
 
 // ─── test job implementations ────────────────────────────────────────────────
@@ -478,5 +530,28 @@ internal sealed class RecurringFromAppsettingsTestJob : IJob
     public Task ExecuteAsync(CancellationToken cancellationToken)
     {
         return Task.CompletedTask;
+    }
+}
+
+/// <summary>
+/// No-input job that tracks execution count when loaded from appsettings.
+/// Used to verify end-to-end execution of recurring IJob from configuration.
+/// Regression test: ensures InputType resolves to NoInput (not empty string).
+/// </summary>
+internal sealed class RecurringAppsettingsExecutionTestJob : IJob
+{
+    private static int _executionCount;
+
+    public static int ExecutionCount => _executionCount;
+
+    public Task ExecuteAsync(CancellationToken cancellationToken)
+    {
+        Interlocked.Increment(ref _executionCount);
+        return Task.CompletedTask;
+    }
+
+    public static void ResetCount()
+    {
+        _executionCount = 0;
     }
 }
