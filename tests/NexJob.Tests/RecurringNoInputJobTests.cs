@@ -434,7 +434,7 @@ public sealed class RecurringNoInputJobTests
     /// Integration test: verifies that a recurring IJob (no-input) loaded from appsettings
     /// executes end-to-end without errors. This covers the critical path where
     /// InputType must resolve to NoInput, not empty string.
-    /// Regression test for: https://github.com/oluciano/NexJob/issues/XXXXX
+    /// Regression test for: https://github.com/oluciano/NexJob/issues/XXXXX.
     /// </summary>
     [Fact]
     public async Task RecurringJob_AppsettingsNoInput_ExecutesEndToEnd()

@@ -1,4 +1,4 @@
-Read AI_CONTEXT.md, ARCHITECTURE.md and CLAUDE.md before answering.
+Read NEXJOB_AI_CONTEXT_MINIMAL.md, ARCHITECTURE.md and CLAUDE.md before answering.
 
 # NexJob — AI Context
 
