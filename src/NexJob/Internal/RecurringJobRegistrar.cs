@@ -126,8 +126,8 @@ internal sealed class RecurringJobRegistrar
             {
                 RecurringJobId = jobConfig.Id,
                 JobType = jobType.AssemblyQualifiedName!,
-                InputType = inputType?.AssemblyQualifiedName ?? string.Empty,
-                InputJson = inputJson ?? string.Empty,
+                InputType = inputType?.AssemblyQualifiedName ?? typeof(NoInput).AssemblyQualifiedName!,
+                InputJson = inputJson ?? JsonSerializer.Serialize(NoInput.Instance),
                 Cron = jobConfig.Cron,
                 TimeZoneId = jobConfig.TimeZoneId,
                 Queue = jobConfig.Queue,
