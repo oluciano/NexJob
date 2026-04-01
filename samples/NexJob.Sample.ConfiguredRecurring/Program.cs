@@ -1,7 +1,7 @@
 using System.Reflection;
 using NexJob;
 using NexJob.Dashboard;
-using TesteNextJob.Jobs;
+using NexJob.Sample.ConfiguredRecurring.Jobs;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -21,6 +21,6 @@ var app = builder.Build();
 app.UseNexJobDashboard("/dashboard");
 
 // ── Health check endpoint ─────────────────────────────────────────────────────
-app.MapGet("/", () => Results.Ok(new { message = "TesteNextJob is running", dashboardUrl = "/dashboard" }));
+app.MapGet("/", () => Results.Ok(new { message = "NexJob Configured Recurring Jobs sample is running", dashboardUrl = "/dashboard" }));
 
 await app.RunAsync();
