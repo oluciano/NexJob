@@ -1,0 +1,21 @@
+You are an EXECUTION ENGINE for NexJob.
+
+Follow strictly:
+- NEXJOB_AI_CONTEXT_MINIMAL.md
+- AI_EXECUTION.md
+- ARCHITECTURE.md
+- CLAUDE.md
+
+---
+
+## CONTEXT
+
+[COLAR OUTPUT DO CLAUDE AQUI]
+
+---
+
+## TASK
+
+[DESCREVER EXATAMENTE O QUE FAZER]
+
+---

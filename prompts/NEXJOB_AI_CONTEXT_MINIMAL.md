@@ -1,82 +1,99 @@
-# NEXJOB_AI_CONTEXT_MINIMAL.md
+NEXJOB — AI CONTEXT (EXECUTABLE)
 
-## Core Rules
+Core Invariants (NON-NEGOTIABLE)
 
-Storage = source of truth\
-Dispatcher = stateless\
-All state transitions must be persisted\
-No hidden behavior\
-Prefer simplicity over magic\
-Incremental evolution over rewrite
+- Storage is the single source of truth
+- Dispatcher is stateless
+- All state transitions MUST be persisted
+- No in-memory state can override storage
+- Jobs MUST respect deadline BEFORE execution
+- Expired jobs MUST NEVER execute
+- Dead-letter handlers MUST NEVER crash dispatcher
 
-## Job Model
+---
 
-Use IJob for internal jobs\
-Use IJob`<T>`{=html} for external/structured input
+Execution Model
 
-Rule: minimal input (identity + intent)
+States:
+Enqueued → Processing → Succeeded
+Processing → Failed → Retry OR Dead-letter
+Enqueued → Expired (never executed)
 
-## Job Lifecycle
+Rules:
+- Every transition MUST be persisted
+- Failed = retryable
+- Dead-letter = terminal
+- Expired = terminal (no execution)
 
-States: Enqueued Processing Succeeded Failed (retryable) Dead-letter
-(terminal) Expired (terminal, never executed)
+---
 
-## Deadline
+Job Model
 
-ExpiresAt defined at enqueue\
-Must be checked before execution\
-Expired jobs must never run
+- IJob → internal jobs
+- IJob<T> → external input
 
-## Retry
+Rule:
+- Input MUST be minimal (identity + intent)
+- DO NOT introduce unnecessary DTOs
 
-On failure: record attempt retry if allowed otherwise → dead-letter
+---
 
-Dead-letter handler must never crash dispatcher
+Dispatcher Rules
 
-## Dispatch
+- MUST be stateless
+- MUST NOT cache state
+- MUST enforce:
+  - deadline
+  - retry policy
+  - scheduling constraints
 
-Wake-up (local) + polling (fallback)\
-Wake-up must be: - bounded - non-blocking
+---
 
-## Storage
+Storage Rules
 
-Storage owns: - state - retries - schedules - deadlines - history
+Storage owns:
+- state
+- retries
+- scheduling
+- deadlines
+- history
 
-Never override storage with memory
+Rule:
+- NEVER bypass storage
 
-## Observability
+---
 
-Use persisted truth only\
-Expose: - lifecycle - failures - retries - dead-letter - expired -
-queues - timing
+Retry Rules
 
-No fake state
+- On failure:
+  - record attempt
+  - evaluate retry
+  - reschedule OR dead-letter
 
-## Dashboard Rules
+---
 
--   lightweight
--   no rewrite
--   server-side driven
--   no hidden UI state
--   query-based navigation
--   deterministic behavior
+Observability Rules
 
-## Engineering Rules
+- MUST reflect persisted state
+- MUST NOT create fake or derived state
 
--   no placeholders
--   no NotImplementedException
--   production-ready only
--   zero warnings
--   async/await only
--   no .Result / .Wait()
--   propagate CancellationToken
--   sealed classes by default
--   XML docs for public APIs
--   avoid DTO explosion
--   avoid global state
+---
 
-## Prompt Header
+Engineering Constraints
 
-Read NEXJOB_AI_CONTEXT_MINIMAL.md before answering.\
-Do not violate CLAUDE.md rules.\
-Implement only the scope described below.
+- NO NotImplementedException
+- NO placeholders
+- Production-ready code only
+- async/await only
+- NEVER use .Result or .Wait()
+- ALWAYS propagate CancellationToken
+- Classes MUST be sealed by default
+- Public APIs MUST have XML docs
+
+---
+
+Golden Rule
+
+If behavior is not explicitly defined:
+→ DO NOT IMPLEMENT
+→ ASK instead
