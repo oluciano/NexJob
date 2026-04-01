@@ -1,6 +1,6 @@
-# TesteNextJob Sample
+# NexJob.Sample.ConfiguredRecurring
 
-A minimal WebAPI sample demonstrating NexJob's **automatic recurring job binding from `appsettings.json`**.
+A minimal WebAPI sample demonstrating NexJob's **automatic recurring job binding from `appsettings.json`** — Zero-code configuration approach.
 
 ## What It Does
 
@@ -11,10 +11,11 @@ A minimal WebAPI sample demonstrating NexJob's **automatic recurring job binding
 ## Running the Sample
 
 ```bash
+cd samples/NexJob.Sample.ConfiguredRecurring
 dotnet run
 ```
 
-The application will start on `http://localhost:5000`.
+The application will start on `http://localhost:5000` and automatically register the recurring job from `appsettings.json`.
 
 ## Key Features
 
@@ -40,8 +41,8 @@ No code registration required. Just define in `appsettings.json`:
   "NexJob": {
     "RecurringJobs": [
       {
-        "Id": "teste-every-minute",
-        "JobType": "TesteNextJob.Jobs.TesteOnlyJob, TesteNextJob",
+        "Id": "log-time-every-minute",
+        "JobType": "NexJob.Sample.ConfiguredRecurring.Jobs.TesteOnlyJob, NexJob.Sample.ConfiguredRecurring",
         "Cron": "*/1 * * * *",
         "Queue": "default",
         "TimeZoneId": "America/Sao_Paulo",
@@ -59,7 +60,7 @@ Once running, visit the dashboard at:
 http://localhost:5000/dashboard
 ```
 
-Watch TesteOnlyJob execute every minute with live updates.
+Watch the job execute every minute — see execution timeline, status, metrics, and logs in real-time.
 
 ## What's Happening
 
@@ -76,12 +77,13 @@ Watch TesteOnlyJob execute every minute with live updates.
 ## Project Structure
 
 ```
-TesteNextJob/
+NexJob.Sample.ConfiguredRecurring/
 ├── Jobs/
-│   └── TesteOnlyJob.cs       # IJob implementation
-├── Program.cs                  # NexJob setup & dashboard
-├── appsettings.json            # Recurring job configuration
-└── TesteNextJob.csproj        # Project file
+│   └── TesteOnlyJob.cs                           # IJob implementation
+├── Program.cs                                     # NexJob setup & dashboard
+├── appsettings.json                              # Recurring job configuration
+├── NexJob.Sample.ConfiguredRecurring.csproj      # Project file
+└── README.md                                      # This file
 ```
 
 ## Customization

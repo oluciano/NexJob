@@ -1,6 +1,6 @@
 using NexJob;
 
-namespace TesteNextJob.Jobs;
+namespace NexJob.Sample.ConfiguredRecurring.Jobs;
 
 /// <summary>
 /// Simple job that logs the current time. Implements IJob (no input required).
