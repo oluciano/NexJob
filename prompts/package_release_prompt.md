@@ -1,15 +1,14 @@
-Read AI_CONTEXT.md, ARCHITECTURE.md and CLAUDE.md before answering.
+Read NEXJOB_AI_CONTEXT_MINIMAL.md, ARCHITECTURE.md and CLAUDE.md before answering.
 
-9. PACK / RELEASE PROMPT
 Validate release readiness.
 
 Check:
-- build
-- tests
-- packages
-- version consistency
+- build passes
+- all tests pass
+- packages pack correctly
+- version in Directory.Build.props matches latest CHANGELOG entry
+- no [Unreleased] content left uncommitted
 
 Deliver:
-- readiness status
-- issues (if any)
-
+- readiness status (READY / NOT READY)
+- issues found (if any)
