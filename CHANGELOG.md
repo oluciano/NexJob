@@ -7,6 +7,33 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+
+### Changed
+
+## [0.5.0] — April 2026
+
+### Added
+- **Dashboard visual timeline** — Execution timeline showing every job's lifecycle: Enqueued, Processing, Succeeded, Failed, Dead-letter, Expired. See state transitions, retry attempts, and exact timing at a glance. Built for operational clarity and instant system visibility.
+
+### Changed
+- **Dashboard rendering refactored** — Streamlined component architecture for maintainability. Separated presentation logic from business logic. Reduced render cycles for improved performance.
+- **Dashboard operational features** — Added filtering and diagnostics for queue inspection. Enhanced queue visibility with worker utilization. New operational view for production monitoring.
+- **Dashboard observability** — Improved failure tracking and dead-letter visibility. Enhanced retry history display. Clear indication of expired jobs.
+- **Dashboard authorization and security** — Added read-only mode for restricted access. JSON endpoints for programmatic dashboard queries. Support for authorization headers.
+- **Dashboard visual design** — Updated UI components with consistent spacing and typography. Improved contrast and readability. Refined color palette for better visual hierarchy.
+- **README refined for product positioning** — Stronger opening hook emphasizing reliability and no surprises in production. Enhanced "Why NexJob" section with storage authority and deadline enforcement. Improved Quick Example with deadline usage as core differentiator. Dashboard section repositioned as operational necessity with visual proof placeholder. Tightened language throughout for clarity and confidence. Streamlined feature list to high-impact items only.
+
+### Fixed
+- Dashboard Live Updates — The entire NexJob Dashboard is now fully reactive. A universal vanilla JavaScript polling engine (`HTMX`-style) seamlessly replaces the DOM using `data-refresh` annotations, keeping lists and pages up to date every 5 seconds without full page reloads, closing open modals, or interrupting text inputs. *(Architecture Note: This zero-dependency approach was chosen over SignalR to guarantee real-time reactivity without forcing consumers to configure WebSockets, Load Balancers, or Redis backplanes, keeping the library strictly lightweight and plug-and-play).*
+
+### Internal
+- Refactored Integration Tests to use `IClassFixture<T>` for Testcontainers, vastly reducing CI compilation and execution times by reusing Docker containers across test runs.
+- Improved database isolation strategy for Postgres and SQL Server to dynamically generate and provision separate database instances per-test.
+- Stabilized `HeartbeatServerAsync` test to prevent flaky timing conditions in rapid CI environments (`.BeOnOrAfter`).
+
+## [0.5.1] — April 2026
+
+### Added
 - **Automatic RecurringJob binding from `appsettings.json`** — Define recurring jobs directly in configuration without code:
   ```json
   {
@@ -28,30 +55,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   ```
   Full validation at startup: type resolution, cron syntax, input deserialization. All validation errors logged with job ID for easy troubleshooting. Graceful error handling — invalid jobs skipped, valid jobs registered and immediately queued for execution.
 
-### Changed
-
-## [0.5.0] — March 2026
-
-### Added
-- **Dashboard visual timeline** — Execution timeline showing every job's lifecycle: Enqueued, Processing, Succeeded, Failed, Dead-letter, Expired. See state transitions, retry attempts, and exact timing at a glance. Built for operational clarity and instant system visibility.
-
-### Changed
-- **Dashboard rendering refactored** — Streamlined component architecture for maintainability. Separated presentation logic from business logic. Reduced render cycles for improved performance.
-- **Dashboard operational features** — Added filtering and diagnostics for queue inspection. Enhanced queue visibility with worker utilization. New operational view for production monitoring.
-- **Dashboard observability** — Improved failure tracking and dead-letter visibility. Enhanced retry history display. Clear indication of expired jobs.
-- **Dashboard authorization and security** — Added read-only mode for restricted access. JSON endpoints for programmatic dashboard queries. Support for authorization headers.
-- **Dashboard visual design** — Updated UI components with consistent spacing and typography. Improved contrast and readability. Refined color palette for better visual hierarchy.
-- **README refined for product positioning** — Stronger opening hook emphasizing reliability and no surprises in production. Enhanced "Why NexJob" section with storage authority and deadline enforcement. Improved Quick Example with deadline usage as core differentiator. Dashboard section repositioned as operational necessity with visual proof placeholder. Tightened language throughout for clarity and confidence. Streamlined feature list to high-impact items only.
-
-### Fixed
-- Dashboard Live Updates — The entire NexJob Dashboard is now fully reactive. A universal vanilla JavaScript polling engine (`HTMX`-style) seamlessly replaces the DOM using `data-refresh` annotations, keeping lists and pages up to date every 5 seconds without full page reloads, closing open modals, or interrupting text inputs. *(Architecture Note: This zero-dependency approach was chosen over SignalR to guarantee real-time reactivity without forcing consumers to configure WebSockets, Load Balancers, or Redis backplanes, keeping the library strictly lightweight and plug-and-play).*
-
-### Internal
-- Refactored Integration Tests to use `IClassFixture<T>` for Testcontainers, vastly reducing CI compilation and execution times by reusing Docker containers across test runs.
-- Improved database isolation strategy for Postgres and SQL Server to dynamically generate and provision separate database instances per-test.
-- Stabilized `HeartbeatServerAsync` test to prevent flaky timing conditions in rapid CI environments (`.BeOnOrAfter`).
-
-## [0.4.0] — April 2026
+## [0.4.0] — March 2026
 
 ### Added
 - **Wake-up channel** — Local job enqueues trigger immediate dispatcher wake-up instead of waiting for the next polling interval. Non-blocking signal with capacity=1 prevents latency spikes. Polling fallback preserved for distributed scenarios. Integrated into `JobDispatcherService` and `DefaultScheduler`.
@@ -246,7 +250,8 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Recurring concurrency policy — `SkipIfRunning` (default) or `AllowConcurrent`
 - CI/CD pipeline (`ci.yml` + `publish.yml`) publishing all packages to NuGet on `v*` tag push
 
-[Unreleased]: https://github.com/oluciano/NexJob/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/oluciano/NexJob/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/oluciano/NexJob/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/oluciano/NexJob/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/oluciano/NexJob/compare/v0.3.2...v0.4.0
 [0.3.2]: https://github.com/oluciano/NexJob/compare/v0.3.1...v0.3.2
