@@ -87,14 +87,6 @@ public abstract class DistributedReliabilityTestBase
     /// </summary>
     protected static void ResetTestState()
     {
-        SuccessJobWithInput.ExecutionCount = 0;
-        AlwaysFailJobWithInput.ExecutionCount = 0;
-        TrackingJobWithInput.ExecutionCount = 0;
-        FailOnceThenSucceedJobWithInput.ExecutionCount = 0;
-        CancellableJobWithInput.CancellationCount = 0;
-        DelayJobWithInput.ExecutionCount = 0;
-        DiagnosticJobWithInput.ExecutionCount = 0;
-
         SuccessJob.ExecutionCount = 0;
         AlwaysFailJob.ExecutionCount = 0;
         TrackingJob.ExecutionCount = 0;
@@ -104,6 +96,5 @@ public abstract class DistributedReliabilityTestBase
         DiagnosticJob.ExecutionCount = 0;
 
         RecordingDeadLetterHandler<AlwaysFailJob>.Reset();
-        RecordingDeadLetterHandler<AlwaysFailJobWithInput>.Reset();
     }
 }

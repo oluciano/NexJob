@@ -51,8 +51,8 @@ public sealed class SqlServerRecoveryTests
         var scheduler = host.Services.GetRequiredService<IScheduler>();
         var storage = host.Services.GetRequiredService<Storage.IStorageProvider>();
 
-        var jobId = await scheduler.EnqueueAsync<SuccessJobWithInput, SuccessJobInput>(
-            new SuccessJobInput("test"));
+        var jobId = await scheduler.EnqueueAsync<SuccessJobWithInput, SuccessInput>(
+            new SuccessInput("test"));
         await host.StopAsync();
 
         var job = await storage.GetJobByIdAsync(jobId);
@@ -101,8 +101,8 @@ public sealed class SqlServerRecoveryTests
         {
             await host1.StartAsync();
             var scheduler = host1.Services.GetRequiredService<IScheduler>();
-            jobId = await scheduler.EnqueueAsync<DelayJobWithInput, DelayJobInputWithInput>(
-                new DelayJobInputWithInput(2000));
+            jobId = await scheduler.EnqueueAsync<DelayJobWithInput, DelayInput>(
+                new DelayInput(2000));
             await host1.StopAsync();
         }
 
@@ -174,8 +174,8 @@ public sealed class SqlServerRecoveryTests
 
         for (int i = 0; i < 3; i++)
         {
-            jobIds.Add(await scheduler.EnqueueAsync<SuccessJobWithInput, SuccessJobInput>(
-                new SuccessJobInput($"recover-{i}")));
+            jobIds.Add(await scheduler.EnqueueAsync<SuccessJobWithInput, SuccessInput>(
+                new SuccessInput($"recover-{i}")));
         }
 
         await host.StopAsync();
@@ -231,10 +231,10 @@ public sealed class SqlServerRecoveryTests
         {
             await host1.StartAsync();
             var scheduler = host1.Services.GetRequiredService<IScheduler>();
-            jobId1 = await scheduler.EnqueueAsync<SuccessJobWithInput, SuccessJobInput>(
-                new SuccessJobInput("concurrent-1"));
-            jobId2 = await scheduler.EnqueueAsync<SuccessJobWithInput, SuccessJobInput>(
-                new SuccessJobInput("concurrent-2"));
+            jobId1 = await scheduler.EnqueueAsync<SuccessJobWithInput, SuccessInput>(
+                new SuccessInput("concurrent-1"));
+            jobId2 = await scheduler.EnqueueAsync<SuccessJobWithInput, SuccessInput>(
+                new SuccessInput("concurrent-2"));
             await host1.StopAsync();
         }
 

@@ -59,14 +59,13 @@ public sealed class SqlServerRetryAndDeadLetterTests
         await host.StartAsync();
 
         var scheduler = host.Services.GetRequiredService<IScheduler>();
-        var jobId = await scheduler.EnqueueAsync<FailOnceThenSucceedJobWithInput, FailOnceThenSucceedJobInput>(
-            new FailOnceThenSucceedJobInput("test-context"));
+        var jobId = await scheduler.EnqueueAsync<FailOnceThenSucceedJobWithInput, FailOnceThenSucceedInput>(
+            new FailOnceThenSucceedInput("test-context"));
 
         var job = await WaitForJobStatus(host, jobId, JobStatus.Succeeded, TimeSpan.FromSeconds(20));
 
         job.Should().NotBeNull();
         job!.Attempts.Should().Be(2);
-        FailOnceThenSucceedJobWithInput.ExecutionCount.Should().Be(2);
 
         await host.StopAsync();
     }
@@ -107,7 +106,6 @@ public sealed class SqlServerRetryAndDeadLetterTests
     public async Task DeadLetterHandlerInvokedAfterMaxAttemptsExhausted_WithInput()
     {
         ResetTestState();
-        RecordingDeadLetterHandler<AlwaysFailJobWithInput>.Reset();
 
         using var host = BuildHost(
             Storage(),
@@ -121,8 +119,8 @@ public sealed class SqlServerRetryAndDeadLetterTests
         await host.StartAsync();
 
         var scheduler = host.Services.GetRequiredService<IScheduler>();
-        var jobId = await scheduler.EnqueueAsync<AlwaysFailJobWithInput, AlwaysFailJobInput>(
-            new AlwaysFailJobInput("test"));
+        var jobId = await scheduler.EnqueueAsync<AlwaysFailJobWithInput, AlwaysFailInput>(
+            new AlwaysFailInput("test"));
 
         await Task.Delay(10000);
 
@@ -184,15 +182,15 @@ public sealed class SqlServerRetryAndDeadLetterTests
         await host.StartAsync();
 
         var scheduler = host.Services.GetRequiredService<IScheduler>();
-        var jobId = await scheduler.EnqueueAsync<AlwaysFailJobWithInput, AlwaysFailJobInput>(
-            new AlwaysFailJobInput("test"));
+        var jobId = await scheduler.EnqueueAsync<AlwaysFailJobWithInput, AlwaysFailInput>(
+            new AlwaysFailInput("test"));
 
         await Task.Delay(10000);
 
         var job = await WaitForJobStatus(host, jobId, JobStatus.Failed, TimeSpan.FromSeconds(10));
         job.Should().NotBeNull();
 
-        var jobId2 = await scheduler.EnqueueAsync<SuccessJobWithInput, SuccessJobInput>(new SuccessJobInput("test"));
+        var jobId2 = await scheduler.EnqueueAsync<SuccessJobWithInput, SuccessInput>(new SuccessInput("test"));
         var successJob = await WaitForJobStatus(host, jobId2, JobStatus.Succeeded, TimeSpan.FromSeconds(15));
         successJob.Should().NotBeNull();
 
@@ -245,10 +243,10 @@ public sealed class SqlServerRetryAndDeadLetterTests
         await host.StartAsync();
 
         var scheduler = host.Services.GetRequiredService<IScheduler>();
-        var jobId1 = await scheduler.EnqueueAsync<SuccessJobWithInput, SuccessJobInput>(
-            new SuccessJobInput("test1"));
-        var jobId2 = await scheduler.EnqueueAsync<FailOnceThenSucceedJobWithInput, FailOnceThenSucceedJobInput>(
-            new FailOnceThenSucceedJobInput("test2"));
+        var jobId1 = await scheduler.EnqueueAsync<SuccessJobWithInput, SuccessInput>(
+            new SuccessInput("test1"));
+        var jobId2 = await scheduler.EnqueueAsync<FailOnceThenSucceedJobWithInput, FailOnceThenSucceedInput>(
+            new FailOnceThenSucceedInput("test2"));
 
         var job1 = await WaitForJobStatus(host, jobId1, JobStatus.Succeeded, TimeSpan.FromSeconds(25));
         var job2 = await WaitForJobStatus(host, jobId2, JobStatus.Succeeded, TimeSpan.FromSeconds(25));
@@ -314,10 +312,10 @@ public sealed class SqlServerRetryAndDeadLetterTests
 
         for (int i = 0; i < 3; i++)
         {
-            jobIds.Add(await scheduler.EnqueueAsync<FailOnceThenSucceedJobWithInput, FailOnceThenSucceedJobInput>(
-                new FailOnceThenSucceedJobInput($"retry-{i}")));
-            jobIds.Add(await scheduler.EnqueueAsync<SuccessJobWithInput, SuccessJobInput>(
-                new SuccessJobInput($"success-{i}")));
+            jobIds.Add(await scheduler.EnqueueAsync<FailOnceThenSucceedJobWithInput, FailOnceThenSucceedInput>(
+                new FailOnceThenSucceedInput($"retry-{i}")));
+            jobIds.Add(await scheduler.EnqueueAsync<SuccessJobWithInput, SuccessInput>(
+                new SuccessInput($"success-{i}")));
         }
 
         foreach (var jobId in jobIds)

@@ -61,8 +61,8 @@ public sealed class RedisDeadlineTests
         await host.StartAsync();
 
         var scheduler = host.Services.GetRequiredService<IScheduler>();
-        var jobId = await scheduler.EnqueueAsync<SuccessJobWithInput, SuccessJobInput>(
-            new SuccessJobInput("test"),
+        var jobId = await scheduler.EnqueueAsync<SuccessJobWithInput, SuccessInput>(
+            new SuccessInput("test"),
             deadlineAfter: TimeSpan.FromMilliseconds(100));
 
         await Task.Delay(8000);
@@ -109,8 +109,8 @@ public sealed class RedisDeadlineTests
         await host.StartAsync();
 
         var scheduler = host.Services.GetRequiredService<IScheduler>();
-        var jobId = await scheduler.EnqueueAsync<SuccessJobWithInput, SuccessJobInput>(
-            new SuccessJobInput("test"),
+        var jobId = await scheduler.EnqueueAsync<SuccessJobWithInput, SuccessInput>(
+            new SuccessInput("test"),
             deadlineAfter: TimeSpan.FromSeconds(30));
 
         var job = await WaitForJobStatus(host, jobId, JobStatus.Succeeded, TimeSpan.FromSeconds(15));
@@ -159,8 +159,8 @@ public sealed class RedisDeadlineTests
         await host.StartAsync();
 
         var scheduler = host.Services.GetRequiredService<IScheduler>();
-        var jobId = await scheduler.EnqueueAsync<AlwaysFailJobWithInput, AlwaysFailJobInput>(
-            new AlwaysFailJobInput("test"),
+        var jobId = await scheduler.EnqueueAsync<AlwaysFailJobWithInput, AlwaysFailInput>(
+            new AlwaysFailInput("test"),
             deadlineAfter: TimeSpan.FromMilliseconds(150));
 
         await Task.Delay(8000);
@@ -210,11 +210,11 @@ public sealed class RedisDeadlineTests
         await host.StartAsync();
 
         var scheduler = host.Services.GetRequiredService<IScheduler>();
-        var jobId1 = await scheduler.EnqueueAsync<SuccessJobWithInput, SuccessJobInput>(
-            new SuccessJobInput("deadline-1"),
+        var jobId1 = await scheduler.EnqueueAsync<SuccessJobWithInput, SuccessInput>(
+            new SuccessInput("deadline-1"),
             deadlineAfter: TimeSpan.FromSeconds(30));
-        var jobId2 = await scheduler.EnqueueAsync<SuccessJobWithInput, SuccessJobInput>(
-            new SuccessJobInput("deadline-2"),
+        var jobId2 = await scheduler.EnqueueAsync<SuccessJobWithInput, SuccessInput>(
+            new SuccessInput("deadline-2"),
             deadlineAfter: TimeSpan.FromSeconds(30));
 
         var job1 = await WaitForJobStatus(host, jobId1, JobStatus.Succeeded, TimeSpan.FromSeconds(25));
@@ -272,8 +272,8 @@ public sealed class RedisDeadlineTests
 
         for (int i = 0; i < 6; i++)
         {
-            jobIds.Add(await scheduler.EnqueueAsync<SuccessJobWithInput, SuccessJobInput>(
-                new SuccessJobInput($"multi-deadline-{i}"),
+            jobIds.Add(await scheduler.EnqueueAsync<SuccessJobWithInput, SuccessInput>(
+                new SuccessInput($"multi-deadline-{i}"),
                 deadlineAfter: TimeSpan.FromSeconds(20)));
         }
 
