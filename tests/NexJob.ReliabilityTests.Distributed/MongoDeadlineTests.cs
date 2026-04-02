@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
 using NexJob;
 using NexJob.MongoDB;
@@ -22,14 +23,12 @@ public sealed class MongoDeadlineTests
     private Action<IServiceCollection> Storage() =>
         s => s.AddNexJobMongoDB(_fixture.ConnectionString, databaseName: "nexjob_reliability");
 
-    [Fact(Skip = "BUG: Deadline enforcement timing - jobs not transitioning to Expired status as expected")]
+    [Fact]
     public async Task JobNotExecutedAfterDeadline_NoInput()
     {
-        ResetTestState();
-
         using var host = BuildHost(
             Storage(),
-            s => s.AddTransient<SuccessJob>(),
+            s => s.AddTransient<SuccessJob>(sp => new SuccessJob(() => { }, sp.GetRequiredService<ILogger<SuccessJob>>())),
             workers: 1,
             pollingInterval: TimeSpan.FromMilliseconds(500));
 
@@ -47,14 +46,12 @@ public sealed class MongoDeadlineTests
         await host.StopAsync();
     }
 
-    [Fact(Skip = "BUG: Deadline enforcement timing - jobs not transitioning to Expired status as expected")]
+    [Fact]
     public async Task JobNotExecutedAfterDeadline_WithInput()
     {
-        ResetTestState();
-
         using var host = BuildHost(
             Storage(),
-            s => s.AddTransient<SuccessJobWithInput>(),
+            s => s.AddTransient<SuccessJobWithInput>(sp => new SuccessJobWithInput(() => { }, sp.GetRequiredService<ILogger<SuccessJobWithInput>>())),
             workers: 1,
             pollingInterval: TimeSpan.FromMilliseconds(500));
 
@@ -77,11 +74,9 @@ public sealed class MongoDeadlineTests
     [Fact]
     public async Task JobWithLongDeadlineExecutesNormally_NoInput()
     {
-        ResetTestState();
-
         using var host = BuildHost(
             Storage(),
-            s => s.AddTransient<SuccessJob>(),
+            s => s.AddTransient<SuccessJob>(sp => new SuccessJob(() => { }, sp.GetRequiredService<ILogger<SuccessJob>>())),
             workers: 1);
 
         await host.StartAsync();
@@ -99,11 +94,9 @@ public sealed class MongoDeadlineTests
     [Fact]
     public async Task JobWithLongDeadlineExecutesNormally_WithInput()
     {
-        ResetTestState();
-
         using var host = BuildHost(
             Storage(),
-            s => s.AddTransient<SuccessJobWithInput>(),
+            s => s.AddTransient<SuccessJobWithInput>(sp => new SuccessJobWithInput(() => { }, sp.GetRequiredService<ILogger<SuccessJobWithInput>>())),
             workers: 1);
 
         await host.StartAsync();
@@ -120,14 +113,12 @@ public sealed class MongoDeadlineTests
         await host.StopAsync();
     }
 
-    [Fact(Skip = "BUG: Deadline enforcement timing - jobs not transitioning to Expired status as expected")]
+    [Fact]
     public async Task ExpirationRespectedEvenAfterRetries_NoInput()
     {
-        ResetTestState();
-
         using var host = BuildHost(
             Storage(),
-            s => s.AddTransient<AlwaysFailJob>(),
+            s => s.AddTransient<AlwaysFailJob>(sp => new AlwaysFailJob(() => { }, sp.GetRequiredService<ILogger<AlwaysFailJob>>())),
             workers: 1,
             pollingInterval: TimeSpan.FromMilliseconds(500));
 
@@ -145,14 +136,12 @@ public sealed class MongoDeadlineTests
         await host.StopAsync();
     }
 
-    [Fact(Skip = "BUG: Deadline enforcement timing - jobs not transitioning to Expired status as expected")]
+    [Fact]
     public async Task ExpirationRespectedEvenAfterRetries_WithInput()
     {
-        ResetTestState();
-
         using var host = BuildHost(
             Storage(),
-            s => s.AddTransient<AlwaysFailJobWithInput>(),
+            s => s.AddTransient<AlwaysFailJobWithInput>(sp => new AlwaysFailJobWithInput(() => { }, sp.GetRequiredService<ILogger<AlwaysFailJobWithInput>>())),
             workers: 1,
             pollingInterval: TimeSpan.FromMilliseconds(500));
 
@@ -175,11 +164,9 @@ public sealed class MongoDeadlineTests
     [Fact]
     public async Task MultipleJobsWithDifferentDeadlines_NoInput()
     {
-        ResetTestState();
-
         using var host = BuildHost(
             Storage(),
-            s => s.AddTransient<SuccessJob>(),
+            s => s.AddTransient<SuccessJob>(sp => new SuccessJob(() => { }, sp.GetRequiredService<ILogger<SuccessJob>>())),
             workers: 2);
 
         await host.StartAsync();
@@ -200,11 +187,9 @@ public sealed class MongoDeadlineTests
     [Fact]
     public async Task MultipleJobsWithDifferentDeadlines_WithInput()
     {
-        ResetTestState();
-
         using var host = BuildHost(
             Storage(),
-            s => s.AddTransient<SuccessJobWithInput>(),
+            s => s.AddTransient<SuccessJobWithInput>(sp => new SuccessJobWithInput(() => { }, sp.GetRequiredService<ILogger<SuccessJobWithInput>>())),
             workers: 2);
 
         await host.StartAsync();
@@ -229,11 +214,9 @@ public sealed class MongoDeadlineTests
     [Fact]
     public async Task DeadlineEnforcementWithMultipleWorkers_NoInput()
     {
-        ResetTestState();
-
         using var host = BuildHost(
             Storage(),
-            s => s.AddTransient<SuccessJob>(),
+            s => s.AddTransient<SuccessJob>(sp => new SuccessJob(() => { }, sp.GetRequiredService<ILogger<SuccessJob>>())),
             workers: 3);
 
         await host.StartAsync();
@@ -258,11 +241,9 @@ public sealed class MongoDeadlineTests
     [Fact]
     public async Task DeadlineEnforcementWithMultipleWorkers_WithInput()
     {
-        ResetTestState();
-
         using var host = BuildHost(
             Storage(),
-            s => s.AddTransient<SuccessJobWithInput>(),
+            s => s.AddTransient<SuccessJobWithInput>(sp => new SuccessJobWithInput(() => { }, sp.GetRequiredService<ILogger<SuccessJobWithInput>>())),
             workers: 3);
 
         await host.StartAsync();

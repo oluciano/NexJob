@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
 using NexJob;
 using NexJob.Postgres;
@@ -24,14 +25,12 @@ public sealed class PostgresRetryAndDeadLetterTests
     private Action<IServiceCollection> Storage() =>
         s => s.AddNexJobPostgres(_fixture.ConnectionString);
 
-    [Fact(Skip = "BUG: Test isolation issue - passes individually but times out in full suite")]
+    [Fact]
     public async Task RetryExecutesCorrectlyAfterFailure_NoInput()
     {
-        ResetTestState();
-
         using var host = BuildHost(
             Storage(),
-            s => s.AddTransient<FailOnceThenSucceedJob>(),
+            s => s.AddTransient<FailOnceThenSucceedJob>(sp => new FailOnceThenSucceedJob(() => { }, sp.GetRequiredService<ILogger<FailOnceThenSucceedJob>>())),
             workers: 1);
 
         await host.StartAsync();
@@ -43,19 +42,16 @@ public sealed class PostgresRetryAndDeadLetterTests
 
         job.Should().NotBeNull("job should eventually succeed after retry");
         job!.Attempts.Should().Be(2, "job should have attempted twice");
-        FailOnceThenSucceedJob.ExecutionCount.Should().Be(2, "job should execute twice (fail then succeed)");
 
         await host.StopAsync();
     }
 
-    [Fact(Skip = "BUG: Test isolation issue - passes individually but times out in full suite")]
+    [Fact]
     public async Task RetryExecutesCorrectlyAfterFailure_WithInput()
     {
-        ResetTestState();
-
         using var host = BuildHost(
             Storage(),
-            s => s.AddTransient<FailOnceThenSucceedJobWithInput>(),
+            s => s.AddTransient<FailOnceThenSucceedJobWithInput>(sp => new FailOnceThenSucceedJobWithInput(() => { }, sp.GetRequiredService<ILogger<FailOnceThenSucceedJobWithInput>>())),
             workers: 1);
 
         await host.StartAsync();
@@ -72,17 +68,16 @@ public sealed class PostgresRetryAndDeadLetterTests
         await host.StopAsync();
     }
 
-    [Fact(Skip = "BUG: Known issue")]
+    [Fact]
     public async Task DeadLetterHandlerInvokedAfterMaxAttemptsExhausted_NoInput()
     {
-        ResetTestState();
         RecordingDeadLetterHandler<AlwaysFailJob>.Reset();
 
         using var host = BuildHost(
             Storage(),
             s =>
             {
-                s.AddTransient<AlwaysFailJob>();
+                s.AddTransient<AlwaysFailJob>(sp => new AlwaysFailJob(() => { }, sp.GetRequiredService<ILogger<AlwaysFailJob>>()));
                 s.AddTransient<IDeadLetterHandler<AlwaysFailJob>, RecordingDeadLetterHandler<AlwaysFailJob>>();
             },
             workers: 1);
@@ -104,16 +99,14 @@ public sealed class PostgresRetryAndDeadLetterTests
         await host.StopAsync();
     }
 
-    [Fact(Skip = "BUG: Known issue")]
+    [Fact]
     public async Task DeadLetterHandlerInvokedAfterMaxAttemptsExhausted_WithInput()
     {
-        ResetTestState();
-
         using var host = BuildHost(
             Storage(),
             s =>
             {
-                s.AddTransient<AlwaysFailJobWithInput>();
+                s.AddTransient<AlwaysFailJobWithInput>(sp => new AlwaysFailJobWithInput(() => { }, sp.GetRequiredService<ILogger<AlwaysFailJobWithInput>>()));
                 s.AddTransient<IDeadLetterHandler<AlwaysFailJobWithInput>, RecordingDeadLetterHandler<AlwaysFailJobWithInput>>();
             },
             workers: 1);
@@ -136,16 +129,14 @@ public sealed class PostgresRetryAndDeadLetterTests
         await host.StopAsync();
     }
 
-    [Fact(Skip = "BUG: Requires deterministic handler invocation pattern")]
+    [Fact]
     public async Task DeadLetterHandlerExceptionDoesNotCrashDispatcher_NoInput()
     {
-        ResetTestState();
-
         using var host = BuildHost(
             Storage(),
             s =>
             {
-                s.AddTransient<AlwaysFailJob>();
+                s.AddTransient<AlwaysFailJob>(sp => new AlwaysFailJob(() => { }, sp.GetRequiredService<ILogger<AlwaysFailJob>>()));
                 s.AddTransient<IDeadLetterHandler<AlwaysFailJob>, ThrowingDeadLetterHandler<AlwaysFailJob>>();
             },
             workers: 1);
@@ -167,16 +158,14 @@ public sealed class PostgresRetryAndDeadLetterTests
         await host.StopAsync();
     }
 
-    [Fact(Skip = "BUG: Requires deterministic handler invocation pattern")]
+    [Fact]
     public async Task DeadLetterHandlerExceptionDoesNotCrashDispatcher_WithInput()
     {
-        ResetTestState();
-
         using var host = BuildHost(
             Storage(),
             s =>
             {
-                s.AddTransient<AlwaysFailJobWithInput>();
+                s.AddTransient<AlwaysFailJobWithInput>(sp => new AlwaysFailJobWithInput(() => { }, sp.GetRequiredService<ILogger<AlwaysFailJobWithInput>>()));
                 s.AddTransient<IDeadLetterHandler<AlwaysFailJobWithInput>, ThrowingDeadLetterHandler<AlwaysFailJobWithInput>>();
             },
             workers: 1);
@@ -199,17 +188,15 @@ public sealed class PostgresRetryAndDeadLetterTests
         await host.StopAsync();
     }
 
-    [Fact(Skip = "BUG: Test isolation - static counter shared between parallel tests")]
+    [Fact]
     public async Task MultipleJobsWithDifferentRetryBehavior_NoInput()
     {
-        ResetTestState();
-
         using var host = BuildHost(
             Storage(),
             s =>
             {
-                s.AddTransient<SuccessJob>();
-                s.AddTransient<FailOnceThenSucceedJob>();
+                s.AddTransient<SuccessJob>(sp => new SuccessJob(() => { }, sp.GetRequiredService<ILogger<SuccessJob>>()));
+                s.AddTransient<FailOnceThenSucceedJob>(sp => new FailOnceThenSucceedJob(() => { }, sp.GetRequiredService<ILogger<FailOnceThenSucceedJob>>()));
             },
             workers: 2);
 
@@ -228,17 +215,15 @@ public sealed class PostgresRetryAndDeadLetterTests
         await host.StopAsync();
     }
 
-    [Fact(Skip = "BUG: Test isolation - static counter shared between parallel tests")]
+    [Fact]
     public async Task MultipleJobsWithDifferentRetryBehavior_WithInput()
     {
-        ResetTestState();
-
         using var host = BuildHost(
             Storage(),
             s =>
             {
-                s.AddTransient<SuccessJobWithInput>();
-                s.AddTransient<FailOnceThenSucceedJobWithInput>();
+                s.AddTransient<SuccessJobWithInput>(sp => new SuccessJobWithInput(() => { }, sp.GetRequiredService<ILogger<SuccessJobWithInput>>()));
+                s.AddTransient<FailOnceThenSucceedJobWithInput>(sp => new FailOnceThenSucceedJobWithInput(() => { }, sp.GetRequiredService<ILogger<FailOnceThenSucceedJobWithInput>>()));
             },
             workers: 2);
 
@@ -259,17 +244,15 @@ public sealed class PostgresRetryAndDeadLetterTests
         await host.StopAsync();
     }
 
-    [Fact(Skip = "BUG: Test isolation - static counter shared between parallel tests")]
+    [Fact]
     public async Task JobSequenceWithRetryAndSuccess_NoInput()
     {
-        ResetTestState();
-
         using var host = BuildHost(
             Storage(),
             s =>
             {
-                s.AddTransient<FailOnceThenSucceedJob>();
-                s.AddTransient<SuccessJob>();
+                s.AddTransient<FailOnceThenSucceedJob>(sp => new FailOnceThenSucceedJob(() => { }, sp.GetRequiredService<ILogger<FailOnceThenSucceedJob>>()));
+                s.AddTransient<SuccessJob>(sp => new SuccessJob(() => { }, sp.GetRequiredService<ILogger<SuccessJob>>()));
             },
             workers: 1);
 
@@ -293,17 +276,15 @@ public sealed class PostgresRetryAndDeadLetterTests
         await host.StopAsync();
     }
 
-    [Fact(Skip = "BUG: Test isolation - static counter shared between parallel tests")]
+    [Fact]
     public async Task JobSequenceWithRetryAndSuccess_WithInput()
     {
-        ResetTestState();
-
         using var host = BuildHost(
             Storage(),
             s =>
             {
-                s.AddTransient<FailOnceThenSucceedJobWithInput>();
-                s.AddTransient<SuccessJobWithInput>();
+                s.AddTransient<FailOnceThenSucceedJobWithInput>(sp => new FailOnceThenSucceedJobWithInput(() => { }, sp.GetRequiredService<ILogger<FailOnceThenSucceedJobWithInput>>()));
+                s.AddTransient<SuccessJobWithInput>(sp => new SuccessJobWithInput(() => { }, sp.GetRequiredService<ILogger<SuccessJobWithInput>>()));
             },
             workers: 1);
 

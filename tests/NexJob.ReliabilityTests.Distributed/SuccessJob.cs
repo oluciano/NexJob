@@ -8,16 +8,19 @@ namespace NexJob.ReliabilityTests.Distributed;
 /// </summary>
 internal sealed class SuccessJob : IJob
 {
-    public static int ExecutionCount { get; set; }
-
+    private readonly Action _onExecuted;
     private readonly ILogger<SuccessJob> _logger;
 
-    public SuccessJob(ILogger<SuccessJob> logger) => _logger = logger;
+    public SuccessJob(Action onExecuted, ILogger<SuccessJob> logger)
+    {
+        _onExecuted = onExecuted;
+        _logger = logger;
+    }
 
     public async Task ExecuteAsync(CancellationToken cancellationToken)
     {
-        ExecutionCount++;
-        _logger.LogInformation("SuccessJob executed (count: {Count})", ExecutionCount);
+        _logger.LogInformation("SuccessJob executed");
+        _onExecuted();
         await Task.CompletedTask;
     }
 }
@@ -27,16 +30,19 @@ internal sealed class SuccessJob : IJob
 /// </summary>
 internal sealed class AlwaysFailJob : IJob
 {
-    public static int ExecutionCount { get; set; }
-
+    private readonly Action _onExecuted;
     private readonly ILogger<AlwaysFailJob> _logger;
 
-    public AlwaysFailJob(ILogger<AlwaysFailJob> logger) => _logger = logger;
+    public AlwaysFailJob(Action onExecuted, ILogger<AlwaysFailJob> logger)
+    {
+        _onExecuted = onExecuted;
+        _logger = logger;
+    }
 
     public async Task ExecuteAsync(CancellationToken cancellationToken)
     {
-        ExecutionCount++;
-        _logger.LogInformation("AlwaysFailJob executing (count: {Count})", ExecutionCount);
+        _logger.LogInformation("AlwaysFailJob executing");
+        _onExecuted();
         await Task.CompletedTask;
         throw new InvalidOperationException("Job intentionally failed");
     }
@@ -47,16 +53,19 @@ internal sealed class AlwaysFailJob : IJob
 /// </summary>
 internal sealed class TrackingJob : IJob
 {
-    public static int ExecutionCount { get; set; }
-
+    private readonly Action _onExecuted;
     private readonly ILogger<TrackingJob> _logger;
 
-    public TrackingJob(ILogger<TrackingJob> logger) => _logger = logger;
+    public TrackingJob(Action onExecuted, ILogger<TrackingJob> logger)
+    {
+        _onExecuted = onExecuted;
+        _logger = logger;
+    }
 
     public async Task ExecuteAsync(CancellationToken cancellationToken)
     {
-        ExecutionCount++;
-        _logger.LogInformation("TrackingJob executed (count: {Count})", ExecutionCount);
+        _logger.LogInformation("TrackingJob executed");
+        _onExecuted();
         await Task.CompletedTask;
     }
 }
@@ -66,18 +75,21 @@ internal sealed class TrackingJob : IJob
 /// </summary>
 internal sealed class DelayJob : IJob
 {
-    public static int ExecutionCount { get; set; }
-
+    private readonly Action _onExecuted;
     private readonly ILogger<DelayJob> _logger;
 
-    public DelayJob(ILogger<DelayJob> logger) => _logger = logger;
+    public DelayJob(Action onExecuted, ILogger<DelayJob> logger)
+    {
+        _onExecuted = onExecuted;
+        _logger = logger;
+    }
 
     public async Task ExecuteAsync(CancellationToken cancellationToken)
     {
-        ExecutionCount++;
-        _logger.LogInformation("DelayJob executing (count: {Count})", ExecutionCount);
+        _logger.LogInformation("DelayJob executing");
         await Task.Delay(2000, cancellationToken);
         _logger.LogInformation("DelayJob completed");
+        _onExecuted();
     }
 }
 
@@ -86,24 +98,30 @@ internal sealed class DelayJob : IJob
 /// </summary>
 internal sealed class FailOnceThenSucceedJob : IJob
 {
-    public static int ExecutionCount { get; set; }
-
+    private readonly Action _onExecuted;
     private readonly ILogger<FailOnceThenSucceedJob> _logger;
 
-    public FailOnceThenSucceedJob(ILogger<FailOnceThenSucceedJob> logger) => _logger = logger;
+    private int _attempt = 0;
+
+    public FailOnceThenSucceedJob(Action onExecuted, ILogger<FailOnceThenSucceedJob> logger)
+    {
+        _onExecuted = onExecuted;
+        _logger = logger;
+    }
 
     public async Task ExecuteAsync(CancellationToken cancellationToken)
     {
-        ExecutionCount++;
-        _logger.LogInformation("FailOnceThenSucceedJob executing (attempt {Attempt})", ExecutionCount);
+        _attempt++;
+        _logger.LogInformation("FailOnceThenSucceedJob executing (attempt {Attempt})", _attempt);
 
-        if (ExecutionCount == 1)
+        if (_attempt == 1)
         {
-            await Task.CompletedTask;
+            _onExecuted();
             throw new InvalidOperationException("First attempt fails intentionally");
         }
 
         await Task.CompletedTask;
+        _onExecuted();
     }
 }
 
@@ -112,24 +130,27 @@ internal sealed class FailOnceThenSucceedJob : IJob
 /// </summary>
 internal sealed class CancellableJob : IJob
 {
-    public static int CancellationCount { get; set; }
-
+    private readonly Action _onExecuted;
     private readonly ILogger<CancellableJob> _logger;
 
-    public CancellableJob(ILogger<CancellableJob> logger) => _logger = logger;
+    public CancellableJob(Action onExecuted, ILogger<CancellableJob> logger)
+    {
+        _onExecuted = onExecuted;
+        _logger = logger;
+    }
 
     public async Task ExecuteAsync(CancellationToken cancellationToken)
     {
         try
         {
             _logger.LogInformation("CancellableJob started");
-            await Task.Delay(5000, cancellationToken); // Long delay to be cancellable
+            await Task.Delay(5000, cancellationToken);
             _logger.LogInformation("CancellableJob completed");
+            _onExecuted();
         }
         catch (OperationCanceledException)
         {
-            CancellationCount++;
-            _logger.LogInformation("CancellableJob cancelled (count: {Count})", CancellationCount);
+            _logger.LogInformation("CancellableJob cancelled");
             throw;
         }
     }
@@ -140,18 +161,21 @@ internal sealed class CancellableJob : IJob
 /// </summary>
 internal sealed class DiagnosticJob : IJob
 {
-    public static int ExecutionCount { get; set; }
-
+    private readonly Action _onExecuted;
     private readonly ILogger<DiagnosticJob> _logger;
 
-    public DiagnosticJob(ILogger<DiagnosticJob> logger) => _logger = logger;
+    public DiagnosticJob(Action onExecuted, ILogger<DiagnosticJob> logger)
+    {
+        _onExecuted = onExecuted;
+        _logger = logger;
+    }
 
     public async Task ExecuteAsync(CancellationToken cancellationToken)
     {
-        ExecutionCount++;
-        _logger.LogInformation("DiagnosticJob executing (count: {Count})", ExecutionCount);
+        _logger.LogInformation("DiagnosticJob executing");
         _logger.LogWarning("This is a warning log");
         _logger.LogError("This is an error log");
+        _onExecuted();
         await Task.CompletedTask;
     }
 }

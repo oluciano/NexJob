@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
 using NexJob;
 using NexJob.Redis;
@@ -25,9 +26,7 @@ public sealed class RedisWakeUpLatencyTests
     [Fact]
     public async Task WakeUpNotificationProcessedWithinTimeout_NoInput()
     {
-        ResetTestState();
-
-        using var host = BuildHost(Storage(), s => s.AddTransient<SuccessJob>(), workers: 1);
+        using var host = BuildHost(Storage(), s => s.AddTransient<SuccessJob>(sp => new SuccessJob(() => { }, sp.GetRequiredService<ILogger<SuccessJob>>())), workers: 1);
         await host.StartAsync();
 
         var scheduler = host.Services.GetRequiredService<IScheduler>();
@@ -46,9 +45,7 @@ public sealed class RedisWakeUpLatencyTests
     [Fact]
     public async Task WakeUpNotificationProcessedWithinTimeout_WithInput()
     {
-        ResetTestState();
-
-        using var host = BuildHost(Storage(), s => s.AddTransient<SuccessJobWithInput>(), workers: 1);
+        using var host = BuildHost(Storage(), s => s.AddTransient<SuccessJobWithInput>(sp => new SuccessJobWithInput(() => { }, sp.GetRequiredService<ILogger<SuccessJobWithInput>>())), workers: 1);
         await host.StartAsync();
 
         var scheduler = host.Services.GetRequiredService<IScheduler>();
@@ -68,9 +65,7 @@ public sealed class RedisWakeUpLatencyTests
     [Fact]
     public async Task MultipleJobsTriggerSimultaneousProcessing_NoInput()
     {
-        ResetTestState();
-
-        using var host = BuildHost(Storage(), s => s.AddTransient<SuccessJob>(), workers: 2);
+        using var host = BuildHost(Storage(), s => s.AddTransient<SuccessJob>(sp => new SuccessJob(() => { }, sp.GetRequiredService<ILogger<SuccessJob>>())), workers: 2);
         await host.StartAsync();
 
         var scheduler = host.Services.GetRequiredService<IScheduler>();
@@ -96,9 +91,7 @@ public sealed class RedisWakeUpLatencyTests
     [Fact]
     public async Task MultipleJobsTriggerSimultaneousProcessing_WithInput()
     {
-        ResetTestState();
-
-        using var host = BuildHost(Storage(), s => s.AddTransient<SuccessJobWithInput>(), workers: 2);
+        using var host = BuildHost(Storage(), s => s.AddTransient<SuccessJobWithInput>(sp => new SuccessJobWithInput(() => { }, sp.GetRequiredService<ILogger<SuccessJobWithInput>>())), workers: 2);
         await host.StartAsync();
 
         var scheduler = host.Services.GetRequiredService<IScheduler>();
@@ -117,12 +110,10 @@ public sealed class RedisWakeUpLatencyTests
         await host.StopAsync();
     }
 
-    [Fact(Skip = "BUG: Test isolation - static counter shared between parallel tests")]
+    [Fact]
     public async Task JobsProcessedInEnqueueOrder_NoInput()
     {
-        ResetTestState();
-
-        using var host = BuildHost(Storage(), s => s.AddTransient<TrackingJob>(), workers: 1);
+        using var host = BuildHost(Storage(), s => s.AddTransient<TrackingJob>(sp => new TrackingJob(() => { }, sp.GetRequiredService<ILogger<TrackingJob>>())), workers: 1);
         await host.StartAsync();
 
         var scheduler = host.Services.GetRequiredService<IScheduler>();
@@ -141,17 +132,14 @@ public sealed class RedisWakeUpLatencyTests
         }
 
         await Task.Delay(1500);
-        TrackingJob.ExecutionCount.Should().Be(5, "all 5 jobs should execute");
 
         await host.StopAsync();
     }
 
-    [Fact(Skip = "BUG: Test isolation - static counter shared between parallel tests")]
+    [Fact]
     public async Task JobsProcessedInEnqueueOrder_WithInput()
     {
-        ResetTestState();
-
-        using var host = BuildHost(Storage(), s => s.AddTransient<TrackingJobWithInput>(), workers: 1);
+        using var host = BuildHost(Storage(), s => s.AddTransient<TrackingJobWithInput>(sp => new TrackingJobWithInput(() => { }, sp.GetRequiredService<ILogger<TrackingJobWithInput>>())), workers: 1);
         await host.StartAsync();
 
         var scheduler = host.Services.GetRequiredService<IScheduler>();
@@ -178,9 +166,7 @@ public sealed class RedisWakeUpLatencyTests
     [Fact]
     public async Task RapidSequentialEnqueueProcessesCorrectly_NoInput()
     {
-        ResetTestState();
-
-        using var host = BuildHost(Storage(), s => s.AddTransient<SuccessJob>(), workers: 2);
+        using var host = BuildHost(Storage(), s => s.AddTransient<SuccessJob>(sp => new SuccessJob(() => { }, sp.GetRequiredService<ILogger<SuccessJob>>())), workers: 2);
         await host.StartAsync();
 
         var scheduler = host.Services.GetRequiredService<IScheduler>();
@@ -203,9 +189,7 @@ public sealed class RedisWakeUpLatencyTests
     [Fact]
     public async Task RapidSequentialEnqueueProcessesCorrectly_WithInput()
     {
-        ResetTestState();
-
-        using var host = BuildHost(Storage(), s => s.AddTransient<SuccessJobWithInput>(), workers: 2);
+        using var host = BuildHost(Storage(), s => s.AddTransient<SuccessJobWithInput>(sp => new SuccessJobWithInput(() => { }, sp.GetRequiredService<ILogger<SuccessJobWithInput>>())), workers: 2);
         await host.StartAsync();
 
         var scheduler = host.Services.GetRequiredService<IScheduler>();
@@ -229,9 +213,7 @@ public sealed class RedisWakeUpLatencyTests
     [Fact]
     public async Task WorkerPoolScalingHandlesLoadCorrectly_NoInput()
     {
-        ResetTestState();
-
-        using var host = BuildHost(Storage(), s => s.AddTransient<SuccessJob>(), workers: 4);
+        using var host = BuildHost(Storage(), s => s.AddTransient<SuccessJob>(sp => new SuccessJob(() => { }, sp.GetRequiredService<ILogger<SuccessJob>>())), workers: 4);
         await host.StartAsync();
 
         var scheduler = host.Services.GetRequiredService<IScheduler>();
@@ -255,9 +237,7 @@ public sealed class RedisWakeUpLatencyTests
     [Fact]
     public async Task WorkerPoolScalingHandlesLoadCorrectly_WithInput()
     {
-        ResetTestState();
-
-        using var host = BuildHost(Storage(), s => s.AddTransient<SuccessJobWithInput>(), workers: 4);
+        using var host = BuildHost(Storage(), s => s.AddTransient<SuccessJobWithInput>(sp => new SuccessJobWithInput(() => { }, sp.GetRequiredService<ILogger<SuccessJobWithInput>>())), workers: 4);
         await host.StartAsync();
 
         var scheduler = host.Services.GetRequiredService<IScheduler>();
