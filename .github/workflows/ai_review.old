@@ -17,3 +17,5 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CONFIG.MODEL: "gemini-1.5-flash"
+          CONFIG.IGNORE_PATHS: ["**/bin/**", "**/obj/**", "**/migrations/**", "*.dockerfile", "docker-compose.yml"]
+          PR_REVIEWS.INLINE_CODE_COMMENTS: true

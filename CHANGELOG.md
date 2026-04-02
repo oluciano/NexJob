@@ -9,6 +9,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 ### Changed
+- **AI execution system migrated to `ai-method/`** — modular, token-efficient framework replaces monolithic `prompts/` folder. Load only what each task needs (200–3000 tokens) instead of all-or-nothing (5000–8000 tokens). See `ai-method/README.md` for full documentation.
 
 ## [0.6.0] — April 2026
 

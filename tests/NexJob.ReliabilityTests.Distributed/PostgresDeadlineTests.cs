@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using NexJob;
 using NexJob.Postgres;
 using Xunit;
@@ -22,14 +23,12 @@ public sealed class PostgresDeadlineTests
     private Action<IServiceCollection> Storage() =>
         s => s.AddNexJobPostgres(_fixture.ConnectionString);
 
-    [Fact(Skip = "BUG: Deadline enforcement timing - jobs not transitioning to Expired status as expected")]
+    [Fact]
     public async Task JobNotExecutedAfterDeadline_NoInput()
     {
-        ResetTestState();
-
         using var host = BuildHost(
             Storage(),
-            s => s.AddTransient<SuccessJob>(),
+            s => s.AddTransient<SuccessJob>(sp => new SuccessJob(() => { }, sp.GetRequiredService<ILogger<SuccessJob>>())),
             workers: 1,
             pollingInterval: TimeSpan.FromMilliseconds(500));
 
@@ -47,22 +46,20 @@ public sealed class PostgresDeadlineTests
         await host.StopAsync();
     }
 
-    [Fact(Skip = "BUG: Deadline enforcement timing - jobs not transitioning to Expired status as expected")]
+    [Fact]
     public async Task JobNotExecutedAfterDeadline_WithInput()
     {
-        ResetTestState();
-
         using var host = BuildHost(
             Storage(),
-            s => s.AddTransient<SuccessJobWithInput>(),
+            s => s.AddTransient<SuccessJobWithInput>(sp => new SuccessJobWithInput(() => { }, sp.GetRequiredService<ILogger<SuccessJobWithInput>>())),
             workers: 1,
             pollingInterval: TimeSpan.FromMilliseconds(500));
 
         await host.StartAsync();
 
         var scheduler = host.Services.GetRequiredService<IScheduler>();
-        var jobId = await scheduler.EnqueueAsync<SuccessJobWithInput, SuccessJobInput>(
-            new SuccessJobInput("test"),
+        var jobId = await scheduler.EnqueueAsync<SuccessJobWithInput, SuccessInput>(
+            new SuccessInput("test"),
             deadlineAfter: TimeSpan.FromMilliseconds(100));
 
         await Task.Delay(8000);
@@ -77,11 +74,9 @@ public sealed class PostgresDeadlineTests
     [Fact]
     public async Task JobWithLongDeadlineExecutesNormally_NoInput()
     {
-        ResetTestState();
-
         using var host = BuildHost(
             Storage(),
-            s => s.AddTransient<SuccessJob>(),
+            s => s.AddTransient<SuccessJob>(sp => new SuccessJob(() => { }, sp.GetRequiredService<ILogger<SuccessJob>>())),
             workers: 1);
 
         await host.StartAsync();
@@ -99,18 +94,16 @@ public sealed class PostgresDeadlineTests
     [Fact]
     public async Task JobWithLongDeadlineExecutesNormally_WithInput()
     {
-        ResetTestState();
-
         using var host = BuildHost(
             Storage(),
-            s => s.AddTransient<SuccessJobWithInput>(),
+            s => s.AddTransient<SuccessJobWithInput>(sp => new SuccessJobWithInput(() => { }, sp.GetRequiredService<ILogger<SuccessJobWithInput>>())),
             workers: 1);
 
         await host.StartAsync();
 
         var scheduler = host.Services.GetRequiredService<IScheduler>();
-        var jobId = await scheduler.EnqueueAsync<SuccessJobWithInput, SuccessJobInput>(
-            new SuccessJobInput("test"),
+        var jobId = await scheduler.EnqueueAsync<SuccessJobWithInput, SuccessInput>(
+            new SuccessInput("test"),
             deadlineAfter: TimeSpan.FromSeconds(30));
 
         var job = await WaitForJobStatus(host, jobId, JobStatus.Succeeded, TimeSpan.FromSeconds(25));
@@ -120,14 +113,12 @@ public sealed class PostgresDeadlineTests
         await host.StopAsync();
     }
 
-    [Fact(Skip = "BUG: Deadline enforcement timing - jobs not transitioning to Expired status as expected")]
+    [Fact]
     public async Task ExpirationRespectedEvenAfterRetries_NoInput()
     {
-        ResetTestState();
-
         using var host = BuildHost(
             Storage(),
-            s => s.AddTransient<AlwaysFailJob>(),
+            s => s.AddTransient<AlwaysFailJob>(sp => new AlwaysFailJob(() => { }, sp.GetRequiredService<ILogger<AlwaysFailJob>>())),
             workers: 1,
             pollingInterval: TimeSpan.FromMilliseconds(500));
 
@@ -145,22 +136,20 @@ public sealed class PostgresDeadlineTests
         await host.StopAsync();
     }
 
-    [Fact(Skip = "BUG: Deadline enforcement timing - jobs not transitioning to Expired status as expected")]
+    [Fact]
     public async Task ExpirationRespectedEvenAfterRetries_WithInput()
     {
-        ResetTestState();
-
         using var host = BuildHost(
             Storage(),
-            s => s.AddTransient<AlwaysFailJobWithInput>(),
+            s => s.AddTransient<AlwaysFailJobWithInput>(sp => new AlwaysFailJobWithInput(() => { }, sp.GetRequiredService<ILogger<AlwaysFailJobWithInput>>())),
             workers: 1,
             pollingInterval: TimeSpan.FromMilliseconds(500));
 
         await host.StartAsync();
 
         var scheduler = host.Services.GetRequiredService<IScheduler>();
-        var jobId = await scheduler.EnqueueAsync<AlwaysFailJobWithInput, AlwaysFailJobInput>(
-            new AlwaysFailJobInput("test"),
+        var jobId = await scheduler.EnqueueAsync<AlwaysFailJobWithInput, AlwaysFailInput>(
+            new AlwaysFailInput("test"),
             deadlineAfter: TimeSpan.FromMilliseconds(150));
 
         await Task.Delay(8000);
@@ -175,11 +164,9 @@ public sealed class PostgresDeadlineTests
     [Fact]
     public async Task MultipleJobsWithDifferentDeadlines_NoInput()
     {
-        ResetTestState();
-
         using var host = BuildHost(
             Storage(),
-            s => s.AddTransient<SuccessJob>(),
+            s => s.AddTransient<SuccessJob>(sp => new SuccessJob(() => { }, sp.GetRequiredService<ILogger<SuccessJob>>())),
             workers: 2);
 
         await host.StartAsync();
@@ -200,21 +187,19 @@ public sealed class PostgresDeadlineTests
     [Fact]
     public async Task MultipleJobsWithDifferentDeadlines_WithInput()
     {
-        ResetTestState();
-
         using var host = BuildHost(
             Storage(),
-            s => s.AddTransient<SuccessJobWithInput>(),
+            s => s.AddTransient<SuccessJobWithInput>(sp => new SuccessJobWithInput(() => { }, sp.GetRequiredService<ILogger<SuccessJobWithInput>>())),
             workers: 2);
 
         await host.StartAsync();
 
         var scheduler = host.Services.GetRequiredService<IScheduler>();
-        var jobId1 = await scheduler.EnqueueAsync<SuccessJobWithInput, SuccessJobInput>(
-            new SuccessJobInput("deadline-1"),
+        var jobId1 = await scheduler.EnqueueAsync<SuccessJobWithInput, SuccessInput>(
+            new SuccessInput("deadline-1"),
             deadlineAfter: TimeSpan.FromSeconds(30));
-        var jobId2 = await scheduler.EnqueueAsync<SuccessJobWithInput, SuccessJobInput>(
-            new SuccessJobInput("deadline-2"),
+        var jobId2 = await scheduler.EnqueueAsync<SuccessJobWithInput, SuccessInput>(
+            new SuccessInput("deadline-2"),
             deadlineAfter: TimeSpan.FromSeconds(30));
 
         var job1 = await WaitForJobStatus(host, jobId1, JobStatus.Succeeded, TimeSpan.FromSeconds(25));
@@ -229,11 +214,9 @@ public sealed class PostgresDeadlineTests
     [Fact]
     public async Task DeadlineEnforcementWithMultipleWorkers_NoInput()
     {
-        ResetTestState();
-
         using var host = BuildHost(
             Storage(),
-            s => s.AddTransient<SuccessJob>(),
+            s => s.AddTransient<SuccessJob>(sp => new SuccessJob(() => { }, sp.GetRequiredService<ILogger<SuccessJob>>())),
             workers: 3);
 
         await host.StartAsync();
@@ -258,11 +241,9 @@ public sealed class PostgresDeadlineTests
     [Fact]
     public async Task DeadlineEnforcementWithMultipleWorkers_WithInput()
     {
-        ResetTestState();
-
         using var host = BuildHost(
             Storage(),
-            s => s.AddTransient<SuccessJobWithInput>(),
+            s => s.AddTransient<SuccessJobWithInput>(sp => new SuccessJobWithInput(() => { }, sp.GetRequiredService<ILogger<SuccessJobWithInput>>())),
             workers: 3);
 
         await host.StartAsync();
@@ -272,8 +253,8 @@ public sealed class PostgresDeadlineTests
 
         for (int i = 0; i < 6; i++)
         {
-            jobIds.Add(await scheduler.EnqueueAsync<SuccessJobWithInput, SuccessJobInput>(
-                new SuccessJobInput($"multi-deadline-{i}"),
+            jobIds.Add(await scheduler.EnqueueAsync<SuccessJobWithInput, SuccessInput>(
+                new SuccessInput($"multi-deadline-{i}"),
                 deadlineAfter: TimeSpan.FromSeconds(20)));
         }
 

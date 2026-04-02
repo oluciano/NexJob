@@ -83,27 +83,11 @@ public abstract class DistributedReliabilityTestBase
     }
 
     /// <summary>
-    /// Resets all test job and handler static state.
+    /// Resets recording dead-letter handler state.
+    /// Job state is now instance-based via callbacks, no static reset needed.
     /// </summary>
     protected static void ResetTestState()
     {
-        SuccessJobWithInput.ExecutionCount = 0;
-        AlwaysFailJobWithInput.ExecutionCount = 0;
-        TrackingJobWithInput.ExecutionCount = 0;
-        FailOnceThenSucceedJobWithInput.ExecutionCount = 0;
-        CancellableJobWithInput.CancellationCount = 0;
-        DelayJobWithInput.ExecutionCount = 0;
-        DiagnosticJobWithInput.ExecutionCount = 0;
-
-        SuccessJob.ExecutionCount = 0;
-        AlwaysFailJob.ExecutionCount = 0;
-        TrackingJob.ExecutionCount = 0;
-        FailOnceThenSucceedJob.ExecutionCount = 0;
-        CancellableJob.CancellationCount = 0;
-        DelayJob.ExecutionCount = 0;
-        DiagnosticJob.ExecutionCount = 0;
-
         RecordingDeadLetterHandler<AlwaysFailJob>.Reset();
-        RecordingDeadLetterHandler<AlwaysFailJobWithInput>.Reset();
     }
 }
