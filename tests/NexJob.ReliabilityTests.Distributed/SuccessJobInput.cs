@@ -10,7 +10,7 @@ namespace NexJob.ReliabilityTests.Distributed;
 internal sealed record SuccessJobInput(string Label);
 
 /// <summary>
-/// Test job that always succeeds immediately (IJob<T> variant).
+/// Test job that always succeeds immediately (IJob.<T> variant).
 /// </summary>
 internal sealed class SuccessJobWithInput : IJob<SuccessJobInput>
 {
@@ -31,7 +31,7 @@ internal sealed class SuccessJobWithInput : IJob<SuccessJobInput>
 internal sealed record AlwaysFailJobInput(string Reason);
 
 /// <summary>
-/// Test job that always fails with InvalidOperationException (IJob<T> variant).
+/// Test job that always fails with InvalidOperationException (IJob.<T> variant).
 /// </summary>
 internal sealed class AlwaysFailJobWithInput : IJob<AlwaysFailJobInput>
 {
@@ -53,7 +53,7 @@ internal sealed class AlwaysFailJobWithInput : IJob<AlwaysFailJobInput>
 internal sealed record TrackingJobInput(Guid RunId);
 
 /// <summary>
-/// Test job that tracks execution count (IJob<T> variant).
+/// Test job that tracks execution count (IJob.<T> variant).
 /// </summary>
 internal sealed class TrackingJobWithInput : IJob<TrackingJobInput>
 {
@@ -74,7 +74,7 @@ internal sealed class TrackingJobWithInput : IJob<TrackingJobInput>
 internal sealed record DelayJobInputWithInput(int DelayMs);
 
 /// <summary>
-/// Test job with delay that can be cancelled (IJob<T> variant).
+/// Test job with delay that can be cancelled (IJob.<T> variant).
 /// </summary>
 internal sealed class DelayJobWithInput : IJob<DelayJobInputWithInput>
 {
@@ -96,7 +96,7 @@ internal sealed class DelayJobWithInput : IJob<DelayJobInputWithInput>
 internal sealed record FailOnceThenSucceedJobInput(string Context);
 
 /// <summary>
-/// Test job that fails on first attempt, succeeds on second (IJob<T> variant).
+/// Test job that fails on first attempt, succeeds on second (IJob.<T> variant).
 /// </summary>
 internal sealed class FailOnceThenSucceedJobWithInput : IJob<FailOnceThenSucceedJobInput>
 {
@@ -122,7 +122,7 @@ internal sealed class FailOnceThenSucceedJobWithInput : IJob<FailOnceThenSucceed
 }
 
 /// <summary>
-/// Test job that respects cancellation gracefully (IJob<T> variant).
+/// Test job that respects cancellation gracefully (IJob.<T> variant).
 /// </summary>
 internal sealed class CancellableJobWithInput : IJob<TrackingJobInput>
 {
@@ -152,7 +152,7 @@ internal sealed class CancellableJobWithInput : IJob<TrackingJobInput>
 internal sealed record DiagnosticJobInput(string Message);
 
 /// <summary>
-/// Test job that logs diagnostics (IJob<T> variant).
+/// Test job that logs diagnostics (IJob.<T> variant).
 /// </summary>
 internal sealed class DiagnosticJobWithInput : IJob<DiagnosticJobInput>
 {
