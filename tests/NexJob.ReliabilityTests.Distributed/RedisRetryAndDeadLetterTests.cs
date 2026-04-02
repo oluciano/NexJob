@@ -1,6 +1,6 @@
 using FluentAssertions;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using NexJob;
 using NexJob.Redis;
 using Xunit;

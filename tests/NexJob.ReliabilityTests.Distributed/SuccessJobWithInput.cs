@@ -4,7 +4,7 @@ using NexJob;
 namespace NexJob.ReliabilityTests.Distributed;
 
 /// <summary>
-/// Test job with input that always succeeds immediately (IJob<T> variant).
+/// Test job with input that always succeeds immediately (IJob.<T> variant).
 /// </summary>
 internal sealed class SuccessJobWithInput : IJob<SuccessInput>
 {
@@ -26,7 +26,7 @@ internal sealed class SuccessJobWithInput : IJob<SuccessInput>
 }
 
 /// <summary>
-/// Test job with input that always fails with InvalidOperationException (IJob<T> variant).
+/// Test job with input that always fails with InvalidOperationException (IJob.<T> variant).
 /// </summary>
 internal sealed class AlwaysFailJobWithInput : IJob<AlwaysFailInput>
 {
@@ -49,7 +49,7 @@ internal sealed class AlwaysFailJobWithInput : IJob<AlwaysFailInput>
 }
 
 /// <summary>
-/// Test job with input that tracks execution count (IJob<T> variant).
+/// Test job with input that tracks execution count (IJob.<T> variant).
 /// </summary>
 internal sealed class TrackingJobWithInput : IJob<TrackingInput>
 {
@@ -71,7 +71,7 @@ internal sealed class TrackingJobWithInput : IJob<TrackingInput>
 }
 
 /// <summary>
-/// Test job with input and delay that can be cancelled (IJob<T> variant).
+/// Test job with input and delay that can be cancelled (IJob.<T> variant).
 /// </summary>
 internal sealed class DelayJobWithInput : IJob<DelayInput>
 {
@@ -94,7 +94,7 @@ internal sealed class DelayJobWithInput : IJob<DelayInput>
 }
 
 /// <summary>
-/// Test job with input that fails on first attempt, succeeds on second (IJob<T> variant).
+/// Test job with input that fails on first attempt, succeeds on second (IJob.<T> variant).
 /// </summary>
 internal sealed class FailOnceThenSucceedJobWithInput : IJob<FailOnceThenSucceedInput>
 {
@@ -126,7 +126,7 @@ internal sealed class FailOnceThenSucceedJobWithInput : IJob<FailOnceThenSucceed
 }
 
 /// <summary>
-/// Test job with input that respects cancellation gracefully (IJob<T> variant).
+/// Test job with input that respects cancellation gracefully (IJob.<T> variant).
 /// </summary>
 internal sealed class CancellableJobWithInput : IJob<CancellableInput>
 {
@@ -157,7 +157,7 @@ internal sealed class CancellableJobWithInput : IJob<CancellableInput>
 }
 
 /// <summary>
-/// Test job with input that logs diagnostics (IJob<T> variant).
+/// Test job with input that logs diagnostics (IJob.<T> variant).
 /// </summary>
 internal sealed class DiagnosticJobWithInput : IJob<DiagnosticInput>
 {

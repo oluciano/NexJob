@@ -1,6 +1,6 @@
 using FluentAssertions;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using NexJob;
 using NexJob.SqlServer;
 using Xunit;
@@ -118,7 +118,7 @@ public sealed class SqlServerRecoveryTests
         await host.StopAsync();
     }
 
-    #pragma warning disable S2699
+#pragma warning disable S2699
 
     [Fact]
 

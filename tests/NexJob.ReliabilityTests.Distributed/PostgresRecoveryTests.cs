@@ -1,6 +1,6 @@
 using FluentAssertions;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using NexJob;
 using NexJob.Postgres;
 using Xunit;
@@ -119,7 +119,7 @@ public sealed class PostgresRecoveryTests
         await host.StopAsync();
     }
 
-    #pragma warning disable S2699
+#pragma warning disable S2699
 
     [Fact]
 

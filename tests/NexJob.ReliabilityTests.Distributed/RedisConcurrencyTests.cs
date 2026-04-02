@@ -1,6 +1,6 @@
 using FluentAssertions;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using NexJob;
 using NexJob.Redis;
 using Xunit;
@@ -66,7 +66,7 @@ public sealed class RedisConcurrencyTests
         await host.StopAsync();
     }
 
-    #pragma warning disable S2699
+#pragma warning disable S2699
 
     [Fact]
 
@@ -90,7 +90,7 @@ public sealed class RedisConcurrencyTests
         await host.StopAsync();
     }
 
-    #pragma warning disable S2699
+#pragma warning disable S2699
 
     [Fact]
 
@@ -113,7 +113,7 @@ public sealed class RedisConcurrencyTests
         await host.StopAsync();
     }
 
-    #pragma warning disable S2699
+#pragma warning disable S2699
 
     [Fact]
 
@@ -139,7 +139,7 @@ public sealed class RedisConcurrencyTests
         await host.StopAsync();
     }
 
-    #pragma warning disable S2699
+#pragma warning disable S2699
 
     [Fact]
 
