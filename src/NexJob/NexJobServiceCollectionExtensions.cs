@@ -72,6 +72,8 @@ public static class NexJobServiceCollectionExtensions
     /// <summary>
     /// Scans <paramref name="assembly"/> for all non-abstract classes implementing
     /// <see cref="IJob{TInput}"/> or <see cref="IJob"/> and registers each one as <c>Transient</c>.
+    /// Each found type is also registered in the <see cref="NexJobJobRegistry"/> for
+    /// configuration-based job resolution.
     /// </summary>
     /// <param name="services">The service collection to configure.</param>
     /// <param name="assembly">The assembly to scan.</param>
@@ -94,9 +96,11 @@ public static class NexJobServiceCollectionExtensions
                     Array.Exists(t.GetInterfaces(), i => i == jobSimpleInterface)
                 ));
 
+        var registry = GetOrCreateRegistry(services);
         foreach (var jobType in jobTypes)
         {
             services.TryAddTransient(jobType);
+            registry.Register(jobType);
         }
 
         return services;
@@ -144,6 +148,7 @@ public static class NexJobServiceCollectionExtensions
         services.AddSingleton(options);
         services.TryAddSingleton<IStorageProvider, InMemoryStorageProvider>();
         services.TryAddSingleton<IRuntimeSettingsStore, InMemoryRuntimeSettingsStore>();
+        GetOrCreateRegistry(services);  // Ensure registry is registered
         services.AddSingleton<JobWakeUpChannel>();
         services.AddSingleton<IScheduler, DefaultScheduler>();
         services.AddSingleton<ThrottleRegistry>();
@@ -169,5 +174,20 @@ public static class NexJobServiceCollectionExtensions
                 "Do not resolve it outside of an IJob<TInput>.ExecuteAsync call."));
 
         return services;
+    }
+
+    private static NexJobJobRegistry GetOrCreateRegistry(IServiceCollection services)
+    {
+        var existing = services
+            .FirstOrDefault(d => d.ServiceType == typeof(NexJobJobRegistry)
+                              && d.ImplementationInstance != null);
+        if (existing?.ImplementationInstance is NexJobJobRegistry reg)
+        {
+            return reg;
+        }
+
+        var registry = new NexJobJobRegistry();
+        services.AddSingleton(registry);
+        return registry;
     }
 }

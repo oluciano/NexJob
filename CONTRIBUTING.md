@@ -44,6 +44,8 @@ src/
 tests/
   NexJob.Tests/
   NexJob.IntegrationTests/
+  NexJob.ReliabilityTests/
+  NexJob.ReliabilityTests.Distributed/
 
 samples/
   NexJob.Sample.WebApi/
@@ -60,9 +62,67 @@ dotnet test tests/NexJob.Tests/
 # Integration tests (requires Docker)
 dotnet test tests/NexJob.IntegrationTests/
 
+# Distributed reliability tests (requires Docker)
+# Runs all scenarios across real storage providers via Testcontainers
+dotnet test tests/NexJob.ReliabilityTests.Distributed -c Release --verbosity normal
+
+# Single provider reliability tests
+dotnet test tests/NexJob.ReliabilityTests.Distributed -c Release \
+  --filter "Category=Reliability.Distributed&ClassName~Postgres"
+
+dotnet test tests/NexJob.ReliabilityTests.Distributed -c Release \
+  --filter "Category=Reliability.Distributed&ClassName~SqlServer"
+
+dotnet test tests/NexJob.ReliabilityTests.Distributed -c Release \
+  --filter "Category=Reliability.Distributed&ClassName~Redis"
+
+dotnet test tests/NexJob.ReliabilityTests.Distributed -c Release \
+  --filter "Category=Reliability.Distributed&ClassName~Mongo"
+
+# Single test category across all providers
+dotnet test tests/NexJob.ReliabilityTests.Distributed -c Release \
+  --filter "Category=Reliability.Distributed&ClassName~RetryAndDeadLetter"
+
+dotnet test tests/NexJob.ReliabilityTests.Distributed -c Release \
+  --filter "Category=Reliability.Distributed&ClassName~Concurrency"
+
+dotnet test tests/NexJob.ReliabilityTests.Distributed -c Release \
+  --filter "Category=Reliability.Distributed&ClassName~Recovery"
+
+dotnet test tests/NexJob.ReliabilityTests.Distributed -c Release \
+  --filter "Category=Reliability.Distributed&ClassName~Deadline"
+
+dotnet test tests/NexJob.ReliabilityTests.Distributed -c Release \
+  --filter "Category=Reliability.Distributed&ClassName~WakeUpLatency"
+
 # All tests
 dotnet test
 ```
+
+## Distributed Reliability Testing
+
+The `NexJob.ReliabilityTests.Distributed` project validates all scenarios against **real storage providers** via Docker (Testcontainers). This ensures production readiness across all supported backends.
+
+### What's Tested
+
+- **Retry & Dead-Letter**: Retry execution, handler invocation, exception resilience
+- **Concurrency**: Duplicate prevention, concurrent enqueue, stress scenarios
+- **Crash Recovery**: Job persistence, state consistency across restarts
+- **Deadline Enforcement**: Expiration handling, deadline before execution
+- **Wake-Up Latency**: Signaling efficiency, queue-specific dispatch
+
+### Providers
+
+- PostgreSQL 16
+- SQL Server 2022
+- Redis 7
+- MongoDB 7
+
+### Requirements
+
+- Docker (Testcontainers manages container lifecycle)
+- `.NET 8 SDK`
+- `dotnet test` (xUnit runs with full isolation per fixture)
 
 ---
 

@@ -10,7 +10,53 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
-## [0.5.2] — April 2026
+## [0.6.0] — April 2026
+
+### Added
+- **Distributed Reliability Tests** — New `NexJob.ReliabilityTests.Distributed` project validates all scenarios against **real storage providers** via Testcontainers (PostgreSQL, SQL Server, Redis, MongoDB). Tests ensure production readiness across all backends.
+  - **Retry & Dead-Letter**: Retry execution, handler invocation, exception resilience across providers.
+  - **Concurrency**: Duplicate prevention, concurrent enqueue, stress testing.
+  - **Crash Recovery**: Job persistence, state consistency after node restart.
+  - **Deadline Enforcement**: Expiration handling, deadline evaluated before execution.
+  - **Wake-Up Latency**: Signaling efficiency, queue-specific dispatch behavior.
+
+### Changed (Breaking)
+- **RecurringJobs configuration redesigned** — simpler, refactor-safe API replaces assembly-qualified type strings:
+  - `Job` replaces `JobType` — use simple class name ("CleanupJob"), not assembly-qualified string. Types resolved via DI registry.
+  - `Id` is now optional — omit it and NexJob derives it from the job name. Use explicit Id when scheduling the same job multiple times with different inputs/schedules.
+  - `Input` replaces `InputJson` + `InputType` — plain JSON object, input type inferred automatically from `IJob<T>` interface.
+  - Ambiguous job names (same class name in multiple namespaces) produce a clear startup error listing both types.
+  - `JobType`, `InputType`, `InputJson` config fields removed entirely.
+
+  **Before:**
+  ```json
+  {
+    "Id": "my-job",
+    "JobType": "MyApp.Jobs.CleanupJob, MyApp",
+    "InputType": "MyApp.Jobs.CleanupInput, MyApp",
+    "InputJson": "{ \"Target\": \"old-jobs\" }",
+    "Cron": "0 2 * * *"
+  }
+  ```
+  **After:**
+  ```json
+  {
+    "Job": "CleanupJob",
+    "Input": { "Target": "old-jobs" },
+    "Cron": "0 2 * * *"
+  }
+  ```
+
+### Fixed
+- **IJob (no-input) recurring jobs from appsettings.json** — Fixed critical regression where configuration-driven recurring jobs implementing `IJob` (without input parameter) failed with `"Cannot load input type: "` error. The `InputType` is now correctly set to the `NoInput` sentinel type when no input is specified, matching the behavior of code-registered recurring jobs.
+
+### Internal
+- Added distributed test filtering commands to `CONTRIBUTING.md` for running individual provider or scenario tests.
+- **NexJobJobRegistry** — internal DI singleton tracking all registered job types for configuration-based resolution.
+- Added regression test `RecurringJob_AppsettingsNoInput_ExecutesEndToEnd` verifying end-to-end execution of `IJob` recurring jobs loaded from configuration.
+- **NexJob.Sample.ConfiguredRecurring** — New WebAPI sample demonstrating configuration-driven recurring jobs with automatic binding from `appsettings.json`.
+
+## [0.5.2] — April 2026 [NOT PUBLISHED]
 
 ### Fixed
 - **IJob (no-input) recurring jobs from appsettings.json** — Fixed critical regression where configuration-driven recurring jobs implementing `IJob` (without input parameter) failed with `"Cannot load input type: "` error. The `InputType` is now correctly set to the `NoInput` sentinel type when no input is specified, matching the behavior of code-registered recurring jobs.
@@ -209,7 +255,8 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Recurring concurrency policy: `SkipIfRunning` / `AllowConcurrent`
 - CI/CD pipeline publishing all packages on `v*` tag push
 
-[Unreleased]: https://github.com/oluciano/NexJob/compare/v0.5.2...HEAD
+[Unreleased]: https://github.com/oluciano/NexJob/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/oluciano/NexJob/compare/v0.5.1...v0.6.0
 [0.5.2]: https://github.com/oluciano/NexJob/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/oluciano/NexJob/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/oluciano/NexJob/compare/v0.4.0...v0.5.0
