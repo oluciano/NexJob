@@ -1,4 +1,3 @@
-using System.Reflection;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using NexJob.Configuration;
@@ -14,14 +13,17 @@ internal sealed class RecurringJobRegistrar
     };
 
     private readonly IStorageProvider _storage;
+    private readonly NexJobJobRegistry _jobRegistry;
     private readonly ILogger<RecurringJobRegistrar> _logger;
-    private readonly List<string> _registeredJobIds = new();
+    private readonly List<string> _registeredJobIds = [];
 
     public RecurringJobRegistrar(
         IStorageProvider storage,
+        NexJobJobRegistry jobRegistry,
         ILogger<RecurringJobRegistrar> logger)
     {
         _storage = storage;
+        _jobRegistry = jobRegistry;
         _logger = logger;
     }
 
@@ -31,9 +33,12 @@ internal sealed class RecurringJobRegistrar
         IEnumerable<RecurringJobSettings> recurringJobs,
         CancellationToken cancellationToken = default)
     {
-        foreach (var jobConfig in recurringJobs)
+        var configs = recurringJobs.ToList();
+        var assignments = AssignEffectiveIds(configs);
+
+        foreach (var (config, effectiveId) in assignments)
         {
-            await RegisterRecurringJobAsync(jobConfig, cancellationToken);
+            await RegisterRecurringJobAsync(config, effectiveId, cancellationToken);
         }
 
         _logger.LogInformation(
@@ -41,41 +46,21 @@ internal sealed class RecurringJobRegistrar
             _registeredJobIds.Count);
     }
 
+    // ────────────────────────────────────────────────────────────────────────────
+    // Static Helpers
+    // ────────────────────────────────────────────────────────────────────────────
+
     private static void ValidateJobConfiguration(RecurringJobSettings jobConfig)
     {
-        if (string.IsNullOrWhiteSpace(jobConfig.Id))
+        if (string.IsNullOrWhiteSpace(jobConfig.Job))
         {
-            throw new ArgumentException("Recurring job ID is required.", nameof(jobConfig));
-        }
-
-        if (string.IsNullOrWhiteSpace(jobConfig.JobType))
-        {
-            throw new ArgumentException("Job type is required.", nameof(jobConfig));
+            throw new ArgumentException("Job name is required.", nameof(jobConfig));
         }
 
         if (string.IsNullOrWhiteSpace(jobConfig.Cron))
         {
             throw new ArgumentException("Cron expression is required.", nameof(jobConfig));
         }
-    }
-
-    private static bool IsValidJobType(Type type, Type? inputType = null)
-    {
-        if (inputType == null)
-        {
-            return Array.Exists(type.GetInterfaces(), i => i == typeof(IJob));
-        }
-        else
-        {
-            var jobInterface = typeof(IJob<>).MakeGenericType(inputType);
-            return Array.Exists(type.GetInterfaces(), i => i == jobInterface);
-        }
-    }
-
-    private static bool HasGenericJobInterface(Type type)
-    {
-        var genericInterface = typeof(IJob<>);
-        return Array.Exists(type.GetInterfaces(), i => i.IsGenericType && i.GetGenericTypeDefinition() == genericInterface);
     }
 
     private static void ParseAndValidateCron(string cronExpression)
@@ -87,47 +72,110 @@ internal sealed class RecurringJobRegistrar
     {
         try
         {
-            // Validate cron expression can be parsed (should always succeed — already validated)
             _ = DefaultScheduler.ParseCron(jobConfig.Cron);
-
-            // Set NextExecution to just before now so the job is immediately due for enqueue.
-            // The scheduler will then enqueue and advance NextExecution to the actual next occurrence.
             return DateTimeOffset.UtcNow.AddSeconds(-1);
         }
         catch
         {
-            // If cron parsing fails (shouldn't happen — already validated), return null
-            // The scheduler will calculate the next execution on its first run
             return null;
         }
     }
 
+    private static Type? ResolveInputType(Type jobType)
+    {
+        var jobInterface = Array.Find(
+            jobType.GetInterfaces(),
+            i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IJob<>));
+        return jobInterface?.GetGenericArguments()[0];
+    }
+
+    private static string SerializeInput(JsonElement? input, Type? inputType)
+    {
+        if (inputType == null || input == null)
+        {
+            return JsonSerializer.Serialize(NoInput.Instance);
+        }
+
+        try
+        {
+            var deserialized = JsonSerializer.Deserialize(
+                input.Value.GetRawText(), inputType, JsonOptions)
+                ?? throw new InvalidOperationException(
+                    $"Input JSON could not be deserialized to {inputType.Name}.");
+
+            return JsonSerializer.Serialize(deserialized, JsonOptions);
+        }
+        catch (Exception ex)
+        {
+            throw new JsonException($"Failed to validate input JSON for type '{inputType.Name}'", ex);
+        }
+    }
+
+    private static IEnumerable<(RecurringJobSettings Config, string EffectiveId)> AssignEffectiveIds(
+        IEnumerable<RecurringJobSettings> configs)
+    {
+        var list = configs.ToList();
+        var nameCount = new Dictionary<string, int>();
+
+        // Count how many times each unnamed job appears
+        foreach (var name in list
+            .Where(c => string.IsNullOrWhiteSpace(c.Id))
+            .Select(c => c.Job))
+        {
+            nameCount[name] = nameCount.GetValueOrDefault(name) + 1;
+        }
+
+        var nameIndex = new Dictionary<string, int>();
+        foreach (var c in list)
+        {
+            string id;
+            if (!string.IsNullOrWhiteSpace(c.Id))
+            {
+                id = c.Id;
+            }
+            else if (nameCount[c.Job] == 1)
+            {
+                id = c.Job;
+            }
+            else
+            {
+                var idx = nameIndex.GetValueOrDefault(c.Job, 0);
+                id = $"{c.Job}-{idx}";
+                nameIndex[c.Job] = idx + 1;
+            }
+
+            yield return (c, id);
+        }
+    }
+
+    // ────────────────────────────────────────────────────────────────────────────
+    // Instance Methods
+    // ────────────────────────────────────────────────────────────────────────────
+
     private async Task RegisterRecurringJobAsync(
         RecurringJobSettings jobConfig,
+        string effectiveId,
         CancellationToken cancellationToken)
     {
         try
         {
             ValidateJobConfiguration(jobConfig);
 
-            var resolvedTypes = ResolveJobTypes(jobConfig);
-            var jobType = resolvedTypes.JobType;
-            var inputType = resolvedTypes.InputType;
+            var jobType = jobConfig.ResolvedJobType ?? ResolveJobTypeByName(jobConfig.Job);
+            var inputType = ResolveInputType(jobType);
 
             ParseAndValidateCron(jobConfig.Cron);
 
-            var inputJson = jobConfig.InputJson != null
-                ? SerializeInputJson(jobConfig.InputJson, inputType)
-                : null;
+            var inputJson = jobConfig.ResolvedInputJson ?? SerializeInput(jobConfig.Input, inputType);
 
             var nextExecution = CalculateNextExecution(jobConfig);
 
             var recurringJob = new RecurringJobRecord
             {
-                RecurringJobId = jobConfig.Id,
+                RecurringJobId = effectiveId,
                 JobType = jobType.AssemblyQualifiedName!,
                 InputType = inputType?.AssemblyQualifiedName ?? typeof(NoInput).AssemblyQualifiedName!,
-                InputJson = inputJson ?? JsonSerializer.Serialize(NoInput.Instance),
+                InputJson = inputJson,
                 Cron = jobConfig.Cron,
                 TimeZoneId = jobConfig.TimeZoneId,
                 Queue = jobConfig.Queue,
@@ -137,21 +185,21 @@ internal sealed class RecurringJobRegistrar
                 NextExecution = nextExecution,
             };
 
-            var existingJob = await _storage.GetRecurringJobByIdAsync(jobConfig.Id, cancellationToken);
+            var existingJob = await _storage.GetRecurringJobByIdAsync(effectiveId, cancellationToken);
             if (existingJob != null)
             {
                 _logger.LogWarning(
                     "Recurring job '{Id}' already exists. Skipping registration.",
-                    jobConfig.Id);
+                    effectiveId);
                 return;
             }
 
             await _storage.UpsertRecurringJobAsync(recurringJob, cancellationToken);
 
-            _registeredJobIds.Add(jobConfig.Id);
+            _registeredJobIds.Add(effectiveId);
             _logger.LogInformation(
                 "Successfully registered recurring job '{Id}' with cron '{Cron}' in queue '{Queue}'",
-                jobConfig.Id,
+                effectiveId,
                 jobConfig.Cron,
                 jobConfig.Queue);
         }
@@ -159,82 +207,27 @@ internal sealed class RecurringJobRegistrar
         {
             _logger.LogError(
                 ex,
-                "Failed to register recurring job '{Id}' from configuration",
-                jobConfig.Id);
+                "Failed to register recurring job '{Job}' from configuration",
+                jobConfig.Job);
         }
     }
 
-    private (Type JobType, Type? InputType) ResolveJobTypes(RecurringJobSettings jobConfig)
+    private Type ResolveJobTypeByName(string jobName)
     {
-        try
+        var matches = _jobRegistry.Types
+            .Where(t => t.Name == jobName)
+            .ToList();
+
+        return matches.Count switch
         {
-            var jobType = Type.GetType(jobConfig.JobType);
-            if (jobType == null)
-            {
-                throw new TypeLoadException($"Could not find job type: {jobConfig.JobType}");
-            }
-
-            if (!IsValidJobType(jobType))
-            {
-                throw new InvalidOperationException(
-                    $"Job type {jobConfig.JobType} must implement IJob or IJob<T>.");
-            }
-
-            Type? inputType = null;
-            if (!string.IsNullOrWhiteSpace(jobConfig.InputType))
-            {
-                inputType = Type.GetType(jobConfig.InputType);
-                if (inputType == null)
-                {
-                    throw new TypeLoadException($"Could not find input type: {jobConfig.InputType}");
-                }
-
-                if (!IsValidJobType(jobType, inputType))
-                {
-                    throw new InvalidOperationException(
-                        $"Job type {jobConfig.JobType} does not implement IJob<{inputType.Name}>.");
-                }
-            }
-            else if (HasGenericJobInterface(jobType))
-            {
-                throw new InvalidOperationException(
-                    $"Job type {jobConfig.JobType} implements IJob<T> but no input type was specified.");
-            }
-
-            return (jobType, InputType: inputType);
-        }
-        catch (TypeLoadException ex)
-        {
-            _logger.LogError(
-                ex,
-                "Type resolution failed for recurring job '{Id}': {JobType}",
-                jobConfig.Id,
-                jobConfig.JobType);
-            throw new TypeLoadException($"Could not resolve job types for recurring job '{jobConfig.Id}'", ex);
-        }
-    }
-
-    private string? SerializeInputJson(string inputJson, Type? inputType)
-    {
-        if (inputType == null || string.IsNullOrWhiteSpace(inputJson))
-        {
-            return null;
-        }
-
-        try
-        {
-            var deserialized = JsonSerializer.Deserialize(inputJson, inputType, JsonOptions);
-            if (deserialized == null)
-            {
-                throw new JsonException($"Input JSON deserialized to null for type: {inputType}");
-            }
-
-            return inputJson;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to deserialize input JSON for type: {InputType}", inputType);
-            throw new JsonException($"Failed to validate input JSON for type '{inputType.Name}'", ex);
-        }
+            0 => throw new InvalidOperationException(
+                $"No job named '{jobName}' found. " +
+                $"Ensure it is registered via AddNexJobJobs() or AddTransient<{jobName}>()."),
+            1 => matches[0],
+            _ => throw new InvalidOperationException(
+                $"Multiple jobs named '{jobName}' found:\n" +
+                string.Join("\n", matches.Select(t => $"  {t.FullName}")) +
+                $"\nUse explicit Id or rename one of the jobs."),
+        };
     }
 }

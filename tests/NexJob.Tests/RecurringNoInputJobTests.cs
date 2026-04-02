@@ -279,7 +279,7 @@ public sealed class RecurringNoInputJobTests
             ["NexJob:Workers"] = "1",
             ["NexJob:PollingIntervalSeconds"] = "1",
             ["NexJob:RecurringJobs:0:Id"] = "test-from-appsettings",
-            ["NexJob:RecurringJobs:0:JobType"] = typeof(RecurringFromAppsettingsTestJob).AssemblyQualifiedName,
+            ["NexJob:RecurringJobs:0:Job"] = "RecurringFromAppsettingsTestJob",
             ["NexJob:RecurringJobs:0:Cron"] = "* * * * *",
             ["NexJob:RecurringJobs:0:Queue"] = "default",
             ["NexJob:RecurringJobs:0:Enabled"] = "true",
@@ -293,7 +293,7 @@ public sealed class RecurringNoInputJobTests
             .ConfigureServices(services =>
             {
                 services.AddNexJob(configuration);
-                services.AddTransient<RecurringFromAppsettingsTestJob>();
+                services.AddNexJobJobs(typeof(RecurringFromAppsettingsTestJob).Assembly);
             })
             .Build();
 
@@ -327,7 +327,7 @@ public sealed class RecurringNoInputJobTests
         var configData = new Dictionary<string, string?>
         {
             ["NexJob:RecurringJobs:0:Id"] = "tz-job",
-            ["NexJob:RecurringJobs:0:JobType"] = typeof(RecurringFromAppsettingsTestJob).AssemblyQualifiedName,
+            ["NexJob:RecurringJobs:0:Job"] = "RecurringFromAppsettingsTestJob",
             ["NexJob:RecurringJobs:0:Cron"] = "0 9 * * *",
             ["NexJob:RecurringJobs:0:TimeZoneId"] = "America/New_York",
             ["NexJob:RecurringJobs:0:Queue"] = "default",
@@ -342,7 +342,7 @@ public sealed class RecurringNoInputJobTests
             .ConfigureServices(services =>
             {
                 services.AddNexJob(configuration);
-                services.AddTransient<RecurringFromAppsettingsTestJob>();
+                services.AddNexJobJobs(typeof(RecurringFromAppsettingsTestJob).Assembly);
             })
             .Build();
 
@@ -369,21 +369,21 @@ public sealed class RecurringNoInputJobTests
         {
             // First job
             ["NexJob:RecurringJobs:0:Id"] = "morning-report",
-            ["NexJob:RecurringJobs:0:JobType"] = typeof(RecurringFromAppsettingsTestJob).AssemblyQualifiedName,
+            ["NexJob:RecurringJobs:0:Job"] = "RecurringFromAppsettingsTestJob",
             ["NexJob:RecurringJobs:0:Cron"] = "0 9 * * *",
             ["NexJob:RecurringJobs:0:Queue"] = "reports",
             ["NexJob:RecurringJobs:0:Enabled"] = "true",
 
             // Second job
             ["NexJob:RecurringJobs:1:Id"] = "evening-cleanup",
-            ["NexJob:RecurringJobs:1:JobType"] = typeof(RecurringFromAppsettingsTestJob).AssemblyQualifiedName,
+            ["NexJob:RecurringJobs:1:Job"] = "RecurringFromAppsettingsTestJob",
             ["NexJob:RecurringJobs:1:Cron"] = "0 18 * * *",
             ["NexJob:RecurringJobs:1:Queue"] = "maintenance",
             ["NexJob:RecurringJobs:1:Enabled"] = "true",
 
             // Third job with timezone
             ["NexJob:RecurringJobs:2:Id"] = "nightly-backup",
-            ["NexJob:RecurringJobs:2:JobType"] = typeof(RecurringFromAppsettingsTestJob).AssemblyQualifiedName,
+            ["NexJob:RecurringJobs:2:Job"] = "RecurringFromAppsettingsTestJob",
             ["NexJob:RecurringJobs:2:Cron"] = "0 2 * * *",
             ["NexJob:RecurringJobs:2:Queue"] = "backup",
             ["NexJob:RecurringJobs:2:TimeZoneId"] = "UTC",
@@ -398,7 +398,7 @@ public sealed class RecurringNoInputJobTests
             .ConfigureServices(services =>
             {
                 services.AddNexJob(configuration);
-                services.AddTransient<RecurringFromAppsettingsTestJob>();
+                services.AddNexJobJobs(typeof(RecurringFromAppsettingsTestJob).Assembly);
             })
             .Build();
 
@@ -447,11 +447,11 @@ public sealed class RecurringNoInputJobTests
             ["NexJob:Workers"] = "1",
             ["NexJob:PollingIntervalMs"] = "200",  // Fast polling for test
             ["NexJob:RecurringJobs:0:Id"] = "e2e-appsettings",
-            ["NexJob:RecurringJobs:0:JobType"] = typeof(RecurringAppsettingsExecutionTestJob).AssemblyQualifiedName,
+            ["NexJob:RecurringJobs:0:Job"] = "RecurringAppsettingsExecutionTestJob",
             ["NexJob:RecurringJobs:0:Cron"] = "* * * * *",  // every minute
             ["NexJob:RecurringJobs:0:Queue"] = "default",
             ["NexJob:RecurringJobs:0:Enabled"] = "true",
-            // Note: NO InputType specified (IJob has no input)
+            // Note: NO Input specified (IJob has no input)
         };
 
         var configuration = new ConfigurationBuilder()
@@ -465,7 +465,7 @@ public sealed class RecurringNoInputJobTests
                 {
                     opt.PollingInterval = TimeSpan.FromMilliseconds(100);
                 });
-                services.AddTransient<RecurringAppsettingsExecutionTestJob>();
+                services.AddNexJobJobs(typeof(RecurringAppsettingsExecutionTestJob).Assembly);
             })
             .Build();
 

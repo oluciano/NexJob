@@ -20,8 +20,36 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - **Deadline Enforcement**: Expiration handling, deadline evaluated before execution.
   - **Wake-Up Latency**: Signaling efficiency, queue-specific dispatch behavior.
 
+### Changed (Breaking)
+- **RecurringJobs configuration redesigned** — simpler, refactor-safe API replaces assembly-qualified type strings:
+  - `Job` replaces `JobType` — use simple class name ("CleanupJob"), not assembly-qualified string. Types resolved via DI registry.
+  - `Id` is now optional — omit it and NexJob derives it from the job name. Use explicit Id when scheduling the same job multiple times with different inputs/schedules.
+  - `Input` replaces `InputJson` + `InputType` — plain JSON object, input type inferred automatically from `IJob<T>` interface.
+  - Ambiguous job names (same class name in multiple namespaces) produce a clear startup error listing both types.
+  - `JobType`, `InputType`, `InputJson` config fields removed entirely.
+
+  **Before:**
+  ```json
+  {
+    "Id": "my-job",
+    "JobType": "MyApp.Jobs.CleanupJob, MyApp",
+    "InputType": "MyApp.Jobs.CleanupInput, MyApp",
+    "InputJson": "{ \"Target\": \"old-jobs\" }",
+    "Cron": "0 2 * * *"
+  }
+  ```
+  **After:**
+  ```json
+  {
+    "Job": "CleanupJob",
+    "Input": { "Target": "old-jobs" },
+    "Cron": "0 2 * * *"
+  }
+  ```
+
 ### Internal
 - Added distributed test filtering commands to `CONTRIBUTING.md` for running individual provider or scenario tests.
+- **NexJobJobRegistry** — internal DI singleton tracking all registered job types for configuration-based resolution.
 
 ## [0.5.2] — April 2026
 

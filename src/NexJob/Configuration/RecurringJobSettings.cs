@@ -1,34 +1,37 @@
-using NexJob;
+using System.Text.Json;
 
 namespace NexJob.Configuration;
 
 /// <summary>
 /// Configuration for a recurring job definition from appsettings.json.
+/// Job resolution uses simple class names (no assembly qualification required) registered via
+/// <see cref="NexJobServiceCollectionExtensions.AddNexJobJobs"/>. Input type is inferred
+/// from the job's <see cref="IJob{TInput}"/> interface — no explicit declaration needed.
 /// </summary>
 public sealed class RecurringJobSettings
 {
     /// <summary>
-    /// Unique identifier for this recurring job. Required.
+    /// Simple class name of the job implementation (e.g. "CleanupJob").
+    /// Resolved from types registered via <see cref="NexJobServiceCollectionExtensions.AddNexJobJobs"/>.
+    /// Required.
     /// </summary>
-    public string Id { get; set; } = string.Empty;
+    public string Job { get; set; } = string.Empty;
 
     /// <summary>
-    /// Assembly-qualified type name of the job implementation. Required.
-    /// Example: "MyApp.Jobs.EmailJob, MyApp".
+    /// Unique identifier for this recurring job. Optional.
+    /// If omitted, the framework derives it from the job name: "{JobName}" if unique,
+    /// or "{JobName}-{index}" if the same job appears multiple times in configuration.
+    /// Use explicit Id when scheduling the same job multiple times with different inputs/schedules.
     /// </summary>
-    public string JobType { get; set; } = string.Empty;
+    public string? Id { get; set; }
 
     /// <summary>
-    /// Assembly-qualified type name of the job's input parameter type.
-    /// For jobs without input (IJob), omit this property or set to null.
-    /// Example: "MyApp.Jobs.EmailInput, MyApp".
+    /// JSON object representing the job input payload. Optional.
+    /// Omit for <see cref="IJob"/> (no-input) jobs.
+    /// Example: { "Region": "us-east", "Limit": 100 }
+    /// Input type is automatically inferred from the job's <see cref="IJob{TInput}"/> interface.
     /// </summary>
-    public string? InputType { get; set; }
-
-    /// <summary>
-    /// JSON-serialized job input payload. For jobs without input, omit or set to null.
-    /// </summary>
-    public string? InputJson { get; set; }
+    public JsonElement? Input { get; set; }
 
     /// <summary>
     /// Cron expression that defines the execution schedule. Required.
@@ -62,4 +65,20 @@ public sealed class RecurringJobSettings
     /// When false, the scheduler skips this job at every firing. Defaults to true.
     /// </summary>
     public bool Enabled { get; set; } = true;
+
+    /// <summary>
+    /// Internal: Pre-resolved job type (set by fluent API, bypasses DI registry lookup).
+    /// </summary>
+    internal Type? ResolvedJobType { get; set; }
+
+    /// <summary>
+    /// Internal: Pre-serialized input JSON (set by fluent API).
+    /// </summary>
+    internal string? ResolvedInputJson { get; set; }
+
+    /// <summary>
+    /// Internal: Effective identifier — explicit Id or derived from Job name.
+    /// Actual ID assignment (handling duplicates with -{index}) happens during registration.
+    /// </summary>
+    internal string EffectiveId => string.IsNullOrWhiteSpace(Id) ? Job : Id;
 }
