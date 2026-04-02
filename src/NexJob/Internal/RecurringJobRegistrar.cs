@@ -140,7 +140,17 @@ internal sealed class RecurringJobRegistrar
             else
             {
                 var idx = nameIndex.GetValueOrDefault(c.Job, 0);
-                id = $"{c.Job}-{idx}";
+                if (idx == 0)
+                {
+                    // First occurrence with duplicate names gets no suffix
+                    id = c.Job;
+                }
+                else
+                {
+                    // Subsequent occurrences get suffix starting from -1
+                    id = $"{c.Job}-{idx}";
+                }
+
                 nameIndex[c.Job] = idx + 1;
             }
 
