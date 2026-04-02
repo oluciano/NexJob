@@ -10,7 +10,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
-## [0.5.3] — April 2026
+## [0.6.0] — April 2026
 
 ### Added
 - **Distributed Reliability Tests** — New `NexJob.ReliabilityTests.Distributed` project validates all scenarios against **real storage providers** via Testcontainers (PostgreSQL, SQL Server, Redis, MongoDB). Tests ensure production readiness across all backends.
@@ -47,11 +47,16 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   }
   ```
 
+### Fixed
+- **IJob (no-input) recurring jobs from appsettings.json** — Fixed critical regression where configuration-driven recurring jobs implementing `IJob` (without input parameter) failed with `"Cannot load input type: "` error. The `InputType` is now correctly set to the `NoInput` sentinel type when no input is specified, matching the behavior of code-registered recurring jobs.
+
 ### Internal
 - Added distributed test filtering commands to `CONTRIBUTING.md` for running individual provider or scenario tests.
 - **NexJobJobRegistry** — internal DI singleton tracking all registered job types for configuration-based resolution.
+- Added regression test `RecurringJob_AppsettingsNoInput_ExecutesEndToEnd` verifying end-to-end execution of `IJob` recurring jobs loaded from configuration.
+- **NexJob.Sample.ConfiguredRecurring** — New WebAPI sample demonstrating configuration-driven recurring jobs with automatic binding from `appsettings.json`.
 
-## [0.5.2] — April 2026
+## [0.5.2] — April 2026 [NOT PUBLISHED]
 
 ### Fixed
 - **IJob (no-input) recurring jobs from appsettings.json** — Fixed critical regression where configuration-driven recurring jobs implementing `IJob` (without input parameter) failed with `"Cannot load input type: "` error. The `InputType` is now correctly set to the `NoInput` sentinel type when no input is specified, matching the behavior of code-registered recurring jobs.
@@ -250,8 +255,8 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Recurring concurrency policy: `SkipIfRunning` / `AllowConcurrent`
 - CI/CD pipeline publishing all packages on `v*` tag push
 
-[Unreleased]: https://github.com/oluciano/NexJob/compare/v0.5.3...HEAD
-[0.5.3]: https://github.com/oluciano/NexJob/compare/v0.5.2...v0.5.3
+[Unreleased]: https://github.com/oluciano/NexJob/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/oluciano/NexJob/compare/v0.5.1...v0.6.0
 [0.5.2]: https://github.com/oluciano/NexJob/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/oluciano/NexJob/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/oluciano/NexJob/compare/v0.4.0...v0.5.0
