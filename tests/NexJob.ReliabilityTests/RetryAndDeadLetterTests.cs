@@ -170,4 +170,48 @@ public sealed class RetryAndDeadLetterTests : ReliabilityTestBase
 
         await host.StopAsync();
     }
+
+    [Fact]
+    public async Task DispatcherContinuesProcessingAfterDeadLetterHandlerThrows_Deterministic()
+    {
+        ResetTestState();
+
+        using var host = BuildHost(s =>
+        {
+            s.AddTransient<AlwaysFailJob>();
+            s.AddTransient<IDeadLetterHandler<AlwaysFailJob>, ThrowingDeadLetterHandler<AlwaysFailJob>>();
+            s.AddTransient<SuccessJob>();
+        }, workers: 1);
+
+        await host.StartAsync();
+
+        var scheduler = host.Services.GetRequiredService<IScheduler>();
+
+        // Step 1: Enqueue job that will fail and trigger handler that throws
+        var failingJobId = await scheduler.EnqueueAsync<AlwaysFailJob>();
+
+        // Step 2: Wait deterministically for the failing job to reach Failed state
+        // This ensures all 3 retries are exhausted AND the dead-letter handler is invoked
+        var failedJob = await WaitForJobStatus(
+            host, failingJobId, JobStatus.Failed, TimeSpan.FromSeconds(10));
+
+        failedJob.Should().NotBeNull(
+            "job should be persisted in Failed state despite handler throwing");
+
+        // Step 3: Immediately enqueue a job that succeeds
+        // If dispatcher hung in the dead-letter handler, this job will never start
+        var successJobId = await scheduler.EnqueueAsync<SuccessJob>();
+
+        // Step 4: Wait deterministically for the success job to complete
+        // If dispatcher hung after the handler threw, this will timeout and fail
+        var successJob = await WaitForJobStatus(
+            host, successJobId, JobStatus.Succeeded, TimeSpan.FromSeconds(10));
+
+        successJob.Should().NotBeNull(
+            "dispatcher should continue processing after dead-letter handler throws");
+        successJob!.Status.Should().Be(JobStatus.Succeeded,
+            "if we got here, the dispatcher is still alive and processing jobs");
+
+        await host.StopAsync();
+    }
 }
