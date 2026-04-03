@@ -127,6 +127,13 @@ All AI-assisted tasks use the **NexJob AI Operating Model** — a structured, to
 
 ---
 
+## AI Guardrails (Strict)
+
+- Do not propose full rewrites
+- Do not introduce new abstractions without clear benefit
+- Do not change public contracts unless explicitly requested
+- Prefer incremental, low-risk changes
+
 ## Engineering Rules
 
 See `CONTRIBUTING.md`
