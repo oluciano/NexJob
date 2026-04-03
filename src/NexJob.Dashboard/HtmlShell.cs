@@ -1,3 +1,5 @@
+using NexJob.Storage;
+
 namespace NexJob.Dashboard;
 
 /// <summary>Shared HTML shell (layout wrapper) injected around page component output.</summary>
@@ -276,6 +278,7 @@ internal static class HtmlShell
             cursor: pointer; transition: opacity .15s; position: relative;
         }
         .bar:hover { opacity: .8; }
+        .bar.anomaly { background: var(--danger) !important; opacity: .85; }
         .bar-label { font-size: 9px; color: var(--text-3); position: absolute; bottom: -18px; white-space: nowrap; }
         .chart-tooltip {
             display: none; position: fixed;
@@ -283,6 +286,17 @@ internal static class HtmlShell
             border-radius: var(--radius-sm); padding: 8px 12px; font-size: 12px; color: var(--text);
             pointer-events: none; z-index: 100; white-space: nowrap;
             box-shadow: 0 8px 24px rgba(0,0,0,.5);
+        }
+        .avg-line {
+            position: absolute; left: 0; right: 0; height: 0;
+            border-top: 1px dashed var(--text-3);
+            pointer-events: none;
+        }
+        .anomaly-note {
+            font-size: 11px; color: var(--danger);
+            margin-top: 6px; padding: 4px 8px;
+            background: var(--danger-bg); border-radius: var(--radius-sm);
+            display: inline-block;
         }
 
         /* Detail grid (grouped sections) */
@@ -435,7 +449,7 @@ internal static class HtmlShell
         .timeline-section { margin-bottom: 28px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,.2), inset 0 1px 0 rgba(255,255,255,.02); }
         .timeline { position: relative; padding: 8px 0; }
         .timeline-item { display: flex; align-items: flex-start; gap: 16px; position: relative; }
-        .timeline-item:not(:last-child) { margin-bottom: 22px; }
+        .timeline-item:not(:last-child) { margin-bottom: 24px; }
         .timeline-node { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; margin-top: 5px; border: 2px solid var(--border); transition: all .2s ease; }
         .timeline-node:hover { transform: scale(1.25); }
         .timeline-node-neutral { background: var(--text-3); border-color: var(--text-3); }
@@ -451,10 +465,10 @@ internal static class HtmlShell
         .timeline-node-final.timeline-node-muted { box-shadow: 0 0 10px rgba(71,85,105,.4), inset 0 0 4px rgba(255,255,255,.05); }
         .timeline-content { flex: 1; min-width: 0; }
         .timeline-label { font-size: 13px; font-weight: 600; color: var(--text); }
-        .timeline-metadata { font-size: 11px; color: var(--text-3); margin-top: 2px; font-style: italic; }
-        .timeline-time { font-size: 12px; color: var(--text-2); font-family: monospace; margin-top: 2px; }
-        .timeline-relative { font-size: 11px; color: var(--text-3); margin-top: 2px; }
-        .timeline-line { position: absolute; left: 5px; top: 17px; width: 2px; height: 22px; background: linear-gradient(to bottom, var(--border), transparent); }
+        .timeline-metadata { font-size: 12px; color: var(--text-2); margin-top: 2px; }
+        .timeline-time { font-size: 11px; color: var(--text-3); font-family: monospace; margin-top: 2px; }
+        .timeline-error { font-size: 11px; color: var(--danger); font-family: monospace; margin-top: 4px; }
+        .timeline-line { position: absolute; left: 5px; top: 22px; width: 2px; height: 24px; background: var(--border); }
         @keyframes timeline-pulse { 0%, 100% { box-shadow: 0 0 10px rgba(251,191,36,.5); } 50% { box-shadow: 0 0 20px rgba(251,191,36,.8); } }
 
         /* Pagination */
@@ -465,6 +479,32 @@ internal static class HtmlShell
         .alert { border-radius: 8px; padding: 10px 14px; font-size: 12px; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
         .alert-warning { background: var(--warning-bg); border: 1px solid rgba(251,191,36,.2); color: var(--warning); }
         .alert-danger  { background: var(--danger-bg);  border: 1px solid rgba(248,113,113,.2); color: var(--danger); }
+
+        /* Inbox styling */
+        .inbox-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+        .inbox-count { font-size: 12px; font-weight: 500; background: var(--danger-bg); color: var(--danger); padding: 3px 10px; border-radius: 20px; align-self: center; }
+        .inbox-actions { display: flex; gap: 6px; flex-shrink: 0; }
+        .btn-danger-ghost { color: var(--danger); }
+        .btn-danger-ghost:hover { background: var(--danger-bg); }
+        .inbox-zero { text-align: center; padding: 48px 0; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+        .inbox-zero-icon { width: 36px; height: 36px; border-radius: 50%; background: var(--success-bg); color: var(--success); display: flex; align-items: center; justify-content: center; font-size: 18px; }
+        .inbox-zero-title { font-size: 14px; font-weight: 500; color: var(--text); }
+        .inbox-zero-sub { font-size: 12px; color: var(--text-2); }
+
+        /* Worker heatmap */
+        .worker-section { margin-bottom: 24px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,.2), inset 0 1px 0 rgba(255,255,255,.02); }
+        .worker-list { display: flex; flex-direction: column; gap: 2px; }
+        .worker-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+        .worker-id { font-size: 11px; font-family: monospace; color: var(--text-3); width: 20px; flex-shrink: 0; }
+        .worker-track { flex: 1; height: 18px; background: var(--surface2); border-radius: 3px; overflow: hidden; }
+        .worker-fill { height: 100%; border-radius: 3px; display: flex; align-items: center; padding-left: 6px; min-width: 8px; }
+        .worker-fill.busy { background: var(--info-bg); border: 1px solid rgba(96,165,250,.2); }
+        .worker-fill.slow { background: var(--warning-bg); border: 1px solid rgba(251,191,36,.2); }
+        .worker-job-name { font-size: 10px; color: var(--text-2); white-space: nowrap; overflow: hidden; }
+        .worker-elapsed { font-size: 11px; font-family: monospace; color: var(--text-3); width: 36px; text-align: right; flex-shrink: 0; }
+        .worker-elapsed.slow { color: var(--warning); }
+        .worker-warn { font-size: 11px; color: var(--warning); width: 14px; flex-shrink: 0; }
+        .worker-row.idle .worker-track { opacity: .3; }
 
         /* Responsive */
         @media (max-width: 1024px) {
@@ -487,9 +527,39 @@ internal static class HtmlShell
             .queue-grid { grid-template-columns: 1fr; }
             .detail-grid { grid-template-columns: 140px 1fr; }
         }
+
+        /* Health badge */
+        .health-badge {
+            margin: 8px 10px; padding: 5px 10px;
+            border-radius: var(--radius-sm);
+            display: flex; align-items: center; gap: 6px;
+            font-size: 11px; font-weight: 600; letter-spacing: .04em;
+        }
+        .health-badge.healthy  { background: var(--success-bg); color: var(--success); }
+        .health-badge.degraded { background: var(--warning-bg); color: var(--warning); }
+        .health-badge.incident  { background: var(--danger-bg);  color: var(--danger);  }
+        .health-pulse { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+        .healthy  .health-pulse { background: var(--success); }
+        .degraded .health-pulse { background: var(--warning); }
+        .incident .health-pulse { background: var(--danger); animation: hpulse 1s infinite; }
+        @keyframes hpulse { 0%,100%{opacity:1} 50%{opacity:.2} }
+
+        /* Nav counters */
+        .nav-counter {
+            font-size: 10px; font-family: monospace;
+            padding: 1px 5px; border-radius: 4px;
+            margin-left: auto; flex-shrink: 0;
+            background: rgba(255,255,255,.06); color: var(--text-3);
+            border: 1px solid var(--border);
+        }
+        .nav-counter.warn   { background: var(--warning-bg); color: var(--warning); border-color: transparent; }
+        .nav-counter.danger { background: var(--danger-bg);  color: var(--danger);  border-color: transparent; }
+        .nav-counter.ok     { background: var(--success-bg); color: var(--success); border-color: transparent; }
         """;
 
-    internal static string Wrap(string title, string pathPrefix, string activeRoute, string body) =>
+    internal static string Wrap(
+        string title, string pathPrefix, string activeRoute, string body,
+        NavCounters? counters = null, JobMetrics? metrics = null) =>
         $$"""
         <!DOCTYPE html>
         <html lang="en">
@@ -513,6 +583,7 @@ internal static class HtmlShell
                     </svg>
                     <span class="logo-text">{{title}}</span>
                 </div>
+                {{HealthBadge(metrics)}}
                 <div class="nav-section">
                     <ul class="nav-list">
                         <li><a href="{{pathPrefix}}" class="nav-link {{Active(activeRoute, "overview")}}">
@@ -520,19 +591,19 @@ internal static class HtmlShell
                             <span class="nav-label">Overview</span></a></li>
                         <li><a href="{{pathPrefix}}/queues" class="nav-link {{Active(activeRoute, "queues")}}">
                             <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="10" width="14" height="4" rx="1"/><rect x="1" y="6" width="14" height="3" rx="1" opacity=".6"/><rect x="1" y="2" width="14" height="3" rx="1" opacity=".35"/></svg>
-                            <span class="nav-label">Queues</span></a></li>
+                            <span class="nav-label">Queues</span>{{NavCounter(counters?.Queues, counters?.QueuesClass)}}</a></li>
                         <li><a href="{{pathPrefix}}/servers" class="nav-link {{Active(activeRoute, "servers")}}">
                             <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="12" height="4" rx="1"/><rect x="2" y="10" width="12" height="4" rx="1"/><line x1="5" y1="4" x2="5.01" y2="4"/><line x1="5" y1="12" x2="5.01" y2="12"/></svg>
-                            <span class="nav-label">Servers</span></a></li>
+                            <span class="nav-label">Servers</span>{{NavCounter(counters?.Servers, counters?.ServersClass)}}</a></li>
                         <li><a href="{{pathPrefix}}/jobs" class="nav-link {{Active(activeRoute, "jobs")}}">
                             <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="3" y1="4" x2="13" y2="4"/><line x1="3" y1="8" x2="13" y2="8"/><line x1="3" y1="12" x2="9" y2="12"/></svg>
-                            <span class="nav-label">Jobs</span></a></li>
+                            <span class="nav-label">Jobs</span>{{NavCounter(counters?.Jobs, null)}}</a></li>
                         <li><a href="{{pathPrefix}}/recurring" class="nav-link {{Active(activeRoute, "recurring")}}">
                             <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M13.5 8A5.5 5.5 0 1 1 8 2.5"/><polyline points="11,1 14,2.5 11,4"/></svg>
-                            <span class="nav-label">Recurring</span></a></li>
+                            <span class="nav-label">Recurring</span>{{NavCounter(counters?.Recurring, null)}}</a></li>
                         <li><a href="{{pathPrefix}}/failed" class="nav-link {{Active(activeRoute, "failed")}}">
                             <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6.5"/><line x1="5.5" y1="5.5" x2="10.5" y2="10.5"/><line x1="10.5" y1="5.5" x2="5.5" y2="10.5"/></svg>
-                            <span class="nav-label">Failed</span></a></li>
+                            <span class="nav-label">Failed</span>{{NavCounter(counters?.Failed, counters?.FailedClass)}}</a></li>
                         <li><a href="{{pathPrefix}}/settings" class="nav-link {{Active(activeRoute, "settings")}}">
                             <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="2.5"/><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M11.2 3.4l-1.4 1.4M4.6 11.2l-1.4 1.4"/></svg>
                             <span class="nav-label">Settings</span></a></li>
@@ -584,4 +655,35 @@ internal static class HtmlShell
 
     private static string Active(string route, string page) =>
         route == page ? "active" : string.Empty;
+
+    private static string HealthBadge(JobMetrics? m)
+    {
+        if (m is null)
+        {
+            return "<div class=\"health-badge healthy\"><span class=\"health-pulse\"></span>HEALTHY</div>";
+        }
+
+        if (m.Failed > 0 && m.Processing == 0)
+        {
+            return "<div class=\"health-badge incident\"><span class=\"health-pulse\"></span>INCIDENT</div>";
+        }
+
+        if (m.Failed > 0)
+        {
+            return "<div class=\"health-badge degraded\"><span class=\"health-pulse\"></span>DEGRADED</div>";
+        }
+
+        return "<div class=\"health-badge healthy\"><span class=\"health-pulse\"></span>HEALTHY</div>";
+    }
+
+    private static string NavCounter(string? value, string? cls)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return string.Empty;
+        }
+
+        var clsPart = string.IsNullOrEmpty(cls) ? string.Empty : " " + cls;
+        return $"<span class=\"nav-counter{clsPart}\">{value}</span>";
+    }
 }

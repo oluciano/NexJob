@@ -1,3 +1,5 @@
+[Human Reference Only] - Not loaded by AI execution engine. For human planning only.
+
 # Workflow: Test Implementation
 
 **When:** Adding tests for existing code or new scenarios

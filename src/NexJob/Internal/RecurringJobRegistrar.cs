@@ -89,25 +89,24 @@ internal sealed class RecurringJobRegistrar
         return jobInterface?.GetGenericArguments()[0];
     }
 
-    private static string SerializeInput(JsonElement? input, Type? inputType)
+    private static string SerializeInput(string? inputJson, Type? inputType)
     {
-        if (inputType == null || input == null)
+        if (inputType == null || string.IsNullOrWhiteSpace(inputJson))
         {
             return JsonSerializer.Serialize(NoInput.Instance);
         }
 
         try
         {
-            var deserialized = JsonSerializer.Deserialize(
-                input.Value.GetRawText(), inputType, JsonOptions)
+            var deserialized = JsonSerializer.Deserialize(inputJson, inputType, JsonOptions)
                 ?? throw new InvalidOperationException(
                     $"Input JSON could not be deserialized to {inputType.Name}.");
-
             return JsonSerializer.Serialize(deserialized, JsonOptions);
         }
         catch (Exception ex)
         {
-            throw new JsonException($"Failed to validate input JSON for type '{inputType.Name}'", ex);
+            throw new JsonException(
+                $"Failed to validate input JSON for type '{inputType.Name}'", ex);
         }
     }
 

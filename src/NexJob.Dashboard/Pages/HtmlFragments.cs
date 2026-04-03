@@ -83,13 +83,26 @@ internal static class HtmlFragments
             $"</div></a>";
     }
 
-    /// <summary>Renders a job row for the Failed Jobs page (with error snippet).</summary>
+    /// <summary>Renders a job row for the Failed Jobs page (with error snippet and inline actions).</summary>
     internal static string JobRowFailed(JobRecord job, string pathPrefix, DateTimeOffset now)
     {
         var errorSnippet = Helpers.Truncate(job.LastErrorMessage, 90);
+        var requeueForm =
+            $"<form method=\"post\" action=\"{pathPrefix}/jobs/{job.Id.Value}/requeue\" style=\"display:inline\">" +
+            "<button type=\"submit\" class=\"btn btn-ghost btn-sm\">↺ Requeue</button></form>";
+        var deleteForm =
+            $"<form method=\"post\" action=\"{pathPrefix}/jobs/{job.Id.Value}/delete\" style=\"display:inline\" " +
+            "onclick=\"return confirm('Delete this job?')\">" +
+            "<button type=\"submit\" class=\"btn btn-danger-ghost btn-sm\">Delete</button></form>";
+
         return
-            $"<a href=\"{pathPrefix}/jobs/{job.Id.Value}\" style=\"text-decoration:none\">" +
-            $"<div class=\"job-row\">" +
+            $"<div style=\"display:flex;gap:16px;align-items:flex-start;padding:14px 16px;" +
+            $"background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);" +
+            $"cursor:pointer;transition:border-color .12s, background .12s, box-shadow .15s;\" " +
+            $"onmouseenter=\"this.style.borderColor='var(--border-hover)';this.style.background='var(--surface2)';\" " +
+            $"onmouseleave=\"this.style.borderColor='var(--border)';this.style.background='var(--surface)';\">" +
+            $"<a href=\"{pathPrefix}/jobs/{job.Id.Value}\" style=\"text-decoration:none;color:inherit;flex:1;min-width:0\">" +
+            $"<div style=\"display:flex;align-items:flex-start;gap:16px\">" +
             $"<div class=\"job-row-dot\">{Helpers.StatusDot(JobStatus.Failed)}</div>" +
             $"<div class=\"job-row-main\">" +
             $"<div class=\"job-row-title\">{HtmlEncode(Helpers.ShortType(job.JobType))}</div>" +
@@ -100,10 +113,16 @@ internal static class HtmlFragments
             $"</div>" +
             $"<div style=\"font-size:12px;color:var(--danger);margin-top:4px\">{HtmlEncode(errorSnippet)}</div>" +
             $"</div>" +
-            $"<div class=\"job-row-meta\">" +
+            $"</div>" +
+            $"</a>" +
+            $"<div class=\"job-row-meta\" style=\"flex-shrink:0\">" +
             $"{Helpers.RelativeTime(job.CompletedAt, now)}" +
             $"</div>" +
-            $"</div></a>";
+            $"<div class=\"inbox-actions\" onclick=\"event.stopPropagation()\">" +
+            requeueForm +
+            deleteForm +
+            $"</div>" +
+            $"</div>";
     }
 
     /// <summary>Renders a job row for the Overview page recent failures section.</summary>
@@ -489,66 +508,33 @@ internal static class HtmlFragments
     /// <summary>Renders a visual execution flow timeline.</summary>
     internal static string ExecutionTimeline(JobRecord job, DateTimeOffset now)
     {
-        var items = new List<(string Status, DateTimeOffset? Time, string? Metadata, string FinalState)>();
-
-        // Build timeline from job state
-        var finalState = GetFinalState(job);
-        items.Add(("Enqueued", job.CreatedAt, null, finalState));
-
-        if (job.ProcessingStartedAt.HasValue)
-        {
-            items.Add(("Processing", job.ProcessingStartedAt.Value, null, finalState));
-        }
-
-        if (job.Status == JobStatus.Failed || job.Status == JobStatus.Succeeded || job.Status == JobStatus.Expired)
-        {
-            if (job.CompletedAt.HasValue)
-            {
-                var statusLabel = job.Status switch
-                {
-                    JobStatus.Failed => "Failed",
-                    JobStatus.Succeeded => "Succeeded",
-                    JobStatus.Expired => "Expired",
-                    _ => "Completed",
-                };
-                var metadata = job.Status == JobStatus.Failed && !string.IsNullOrEmpty(job.LastErrorMessage)
-                    ? Helpers.Truncate(job.LastErrorMessage, 50)
-                    : null;
-                items.Add((statusLabel, job.CompletedAt.Value, metadata, finalState));
-            }
-
-            if (job.Status == JobStatus.Failed && job.Attempts > 1)
-            {
-                var retryMetadata = $"attempt {job.Attempts}";
-                items.Add(("Retry", job.RetryAt, retryMetadata, finalState));
-            }
-        }
+        var events = BuildTimelineEvents(job, now).ToList();
 
         var sb = new System.Text.StringBuilder();
         sb.Append("<div class=\"timeline\">");
 
-        for (int i = 0; i < items.Count; i++)
+        for (int i = 0; i < events.Count; i++)
         {
-            var (status, time, metadata, finalState2) = items[i];
-            var isLast = i == items.Count - 1;
-            var nodeClass = GetTimelineNodeClass(status, isLast);
-            var lineGradient = GetLineGradient(status, isLast ? finalState2 : GetNextStateClass(items, i));
-            var timeStr = time.HasValue ? $"{time.Value:HH:mm:ss}" : "—";
-            var relativeStr = time.HasValue ? Helpers.RelativeTime(time.Value, now) : string.Empty;
+            var @event = events[i];
+            var isLast = i == events.Count - 1;
+            var nodeClass = GetTimelineNodeClass(@event.CssClass, isLast);
+            var timeStr = @event.At.HasValue ? $"{@event.At.Value:HH:mm:ss}" : "—";
 
             sb.Append($"<div class=\"timeline-item\">");
-            sb.Append($"<div class=\"timeline-node {nodeClass}\" data-status=\"{status.ToLowerInvariant()}\"></div>");
+            sb.Append($"<div class=\"timeline-node {nodeClass}\" data-status=\"{@event.CssClass}\"></div>");
             sb.Append($"<div class=\"timeline-content\">");
-            sb.Append($"<div class=\"timeline-label\">{HtmlEncode(status)}</div>");
-            if (!string.IsNullOrEmpty(metadata))
+            sb.Append($"<div class=\"timeline-label\">{HtmlEncode(@event.Label)}</div>");
+
+            if (!string.IsNullOrEmpty(@event.Subtitle))
             {
-                sb.Append($"<div class=\"timeline-metadata\">{HtmlEncode(metadata)}</div>");
+                sb.Append($"<div class=\"timeline-metadata\">{HtmlEncode(@event.Subtitle)}</div>");
             }
 
             sb.Append($"<div class=\"timeline-time\">{timeStr}</div>");
-            if (!string.IsNullOrEmpty(relativeStr))
+
+            if (!string.IsNullOrEmpty(@event.Error))
             {
-                sb.Append($"<div class=\"timeline-relative\">{relativeStr}</div>");
+                sb.Append($"<div class=\"timeline-error\">{HtmlEncode(@event.Error)}</div>");
             }
 
             sb.Append($"</div>");
@@ -556,7 +542,7 @@ internal static class HtmlFragments
 
             if (!isLast)
             {
-                sb.Append($"<div class=\"timeline-line\" style=\"{lineGradient}\"></div>");
+                sb.Append($"<div class=\"timeline-line\"></div>");
             }
         }
 
@@ -565,54 +551,127 @@ internal static class HtmlFragments
         return sb.ToString();
     }
 
-    private static string GetFinalState(JobRecord job) =>
-        job.Status switch
-        {
-            JobStatus.Succeeded => "success",
-            JobStatus.Failed => "error",
-            JobStatus.Expired => "muted",
-            _ => "neutral",
-        };
-
-    private static string GetNextStateClass(List<(string Status, DateTimeOffset? Time, string? Metadata, string FinalState)> items, int currentIndex)
+    /// <summary>Builds detailed timeline events from job record.</summary>
+    private static IEnumerable<TimelineEvent> BuildTimelineEvents(JobRecord job, DateTimeOffset now)
     {
-        if (currentIndex + 1 < items.Count)
+        // Enqueued — initial state
+        yield return new TimelineEvent(
+            job.CreatedAt,
+            "Enqueued",
+            "enqueued",
+            $"queue: {HtmlEncode(job.Queue)} · priority: {job.Priority}",
+            null);
+
+        // Processing attempts — simulate each attempt
+        if (job.ProcessingStartedAt.HasValue)
         {
-            var nextStatus = items[currentIndex + 1].Status;
-            return GetTimelineNodeClass(nextStatus, false).Replace("timeline-node-", string.Empty);
+            // For the first attempt, show as Processing
+            yield return new TimelineEvent(
+                job.ProcessingStartedAt.Value,
+                "Processing",
+                "processing",
+                $"attempt 1/{job.MaxAttempts}",
+                null);
+
+            // If there were retries (attempts > 1), show them as Processing with retry marker
+            if (job.Attempts > 1)
+            {
+                for (int i = 2; i <= job.Attempts; i++)
+                {
+                    // Retries happened — show as Failed then retry scheduled
+                    yield return new TimelineEvent(
+                        job.CompletedAt,
+                        "Failed",
+                        "failed",
+                        null,
+                        job.LastErrorMessage);
+
+                    // Show retry scheduled
+                    if (job.RetryAt.HasValue && i == job.Attempts)
+                    {
+                        yield return new TimelineEvent(
+                            job.RetryAt.Value,
+                            "Retry scheduled",
+                            "scheduled",
+                            Helpers.CountdownFriendly(job.RetryAt.Value - now),
+                            null);
+
+                        // Show next processing attempt
+                        if (job.RetryAt.Value <= now)
+                        {
+                            yield return new TimelineEvent(
+                                job.RetryAt.Value,
+                                "Processing",
+                                "processing",
+                                $"attempt {i}/{job.MaxAttempts}",
+                                null);
+                        }
+                    }
+                }
+            }
         }
 
-        return items[currentIndex].FinalState;
+        // Terminal states
+        if (job.Status == JobStatus.Succeeded && job.CompletedAt.HasValue)
+        {
+            yield return new TimelineEvent(
+                job.CompletedAt.Value,
+                "Succeeded",
+                "succeeded",
+                null,
+                null);
+        }
+        else if (job.Status == JobStatus.Failed && job.CompletedAt.HasValue)
+        {
+            // Final failure (no more retries)
+            if (!job.RetryAt.HasValue || job.RetryAt.Value <= now)
+            {
+                yield return new TimelineEvent(
+                    job.CompletedAt.Value,
+                    "Failed",
+                    "failed",
+                    null,
+                    job.LastErrorMessage);
+
+                // Dead-letter if applicable
+                yield return new TimelineEvent(
+                    job.CompletedAt.Value,
+                    "Dead-letter",
+                    "dead",
+                    "handler invoked",
+                    null);
+            }
+        }
+        else if (job.Status == JobStatus.Expired && job.ExpiresAt.HasValue)
+        {
+            yield return new TimelineEvent(
+                job.ExpiresAt.Value,
+                "Expired",
+                "expired",
+                "deadline passed before execution",
+                null);
+        }
     }
 
-    private static string GetLineGradient(string currentStatus, string nextStatus)
-    {
-        var currentColor = GetStatusColor(currentStatus);
-        var nextColor = GetStatusColor(nextStatus);
-        return $"background: linear-gradient(to bottom, {currentColor}, {nextColor});";
-    }
-
-    private static string GetStatusColor(string status) =>
-        status switch
+    private static string GetTimelineNodeClass(string cssClass, bool isFinal) =>
+        cssClass switch
         {
-            "success" => "rgba(52,211,153,.8)",
-            "error" => "rgba(248,113,113,.8)",
-            "muted" => "rgba(71,85,105,.5)",
-            "warning" => "rgba(251,191,36,.8)",
-            "active" => "rgba(251,191,36,.8)",
-            _ => "rgba(148,163,184,.4)",
-        };
-
-    private static string GetTimelineNodeClass(string status, bool isFinal) =>
-        status switch
-        {
-            "Succeeded" => isFinal ? "timeline-node-success timeline-node-final" : "timeline-node-success",
-            "Failed" => isFinal ? "timeline-node-error timeline-node-final" : "timeline-node-error",
-            "Expired" => isFinal ? "timeline-node-muted timeline-node-final" : "timeline-node-muted",
-            "Processing" => "timeline-node-active",
-            "Retry" => isFinal ? "timeline-node-warning timeline-node-final" : "timeline-node-warning",
+            "succeeded" => isFinal ? "timeline-node-success timeline-node-final" : "timeline-node-success",
+            "failed" or "dead" => isFinal ? "timeline-node-error timeline-node-final" : "timeline-node-error",
+            "expired" => isFinal ? "timeline-node-muted timeline-node-final" : "timeline-node-muted",
+            "processing" => "timeline-node-active",
+            "scheduled" => isFinal ? "timeline-node-warning timeline-node-final" : "timeline-node-warning",
+            "enqueued" => "timeline-node-neutral",
             _ => "timeline-node-neutral",
         };
 
     private static string HtmlEncode(string? text) => HttpUtility.HtmlEncode(text ?? string.Empty);
+
+    /// <summary>Timeline event record.</summary>
+    private sealed record TimelineEvent(
+        DateTimeOffset? At,
+        string Label,
+        string CssClass,
+        string? Subtitle,
+        string? Error);
 }

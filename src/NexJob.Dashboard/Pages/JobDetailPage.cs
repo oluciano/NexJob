@@ -12,6 +12,7 @@ internal sealed class JobDetailPage : IComponent
     [Parameter] public IStorageProvider Storage { get; set; } = default!;
     [Parameter] public string PathPrefix { get; set; } = "/dashboard";
     [Parameter] public string Title { get; set; } = "NexJob";
+    [Parameter] public NavCounters? Counters { get; set; }
     [Parameter] public JobId JobId { get; set; }
     [Parameter] public bool IsReadOnly { get; set; }
 
@@ -31,7 +32,7 @@ internal sealed class JobDetailPage : IComponent
             var notFoundHtml =
                 HtmlFragments.EmptyState("0 0 24 24", "Job not found") +
                 $"<div style=\"text-align:center;margin-top:12px\"><a href=\"{PathPrefix}/jobs\" class=\"btn btn-ghost btn-sm\">← Back to Jobs</a></div>";
-            return HtmlShell.Wrap(Title, PathPrefix, "jobs", notFoundHtml);
+            return HtmlShell.Wrap(Title, PathPrefix, "jobs", notFoundHtml, Counters);
         }
 
         var now = DateTimeOffset.UtcNow;
@@ -186,6 +187,6 @@ internal sealed class JobDetailPage : IComponent
             logsSection +
             sseScript;
 
-        return HtmlShell.Wrap(Title, PathPrefix, "jobs", body);
+        return HtmlShell.Wrap(Title, PathPrefix, "jobs", body, Counters);
     }
 }

@@ -11,6 +11,7 @@ internal sealed class RecurringPage : IComponent
     [Parameter] public IStorageProvider Storage { get; set; } = default!;
     [Parameter] public string PathPrefix { get; set; } = "/dashboard";
     [Parameter] public string Title { get; set; } = "NexJob";
+    [Parameter] public NavCounters? Counters { get; set; }
 
     void IComponent.Attach(RenderHandle renderHandle) => _handle = renderHandle;
 
@@ -30,7 +31,7 @@ internal sealed class RecurringPage : IComponent
             var emptyBody =
                 "<div class=\"page-header\"><div><h1 class=\"page-title\">Recurring Jobs</h1><p class=\"page-subtitle\">Scheduled cron jobs</p></div></div>" +
                 "<div class=\"empty-state\"><svg width=\"40\" height=\"40\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1\"><path d=\"M21 8A9 9 0 1 1 12 3v4l-3-3\"/><polyline points=\"15,3 12,6 15,9\"/></svg><p>No recurring jobs registered.</p></div>";
-            return HtmlShell.Wrap(Title, PathPrefix, "recurring", emptyBody);
+            return HtmlShell.Wrap(Title, PathPrefix, "recurring", emptyBody, Counters);
         }
 
         var cards = string.Join(string.Empty, jobs.Select(r =>
@@ -150,6 +151,6 @@ internal sealed class RecurringPage : IComponent
             "<div class=\"recurring-list\">" + cards + "</div>" +
             "</div>";
 
-        return HtmlShell.Wrap(Title, PathPrefix, "recurring", body);
+        return HtmlShell.Wrap(Title, PathPrefix, "recurring", body, Counters);
     }
 }

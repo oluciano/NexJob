@@ -12,31 +12,76 @@ internal sealed class OverviewPage : IComponent
     [Parameter] public IStorageProvider Storage { get; set; } = default!;
     [Parameter] public string PathPrefix { get; set; } = "/dashboard";
     [Parameter] public string Title { get; set; } = "NexJob";
+    [Parameter] public NavCounters? Counters { get; set; }
+    [Parameter] public JobMetrics? Metrics { get; set; }
 
     void IComponent.Attach(RenderHandle renderHandle) => _handle = renderHandle;
 
-    async Task IComponent.SetParametersAsync(ParameterView parameters)
+    Task IComponent.SetParametersAsync(ParameterView parameters)
     {
         parameters.SetParameterProperties(this);
-        var metrics = await Storage.GetMetricsAsync();
-        _handle.Render(b => b.AddMarkupContent(0, BuildHtml(metrics)));
+        _handle.Render(b => b.AddMarkupContent(0, BuildHtml()));
+        return Task.CompletedTask;
     }
 
-    private string BuildHtml(JobMetrics m)
+    private static (int Avg, HashSet<int> Anomalies) DetectAnomalies(
+        IReadOnlyList<HourlyThroughput> hours)
     {
+        if (hours.Count < 4)
+        {
+            return (0, new HashSet<int>());
+        }
+
+        var active = hours.Where(h => h.Count > 0).ToList();
+        if (active.Count < 3)
+        {
+            return (0, new HashSet<int>());
+        }
+
+        var avg = (int)active.Average(h => h.Count);
+        if (avg == 0)
+        {
+            return (0, new HashSet<int>());
+        }
+
+        var anomalies = hours
+            .Select((h, i) => (h, i))
+            .Where(x => x.h.Count > 0 && x.h.Count < avg * 0.4)
+            .Select(x => x.i)
+            .ToHashSet();
+
+        return (avg, anomalies);
+    }
+
+    private string BuildHtml()
+    {
+        var m = Metrics ?? new JobMetrics();
         var now = DateTimeOffset.UtcNow;
         var max = m.HourlyThroughput.Count > 0 ? m.HourlyThroughput.Max(h => h.Count) : 1;
+
+        var (avg, anomalyIndexes) = DetectAnomalies(m.HourlyThroughput);
+        var avgPct = max > 0 ? (int)(avg * 140.0 / max) : 0;
 
         // Only label every 4th bar to avoid clutter
         var bars = string.Join(string.Empty, m.HourlyThroughput.Select((h, i) =>
         {
             var pct = max > 0 ? (int)(h.Count * 140.0 / max) : 2;
+            var isAnomaly = anomalyIndexes.Contains(i);
+            var cssClass = isAnomaly ? "bar anomaly" : "bar";
             var label = i % 4 == 0
                 ? $"<span class=\"bar-label\">{h.Hour:HH}</span>"
                 : string.Empty;
             var tooltip = $"{h.Hour:HH:mm} — {h.Count} job{(h.Count == 1 ? string.Empty : "s")}";
-            return $"<div class=\"bar-wrap\"><div class=\"bar\" style=\"height:{pct}px\" data-tip=\"{System.Web.HttpUtility.HtmlAttributeEncode(tooltip)}\"></div>{label}</div>";
+            return $"<div class=\"bar-wrap\"><div class=\"{cssClass}\" style=\"height:{pct}px\" data-tip=\"{System.Web.HttpUtility.HtmlAttributeEncode(tooltip)}\"></div>{label}</div>";
         }));
+
+        var anomalyHours = anomalyIndexes
+            .OrderBy(i => i)
+            .Select(i => m.HourlyThroughput[i].Hour.ToString("HH") + "h")
+            .ToList();
+        var anomalyNote = anomalyHours.Count > 0
+            ? $"<div class=\"anomaly-note\">⚠ Drop at {string.Join(", ", anomalyHours)} — below 40% of average</div>"
+            : string.Empty;
 
         var failCards = m.RecentFailures.Count == 0
             ? "<div class=\"empty-state\" style=\"padding:32px 0\"><p>No failures recently — things look good.</p></div>"
@@ -70,7 +115,7 @@ internal sealed class OverviewPage : IComponent
             "<div class=\"chart\">" +
             "<div class=\"chart-header\"><span class=\"section-title\">Throughput — last 24h</span></div>" +
             (bars.Length > 0
-                ? $"<div class=\"bars\" id=\"chart-bars\">{bars}</div><div class=\"chart-tooltip\" id=\"chart-tip\"></div>"
+                ? $"<div class=\"bars\" id=\"chart-bars\" data-avg-pct=\"{avgPct}\">{bars}</div><div class=\"chart-tooltip\" id=\"chart-tip\"></div>{anomalyNote}"
                 : "<div class=\"empty-state\" style=\"padding:24px 0\"><p>No completed jobs in the last 24 hours.</p></div>") +
             "</div>" +
 
@@ -102,8 +147,20 @@ internal sealed class OverviewPage : IComponent
             $"b.addEventListener('mousemove',function(e){{tip.style.left=(e.clientX+12)+'px';tip.style.top=(e.clientY-32)+'px';}});" +
             $"b.addEventListener('mouseleave',function(){{tip.style.display='none';}});" +
             $"}});}}" +
+            // average line
+            $"(function(){{" +
+            $"var el=document.getElementById('chart-bars');" +
+            $"if(!el)return;" +
+            $"var pct=parseInt(el.getAttribute('data-avg-pct')||'0');" +
+            $"if(pct<4)return;" +
+            $"var line=document.createElement('div');" +
+            $"line.className='avg-line';" +
+            $"line.style.bottom=pct+'px';" +
+            $"el.style.position='relative';" +
+            $"el.appendChild(line);" +
+            $"}})();" +
             $"}})();</script>";
 
-        return HtmlShell.Wrap(Title, PathPrefix, "overview", body);
+        return HtmlShell.Wrap(Title, PathPrefix, "overview", body, Counters, m);
     }
 }

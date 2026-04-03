@@ -12,6 +12,7 @@ internal sealed class ServersPage : IComponent
     [Parameter] public IStorageProvider Storage { get; set; } = default!;
     [Parameter] public string PathPrefix { get; set; } = "/dashboard";
     [Parameter] public string Title { get; set; } = "NexJob";
+    [Parameter] public NavCounters? Counters { get; set; }
 
     void IComponent.Attach(RenderHandle renderHandle) => _handle = renderHandle;
 
@@ -36,7 +37,7 @@ internal sealed class ServersPage : IComponent
                 "<svg width=\"40\" height=\"40\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1\"><rect x=\"2\" y=\"2\" width=\"20\" height=\"8\" rx=\"2\" ry=\"2\"/><rect x=\"2\" y=\"14\" width=\"20\" height=\"8\" rx=\"2\" ry=\"2\"/><line x1=\"6\" y1=\"6\" x2=\"6.01\" y2=\"6\"/><line x1=\"6\" y1=\"18\" x2=\"6.01\" y2=\"18\"/></svg>" +
                 "<p>No active servers running.</p>" +
                 "</div>";
-            return HtmlShell.Wrap(Title, PathPrefix, "servers", emptyBody);
+            return HtmlShell.Wrap(Title, PathPrefix, "servers", emptyBody, Counters);
         }
 
         var tableBody = string.Join(string.Empty, servers.Select(s =>
@@ -105,6 +106,6 @@ internal sealed class ServersPage : IComponent
             "</table></div>" +
             "</div>";
 
-        return HtmlShell.Wrap(Title, PathPrefix, "servers", body);
+        return HtmlShell.Wrap(Title, PathPrefix, "servers", body, Counters);
     }
 }

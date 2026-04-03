@@ -142,12 +142,11 @@ public sealed class RecurringJobSettingsTests
             registry,
             NullLogger<RecurringJobRegistrar>.Instance);
         var inputJson = """{ "Value": "test-input" }""";
-        using var doc = System.Text.Json.JsonDocument.Parse(inputJson);
 
         var settings = new RecurringJobSettings
         {
             Job = "TestJobWithInput",
-            Input = doc.RootElement,
+            Input = inputJson,
             Cron = "0 0 * * *",
         };
 
@@ -228,6 +227,38 @@ public sealed class RecurringJobSettingsTests
         // Assert - job should NOT be registered due to ambiguity
         var all = await storage.GetRecurringJobsAsync();
         all.Should().BeEmpty("ambiguous job should not be registered");
+    }
+
+    [Fact]
+    public async Task InputAsString_FromConfig_RegistersSuccessfully()
+    {
+        // Arrange
+        var storage = new InMemoryStorageProvider();
+        var registry = new NexJobJobRegistry();
+        registry.Register(typeof(TestJobWithInput));
+
+        var registrar = new RecurringJobRegistrar(
+            storage,
+            registry,
+            NullLogger<RecurringJobRegistrar>.Instance);
+        var inputJson = """{"Value": "test-value"}""";
+
+        var settings = new RecurringJobSettings
+        {
+            Job = "TestJobWithInput",
+            Id = "test-with-input",
+            Input = inputJson,
+            Cron = "* * * * *",
+        };
+
+        // Act - should not throw (was throwing InvalidOperationException from JsonElement.GetRawText)
+        await registrar.RegisterRecurringJobsAsync([settings], default);
+
+        // Assert
+        var all = await storage.GetRecurringJobsAsync();
+        var registered = all.Should().ContainSingle(r => r.RecurringJobId == "test-with-input").Subject;
+        registered.InputType.Should().Contain(nameof(TestInput));
+        registered.InputJson.Should().Contain("test-value");
     }
 }
 

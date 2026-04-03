@@ -11,6 +11,7 @@ internal sealed class JobsPage : IComponent
     [Parameter] public IStorageProvider Storage { get; set; } = default!;
     [Parameter] public string PathPrefix { get; set; } = "/dashboard";
     [Parameter] public string Title { get; set; } = "NexJob";
+    [Parameter] public NavCounters? Counters { get; set; }
     [Parameter] public JobStatus? StatusFilter { get; set; }
     [Parameter] public string? Search { get; set; }
     [Parameter] public string? TagFilter { get; set; }
@@ -78,6 +79,6 @@ internal sealed class JobsPage : IComponent
             $"</div>" +
             $"</div>";
 
-        return HtmlShell.Wrap(Title, PathPrefix, "jobs", body);
+        return HtmlShell.Wrap(Title, PathPrefix, "jobs", body, Counters);
     }
 }
