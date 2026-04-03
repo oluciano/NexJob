@@ -22,6 +22,9 @@ internal sealed class RecurringJobDetailPage : IComponent
     /// <summary>Gets or sets the page title.</summary>
     [Parameter] public string Title { get; set; } = "NexJob";
 
+    /// <summary>Gets or sets shared navigation counters.</summary>
+    [Parameter] public NavCounters? Counters { get; set; }
+
     void IComponent.Attach(RenderHandle renderHandle) => _handle = renderHandle;
 
     Task IComponent.SetParametersAsync(ParameterView parameters)
@@ -260,7 +263,7 @@ internal sealed class RecurringJobDetailPage : IComponent
             $"</div>" +
             modalHtml;
 
-        return HtmlShell.Wrap(Title, PathPrefix, "recurring", body);
+        return HtmlShell.Wrap(Title, PathPrefix, "recurring", body, Counters);
     }
 
     private string BuildPagination(PagedResult<JobRecord> result, string encodedIdUrl)

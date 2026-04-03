@@ -29,6 +29,10 @@ internal sealed class SettingsPage : ComponentBase
     [Parameter]
     public string PathPrefix { get; set; } = string.Empty;
 
+    /// <summary>Shared navigation counters.</summary>
+    [Parameter]
+    public NavCounters? Counters { get; set; }
+
     /// <summary>The dashboard title.</summary>
     [Parameter]
     public string Title { get; set; } = "NexJob";
@@ -134,7 +138,7 @@ internal sealed class SettingsPage : ComponentBase
                   "</form></div>"
                 : string.Empty);
 
-        builder.AddMarkupContent(0, HtmlShell.Wrap(Title, PathPrefix, "settings", body));
+        builder.AddMarkupContent(0, HtmlShell.Wrap(Title, PathPrefix, "settings", body, Counters));
     }
 
     private string BuildQueueRows()

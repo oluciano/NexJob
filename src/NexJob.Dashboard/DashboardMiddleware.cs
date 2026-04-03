@@ -424,17 +424,35 @@ public sealed class DashboardMiddleware
         await using var renderer = new HtmlRenderer(context.RequestServices,
             context.RequestServices.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>());
 
+        // Compute shared counters once for all pages
+        var metrics = await storage.GetMetricsAsync();
+        var servers = await storage.GetActiveServersAsync(TimeSpan.FromMinutes(1), context.RequestAborted);
+        var queues = await storage.GetQueueMetricsAsync(context.RequestAborted);
+        var nexJobOptions = context.RequestServices.GetRequiredService<NexJobOptions>();
+
+        var activeQueues = queues.Count(q => q.Processing > 0);
+        var totalQueues = nexJobOptions.Queues.Count;
+        NavCounters counters = new NavCounters(
+            Queues: $"{activeQueues}/{totalQueues}",
+            QueuesClass: activeQueues < totalQueues ? "warn" : "ok",
+            Jobs: $"{metrics.Processing}/{metrics.Enqueued}",
+            Recurring: $"{metrics.Processing}/{metrics.Recurring}",
+            Failed: metrics.Failed > 0 ? metrics.Failed.ToString() : null,
+            FailedClass: metrics.Failed > 0 ? "danger" : null,
+            Servers: $"{servers.Count}/{servers.Count}",
+            ServersClass: "ok");
+
         ParameterView parameters;
 
         if (subPath == string.Empty || subPath == "overview")
         {
-            var nexJobOptions = context.RequestServices.GetRequiredService<NexJobOptions>();
             parameters = ParameterView.FromDictionary(new Dictionary<string, object?>
             {
                 ["Storage"] = storage,
                 ["PathPrefix"] = _pathPrefix,
                 ["Title"] = _options.Title,
-                ["Options"] = nexJobOptions,
+                ["Counters"] = counters,
+                ["Metrics"] = metrics,
             });
             return await RenderAsync<OverviewPage>(renderer, parameters);
         }
@@ -446,6 +464,7 @@ public sealed class DashboardMiddleware
                 ["Storage"] = storage,
                 ["PathPrefix"] = _pathPrefix,
                 ["Title"] = _options.Title,
+                ["Counters"] = counters,
             });
             return await RenderAsync<QueuesPage>(renderer, parameters);
         }
@@ -457,6 +476,7 @@ public sealed class DashboardMiddleware
                 ["Storage"] = storage,
                 ["PathPrefix"] = _pathPrefix,
                 ["Title"] = _options.Title,
+                ["Counters"] = counters,
             });
             return await RenderAsync<ServersPage>(renderer, parameters);
         }
@@ -478,6 +498,7 @@ public sealed class DashboardMiddleware
                 ["Search"] = search,
                 ["TagFilter"] = tag,
                 ["Page"] = page,
+                ["Counters"] = counters,
             });
             return await RenderAsync<JobsPage>(renderer, parameters);
         }
@@ -493,6 +514,7 @@ public sealed class DashboardMiddleware
                     ["PathPrefix"] = _pathPrefix,
                     ["Title"] = _options.Title,
                     ["JobId"] = new JobId(guid),
+                    ["Counters"] = counters,
                 });
                 return await RenderAsync<JobDetailPage>(renderer, parameters);
             }
@@ -521,6 +543,7 @@ public sealed class DashboardMiddleware
                 ["PageSize"] = pageSize,
                 ["PathPrefix"] = _pathPrefix,
                 ["Title"] = _options.Title,
+                ["Counters"] = counters,
             });
             return await RenderAsync<RecurringJobDetailPage>(renderer, parameters);
         }
@@ -532,6 +555,7 @@ public sealed class DashboardMiddleware
                 ["Storage"] = storage,
                 ["PathPrefix"] = _pathPrefix,
                 ["Title"] = _options.Title,
+                ["Counters"] = counters,
             });
             return await RenderAsync<RecurringPage>(renderer, parameters);
         }
@@ -543,6 +567,7 @@ public sealed class DashboardMiddleware
                 ["Storage"] = storage,
                 ["PathPrefix"] = _pathPrefix,
                 ["Title"] = _options.Title,
+                ["Counters"] = counters,
             });
             return await RenderAsync<FailedPage>(renderer, parameters);
         }
@@ -550,7 +575,6 @@ public sealed class DashboardMiddleware
         if (subPath == "settings")
         {
             var runtimeStore = context.RequestServices.GetRequiredService<IRuntimeSettingsStore>();
-            var nexJobOptions = context.RequestServices.GetRequiredService<NexJobOptions>();
             var runtime = await runtimeStore.GetAsync(context.RequestAborted);
 
             parameters = ParameterView.FromDictionary(new Dictionary<string, object?>
@@ -560,6 +584,7 @@ public sealed class DashboardMiddleware
                 ["Runtime"] = runtime,
                 ["PathPrefix"] = _pathPrefix,
                 ["Title"] = _options.Title,
+                ["Counters"] = counters,
             });
             return await RenderAsync<SettingsPage>(renderer, parameters);
         }

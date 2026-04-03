@@ -1,6 +1,5 @@
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Rendering;
-using NexJob.Configuration;
 using NexJob.Storage;
 
 namespace NexJob.Dashboard.Pages;
@@ -13,34 +12,21 @@ internal sealed class OverviewPage : IComponent
     [Parameter] public IStorageProvider Storage { get; set; } = default!;
     [Parameter] public string PathPrefix { get; set; } = "/dashboard";
     [Parameter] public string Title { get; set; } = "NexJob";
-    [Parameter] public NexJobOptions Options { get; set; } = default!;
+    [Parameter] public NavCounters? Counters { get; set; }
+    [Parameter] public JobMetrics? Metrics { get; set; }
 
     void IComponent.Attach(RenderHandle renderHandle) => _handle = renderHandle;
 
-    async Task IComponent.SetParametersAsync(ParameterView parameters)
+    Task IComponent.SetParametersAsync(ParameterView parameters)
     {
         parameters.SetParameterProperties(this);
-        var metrics = await Storage.GetMetricsAsync();
-        var activeServers = await Storage.GetActiveServersAsync(TimeSpan.FromMinutes(1), default);
-        var queueMetrics = await Storage.GetQueueMetricsAsync(default);
-        _handle.Render(b => b.AddMarkupContent(0, BuildHtml(metrics, activeServers, queueMetrics)));
+        _handle.Render(b => b.AddMarkupContent(0, BuildHtml()));
+        return Task.CompletedTask;
     }
 
-    private string BuildHtml(JobMetrics m, IReadOnlyList<ServerRecord> servers, IReadOnlyList<QueueMetrics> queues)
+    private string BuildHtml()
     {
-        var activeQueues = queues.Count(q => q.Processing > 0);
-        var totalQueues = Options.Queues.Count;
-
-        NavCounters counters = new NavCounters(
-            Queues: $"{activeQueues}/{totalQueues}",
-            QueuesClass: activeQueues < totalQueues ? "warn" : "ok",
-            Jobs: $"{m.Processing}/{m.Enqueued}",
-            Recurring: $"{m.Processing}/{m.Recurring}",
-            Failed: m.Failed > 0 ? m.Failed.ToString() : null,
-            FailedClass: m.Failed > 0 ? "danger" : null,
-            Servers: $"{servers.Count}/{servers.Count}",
-            ServersClass: "ok");
-
+        var m = Metrics ?? new JobMetrics();
         var now = DateTimeOffset.UtcNow;
         var max = m.HourlyThroughput.Count > 0 ? m.HourlyThroughput.Max(h => h.Count) : 1;
 
@@ -121,6 +107,6 @@ internal sealed class OverviewPage : IComponent
             $"}});}}" +
             $"}})();</script>";
 
-        return HtmlShell.Wrap(Title, PathPrefix, "overview", body, counters, m);
+        return HtmlShell.Wrap(Title, PathPrefix, "overview", body, Counters, m);
     }
 }

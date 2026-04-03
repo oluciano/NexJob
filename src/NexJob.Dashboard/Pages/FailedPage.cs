@@ -11,6 +11,7 @@ internal sealed class FailedPage : IComponent
     [Parameter] public IStorageProvider Storage { get; set; } = default!;
     [Parameter] public string PathPrefix { get; set; } = "/dashboard";
     [Parameter] public string Title { get; set; } = "NexJob";
+    [Parameter] public NavCounters? Counters { get; set; }
     [Parameter] public JobStatus? StatusFilter { get; set; }
     [Parameter] public string? Search { get; set; }
     [Parameter] public int Page { get; set; } = 1;
@@ -54,7 +55,7 @@ internal sealed class FailedPage : IComponent
                 HtmlFragments.FilterBar(PathPrefix, currentStatus, Search, null) +
                 HtmlFragments.EmptyState("0 0 24 24", emptyMsg) +
                 "</div>";
-            return HtmlShell.Wrap(Title, PathPrefix, "failed", emptyBody);
+            return HtmlShell.Wrap(Title, PathPrefix, "failed", emptyBody, Counters);
         }
 
         var jobPlural = result.TotalCount == 1 ? string.Empty : "s";
@@ -99,6 +100,6 @@ internal sealed class FailedPage : IComponent
             "</div>" +
             "</div>";
 
-        return HtmlShell.Wrap(Title, PathPrefix, "failed", body);
+        return HtmlShell.Wrap(Title, PathPrefix, "failed", body, Counters);
     }
 }

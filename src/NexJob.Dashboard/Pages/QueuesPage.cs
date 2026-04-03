@@ -11,6 +11,7 @@ internal sealed class QueuesPage : IComponent
     [Parameter] public IStorageProvider Storage { get; set; } = default!;
     [Parameter] public string PathPrefix { get; set; } = "/dashboard";
     [Parameter] public string Title { get; set; } = "NexJob";
+    [Parameter] public NavCounters? Counters { get; set; }
 
     void IComponent.Attach(RenderHandle renderHandle) => _handle = renderHandle;
 
@@ -28,7 +29,7 @@ internal sealed class QueuesPage : IComponent
             var emptyBody =
                 "<div class=\"page-header\"><div><h1 class=\"page-title\">Queues</h1><p class=\"page-subtitle\">Active processing queues</p></div></div>" +
                 "<div class=\"empty-state\"><svg width=\"40\" height=\"40\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1\"><rect x=\"1\" y=\"10\" width=\"22\" height=\"4\" rx=\"1\"/><rect x=\"1\" y=\"6\" width=\"22\" height=\"3\" rx=\"1\" opacity=\".5\"/><rect x=\"1\" y=\"2\" width=\"22\" height=\"3\" rx=\"1\" opacity=\".25\"/></svg><p>No active queues.</p></div>";
-            return HtmlShell.Wrap(Title, PathPrefix, "queues", emptyBody);
+            return HtmlShell.Wrap(Title, PathPrefix, "queues", emptyBody, Counters);
         }
 
         var cards = string.Join(string.Empty, queues.Select(q =>
@@ -67,6 +68,6 @@ internal sealed class QueuesPage : IComponent
             $"<div class=\"queue-grid\">{cards}</div>" +
             "</div>";
 
-        return HtmlShell.Wrap(Title, PathPrefix, "queues", body);
+        return HtmlShell.Wrap(Title, PathPrefix, "queues", body, Counters);
     }
 }
