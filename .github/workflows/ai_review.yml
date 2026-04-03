@@ -20,15 +20,15 @@ jobs:
         uses: qodo-ai/pr-agent@main
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GOOGLE_AI_STUDIO.GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-
-          config.model: "gemini-2.0-flash"
-          config.fallback_models: '["gemini-1.5-flash"]'
-
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          
+          config.model: "gemini/gemini-1.5-pro"
+          config.fallback_models: '["gemini/gemini-1.5-flash"]'
 
           github_action_config.auto_review: "true"
           github_action_config.auto_describe: "false"
           github_action_config.auto_improve: "false"
+          github_action_config.handle_pr_actions: '["opened", "synchronize", "reopened", "ready_for_review"]'
 
           pr_reviewer.inline_code_comments: "true"
           pr_code_suggestions.num_code_suggestions: "4"
@@ -54,25 +54,3 @@ jobs:
              "ai-method/**", "prompts-archived/**",
              ".github/workflows/**",
              "**/*.md", "**/*.json", "**/*.yml"]
-      - name: Debug Comment (workflow alive)
-        if: ${{ always() }}
-        uses: actions/github-script@v7
-        with:
-          script: |
-            await github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: "✅ AI Review workflow is running (debug test)"
-            })
-      - name: Debug Comment (workflow alive)
-        if: ${{ always() }}
-        uses: actions/github-script@v7
-        with:
-          script: |
-            await github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: "✅ AI Review workflow is running (debug test)"
-            })
