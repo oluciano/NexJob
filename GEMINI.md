@@ -117,6 +117,43 @@ Before making changes:
 
 ---
 
+## PR Creation Rules
+
+When opening a pull request, always use `gh pr create` with `--body` following
+the project template at `.github/pull_request_template.md`.
+
+Required format:
+```bash
+gh pr create \
+  --title "<type>(<scope>): <description>" \
+  --base develop \
+  --body "## Summary
+<one or two sentences describing what this PR does>
+
+## Type of change
+- [ ] Bug fix
+- [ ] New feature
+- [ ] New storage provider
+- [ ] Refactor / cleanup
+- [ ] Documentation
+- [ ] Tests
+
+## Checklist
+- [ ] \`dotnet build\` passes with **0 warnings**
+- [ ] \`dotnet test\` passes — no regressions
+- [ ] New behaviour is covered by tests
+- [ ] Public API has XML documentation (\`///\`)
+- [ ] Commit messages follow Conventional Commits
+
+## Related issues
+<!-- Closes #123 -->"
+```
+
+Mark the correct `Type of change` checkbox with `[x]`.
+Fill `Related issues` only when there is a related issue — otherwise remove the line.
+
+---
+
 ## Output Style
 
 - Be direct and precise
