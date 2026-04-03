@@ -26,12 +26,12 @@ public sealed class RecurringJobSettings
     public string? Id { get; set; }
 
     /// <summary>
-    /// JSON object representing the job input payload. Optional.
+    /// JSON string representing the job input payload. Optional.
     /// Omit for <see cref="IJob"/> (no-input) jobs.
-    /// Example: { "Region": "us-east", "Limit": 100 }
+    /// Example: "{\"Region\": \"us-east\", \"Limit\": 100}"
     /// Input type is automatically inferred from the job's <see cref="IJob{TInput}"/> interface.
     /// </summary>
-    public JsonElement? Input { get; set; }
+    public string? Input { get; set; }
 
     /// <summary>
     /// Cron expression that defines the execution schedule. Required.
