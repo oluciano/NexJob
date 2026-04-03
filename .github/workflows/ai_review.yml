@@ -20,7 +20,8 @@ jobs:
         uses: qodo-ai/pr-agent@main
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY_2 }}
+          GOOGLE_AI_STUDIO.GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY_2 }}
           
           config.model: "gemini/gemini-1.5-pro"
           config.fallback_models: '["gemini/gemini-1.5-flash"]'
@@ -40,14 +41,8 @@ jobs:
             2. Dispatcher is stateless — all state transitions must be persisted.
             3. Deadline enforced before execution — expired jobs never execute.
             4. Dead-letter handlers must never crash the dispatcher — exceptions swallowed and logged only.
-            5. Zero warnings in Release builds — TreatWarningsAsErrors is enforced.
-            6. Classes sealed by default. No .Result or .Wait(). CancellationToken always propagated.
-            7. All public APIs must have XML documentation.
-            8. StyleCop rules enforced: member ordering (SA1202/SA1204), trailing commas (SA1413), no blank line before closing brace (SA1508).
-            9. Do not propose full rewrites. Prefer incremental, low-risk changes.
-            10. Do not introduce new abstractions without clear benefit.
             Focus on: invariant violations, missing tests, StyleCop issues, missing XML docs, async violations.
-            Do NOT comment on: formatting preferences, subjective style, ai-method/ docs, prompts-archived/.
+            Do NOT comment on: formatting preferences, subjective style.
 
           config.ignore_paths: >
             ["**/bin/**", "**/obj/**", "**/nupkg/**",
