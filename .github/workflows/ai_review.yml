@@ -53,3 +53,25 @@ jobs:
              "ai-method/**", "prompts-archived/**",
              ".github/workflows/**",
              "**/*.md", "**/*.json", "**/*.yml"]
+      - name: Debug Comment (workflow alive)
+        if: ${{ always() }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: "✅ AI Review workflow is running (debug test)"
+            })
+      - name: Debug Comment (workflow alive)
+        if: ${{ always() }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: "✅ AI Review workflow is running (debug test)"
+            })
