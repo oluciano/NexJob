@@ -21,12 +21,13 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY_2 }}
-          GOOGLE_AI_STUDIO.GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY_2 }}
-          
-          config.model: "gemini/gemini-1.5-pro"
-          github_action_config.auto_review: "true"
-          github_action_config.handle_pr_actions: '["opened", "synchronize", "reopened", "ready_for_review"]'
-          pr_reviewer.inline_code_comments: "true"
-          pr_reviewer.extra_instructions: >
-            Focus on: invariant violations, missing tests, StyleCop issues, async violations.
-            Do NOT comment on formatting or docs.
+          PR_AGENT.CONFIG: |
+            config:
+              model: "gemini/gemini-1.5-pro"
+              fallback_models: ["gemini/gemini-1.5-pro"]
+            github_action_config:
+              auto_review: true
+              handle_pr_actions: ["opened", "synchronize", "reopened", "ready_for_review"]
+            pr_reviewer:
+              inline_code_comments: true
+              extra_instructions: "Focus on: invariant violations, StyleCop issues, missing XML docs, async violations."
