@@ -622,7 +622,7 @@ internal static class HtmlShell
     {
         if (m is null)
         {
-            return string.Empty;
+            return "<div class=\"health-badge healthy\"><span class=\"health-pulse\"></span>HEALTHY</div>";
         }
 
         if (m.Failed > 0 && m.Processing == 0)
