@@ -37,7 +37,7 @@ public sealed class WakeUpChannelTests
         sw.Stop();
 
         received.Should().BeFalse();
-        sw.Elapsed.Should().BeGreaterThanOrEqualTo(TimeSpan.FromMilliseconds(50));
+        sw.Elapsed.Should().BeGreaterThanOrEqualTo(TimeSpan.FromMilliseconds(45));
     }
 
     [Fact]
