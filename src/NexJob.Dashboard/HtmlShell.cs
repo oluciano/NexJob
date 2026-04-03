@@ -437,7 +437,7 @@ internal static class HtmlShell
         .timeline-section { margin-bottom: 28px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,.2), inset 0 1px 0 rgba(255,255,255,.02); }
         .timeline { position: relative; padding: 8px 0; }
         .timeline-item { display: flex; align-items: flex-start; gap: 16px; position: relative; }
-        .timeline-item:not(:last-child) { margin-bottom: 22px; }
+        .timeline-item:not(:last-child) { margin-bottom: 24px; }
         .timeline-node { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; margin-top: 5px; border: 2px solid var(--border); transition: all .2s ease; }
         .timeline-node:hover { transform: scale(1.25); }
         .timeline-node-neutral { background: var(--text-3); border-color: var(--text-3); }
@@ -453,10 +453,10 @@ internal static class HtmlShell
         .timeline-node-final.timeline-node-muted { box-shadow: 0 0 10px rgba(71,85,105,.4), inset 0 0 4px rgba(255,255,255,.05); }
         .timeline-content { flex: 1; min-width: 0; }
         .timeline-label { font-size: 13px; font-weight: 600; color: var(--text); }
-        .timeline-metadata { font-size: 11px; color: var(--text-3); margin-top: 2px; font-style: italic; }
-        .timeline-time { font-size: 12px; color: var(--text-2); font-family: monospace; margin-top: 2px; }
-        .timeline-relative { font-size: 11px; color: var(--text-3); margin-top: 2px; }
-        .timeline-line { position: absolute; left: 5px; top: 17px; width: 2px; height: 22px; background: linear-gradient(to bottom, var(--border), transparent); }
+        .timeline-metadata { font-size: 12px; color: var(--text-2); margin-top: 2px; }
+        .timeline-time { font-size: 11px; color: var(--text-3); font-family: monospace; margin-top: 2px; }
+        .timeline-error { font-size: 11px; color: var(--danger); font-family: monospace; margin-top: 4px; }
+        .timeline-line { position: absolute; left: 5px; top: 22px; width: 2px; height: 24px; background: var(--border); }
         @keyframes timeline-pulse { 0%, 100% { box-shadow: 0 0 10px rgba(251,191,36,.5); } 50% { box-shadow: 0 0 20px rgba(251,191,36,.8); } }
 
         /* Pagination */
