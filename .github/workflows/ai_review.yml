@@ -16,7 +16,7 @@ jobs:
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CONFIG.MODEL: "gemini-1.5-flash"
+          CONFIG.MODEL: "gemini-1.5-pro"
           CONFIG.SYSTEM_PROMPT: >
             You are reviewing NexJob, a .NET 8 background job processing library.
             Before reviewing, internalize these rules from CLAUDE.md and GEMINI.md:
@@ -35,8 +35,8 @@ jobs:
           CONFIG.IGNORE_PATHS: >
             ["**/bin/**", "**/obj/**", "**/nupkg/**",
              "ai-method/**", "prompts-archived/**",
-             "*.dockerfile", "docker-compose.yml",
-             "**/*.md", "**/*.json"]
+             ".github/workflows/**",
+             "**/*.md", "**/*.json", "**/*.yml"]
           PR_REVIEWER.INLINE_CODE_COMMENTS: "true"
           PR_REVIEWER.NUM_CODE_SUGGESTIONS: "4"
           PR_REVIEWER.EXTRA_INSTRUCTIONS: >

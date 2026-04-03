@@ -4,6 +4,28 @@
 
 ---
 
+## Release Flow
+
+### Branch strategy
+- All work goes to `develop` first (never directly to `main`)
+- `main` always mirrors NuGet — what is on `main` is what is published
+- Release = merge `develop → main` via PR
+
+### How to release
+1. Update `Directory.Build.props` — bump `VersionPrefix`
+2. Update `CHANGELOG.md` — move `[Unreleased]` to `[x.y.z] — YYYY-MM-DD`
+3. Open PR: `develop → main`, title: `release: vX.Y.Z`
+4. CI must be green
+5. Merge PR
+6. Automation handles: git tag → GitHub Release → NuGet publish
+
+### What you must NOT do
+- Push directly to `main`
+- Create tags manually (automation does this)
+- Merge to `main` outside of a release PR
+
+---
+
 ## Release Checklist
 
 ### Pre-Release Validation
