@@ -17,11 +17,18 @@ jobs:
 
     steps:
       - name: AI PR Review
-        uses: Codium-ai/pr-agent@v0.22
+        uses: qodo-ai/pr-agent@main
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GEMINI.API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          CONFIG.MODEL: "gemini-1.5-pro"
-          PR_REVIEWER.EXTRA_INSTRUCTIONS: >
+          GOOGLE_AI_STUDIO.GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          
+          config.model: "gemini/gemini-1.5-pro"
+          config.fallback_models: '["gemini/gemini-1.5-flash"]'
+          
+          github_action_config.auto_review: "true"
+          github_action_config.handle_pr_actions: '["opened", "synchronize", "reopened", "ready_for_review"]'
+          
+          pr_reviewer.inline_code_comments: "true"
+          pr_reviewer.extra_instructions: >
             You are reviewing NexJob, a .NET 8 background job processing library.
             Focus on: invariant violations, StyleCop issues, missing XML docs, async violations.
