@@ -12,6 +12,11 @@ public sealed class NexJobOptions
     /// Maximum number of jobs that can execute concurrently on this host.
     /// Defaults to <c>10</c>.
     /// </summary>
+    /// <remarks>
+    /// Each worker runs in its own <see cref="System.Threading.Tasks.Task"/>.
+    /// Setting this higher than your storage connection pool size may cause contention.
+    /// For CPU-bound jobs, values above <c>Environment.ProcessorCount</c> rarely help.
+    /// </remarks>
     public int Workers { get; set; } = 10;
 
     /// <summary>
@@ -26,9 +31,14 @@ public sealed class NexJobOptions
     public int MaxAttempts { get; set; } = 10;
 
     /// <summary>
-    /// How often the dispatcher polls for new jobs when none are immediately available.
+    /// How often the dispatcher polls storage for new jobs when none are immediately available.
     /// Defaults to <c>15 seconds</c>.
     /// </summary>
+    /// <remarks>
+    /// Local enqueues via <see cref="IScheduler"/> wake the dispatcher immediately —
+    /// polling only affects jobs enqueued from external processes or other nodes.
+    /// Reduce this for multi-node setups where latency matters.
+    /// </remarks>
     public TimeSpan PollingInterval { get; set; } = TimeSpan.FromSeconds(15);
 
     /// <summary>
@@ -47,6 +57,11 @@ public sealed class NexJobOptions
     /// Maximum time allowed between heartbeat updates before a job is considered
     /// orphaned and re-enqueued. Defaults to <c>5 minutes</c>.
     /// </summary>
+    /// <remarks>
+    /// If a worker crashes mid-execution, its job stays in <see cref="JobStatus.Processing"/>
+    /// until the orphan watcher detects the stale heartbeat and re-enqueues it.
+    /// Set this higher than the longest expected job duration to avoid false re-enqueues.
+    /// </remarks>
     public TimeSpan HeartbeatTimeout { get; set; } = TimeSpan.FromMinutes(5);
 
     /// <summary>
@@ -65,8 +80,13 @@ public sealed class NexJobOptions
     /// <summary>
     /// Computes the retry delay for a failed job given the attempt number (1-based).
     /// Defaults to exponential backoff: <c>pow(attempt, 4) + 15 + rand(30) × (attempt + 1)</c> seconds.
-    /// Override in tests or when you need a different backoff strategy.
     /// </summary>
+    /// <remarks>
+    /// Override this in tests to eliminate delays:
+    /// <code>opt.RetryDelayFactory = _ => TimeSpan.Zero;</code>
+    /// Override in production for custom backoff strategies (linear, fixed, circuit-breaker, etc.).
+    /// This property cannot be set via <c>appsettings.json</c> — code only.
+    /// </remarks>
     public Func<int, TimeSpan> RetryDelayFactory { get; set; } = attempt =>
         TimeSpan.FromSeconds(Math.Pow(attempt, 4) + 15 + (Random.Shared.Next(30) * (attempt + 1)));
 

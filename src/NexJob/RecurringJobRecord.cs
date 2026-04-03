@@ -4,15 +4,23 @@ namespace NexJob;
 /// Persisted definition of a recurring job. The scheduler uses this record to
 /// calculate the next execution time and enqueue a <see cref="JobRecord"/> on schedule.
 /// </summary>
+/// <remarks>
+/// This record defines the schedule — it is NOT a job execution.
+/// Each time the cron fires, a new <see cref="JobRecord"/> is created and enqueued.
+/// Modifying this record via <see cref="IScheduler.RecurringAsync{TJob,TInput}"/>
+/// updates the schedule going forward; it does not affect already-enqueued instances.
+/// </remarks>
 public sealed class RecurringJobRecord
 {
     /// <summary>User-defined identifier for this recurring job. Must be unique.</summary>
     public string RecurringJobId { get; init; } = string.Empty;
 
     /// <summary>Assembly-qualified type name of the <see cref="IJob{TInput}"/> implementation.</summary>
+    /// <remarks>Internal storage field. Use the <c>Job</c> name in appsettings.json — NexJob resolves the type automatically.</remarks>
     public string JobType { get; init; } = string.Empty;
 
     /// <summary>Assembly-qualified type name of the job's input parameter type.</summary>
+    /// <remarks>Internal storage field. Use the <c>Job</c> name in appsettings.json — NexJob resolves the type automatically.</remarks>
     public string InputType { get; init; } = string.Empty;
 
     /// <summary>JSON-serialized job input payload.</summary>

@@ -153,6 +153,13 @@ git push -u origin feat/my-feature
 gh pr create
 ```
 
+## Branch Protection
+
+- `main` — protected. PR required. CI must pass. No direct pushes.
+- `develop` — protected. PR required. CI must pass. No direct pushes.
+- All work starts from `develop`. Features branch off `develop`.
+- `main` only receives merges from `develop` at release time.
+
 ---
 
 ## Pull request checklist
