@@ -465,6 +465,7 @@ public sealed class DashboardMiddleware
                 ["PathPrefix"] = _pathPrefix,
                 ["Title"] = _options.Title,
                 ["Counters"] = counters,
+                ["Options"] = nexJobOptions,
             });
             return await RenderAsync<QueuesPage>(renderer, parameters);
         }

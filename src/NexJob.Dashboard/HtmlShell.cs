@@ -468,6 +468,21 @@ internal static class HtmlShell
         .alert-warning { background: var(--warning-bg); border: 1px solid rgba(251,191,36,.2); color: var(--warning); }
         .alert-danger  { background: var(--danger-bg);  border: 1px solid rgba(248,113,113,.2); color: var(--danger); }
 
+        /* Worker heatmap */
+        .worker-section { margin-bottom: 24px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,.2), inset 0 1px 0 rgba(255,255,255,.02); }
+        .worker-list { display: flex; flex-direction: column; gap: 2px; }
+        .worker-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+        .worker-id { font-size: 11px; font-family: monospace; color: var(--text-3); width: 20px; flex-shrink: 0; }
+        .worker-track { flex: 1; height: 18px; background: var(--surface2); border-radius: 3px; overflow: hidden; }
+        .worker-fill { height: 100%; border-radius: 3px; display: flex; align-items: center; padding-left: 6px; min-width: 8px; }
+        .worker-fill.busy { background: var(--info-bg); border: 1px solid rgba(96,165,250,.2); }
+        .worker-fill.slow { background: var(--warning-bg); border: 1px solid rgba(251,191,36,.2); }
+        .worker-job-name { font-size: 10px; color: var(--text-2); white-space: nowrap; overflow: hidden; }
+        .worker-elapsed { font-size: 11px; font-family: monospace; color: var(--text-3); width: 36px; text-align: right; flex-shrink: 0; }
+        .worker-elapsed.slow { color: var(--warning); }
+        .worker-warn { font-size: 11px; color: var(--warning); width: 14px; flex-shrink: 0; }
+        .worker-row.idle .worker-track { opacity: .3; }
+
         /* Responsive */
         @media (max-width: 1024px) {
             .cards { grid-template-columns: repeat(2, 1fr); gap: 14px; }
