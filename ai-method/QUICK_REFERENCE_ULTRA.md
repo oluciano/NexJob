@@ -16,7 +16,7 @@ load: foundation-minimal + refactor + execution-mode + validation-mode
 load: foundation-minimal + reliability + execution-mode
 
 ## release
-load: release-mode + release
+load: release-mode (04-release-mode.md)
 
 ---
 

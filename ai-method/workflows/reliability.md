@@ -1,3 +1,5 @@
+[Human Reference Only] - Not loaded by AI execution engine. For human planning only.
+
 # Workflow: Reliability Testing
 
 **When:** Validating critical scenarios under failure, concurrency, and distributed conditions

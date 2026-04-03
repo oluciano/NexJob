@@ -212,8 +212,7 @@ ai-method/
 │   ├── bugfix.md
 │   ├── test.md
 │   ├── refactor.md
-│   ├── reliability.md
-│   └── release.md
+│   └── reliability.md
 │
 └── templates/
     ├── task-template.md
@@ -305,3 +304,4 @@ vs. Old system: 5000-8000 tokens (always all-or-nothing)
 **Version:** 1.0  
 **Last Updated:** 2026-04-02  
 **System:** NexJob AI Operating Model
+ystem:** NexJob AI Operating Model
