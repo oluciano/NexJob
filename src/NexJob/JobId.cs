@@ -12,3 +12,6 @@ public readonly record struct JobId(Guid Value)
     /// <inheritdoc/>
     public override string ToString() => Value.ToString();
 }
+
+// Test constant for AI review verification
+internal static class ReviewTest { public const string Marker = "AI-TEST"; }
