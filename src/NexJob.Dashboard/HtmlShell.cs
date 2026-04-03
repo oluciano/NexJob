@@ -278,6 +278,7 @@ internal static class HtmlShell
             cursor: pointer; transition: opacity .15s; position: relative;
         }
         .bar:hover { opacity: .8; }
+        .bar.anomaly { background: var(--danger) !important; opacity: .85; }
         .bar-label { font-size: 9px; color: var(--text-3); position: absolute; bottom: -18px; white-space: nowrap; }
         .chart-tooltip {
             display: none; position: fixed;
@@ -285,6 +286,17 @@ internal static class HtmlShell
             border-radius: var(--radius-sm); padding: 8px 12px; font-size: 12px; color: var(--text);
             pointer-events: none; z-index: 100; white-space: nowrap;
             box-shadow: 0 8px 24px rgba(0,0,0,.5);
+        }
+        .avg-line {
+            position: absolute; left: 0; right: 0; height: 0;
+            border-top: 1px dashed var(--text-3);
+            pointer-events: none;
+        }
+        .anomaly-note {
+            font-size: 11px; color: var(--danger);
+            margin-top: 6px; padding: 4px 8px;
+            background: var(--danger-bg); border-radius: var(--radius-sm);
+            display: inline-block;
         }
 
         /* Detail grid (grouped sections) */
