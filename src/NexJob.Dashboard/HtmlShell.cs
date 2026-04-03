@@ -1,3 +1,5 @@
+using NexJob.Storage;
+
 namespace NexJob.Dashboard;
 
 /// <summary>Shared HTML shell (layout wrapper) injected around page component output.</summary>
@@ -487,9 +489,39 @@ internal static class HtmlShell
             .queue-grid { grid-template-columns: 1fr; }
             .detail-grid { grid-template-columns: 140px 1fr; }
         }
+
+        /* Health badge */
+        .health-badge {
+            margin: 8px 10px; padding: 5px 10px;
+            border-radius: var(--radius-sm);
+            display: flex; align-items: center; gap: 6px;
+            font-size: 11px; font-weight: 600; letter-spacing: .04em;
+        }
+        .health-badge.healthy  { background: var(--success-bg); color: var(--success); }
+        .health-badge.degraded { background: var(--warning-bg); color: var(--warning); }
+        .health-badge.incident  { background: var(--danger-bg);  color: var(--danger);  }
+        .health-pulse { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+        .healthy  .health-pulse { background: var(--success); }
+        .degraded .health-pulse { background: var(--warning); }
+        .incident .health-pulse { background: var(--danger); animation: hpulse 1s infinite; }
+        @keyframes hpulse { 0%,100%{opacity:1} 50%{opacity:.2} }
+
+        /* Nav counters */
+        .nav-counter {
+            font-size: 10px; font-family: monospace;
+            padding: 1px 5px; border-radius: 4px;
+            margin-left: auto; flex-shrink: 0;
+            background: rgba(255,255,255,.06); color: var(--text-3);
+            border: 1px solid var(--border);
+        }
+        .nav-counter.warn   { background: var(--warning-bg); color: var(--warning); border-color: transparent; }
+        .nav-counter.danger { background: var(--danger-bg);  color: var(--danger);  border-color: transparent; }
+        .nav-counter.ok     { background: var(--success-bg); color: var(--success); border-color: transparent; }
         """;
 
-    internal static string Wrap(string title, string pathPrefix, string activeRoute, string body) =>
+    internal static string Wrap(
+        string title, string pathPrefix, string activeRoute, string body,
+        NavCounters? counters = null, JobMetrics? metrics = null) =>
         $$"""
         <!DOCTYPE html>
         <html lang="en">
@@ -513,6 +545,7 @@ internal static class HtmlShell
                     </svg>
                     <span class="logo-text">{{title}}</span>
                 </div>
+                {{HealthBadge(metrics)}}
                 <div class="nav-section">
                     <ul class="nav-list">
                         <li><a href="{{pathPrefix}}" class="nav-link {{Active(activeRoute, "overview")}}">
@@ -520,19 +553,19 @@ internal static class HtmlShell
                             <span class="nav-label">Overview</span></a></li>
                         <li><a href="{{pathPrefix}}/queues" class="nav-link {{Active(activeRoute, "queues")}}">
                             <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="10" width="14" height="4" rx="1"/><rect x="1" y="6" width="14" height="3" rx="1" opacity=".6"/><rect x="1" y="2" width="14" height="3" rx="1" opacity=".35"/></svg>
-                            <span class="nav-label">Queues</span></a></li>
+                            <span class="nav-label">Queues</span>{{NavCounter(counters?.Queues, counters?.QueuesClass)}}</a></li>
                         <li><a href="{{pathPrefix}}/servers" class="nav-link {{Active(activeRoute, "servers")}}">
                             <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="12" height="4" rx="1"/><rect x="2" y="10" width="12" height="4" rx="1"/><line x1="5" y1="4" x2="5.01" y2="4"/><line x1="5" y1="12" x2="5.01" y2="12"/></svg>
-                            <span class="nav-label">Servers</span></a></li>
+                            <span class="nav-label">Servers</span>{{NavCounter(counters?.Servers, counters?.ServersClass)}}</a></li>
                         <li><a href="{{pathPrefix}}/jobs" class="nav-link {{Active(activeRoute, "jobs")}}">
                             <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="3" y1="4" x2="13" y2="4"/><line x1="3" y1="8" x2="13" y2="8"/><line x1="3" y1="12" x2="9" y2="12"/></svg>
-                            <span class="nav-label">Jobs</span></a></li>
+                            <span class="nav-label">Jobs</span>{{NavCounter(counters?.Jobs, null)}}</a></li>
                         <li><a href="{{pathPrefix}}/recurring" class="nav-link {{Active(activeRoute, "recurring")}}">
                             <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M13.5 8A5.5 5.5 0 1 1 8 2.5"/><polyline points="11,1 14,2.5 11,4"/></svg>
-                            <span class="nav-label">Recurring</span></a></li>
+                            <span class="nav-label">Recurring</span>{{NavCounter(counters?.Recurring, null)}}</a></li>
                         <li><a href="{{pathPrefix}}/failed" class="nav-link {{Active(activeRoute, "failed")}}">
                             <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6.5"/><line x1="5.5" y1="5.5" x2="10.5" y2="10.5"/><line x1="10.5" y1="5.5" x2="5.5" y2="10.5"/></svg>
-                            <span class="nav-label">Failed</span></a></li>
+                            <span class="nav-label">Failed</span>{{NavCounter(counters?.Failed, counters?.FailedClass)}}</a></li>
                         <li><a href="{{pathPrefix}}/settings" class="nav-link {{Active(activeRoute, "settings")}}">
                             <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="2.5"/><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M11.2 3.4l-1.4 1.4M4.6 11.2l-1.4 1.4"/></svg>
                             <span class="nav-label">Settings</span></a></li>
@@ -584,4 +617,35 @@ internal static class HtmlShell
 
     private static string Active(string route, string page) =>
         route == page ? "active" : string.Empty;
+
+    private static string HealthBadge(JobMetrics? m)
+    {
+        if (m is null)
+        {
+            return string.Empty;
+        }
+
+        if (m.Failed > 0 && m.Processing == 0)
+        {
+            return "<div class=\"health-badge incident\"><span class=\"health-pulse\"></span>INCIDENT</div>";
+        }
+
+        if (m.Failed > 0)
+        {
+            return "<div class=\"health-badge degraded\"><span class=\"health-pulse\"></span>DEGRADED</div>";
+        }
+
+        return "<div class=\"health-badge healthy\"><span class=\"health-pulse\"></span>HEALTHY</div>";
+    }
+
+    private static string NavCounter(string? value, string? cls)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return string.Empty;
+        }
+
+        var clsPart = string.IsNullOrEmpty(cls) ? string.Empty : " " + cls;
+        return $"<span class=\"nav-counter{clsPart}\">{value}</span>";
+    }
 }

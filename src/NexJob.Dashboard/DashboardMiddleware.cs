@@ -428,11 +428,13 @@ public sealed class DashboardMiddleware
 
         if (subPath == string.Empty || subPath == "overview")
         {
+            var nexJobOptions = context.RequestServices.GetRequiredService<NexJobOptions>();
             parameters = ParameterView.FromDictionary(new Dictionary<string, object?>
             {
                 ["Storage"] = storage,
                 ["PathPrefix"] = _pathPrefix,
                 ["Title"] = _options.Title,
+                ["Options"] = nexJobOptions,
             });
             return await RenderAsync<OverviewPage>(renderer, parameters);
         }

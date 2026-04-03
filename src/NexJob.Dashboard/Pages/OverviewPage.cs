@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Rendering;
+using NexJob.Configuration;
 using NexJob.Storage;
 
 namespace NexJob.Dashboard.Pages;
@@ -12,6 +13,7 @@ internal sealed class OverviewPage : IComponent
     [Parameter] public IStorageProvider Storage { get; set; } = default!;
     [Parameter] public string PathPrefix { get; set; } = "/dashboard";
     [Parameter] public string Title { get; set; } = "NexJob";
+    [Parameter] public NexJobOptions Options { get; set; } = default!;
 
     void IComponent.Attach(RenderHandle renderHandle) => _handle = renderHandle;
 
@@ -19,11 +21,26 @@ internal sealed class OverviewPage : IComponent
     {
         parameters.SetParameterProperties(this);
         var metrics = await Storage.GetMetricsAsync();
-        _handle.Render(b => b.AddMarkupContent(0, BuildHtml(metrics)));
+        var activeServers = await Storage.GetActiveServersAsync(TimeSpan.FromMinutes(1), default);
+        var queueMetrics = await Storage.GetQueueMetricsAsync(default);
+        _handle.Render(b => b.AddMarkupContent(0, BuildHtml(metrics, activeServers, queueMetrics)));
     }
 
-    private string BuildHtml(JobMetrics m)
+    private string BuildHtml(JobMetrics m, IReadOnlyList<ServerRecord> servers, IReadOnlyList<QueueMetrics> queues)
     {
+        var activeQueues = queues.Count(q => q.Processing > 0);
+        var totalQueues = Options.Queues.Count;
+
+        NavCounters counters = new NavCounters(
+            Queues: $"{activeQueues}/{totalQueues}",
+            QueuesClass: activeQueues < totalQueues ? "warn" : "ok",
+            Jobs: $"{m.Processing}/{m.Enqueued}",
+            Recurring: $"{m.Processing}/{m.Recurring}",
+            Failed: m.Failed > 0 ? m.Failed.ToString() : null,
+            FailedClass: m.Failed > 0 ? "danger" : null,
+            Servers: $"{servers.Count}/{servers.Count}",
+            ServersClass: "ok");
+
         var now = DateTimeOffset.UtcNow;
         var max = m.HourlyThroughput.Count > 0 ? m.HourlyThroughput.Max(h => h.Count) : 1;
 
@@ -104,6 +121,6 @@ internal sealed class OverviewPage : IComponent
             $"}});}}" +
             $"}})();</script>";
 
-        return HtmlShell.Wrap(Title, PathPrefix, "overview", body);
+        return HtmlShell.Wrap(Title, PathPrefix, "overview", body, counters, m);
     }
 }
