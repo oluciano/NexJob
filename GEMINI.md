@@ -108,6 +108,8 @@ Before making changes:
 
 ## AI Guardrails (Strict)
 
+- Always work on `develop` branch — never commit directly to `main`
+- `main` is release-only — only merged via release PR
 - Do not propose full rewrites
 - Do not introduce new abstractions without clear benefit
 - Do not change public contracts unless explicitly requested

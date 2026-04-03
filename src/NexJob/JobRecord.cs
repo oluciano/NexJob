@@ -21,7 +21,12 @@ public sealed class JobRecord
     /// </summary>
     public string InputType { get; init; } = string.Empty;
 
-    /// <summary>JSON-serialized job input payload.</summary>
+    /// <summary>JSON-serialized input payload for this job.</summary>
+    /// <remarks>
+    /// Deserialized to <see cref="InputType"/> at execution time.
+    /// Do not write to this field directly — it is managed by the storage layer.
+    /// Use <see cref="IScheduler.EnqueueAsync{TJob,TInput}"/> to supply input at enqueue time.
+    /// </remarks>
     public string InputJson { get; init; } = string.Empty;
 
     /// <summary>
@@ -62,10 +67,13 @@ public sealed class JobRecord
     public DateTimeOffset? ScheduledAt { get; init; }
 
     /// <summary>
-    /// UTC deadline for this job. If the job has not started executing by this time,
-    /// it is marked as <see cref="JobStatus.Expired"/> and skipped.
-    /// <see langword="null"/> means no deadline.
+    /// UTC deadline by which the job must start executing, or <see langword="null"/> if no deadline was set.
     /// </summary>
+    /// <remarks>
+    /// Calculated at enqueue time from the <c>deadlineAfter</c> parameter.
+    /// If the dispatcher fetches this job after <see cref="ExpiresAt"/>, the job is marked
+    /// <see cref="JobStatus.Expired"/> and skipped — execution never occurs.
+    /// </remarks>
     public DateTimeOffset? ExpiresAt { get; init; }
 
     /// <summary>UTC timestamp when a worker last claimed this job.</summary>
