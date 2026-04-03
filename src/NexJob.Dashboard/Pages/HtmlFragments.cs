@@ -83,13 +83,26 @@ internal static class HtmlFragments
             $"</div></a>";
     }
 
-    /// <summary>Renders a job row for the Failed Jobs page (with error snippet).</summary>
+    /// <summary>Renders a job row for the Failed Jobs page (with error snippet and inline actions).</summary>
     internal static string JobRowFailed(JobRecord job, string pathPrefix, DateTimeOffset now)
     {
         var errorSnippet = Helpers.Truncate(job.LastErrorMessage, 90);
+        var requeueForm =
+            $"<form method=\"post\" action=\"{pathPrefix}/jobs/{job.Id.Value}/requeue\" style=\"display:inline\">" +
+            "<button type=\"submit\" class=\"btn btn-ghost btn-sm\">↺ Requeue</button></form>";
+        var deleteForm =
+            $"<form method=\"post\" action=\"{pathPrefix}/jobs/{job.Id.Value}/delete\" style=\"display:inline\" " +
+            "onclick=\"return confirm('Delete this job?')\">" +
+            "<button type=\"submit\" class=\"btn btn-danger-ghost btn-sm\">Delete</button></form>";
+
         return
-            $"<a href=\"{pathPrefix}/jobs/{job.Id.Value}\" style=\"text-decoration:none\">" +
-            $"<div class=\"job-row\">" +
+            $"<div style=\"display:flex;gap:16px;align-items:flex-start;padding:14px 16px;" +
+            $"background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);" +
+            $"cursor:pointer;transition:border-color .12s, background .12s, box-shadow .15s;\" " +
+            $"onmouseenter=\"this.style.borderColor='var(--border-hover)';this.style.background='var(--surface2)';\" " +
+            $"onmouseleave=\"this.style.borderColor='var(--border)';this.style.background='var(--surface)';\">" +
+            $"<a href=\"{pathPrefix}/jobs/{job.Id.Value}\" style=\"text-decoration:none;color:inherit;flex:1;min-width:0\">" +
+            $"<div style=\"display:flex;align-items:flex-start;gap:16px\">" +
             $"<div class=\"job-row-dot\">{Helpers.StatusDot(JobStatus.Failed)}</div>" +
             $"<div class=\"job-row-main\">" +
             $"<div class=\"job-row-title\">{HtmlEncode(Helpers.ShortType(job.JobType))}</div>" +
@@ -100,10 +113,16 @@ internal static class HtmlFragments
             $"</div>" +
             $"<div style=\"font-size:12px;color:var(--danger);margin-top:4px\">{HtmlEncode(errorSnippet)}</div>" +
             $"</div>" +
-            $"<div class=\"job-row-meta\">" +
+            $"</div>" +
+            $"</a>" +
+            $"<div class=\"job-row-meta\" style=\"flex-shrink:0\">" +
             $"{Helpers.RelativeTime(job.CompletedAt, now)}" +
             $"</div>" +
-            $"</div></a>";
+            $"<div class=\"inbox-actions\" onclick=\"event.stopPropagation()\">" +
+            requeueForm +
+            deleteForm +
+            $"</div>" +
+            $"</div>";
     }
 
     /// <summary>Renders a job row for the Overview page recent failures section.</summary>

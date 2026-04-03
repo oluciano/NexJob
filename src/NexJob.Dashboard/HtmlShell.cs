@@ -468,6 +468,17 @@ internal static class HtmlShell
         .alert-warning { background: var(--warning-bg); border: 1px solid rgba(251,191,36,.2); color: var(--warning); }
         .alert-danger  { background: var(--danger-bg);  border: 1px solid rgba(248,113,113,.2); color: var(--danger); }
 
+        /* Inbox styling */
+        .inbox-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+        .inbox-count { font-size: 12px; font-weight: 500; background: var(--danger-bg); color: var(--danger); padding: 3px 10px; border-radius: 20px; align-self: center; }
+        .inbox-actions { display: flex; gap: 6px; flex-shrink: 0; }
+        .btn-danger-ghost { color: var(--danger); }
+        .btn-danger-ghost:hover { background: var(--danger-bg); }
+        .inbox-zero { text-align: center; padding: 48px 0; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+        .inbox-zero-icon { width: 36px; height: 36px; border-radius: 50%; background: var(--success-bg); color: var(--success); display: flex; align-items: center; justify-content: center; font-size: 18px; }
+        .inbox-zero-title { font-size: 14px; font-weight: 500; color: var(--text); }
+        .inbox-zero-sub { font-size: 12px; color: var(--text-2); }
+
         /* Worker heatmap */
         .worker-section { margin-bottom: 24px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,.2), inset 0 1px 0 rgba(255,255,255,.02); }
         .worker-list { display: flex; flex-direction: column; gap: 2px; }

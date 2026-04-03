@@ -45,20 +45,34 @@ internal sealed class FailedPage : IComponent
         {
             var emptyMsg = status switch
             {
-                JobStatus.Failed => "No failed jobs. Looking good.",
-                JobStatus.Expired => "No expired jobs.",
-                _ => "No jobs found.",
+                JobStatus.Failed => "No failed jobs",
+                JobStatus.Expired => "No expired jobs",
+                _ => "No jobs found",
             };
+            var emptySub = status switch
+            {
+                JobStatus.Failed => "Everything is running normally.",
+                JobStatus.Expired => "All jobs completed before their deadline.",
+                _ => "No matching jobs.",
+            };
+            var emptyState =
+                $"<div class=\"inbox-zero\">" +
+                $"<div class=\"inbox-zero-icon\">✓</div>" +
+                $"<div class=\"inbox-zero-title\">{emptyMsg}</div>" +
+                $"<div class=\"inbox-zero-sub\">{emptySub}</div>" +
+                $"</div>";
             var emptyBody =
                 "<div id=\"failed-page-content\" data-refresh=\"true\">" +
                 HtmlFragments.PageHeader("Failed Jobs", subtitle) +
                 HtmlFragments.FilterBar(PathPrefix, currentStatus, Search, null) +
-                HtmlFragments.EmptyState("0 0 24 24", emptyMsg) +
+                emptyState +
                 "</div>";
             return HtmlShell.Wrap(Title, PathPrefix, "failed", emptyBody, Counters);
         }
 
         var jobPlural = result.TotalCount == 1 ? string.Empty : "s";
+        var countBadge = $"<span class=\"inbox-count\">{result.TotalCount} need attention</span>";
+
         var banner = result.TotalCount > 25
             ? $"<div class=\"alert alert-danger\">⚠ {result.TotalCount} {currentStatus.ToLower()} job{jobPlural} — review and requeue or delete</div>"
             : string.Empty;
@@ -89,13 +103,22 @@ internal sealed class FailedPage : IComponent
             HtmlFragments.FailedStatusPills(currentStatus, PathPrefix + "/failed") +
             $"</div>";
 
+        var headerWithBadge =
+            $"<div class=\"inbox-header\">" +
+            $"<div><h1 class=\"page-title\">Failed Jobs</h1><p class=\"page-subtitle\">{System.Web.HttpUtility.HtmlEncode(subtitle)}</p></div>" +
+            $"<div style=\"display:flex;gap:8px;align-items:center\">" +
+            countBadge +
+            $"<div style=\"display:flex;gap:6px\">{string.Format(headerActions, currentStatus.ToLower())}</div>" +
+            $"</div>" +
+            $"</div>";
+
         var body =
             "<div id=\"failed-page-content\" data-refresh=\"true\">" +
-            HtmlFragments.PageHeader("Failed Jobs", subtitle, string.Format(headerActions, currentStatus.ToLower())) +
+            headerWithBadge +
             banner +
             filterSection +
             "<div class=\"section\">" +
-            $"<div class=\"job-list\">{rows}</div>" +
+            $"<div class=\"job-list\" style=\"display:flex;flex-direction:column;gap:8px\">{rows}</div>" +
             pagination +
             "</div>" +
             "</div>";
