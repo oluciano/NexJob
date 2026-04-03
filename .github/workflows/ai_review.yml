@@ -1,0 +1,45 @@
+name: AI PR Review
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: AI PR Review
+        uses: Codium-ai/pr-agent@v0.26
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CONFIG.MODEL: "gemini-1.5-flash"
+          CONFIG.SYSTEM_PROMPT: >
+            You are reviewing NexJob, a .NET 8 background job processing library.
+            Before reviewing, internalize these rules from CLAUDE.md and GEMINI.md:
+            1. Storage is the single source of truth — no in-memory state overrides it.
+            2. Dispatcher is stateless — all state transitions must be persisted.
+            3. Deadline enforced before execution — expired jobs never execute.
+            4. Dead-letter handlers must never crash the dispatcher — exceptions swallowed and logged only.
+            5. Zero warnings in Release builds — TreatWarningsAsErrors is enforced.
+            6. Classes sealed by default. No .Result or .Wait(). CancellationToken always propagated.
+            7. All public APIs must have XML documentation.
+            8. StyleCop rules enforced: member ordering (SA1202/SA1204), trailing commas (SA1413), no blank line before closing brace (SA1508).
+            9. Do not propose full rewrites. Prefer incremental, low-risk changes.
+            10. Do not introduce new abstractions without clear benefit.
+            Focus on: invariant violations, missing tests, StyleCop issues, missing XML docs, async violations.
+            Do NOT comment on: formatting preferences, subjective style, ai-method/ docs, prompts-archived/.
+          CONFIG.IGNORE_PATHS: >
+            ["**/bin/**", "**/obj/**", "**/nupkg/**",
+             "ai-method/**", "prompts-archived/**",
+             "*.dockerfile", "docker-compose.yml",
+             "**/*.md", "**/*.json"]
+          PR_REVIEWER.INLINE_CODE_COMMENTS: "true"
+          PR_REVIEWER.NUM_CODE_SUGGESTIONS: "4"
+          PR_REVIEWER.EXTRA_INSTRUCTIONS: >
+            Flag as blocking: compiler warnings, missing CancellationToken, .Result/.Wait() usage,
+            storage bypass, deadline logic errors, unsealed classes without justification.
+            Flag as suggestion: missing XML docs on public APIs, test coverage gaps.
