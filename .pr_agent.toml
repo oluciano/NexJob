@@ -1,8 +1,9 @@
 [config]
-model = "gemini/gemini-1.5-pro-latest"
-model_weak = "gemini/gemini-1.5-flash-latest"
-fallback_models = ["gemini/gemini-1.5-pro-latest"]
+model = "google/gemini-1.5-pro"
+model_weak = "google/gemini-1.5-flash"
+fallback_models = ["google/gemini-1.5-pro"]
 use_repo_settings_file = true
+custom_model_max_tokens = 1048576
 
 [pr_reviewer]
 require_focused_review = false
