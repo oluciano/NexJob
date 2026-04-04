@@ -1,33 +1,31 @@
-name: AI PR Review
+name: PR-Agent AI Code Review
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, reopened, ready_for_review]
   issue_comment:
-    types: [created, edited]
+    types: [created]
 
 jobs:
-  review:
-    if: ${{ github.event.sender.type != 'Bot' }}
+  pr_agent:
+    # Security: Only authorized users can trigger the bot
+    if: |
+      github.event.sender.type != 'Bot' &&
+      (
+        (github.event_name == 'pull_request' && contains(fromJson('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.pull_request.author_association)) ||
+        (github.event_name == 'issue_comment' && github.event.issue.pull_request && contains(fromJson('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association))
+      )
     runs-on: ubuntu-latest
+    name: AI Code Review
+
     permissions:
-      contents: read
-      pull-requests: write
       issues: write
+      pull-requests: write
+      contents: read
 
     steps:
-      - name: AI PR Review
-        uses: qodo-ai/pr-agent@main
+      - name: Run PR-Agent
+        uses: qodo-ai/pr-agent@v0.31
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY_2 }}
-          PR_AGENT.CONFIG: |
-            config:
-              model: "gemini/gemini-1.5-pro"
-              fallback_models: ["gemini/gemini-1.5-pro"]
-            github_action_config:
-              auto_review: true
-              handle_pr_actions: ["opened", "synchronize", "reopened", "ready_for_review"]
-            pr_reviewer:
-              inline_code_comments: true
-              extra_instructions: "Focus on: invariant violations, StyleCop issues, missing XML docs, async violations."
+          GOOGLE_API_KEY: ${{ secrets.GEMINI_API_KEY_2 }}
