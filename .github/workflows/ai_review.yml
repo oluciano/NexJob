@@ -17,8 +17,14 @@ jobs:
 
     steps:
       - name: AI PR Review
-        uses: qodo-ai/pr-agent@main
+        uses: Codium-ai/pr-agent@v0.22
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY_2 }}
-          GOOGLE_AI_STUDIO.GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY_2 }}
+          GEMINI.API_KEY: ${{ secrets.GEMINI_API_KEY_2 }}
+          CONFIG.MODEL: "gemini-1.5-pro"
+          PR_REVIEWER.REQUIRE_SCORE_REVIEW: "false"
+          PR_REVIEWER.INLINE_CODE_COMMENTS: "true"
+          PR_REVIEWER.EXTRA_INSTRUCTIONS: >
+            You are reviewing NexJob, a .NET 8 background job processing library.
+            Rules: Storage is source of truth, dispatcher is stateless, deadline enforced before execution.
+            Focus on: StyleCop issues, missing tests, async violations.
