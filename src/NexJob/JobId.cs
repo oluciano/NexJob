@@ -12,3 +12,6 @@ public readonly record struct JobId(Guid Value)
     /// <inheritdoc/>
     public override string ToString() => Value.ToString();
 }
+
+// Clean test for AI Review Agent
+public static class AiAgentVerification { public const bool IsOperational = true; }
