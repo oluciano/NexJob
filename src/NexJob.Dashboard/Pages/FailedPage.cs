@@ -25,7 +25,7 @@ internal sealed class FailedPage : IComponent
         // Default to Failed if no status specified; allow Expired as override
         var status = StatusFilter ?? JobStatus.Failed;
         var filter = new JobFilter { Status = status, Search = Search };
-        var result = await Storage.GetJobsAsync(filter, Page, 25);
+        var result = await Storage.GetJobsAsync(filter, Page, 25).ConfigureAwait(false);
         _handle.Render(b => b.AddMarkupContent(0, BuildHtml(result, status)));
     }
 

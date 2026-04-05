@@ -154,7 +154,7 @@ internal sealed class SettingsPage : ComponentBase
         foreach (var q in Options.Queues)
         {
             var isPaused = Runtime.PausedQueues.Contains(q);
-            var windowSetting = Options.QueueSettings.Find(qs => qs.Name == q);
+            var windowSetting = Options.QueueSettings.Find(qs => string.Equals(qs.Name, q, StringComparison.Ordinal));
             var inWindow = windowSetting?.ExecutionWindow?.IsWithinWindow(now) ?? true;
 
             string statusBadge;

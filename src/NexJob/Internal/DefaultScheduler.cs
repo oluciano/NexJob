@@ -46,7 +46,7 @@ internal sealed class DefaultScheduler : IScheduler
 
         using var activity = NexJobActivitySource.StartEnqueue(typeof(TJob).FullName ?? typeof(TJob).Name, job.Queue);
 
-        var jobId = await _storage.EnqueueAsync(job, cancellationToken);
+        var jobId = await _storage.EnqueueAsync(job, cancellationToken).ConfigureAwait(false);
 
         activity?.SetTag("nexjob.job_id", jobId.Value.ToString());
         NexJobMetrics.JobsEnqueued.Add(1, new TagList { { "nexjob.job_type", typeof(TJob).Name }, { "nexjob.queue", job.Queue } });
@@ -85,7 +85,7 @@ internal sealed class DefaultScheduler : IScheduler
 
         using var activity = NexJobActivitySource.StartEnqueue(typeof(TJob).FullName ?? typeof(TJob).Name, job.Queue);
 
-        var jobId = await _storage.EnqueueAsync(job, cancellationToken);
+        var jobId = await _storage.EnqueueAsync(job, cancellationToken).ConfigureAwait(false);
 
         activity?.SetTag("nexjob.job_id", jobId.Value.ToString());
         NexJobMetrics.JobsEnqueued.Add(1, new TagList { { "nexjob.job_type", typeof(TJob).Name }, { "nexjob.queue", job.Queue } });
@@ -109,7 +109,7 @@ internal sealed class DefaultScheduler : IScheduler
             status: JobStatus.Scheduled, scheduledAt: scheduledAt);
 
         using var activity = NexJobActivitySource.StartEnqueue(typeof(TJob).FullName ?? typeof(TJob).Name, job.Queue);
-        var jobId = await _storage.EnqueueAsync(job, cancellationToken);
+        var jobId = await _storage.EnqueueAsync(job, cancellationToken).ConfigureAwait(false);
 
         activity?.SetTag("nexjob.job_id", jobId.Value.ToString());
         activity?.SetTag("nexjob.delay_seconds", delay.TotalSeconds);
@@ -143,7 +143,7 @@ internal sealed class DefaultScheduler : IScheduler
         };
 
         using var activity = NexJobActivitySource.StartEnqueue(typeof(TJob).FullName ?? typeof(TJob).Name, job.Queue);
-        var jobId = await _storage.EnqueueAsync(job, cancellationToken);
+        var jobId = await _storage.EnqueueAsync(job, cancellationToken).ConfigureAwait(false);
 
         activity?.SetTag("nexjob.job_id", jobId.Value.ToString());
         activity?.SetTag("nexjob.delay_seconds", delay.TotalSeconds);
@@ -165,7 +165,7 @@ internal sealed class DefaultScheduler : IScheduler
             status: JobStatus.Scheduled, scheduledAt: runAt);
 
         using var activity = NexJobActivitySource.StartEnqueue(typeof(TJob).FullName ?? typeof(TJob).Name, job.Queue);
-        var jobId = await _storage.EnqueueAsync(job, cancellationToken);
+        var jobId = await _storage.EnqueueAsync(job, cancellationToken).ConfigureAwait(false);
 
         activity?.SetTag("nexjob.job_id", jobId.Value.ToString());
         activity?.SetTag("nexjob.scheduled_at", runAt.ToString("o"));
@@ -198,7 +198,7 @@ internal sealed class DefaultScheduler : IScheduler
         };
 
         using var activity = NexJobActivitySource.StartEnqueue(typeof(TJob).FullName ?? typeof(TJob).Name, job.Queue);
-        var jobId = await _storage.EnqueueAsync(job, cancellationToken);
+        var jobId = await _storage.EnqueueAsync(job, cancellationToken).ConfigureAwait(false);
 
         activity?.SetTag("nexjob.job_id", jobId.Value.ToString());
         activity?.SetTag("nexjob.scheduled_at", runAt.ToString("o"));
@@ -237,7 +237,7 @@ internal sealed class DefaultScheduler : IScheduler
         };
 
         using var activity = NexJobActivitySource.StartRecurring(typeof(TJob).FullName ?? typeof(TJob).Name, recurringJobId);
-        await _storage.UpsertRecurringJobAsync(record, cancellationToken);
+        await _storage.UpsertRecurringJobAsync(record, cancellationToken).ConfigureAwait(false);
 
         activity?.SetTag("nexjob.queue", record.Queue);
         activity?.SetTag("nexjob.cron", cron);
@@ -273,7 +273,7 @@ internal sealed class DefaultScheduler : IScheduler
         };
 
         using var activity = NexJobActivitySource.StartRecurring(typeof(TJob).FullName ?? typeof(TJob).Name, recurringJobId);
-        await _storage.UpsertRecurringJobAsync(record, cancellationToken);
+        await _storage.UpsertRecurringJobAsync(record, cancellationToken).ConfigureAwait(false);
 
         activity?.SetTag("nexjob.queue", record.Queue);
         activity?.SetTag("nexjob.cron", cron);
@@ -306,7 +306,7 @@ internal sealed class DefaultScheduler : IScheduler
         };
 
         using var activity = NexJobActivitySource.StartEnqueue(typeof(TJob).FullName ?? typeof(TJob).Name, job.Queue);
-        var jobId = await _storage.EnqueueAsync(job, cancellationToken);
+        var jobId = await _storage.EnqueueAsync(job, cancellationToken).ConfigureAwait(false);
 
         activity?.SetTag("nexjob.job_id", jobId.Value.ToString());
         activity?.SetTag("nexjob.parent_job_id", parentJobId.Value.ToString());
