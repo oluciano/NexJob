@@ -81,8 +81,7 @@ dotnet_diagnostic.SA1503.severity = none
 dotnet_diagnostic.SA1519.severity = none
 
 # SA0001 — XML comment analysis disabled (fires when GenerateDocumentationFile=false).
-# Test projects intentionally omit doc generation; suppress the resulting SA0001.
-dotnet_diagnostic.SA0001.severity = none
+dotnet_diagnostic.SA0001.severity = warning
 
 # SA1516 — elements should be separated by blank line.
 # Row-mapping and BSON-document classes have 20-40 compact properties; adding a blank
@@ -109,8 +108,7 @@ dotnet_diagnostic.SA1111.severity = warning
 dotnet_diagnostic.SA1214.severity = none
 
 # SA1134 — each attribute should be on its own line.
-# Blazor [Parameter] attributes on the same line as the property is standard Blazor convention.
-dotnet_diagnostic.SA1134.severity = none
+dotnet_diagnostic.SA1134.severity = warning
 
 # SA1001 — commas should be followed by whitespace.
 # False positives inside verbatim/interpolated HTML strings used in the dashboard renderer.
@@ -121,9 +119,9 @@ dotnet_diagnostic.SA1001.severity = warning
 dotnet_diagnostic.SA1114.severity = none
 
 # membership ordering rules
-dotnet_diagnostic.SA1201.severity = none
-dotnet_diagnostic.SA1202.severity = none
-dotnet_diagnostic.SA1204.severity = none
+dotnet_diagnostic.SA1201.severity = warning
+dotnet_diagnostic.SA1202.severity = warning
+dotnet_diagnostic.SA1204.severity = warning
 
 # ── Meziantou.Analyzer ────────────────────────────────────────────────────────
 
@@ -145,6 +143,10 @@ dotnet_diagnostic.MA0011.severity = none
 dotnet_diagnostic.SA1600.severity = none
 dotnet_diagnostic.SA1601.severity = none
 dotnet_diagnostic.SA1602.severity = none
+dotnet_diagnostic.SA1134.severity = none
+dotnet_diagnostic.SA1201.severity = none
+dotnet_diagnostic.SA1202.severity = none
+dotnet_diagnostic.SA1204.severity = none
 
 # Suppress documentation rules for internal storage rows/documents
 [src/NexJob.*/{JobRow,RecurringJobRow,JobDocument,RecurringJobDocument,ServerDocument,ExecutionLogEntry,SchemaSQL,SchemaMigration,SqlServerSchemaSql}.cs]
@@ -171,6 +173,9 @@ dotnet_diagnostic.MA0134.severity = none
 dotnet_diagnostic.SA1600.severity = none
 dotnet_diagnostic.SA1601.severity = none
 dotnet_diagnostic.SA1602.severity = none
+dotnet_diagnostic.SA1201.severity = none
+dotnet_diagnostic.SA1202.severity = none
+dotnet_diagnostic.SA1204.severity = none
 
 [benchmarks/**/*.cs]
 dotnet_diagnostic.SA0001.severity = none
@@ -183,6 +188,9 @@ dotnet_diagnostic.MA0134.severity = none
 dotnet_diagnostic.SA1600.severity = none
 dotnet_diagnostic.SA1601.severity = none
 dotnet_diagnostic.SA1602.severity = none
+dotnet_diagnostic.SA1201.severity = none
+dotnet_diagnostic.SA1202.severity = none
+dotnet_diagnostic.SA1204.severity = none
 
 [src/NexJob.Dashboard.Standalone/**/*.cs]
 dotnet_diagnostic.MA0004.severity = none
