@@ -205,8 +205,7 @@ public sealed class WakeUpChannelTests
         await Task.WhenAll(
             tcs1.Task.WaitAsync(TimeSpan.FromSeconds(2)),
             tcs2.Task.WaitAsync(TimeSpan.FromSeconds(2)),
-            tcs3.Task.WaitAsync(TimeSpan.FromSeconds(2))
-        );
+            tcs3.Task.WaitAsync(TimeSpan.FromSeconds(2)));
 
         tcs1.Task.IsCompletedSuccessfully.Should().BeTrue();
         tcs2.Task.IsCompletedSuccessfully.Should().BeTrue();
@@ -237,8 +236,7 @@ public sealed class WakeUpChannelTests
         // Schedule a job for far in the future
         await scheduler.ScheduleAsync<QuickSuccessJob, QuickInput>(
             new(),
-            delay: TimeSpan.FromDays(1)
-        );
+            delay: TimeSpan.FromDays(1));
 
         // Should still be in Scheduled status
         await Task.Delay(150);

@@ -132,8 +132,7 @@ public sealed class DeadlineTests
         // Enqueue with deadline in the future
         await scheduler.EnqueueAsync<QuickSuccessJob, QuickInput>(
             new(),
-            deadlineAfter: TimeSpan.FromSeconds(5)
-        );
+            deadlineAfter: TimeSpan.FromSeconds(5));
 
         var completed = await tcs.Task.WaitAsync(TimeSpan.FromSeconds(2));
         completed.Should().BeTrue("job with valid deadline should execute");
@@ -250,8 +249,7 @@ public sealed class DeadlineTests
 
         // Scheduled jobs should not have deadline applied (API shape ensures this)
         var jobId = await scheduler.ScheduleAsync<SimpleJob>(
-            TimeSpan.FromSeconds(10)
-        );
+            TimeSpan.FromSeconds(10));
 
         var job = await storage.GetJobByIdAsync(jobId);
         job!.ExpiresAt.Should().BeNull("scheduled jobs should not have deadline");

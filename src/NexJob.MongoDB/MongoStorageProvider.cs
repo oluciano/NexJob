@@ -55,8 +55,8 @@ public sealed class MongoStorageProvider : IStorageProvider
             var existing = await _jobs.Find(
                 Builders<JobDocument>.Filter.And(
                     Builders<JobDocument>.Filter.Eq(d => d.IdempotencyKey, job.IdempotencyKey),
-                    Builders<JobDocument>.Filter.In(d => d.Status, new[] { JobStatus.Enqueued, JobStatus.Processing, JobStatus.Scheduled, JobStatus.AwaitingContinuation })
-                )).FirstOrDefaultAsync(cancellationToken).ConfigureAwait(false);
+                    Builders<JobDocument>.Filter.In(d => d.Status, new[] { JobStatus.Enqueued, JobStatus.Processing, JobStatus.Scheduled, JobStatus.AwaitingContinuation })))
+                .FirstOrDefaultAsync(cancellationToken).ConfigureAwait(false);
 
             if (existing is not null)
             {
@@ -80,8 +80,7 @@ public sealed class MongoStorageProvider : IStorageProvider
 
         var filter = Builders<JobDocument>.Filter.And(
             Builders<JobDocument>.Filter.In(d => d.Queue, queues),
-            Builders<JobDocument>.Filter.Eq(d => d.Status, JobStatus.Enqueued)
-        );
+            Builders<JobDocument>.Filter.Eq(d => d.Status, JobStatus.Enqueued));
 
         var sort = Builders<JobDocument>.Sort
             .Ascending(d => d.Priority)   // Critical=1 first
@@ -300,8 +299,7 @@ public sealed class MongoStorageProvider : IStorageProvider
 
         var filter = Builders<JobDocument>.Filter.And(
             Builders<JobDocument>.Filter.Eq(d => d.Status, JobStatus.Processing),
-            Builders<JobDocument>.Filter.Lt(d => d.HeartbeatAt, cutoff)
-        );
+            Builders<JobDocument>.Filter.Lt(d => d.HeartbeatAt, cutoff));
 
         var update = Builders<JobDocument>.Update
             .Set(d => d.Status, JobStatus.Enqueued)
@@ -318,8 +316,7 @@ public sealed class MongoStorageProvider : IStorageProvider
     {
         var filter = Builders<JobDocument>.Filter.And(
             Builders<JobDocument>.Filter.Eq(d => d.Status, JobStatus.AwaitingContinuation),
-            Builders<JobDocument>.Filter.Eq(d => d.ParentJobId, parentJobId)
-        );
+            Builders<JobDocument>.Filter.Eq(d => d.ParentJobId, parentJobId));
 
         var update = Builders<JobDocument>.Update
             .Set(d => d.Status, JobStatus.Enqueued);
@@ -603,10 +600,7 @@ public sealed class MongoStorageProvider : IStorageProvider
                 // first-time scheduled: RetryAt is null and ScheduledAt is due
                 Builders<JobDocument>.Filter.And(
                     Builders<JobDocument>.Filter.Eq(d => d.RetryAt, (DateTimeOffset?)null),
-                    Builders<JobDocument>.Filter.Lte(d => d.ScheduledAt, now)
-                )
-            )
-        );
+                    Builders<JobDocument>.Filter.Lte(d => d.ScheduledAt, now))));
 
         var update = Builders<JobDocument>.Update
             .Set(d => d.Status, JobStatus.Enqueued);

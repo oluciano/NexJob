@@ -101,8 +101,8 @@ dotnet_diagnostic.SA1107.severity = warning
 
 # SA1009/SA1111 — closing parenthesis placement.
 # Multi-line method calls with trailing-paren style conflict with fluent call alignment.
-dotnet_diagnostic.SA1009.severity = suggestion
-dotnet_diagnostic.SA1111.severity = suggestion
+dotnet_diagnostic.SA1009.severity = warning
+dotnet_diagnostic.SA1111.severity = warning
 
 # SA1214 — readonly fields should appear before non-readonly fields.
 # Fields are organised by purpose, not by mutability.
