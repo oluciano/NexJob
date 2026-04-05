@@ -55,7 +55,13 @@ internal sealed class ServerHeartbeatService : IHostedService, IDisposable
         try
         {
             await _storage.RegisterServerAsync(serverInfo, cancellationToken).ConfigureAwait(false);
-            _timer = new Timer(DoWork, null, _options.HeartbeatInterval, _options.HeartbeatInterval);
+
+            // Start the periodic heartbeat timer
+            _timer = new Timer(
+                callback: DoWork,
+                state: null,
+                dueTime: _options.ServerHeartbeatInterval,
+                period: _options.ServerHeartbeatInterval);
         }
         catch (Exception ex)
         {
