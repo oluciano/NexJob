@@ -35,9 +35,9 @@ dotnet_diagnostic.SA1101.severity = none
 # SA1600/SA1601/SA1602 — elements must be documented.
 # Public members already have XML docs. Internal/private members are covered by
 # GenerateDocumentationFile = true; we do not require triple-slash on every private member.
-dotnet_diagnostic.SA1600.severity = none
-dotnet_diagnostic.SA1601.severity = none
-dotnet_diagnostic.SA1602.severity = none
+dotnet_diagnostic.SA1600.severity = warning
+dotnet_diagnostic.SA1601.severity = warning
+dotnet_diagnostic.SA1602.severity = warning
 
 # SA1623 — property documentation must begin with "Gets" or "Gets or sets".
 # Too prescriptive; existing docs are clear without the mandatory verb prefix.
@@ -159,6 +159,9 @@ dotnet_diagnostic.MA0002.severity = none
 dotnet_diagnostic.MA0011.severity = none
 dotnet_diagnostic.MA0074.severity = none
 dotnet_diagnostic.MA0134.severity = none
+dotnet_diagnostic.SA1600.severity = none
+dotnet_diagnostic.SA1601.severity = none
+dotnet_diagnostic.SA1602.severity = none
 
 [benchmarks/**/*.cs]
 dotnet_diagnostic.SA0001.severity = none
@@ -168,6 +171,9 @@ dotnet_diagnostic.MA0006.severity = none
 dotnet_diagnostic.MA0002.severity = none
 dotnet_diagnostic.MA0011.severity = none
 dotnet_diagnostic.MA0134.severity = none
+dotnet_diagnostic.SA1600.severity = none
+dotnet_diagnostic.SA1601.severity = none
+dotnet_diagnostic.SA1602.severity = none
 
 [src/NexJob.Dashboard.Standalone/**/*.cs]
 dotnet_diagnostic.MA0004.severity = none
