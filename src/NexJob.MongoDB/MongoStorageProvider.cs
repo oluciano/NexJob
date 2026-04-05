@@ -56,7 +56,7 @@ public sealed class MongoStorageProvider : IStorageProvider
                 Builders<JobDocument>.Filter.And(
                     Builders<JobDocument>.Filter.Eq(d => d.IdempotencyKey, job.IdempotencyKey),
                     Builders<JobDocument>.Filter.In(d => d.Status, new[] { JobStatus.Enqueued, JobStatus.Processing, JobStatus.Scheduled, JobStatus.AwaitingContinuation })
-                )).FirstOrDefaultAsync(cancellationToken);
+                )).FirstOrDefaultAsync(cancellationToken).ConfigureAwait(false);
 
             if (existing is not null)
             {
@@ -64,7 +64,7 @@ public sealed class MongoStorageProvider : IStorageProvider
             }
         }
 
-        await _jobs.InsertOneAsync(JobDocument.FromRecord(job), cancellationToken: cancellationToken);
+        await _jobs.InsertOneAsync(JobDocument.FromRecord(job), cancellationToken: cancellationToken).ConfigureAwait(false);
         return job.Id;
     }
 
@@ -76,7 +76,7 @@ public sealed class MongoStorageProvider : IStorageProvider
         var now = DateTimeOffset.UtcNow;
 
         // Atomically promote any due scheduled/retry jobs first
-        await PromoteDueScheduledJobsAsync(now, cancellationToken);
+        await PromoteDueScheduledJobsAsync(now, cancellationToken).ConfigureAwait(false);
 
         var filter = Builders<JobDocument>.Filter.And(
             Builders<JobDocument>.Filter.In(d => d.Queue, queues),
@@ -99,7 +99,7 @@ public sealed class MongoStorageProvider : IStorageProvider
             ReturnDocument = ReturnDocument.After,
         };
 
-        var doc = await _jobs.FindOneAndUpdateAsync(filter, update, options, cancellationToken);
+        var doc = await _jobs.FindOneAndUpdateAsync(filter, update, options, cancellationToken).ConfigureAwait(false);
         return doc?.ToRecord();
     }
 
@@ -113,7 +113,7 @@ public sealed class MongoStorageProvider : IStorageProvider
             .Set(d => d.CompletedAt, DateTimeOffset.UtcNow)
             .Unset(d => d.HeartbeatAt);
 
-        await _jobs.UpdateOneAsync(ById(jobId), update, cancellationToken: cancellationToken);
+        await _jobs.UpdateOneAsync(ById(jobId), update, cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
     // ── SetFailedAsync ────────────────────────────────────────────────────────
@@ -142,7 +142,7 @@ public sealed class MongoStorageProvider : IStorageProvider
                 .Unset(d => d.HeartbeatAt);
         }
 
-        await _jobs.UpdateOneAsync(ById(jobId), update, cancellationToken: cancellationToken);
+        await _jobs.UpdateOneAsync(ById(jobId), update, cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -153,7 +153,7 @@ public sealed class MongoStorageProvider : IStorageProvider
             .Set(d => d.CompletedAt, DateTimeOffset.UtcNow)
             .Unset(d => d.HeartbeatAt);
 
-        await _jobs.UpdateOneAsync(ById(jobId), update, cancellationToken: cancellationToken);
+        await _jobs.UpdateOneAsync(ById(jobId), update, cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
     // ── UpdateHeartbeatAsync ──────────────────────────────────────────────────
@@ -164,7 +164,7 @@ public sealed class MongoStorageProvider : IStorageProvider
         var update = Builders<JobDocument>.Update
             .Set(d => d.HeartbeatAt, DateTimeOffset.UtcNow);
 
-        await _jobs.UpdateOneAsync(ById(jobId), update, cancellationToken: cancellationToken);
+        await _jobs.UpdateOneAsync(ById(jobId), update, cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
     // ── Recurring jobs ────────────────────────────────────────────────────────
@@ -191,14 +191,14 @@ public sealed class MongoStorageProvider : IStorageProvider
             .SetOnInsert(d => d.DeletedByUser, false);
 
         var options = new UpdateOptions { IsUpsert = true };
-        await _recurringJobs.UpdateOneAsync(filter, update, options, cancellationToken);
+        await _recurringJobs.UpdateOneAsync(filter, update, options, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
     public async Task<IReadOnlyList<RecurringJobRecord>> GetDueRecurringJobsAsync(DateTimeOffset utcNow, CancellationToken cancellationToken = default)
     {
         var filter = Builders<RecurringJobDocument>.Filter.Lte(d => d.NextExecution, utcNow);
-        var docs = await _recurringJobs.Find(filter).ToListAsync(cancellationToken);
+        var docs = await _recurringJobs.Find(filter).ToListAsync(cancellationToken).ConfigureAwait(false);
         return docs.Select(d => d.ToRecord()).ToList();
     }
 
@@ -210,7 +210,7 @@ public sealed class MongoStorageProvider : IStorageProvider
             .Set(d => d.NextExecution, nextExecution)
             .Set(d => d.LastExecutedAt, DateTimeOffset.UtcNow);
 
-        await _recurringJobs.UpdateOneAsync(filter, update, cancellationToken: cancellationToken);
+        await _recurringJobs.UpdateOneAsync(filter, update, cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -221,35 +221,35 @@ public sealed class MongoStorageProvider : IStorageProvider
             .Set(d => d.LastExecutionStatus, (JobStatus?)status)
             .Set(d => d.LastExecutionError, errorMessage);
 
-        await _recurringJobs.UpdateOneAsync(filter, update, cancellationToken: cancellationToken);
+        await _recurringJobs.UpdateOneAsync(filter, update, cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
     public async Task DeleteRecurringJobAsync(string recurringJobId, CancellationToken cancellationToken = default)
     {
         var filter = Builders<RecurringJobDocument>.Filter.Eq(d => d.RecurringJobId, recurringJobId);
-        await _recurringJobs.DeleteOneAsync(filter, cancellationToken);
+        await _recurringJobs.DeleteOneAsync(filter, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
     public async Task<IReadOnlyList<RecurringJobRecord>> GetRecurringJobsAsync(CancellationToken cancellationToken = default)
     {
         var docs = await _recurringJobs.Find(Builders<RecurringJobDocument>.Filter.Empty)
-            .ToListAsync(cancellationToken);
+            .ToListAsync(cancellationToken).ConfigureAwait(false);
         return docs.Select(d => d.ToRecord()).ToList();
     }
 
     /// <inheritdoc/>
     public async Task<RecurringJobRecord?> GetRecurringJobByIdAsync(string recurringJobId, CancellationToken cancellationToken = default)
     {
-        return await GetRecurringJobAsync(recurringJobId, cancellationToken);
+        return await GetRecurringJobAsync(recurringJobId, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
     public async Task<RecurringJobRecord?> GetRecurringJobAsync(string recurringJobId, CancellationToken cancellationToken = default)
     {
         var filter = Builders<RecurringJobDocument>.Filter.Eq(d => d.RecurringJobId, recurringJobId);
-        var doc = await _recurringJobs.Find(filter).FirstOrDefaultAsync(cancellationToken);
+        var doc = await _recurringJobs.Find(filter).FirstOrDefaultAsync(cancellationToken).ConfigureAwait(false);
         return doc?.ToRecord();
     }
 
@@ -263,7 +263,7 @@ public sealed class MongoStorageProvider : IStorageProvider
             .Set(d => d.CronOverride, cronOverride)
             .Set(d => d.Enabled, enabled);
 
-        await _recurringJobs.UpdateOneAsync(filter, update, cancellationToken: cancellationToken);
+        await _recurringJobs.UpdateOneAsync(filter, update, cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -271,13 +271,13 @@ public sealed class MongoStorageProvider : IStorageProvider
         string recurringJobId, CancellationToken cancellationToken = default)
     {
         var jobsFilter = Builders<JobDocument>.Filter.Eq(d => d.RecurringJobId, recurringJobId);
-        await _jobs.DeleteManyAsync(jobsFilter, cancellationToken);
+        await _jobs.DeleteManyAsync(jobsFilter, cancellationToken).ConfigureAwait(false);
 
         var recurringFilter = Builders<RecurringJobDocument>.Filter.Eq(d => d.RecurringJobId, recurringJobId);
         var update = Builders<RecurringJobDocument>.Update
             .Set(d => d.DeletedByUser, true)
             .Set(d => d.Enabled, false);
-        await _recurringJobs.UpdateOneAsync(recurringFilter, update, cancellationToken: cancellationToken);
+        await _recurringJobs.UpdateOneAsync(recurringFilter, update, cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -288,7 +288,7 @@ public sealed class MongoStorageProvider : IStorageProvider
         var update = Builders<RecurringJobDocument>.Update
             .Set(d => d.DeletedByUser, false)
             .Set(d => d.Enabled, true);
-        await _recurringJobs.UpdateOneAsync(filter, update, cancellationToken: cancellationToken);
+        await _recurringJobs.UpdateOneAsync(filter, update, cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
     // ── Orphan requeue ────────────────────────────────────────────────────────
@@ -308,7 +308,7 @@ public sealed class MongoStorageProvider : IStorageProvider
             .Unset(d => d.HeartbeatAt)
             .Unset(d => d.ProcessingStartedAt);
 
-        await _jobs.UpdateManyAsync(filter, update, cancellationToken: cancellationToken);
+        await _jobs.UpdateManyAsync(filter, update, cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
     // ── Continuations ─────────────────────────────────────────────────────────
@@ -324,7 +324,7 @@ public sealed class MongoStorageProvider : IStorageProvider
         var update = Builders<JobDocument>.Update
             .Set(d => d.Status, JobStatus.Enqueued);
 
-        await _jobs.UpdateManyAsync(filter, update, cancellationToken: cancellationToken);
+        await _jobs.UpdateManyAsync(filter, update, cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
     // ── Server / Worker node tracking ─────────────────────────────────────────
@@ -341,7 +341,7 @@ public sealed class MongoStorageProvider : IStorageProvider
             .SetOnInsert(d => d.StartedAt, server.StartedAt);
 
         var options = new UpdateOptions { IsUpsert = true };
-        await _servers.UpdateOneAsync(filter, update, options, cancellationToken);
+        await _servers.UpdateOneAsync(filter, update, options, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -349,14 +349,14 @@ public sealed class MongoStorageProvider : IStorageProvider
     {
         var filter = Builders<ServerDocument>.Filter.Eq(d => d.Id, serverId);
         var update = Builders<ServerDocument>.Update.Set(d => d.HeartbeatAt, DateTimeOffset.UtcNow);
-        await _servers.UpdateOneAsync(filter, update, cancellationToken: cancellationToken);
+        await _servers.UpdateOneAsync(filter, update, cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
     public async Task DeregisterServerAsync(string serverId, CancellationToken cancellationToken = default)
     {
         var filter = Builders<ServerDocument>.Filter.Eq(d => d.Id, serverId);
-        await _servers.DeleteOneAsync(filter, cancellationToken);
+        await _servers.DeleteOneAsync(filter, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -366,7 +366,7 @@ public sealed class MongoStorageProvider : IStorageProvider
         var filter = Builders<ServerDocument>.Filter.Gte(d => d.HeartbeatAt, cutoff);
         var sort = Builders<ServerDocument>.Sort.Ascending(d => d.Id);
 
-        var docs = await _servers.Find(filter).Sort(sort).ToListAsync(cancellationToken);
+        var docs = await _servers.Find(filter).Sort(sort).ToListAsync(cancellationToken).ConfigureAwait(false);
         return docs.Select(d => d.ToRecord()).ToList();
     }
 
@@ -380,7 +380,7 @@ public sealed class MongoStorageProvider : IStorageProvider
 
         var statusCounts = await _jobs.Aggregate()
             .Group(d => d.Status, g => new { Status = g.Key, Count = g.Count() })
-            .ToListAsync(cancellationToken);
+            .ToListAsync(cancellationToken).ConfigureAwait(false);
 
         var byStatus = statusCounts.ToDictionary(x => x.Status, x => x.Count);
 
@@ -389,7 +389,7 @@ public sealed class MongoStorageProvider : IStorageProvider
                     Builders<JobDocument>.Filter.In(d => d.Status, new[] { JobStatus.Succeeded, JobStatus.Failed }),
                     Builders<JobDocument>.Filter.Gte(d => d.CompletedAt, cutoff24)))
             .Project(d => new { d.CompletedAt })
-            .ToListAsync(cancellationToken);
+            .ToListAsync(cancellationToken).ConfigureAwait(false);
 
         var throughput = completed
             .Where(d => d.CompletedAt.HasValue)
@@ -404,12 +404,12 @@ public sealed class MongoStorageProvider : IStorageProvider
             .Find(Builders<JobDocument>.Filter.Eq(d => d.Status, JobStatus.Failed))
             .Sort(Builders<JobDocument>.Sort.Descending(d => d.CompletedAt))
             .Limit(10)
-            .ToListAsync(cancellationToken))
+            .ToListAsync(cancellationToken).ConfigureAwait(false))
             .Select(d => d.ToRecord())
             .ToList();
 
         var recurringCount = (int)await _recurringJobs.CountDocumentsAsync(
-            FilterDefinition<RecurringJobDocument>.Empty, cancellationToken: cancellationToken);
+            FilterDefinition<RecurringJobDocument>.Empty, cancellationToken: cancellationToken).ConfigureAwait(false);
 
         return new JobMetrics
         {
@@ -454,13 +454,13 @@ public sealed class MongoStorageProvider : IStorageProvider
             filterDef &= fb.Eq(d => d.RecurringJobId, filter.RecurringJobId);
         }
 
-        var total = (int)await _jobs.CountDocumentsAsync(filterDef, cancellationToken: cancellationToken);
+        var total = (int)await _jobs.CountDocumentsAsync(filterDef, cancellationToken: cancellationToken).ConfigureAwait(false);
 
         var docs = await _jobs.Find(filterDef)
             .Sort(Builders<JobDocument>.Sort.Descending(d => d.CreatedAt))
             .Skip((page - 1) * pageSize)
             .Limit(pageSize)
-            .ToListAsync(cancellationToken);
+            .ToListAsync(cancellationToken).ConfigureAwait(false);
 
         return new PagedResult<JobRecord>
         {
@@ -474,13 +474,13 @@ public sealed class MongoStorageProvider : IStorageProvider
     /// <inheritdoc/>
     public async Task<JobRecord?> GetJobByIdAsync(JobId id, CancellationToken cancellationToken = default)
     {
-        var doc = await _jobs.Find(ById(id)).FirstOrDefaultAsync(cancellationToken);
+        var doc = await _jobs.Find(ById(id)).FirstOrDefaultAsync(cancellationToken).ConfigureAwait(false);
         return doc?.ToRecord();
     }
 
     /// <inheritdoc/>
     public async Task DeleteJobAsync(JobId id, CancellationToken cancellationToken = default) =>
-        await _jobs.DeleteOneAsync(ById(id), cancellationToken);
+        await _jobs.DeleteOneAsync(ById(id), cancellationToken).ConfigureAwait(false);
 
     /// <inheritdoc/>
     public async Task RequeueJobAsync(JobId id, CancellationToken cancellationToken = default)
@@ -493,7 +493,7 @@ public sealed class MongoStorageProvider : IStorageProvider
             .Unset(d => d.LastErrorMessage)
             .Unset(d => d.LastErrorStackTrace);
 
-        await _jobs.UpdateOneAsync(ById(id), update, cancellationToken: cancellationToken);
+        await _jobs.UpdateOneAsync(ById(id), update, cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -509,10 +509,10 @@ public sealed class MongoStorageProvider : IStorageProvider
                 Processing = g.Sum(x => x.Status == JobStatus.Processing ? 1 : 0),
             });
 
-        var results = await pipeline.ToListAsync(cancellationToken);
+        var results = await pipeline.ToListAsync(cancellationToken).ConfigureAwait(false);
         return results
             .Select(r => new QueueMetrics { Queue = r.Queue, Enqueued = r.Enqueued, Processing = r.Processing })
-            .OrderBy(q => q.Queue)
+            .OrderBy(q => q.Queue, StringComparer.Ordinal)
             .ToList();
     }
 
@@ -531,7 +531,7 @@ public sealed class MongoStorageProvider : IStorageProvider
         var update = Builders<JobDocument>.Update
             .Set(d => d.ExecutionLogs, entries);
 
-        await _jobs.UpdateOneAsync(ById(jobId), update, cancellationToken: cancellationToken);
+        await _jobs.UpdateOneAsync(ById(jobId), update, cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -546,13 +546,13 @@ public sealed class MongoStorageProvider : IStorageProvider
             Builders<BsonDocument>.Filter.And(
                 Builders<BsonDocument>.Filter.Eq("_id", recurringJobId),
                 Builders<BsonDocument>.Filter.Lt("expires_at", now)),
-            ct);
+            ct).ConfigureAwait(false);
 
         try
         {
             await _recurringLocks.InsertOneAsync(
                 new BsonDocument { ["_id"] = recurringJobId, ["expires_at"] = expiry },
-                cancellationToken: ct);
+                cancellationToken: ct).ConfigureAwait(false);
             return true;
         }
         catch (MongoWriteException ex) when (ex.WriteError.Category == ServerErrorCategory.DuplicateKey)
@@ -566,7 +566,7 @@ public sealed class MongoStorageProvider : IStorageProvider
         string recurringJobId, CancellationToken ct = default)
     {
         await _recurringLocks.DeleteOneAsync(
-            Builders<BsonDocument>.Filter.Eq("_id", recurringJobId), ct);
+            Builders<BsonDocument>.Filter.Eq("_id", recurringJobId), ct).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -576,7 +576,7 @@ public sealed class MongoStorageProvider : IStorageProvider
         var update = Builders<JobDocument>.Update
             .Set(d => d.ProgressPercent, percent)
             .Set(d => d.ProgressMessage, message);
-        await _jobs.UpdateOneAsync(ById(jobId), update, cancellationToken: ct);
+        await _jobs.UpdateOneAsync(ById(jobId), update, cancellationToken: ct).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -584,7 +584,7 @@ public sealed class MongoStorageProvider : IStorageProvider
         string tag, CancellationToken cancellationToken = default)
     {
         var filter = Builders<JobDocument>.Filter.AnyEq(d => d.Tags, tag);
-        var docs = await _jobs.Find(filter).ToListAsync(cancellationToken);
+        var docs = await _jobs.Find(filter).ToListAsync(cancellationToken).ConfigureAwait(false);
         return docs.Select(d => d.ToRecord()).ToList();
     }
 
@@ -611,7 +611,7 @@ public sealed class MongoStorageProvider : IStorageProvider
         var update = Builders<JobDocument>.Update
             .Set(d => d.Status, JobStatus.Enqueued);
 
-        await _jobs.UpdateManyAsync(filter, update, cancellationToken: ct);
+        await _jobs.UpdateManyAsync(filter, update, cancellationToken: ct).ConfigureAwait(false);
     }
 
     private void EnsureIndexes()

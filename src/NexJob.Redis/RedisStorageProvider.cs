@@ -58,7 +58,7 @@ public sealed class RedisStorageProvider : IStorageProvider
         if (job.IdempotencyKey is not null)
         {
             var idemRedisKey = IdempotencyRedisKey(job.IdempotencyKey);
-            var existing = await _db.StringGetAsync(idemRedisKey);
+            var existing = await _db.StringGetAsync(idemRedisKey).ConfigureAwait(false);
             if (existing.HasValue && Guid.TryParse(existing.ToString(), out var existingGuid))
             {
                 return new JobId(existingGuid);
@@ -66,24 +66,24 @@ public sealed class RedisStorageProvider : IStorageProvider
         }
 
         var id = job.Id.Value.ToString();
-        await _db.HashSetAsync(JobKey(id), BuildJobHash(job));
+        await _db.HashSetAsync(JobKey(id), BuildJobHash(job)).ConfigureAwait(false);
 
         if (job.IdempotencyKey is not null)
         {
-            await _db.StringSetAsync(IdempotencyRedisKey(job.IdempotencyKey), id, TimeSpan.FromDays(7));
+            await _db.StringSetAsync(IdempotencyRedisKey(job.IdempotencyKey), id, TimeSpan.FromDays(7)).ConfigureAwait(false);
         }
 
         if (job.Status == JobStatus.AwaitingContinuation && job.ParentJobId.HasValue)
         {
-            await _db.SetAddAsync(ContinuationSetKey(job.ParentJobId.Value.Value), id);
+            await _db.SetAddAsync(ContinuationSetKey(job.ParentJobId.Value.Value), id).ConfigureAwait(false);
         }
         else if (job.Status == JobStatus.Scheduled && job.ScheduledAt.HasValue)
         {
-            await _db.SortedSetAddAsync(ScheduledKey, id, job.ScheduledAt.Value.ToUnixTimeMilliseconds());
+            await _db.SortedSetAddAsync(ScheduledKey, id, job.ScheduledAt.Value.ToUnixTimeMilliseconds()).ConfigureAwait(false);
         }
         else if (job.Status == JobStatus.Enqueued)
         {
-            await _db.SortedSetAddAsync(QueueKey(job.Queue), id, QueueScore((int)job.Priority, job.CreatedAt));
+            await _db.SortedSetAddAsync(QueueKey(job.Queue), id, QueueScore((int)job.Priority, job.CreatedAt)).ConfigureAwait(false);
         }
 
         return job.Id;
@@ -93,13 +93,13 @@ public sealed class RedisStorageProvider : IStorageProvider
     public async Task<JobRecord?> FetchNextAsync(
         IReadOnlyList<string> queues, CancellationToken cancellationToken = default)
     {
-        await PromoteScheduledJobsAsync();
+        await PromoteScheduledJobsAsync().ConfigureAwait(false);
 
         var now = DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture);
         var keys = queues.Select(q => (RedisKey)QueueKey(q)).ToArray();
         var args = new RedisValue[] { now };
 
-        var rawResult = await _db.ScriptEvaluateAsync(FetchNextScript.ExecutableScript, keys, args);
+        var rawResult = await _db.ScriptEvaluateAsync(FetchNextScript.ExecutableScript, keys, args).ConfigureAwait(false);
         if (rawResult.IsNull)
         {
             return null;
@@ -125,10 +125,10 @@ public sealed class RedisStorageProvider : IStorageProvider
             new HashEntry("status", "Succeeded"),
             new HashEntry("completedAt", now.ToString("O", CultureInfo.InvariantCulture)),
             new HashEntry("heartbeatAt", string.Empty),
-        });
+        }).ConfigureAwait(false);
 
-        await _db.HashDeleteAsync(ProcessingKey, id);
-        await _db.SortedSetAddAsync(ThroughputKey, id, now.ToUnixTimeMilliseconds());
+        await _db.HashDeleteAsync(ProcessingKey, id).ConfigureAwait(false);
+        await _db.SortedSetAddAsync(ThroughputKey, id, now.ToUnixTimeMilliseconds()).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -137,7 +137,7 @@ public sealed class RedisStorageProvider : IStorageProvider
         CancellationToken cancellationToken = default)
     {
         var id = jobId.Value.ToString();
-        await _db.HashDeleteAsync(ProcessingKey, id);
+        await _db.HashDeleteAsync(ProcessingKey, id).ConfigureAwait(false);
 
         if (retryAt.HasValue)
         {
@@ -148,8 +148,8 @@ public sealed class RedisStorageProvider : IStorageProvider
                 new HashEntry("exceptionMessage", exception.Message),
                 new HashEntry("exceptionStackTrace", exception.StackTrace ?? string.Empty),
                 new HashEntry("heartbeatAt", string.Empty),
-            });
-            await _db.SortedSetAddAsync(ScheduledKey, id, retryAt.Value.ToUnixTimeMilliseconds());
+            }).ConfigureAwait(false);
+            await _db.SortedSetAddAsync(ScheduledKey, id, retryAt.Value.ToUnixTimeMilliseconds()).ConfigureAwait(false);
         }
         else
         {
@@ -161,7 +161,7 @@ public sealed class RedisStorageProvider : IStorageProvider
                 new HashEntry("exceptionMessage", exception.Message),
                 new HashEntry("exceptionStackTrace", exception.StackTrace ?? string.Empty),
                 new HashEntry("heartbeatAt", string.Empty),
-            });
+            }).ConfigureAwait(false);
         }
     }
 
@@ -171,13 +171,13 @@ public sealed class RedisStorageProvider : IStorageProvider
         var id = jobId.Value.ToString();
         var now = DateTimeOffset.UtcNow;
 
-        await _db.HashDeleteAsync(ProcessingKey, id);
+        await _db.HashDeleteAsync(ProcessingKey, id).ConfigureAwait(false);
         await _db.HashSetAsync(JobKey(id), new[]
         {
             new HashEntry("status", "Expired"),
             new HashEntry("completedAt", now.ToString("O", CultureInfo.InvariantCulture)),
             new HashEntry("heartbeatAt", string.Empty),
-        });
+        }).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -185,8 +185,8 @@ public sealed class RedisStorageProvider : IStorageProvider
     {
         var id = jobId.Value.ToString();
         var now = DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture);
-        await _db.HashSetAsync(JobKey(id), "heartbeatAt", now);
-        await _db.HashSetAsync(ProcessingKey, id, now);
+        await _db.HashSetAsync(JobKey(id), "heartbeatAt", now).ConfigureAwait(false);
+        await _db.HashSetAsync(ProcessingKey, id, now).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -195,7 +195,7 @@ public sealed class RedisStorageProvider : IStorageProvider
     {
         var id = recurringJob.RecurringJobId;
         var key = RecurringKey(id);
-        var isNew = !await _db.KeyExistsAsync(key);
+        var isNew = !await _db.KeyExistsAsync(key).ConfigureAwait(false);
 
         var fields = new List<HashEntry>
         {
@@ -219,20 +219,20 @@ public sealed class RedisStorageProvider : IStorageProvider
             fields.Add(new HashEntry("deletedByUser", "false"));
         }
 
-        await _db.HashSetAsync(key, fields.ToArray());
-        await _db.SetAddAsync(RecurringAllKey, id);
+        await _db.HashSetAsync(key, fields.ToArray()).ConfigureAwait(false);
+        await _db.SetAddAsync(RecurringAllKey, id).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
     public async Task<IReadOnlyList<RecurringJobRecord>> GetDueRecurringJobsAsync(
         DateTimeOffset utcNow, CancellationToken cancellationToken = default)
     {
-        var allIds = await _db.SetMembersAsync(RecurringAllKey);
+        var allIds = await _db.SetMembersAsync(RecurringAllKey).ConfigureAwait(false);
         var result = new List<RecurringJobRecord>();
 
         foreach (var idVal in allIds)
         {
-            var hash = await _db.HashGetAllAsync(RecurringKey(idVal.ToString()));
+            var hash = await _db.HashGetAllAsync(RecurringKey(idVal.ToString())).ConfigureAwait(false);
             if (hash.Length == 0)
             {
                 continue;
@@ -266,7 +266,7 @@ public sealed class RedisStorageProvider : IStorageProvider
             new HashEntry("nextExecution", nextExecution.ToString("O", CultureInfo.InvariantCulture)),
             new HashEntry("lastExecution", now),
             new HashEntry("updatedAt", now),
-        });
+        }).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -279,48 +279,48 @@ public sealed class RedisStorageProvider : IStorageProvider
             new HashEntry("lastExecutionStatus", status.ToString()),
             new HashEntry("lastExecutionError", errorMessage ?? string.Empty),
             new HashEntry("updatedAt", DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture)),
-        });
+        }).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
     public async Task DeleteRecurringJobAsync(
         string recurringJobId, CancellationToken cancellationToken = default)
     {
-        await _db.KeyDeleteAsync(RecurringKey(recurringJobId));
-        await _db.SetRemoveAsync(RecurringAllKey, recurringJobId);
+        await _db.KeyDeleteAsync(RecurringKey(recurringJobId)).ConfigureAwait(false);
+        await _db.SetRemoveAsync(RecurringAllKey, recurringJobId).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
     public async Task<IReadOnlyList<RecurringJobRecord>> GetRecurringJobsAsync(
         CancellationToken cancellationToken = default)
     {
-        var allIds = await _db.SetMembersAsync(RecurringAllKey);
+        var allIds = await _db.SetMembersAsync(RecurringAllKey).ConfigureAwait(false);
         var result = new List<RecurringJobRecord>();
 
         foreach (var idVal in allIds)
         {
-            var hash = await _db.HashGetAllAsync(RecurringKey(idVal.ToString()));
+            var hash = await _db.HashGetAllAsync(RecurringKey(idVal.ToString())).ConfigureAwait(false);
             if (hash.Length > 0)
             {
                 result.Add(HashToRecurring(ParseHash(hash)));
             }
         }
 
-        return result.OrderBy(r => r.RecurringJobId).ToList();
+        return result.OrderBy(r => r.RecurringJobId, StringComparer.Ordinal).ToList();
     }
 
     /// <inheritdoc/>
     public async Task<RecurringJobRecord?> GetRecurringJobByIdAsync(
         string recurringJobId, CancellationToken cancellationToken = default)
     {
-        return await GetRecurringJobAsync(recurringJobId, cancellationToken);
+        return await GetRecurringJobAsync(recurringJobId, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
     public async Task<RecurringJobRecord?> GetRecurringJobAsync(
         string recurringJobId, CancellationToken cancellationToken = default)
     {
-        var hash = await _db.HashGetAllAsync(RecurringKey(recurringJobId));
+        var hash = await _db.HashGetAllAsync(RecurringKey(recurringJobId)).ConfigureAwait(false);
         return hash.Length == 0 ? null : HashToRecurring(ParseHash(hash));
     }
 
@@ -334,7 +334,7 @@ public sealed class RedisStorageProvider : IStorageProvider
             new HashEntry("cronOverride", cronOverride ?? string.Empty),
             new HashEntry("enabled", enabled ? "true" : "false"),
             new HashEntry("updatedAt", DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture)),
-        });
+        }).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -346,7 +346,7 @@ public sealed class RedisStorageProvider : IStorageProvider
             new HashEntry("deletedByUser", "true"),
             new HashEntry("enabled", "false"),
             new HashEntry("updatedAt", DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture)),
-        });
+        }).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -358,7 +358,7 @@ public sealed class RedisStorageProvider : IStorageProvider
             new HashEntry("deletedByUser", "false"),
             new HashEntry("enabled", "true"),
             new HashEntry("updatedAt", DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture)),
-        });
+        }).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -366,7 +366,7 @@ public sealed class RedisStorageProvider : IStorageProvider
         TimeSpan heartbeatTimeout, CancellationToken cancellationToken = default)
     {
         var cutoff = DateTimeOffset.UtcNow - heartbeatTimeout;
-        var processingEntries = await _db.HashGetAllAsync(ProcessingKey);
+        var processingEntries = await _db.HashGetAllAsync(ProcessingKey).ConfigureAwait(false);
 
         foreach (var entry in processingEntries)
         {
@@ -382,10 +382,10 @@ public sealed class RedisStorageProvider : IStorageProvider
                 continue;
             }
 
-            var jobHash = await _db.HashGetAllAsync(JobKey(id));
+            var jobHash = await _db.HashGetAllAsync(JobKey(id)).ConfigureAwait(false);
             if (jobHash.Length == 0)
             {
-                await _db.HashDeleteAsync(ProcessingKey, id);
+                await _db.HashDeleteAsync(ProcessingKey, id).ConfigureAwait(false);
                 continue;
             }
 
@@ -393,7 +393,7 @@ public sealed class RedisStorageProvider : IStorageProvider
             var queue = dict.GetValueOrDefault("queue", "default");
             var priorityStr = dict.GetValueOrDefault("priority", "3");
             var createdAtStr = dict.GetValueOrDefault("createdAt", DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture));
-            var priority = int.TryParse(priorityStr, out var p) ? p : 3;
+            var priority = int.TryParse(priorityStr, NumberStyles.Integer, CultureInfo.InvariantCulture, out var p) ? p : 3;
             var createdAt = DateTimeOffset.TryParse(createdAtStr, CultureInfo.InvariantCulture,
                 DateTimeStyles.RoundtripKind, out var ca) ? ca : DateTimeOffset.UtcNow;
 
@@ -402,9 +402,9 @@ public sealed class RedisStorageProvider : IStorageProvider
                 new HashEntry("status", "Enqueued"),
                 new HashEntry("heartbeatAt", string.Empty),
                 new HashEntry("processingStartedAt", string.Empty),
-            });
-            await _db.HashDeleteAsync(ProcessingKey, id);
-            await _db.SortedSetAddAsync(QueueKey(queue), id, QueueScore(priority, createdAt));
+            }).ConfigureAwait(false);
+            await _db.HashDeleteAsync(ProcessingKey, id).ConfigureAwait(false);
+            await _db.SortedSetAddAsync(QueueKey(queue), id, QueueScore(priority, createdAt)).ConfigureAwait(false);
         }
     }
 
@@ -413,19 +413,19 @@ public sealed class RedisStorageProvider : IStorageProvider
         JobId parentJobId, CancellationToken cancellationToken = default)
     {
         var continuationKey = ContinuationSetKey(parentJobId.Value);
-        var childIds = await _db.SetMembersAsync(continuationKey);
+        var childIds = await _db.SetMembersAsync(continuationKey).ConfigureAwait(false);
 
         foreach (var childIdVal in childIds)
         {
             var childId = childIdVal.ToString();
-            var jobHash = await _db.HashGetAllAsync(JobKey(childId));
+            var jobHash = await _db.HashGetAllAsync(JobKey(childId)).ConfigureAwait(false);
             if (jobHash.Length == 0)
             {
                 continue;
             }
 
             var dict = ParseHash(jobHash);
-            if (dict.GetValueOrDefault("status") != "AwaitingContinuation")
+            if (!string.Equals(dict.GetValueOrDefault("status"), "AwaitingContinuation", StringComparison.Ordinal))
             {
                 continue;
             }
@@ -433,15 +433,15 @@ public sealed class RedisStorageProvider : IStorageProvider
             var queue = dict.GetValueOrDefault("queue", "default");
             var priorityStr = dict.GetValueOrDefault("priority", "3");
             var createdAtStr = dict.GetValueOrDefault("createdAt", DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture));
-            var priority = int.TryParse(priorityStr, out var pri) ? pri : 3;
+            var priority = int.TryParse(priorityStr, NumberStyles.Integer, CultureInfo.InvariantCulture, out var pri) ? pri : 3;
             var createdAt = DateTimeOffset.TryParse(createdAtStr, CultureInfo.InvariantCulture,
                 DateTimeStyles.RoundtripKind, out var ca) ? ca : DateTimeOffset.UtcNow;
 
-            await _db.HashSetAsync(JobKey(childId), "status", "Enqueued");
-            await _db.SortedSetAddAsync(QueueKey(queue), childId, QueueScore(priority, createdAt));
+            await _db.HashSetAsync(JobKey(childId), "status", "Enqueued").ConfigureAwait(false);
+            await _db.SortedSetAddAsync(QueueKey(queue), childId, QueueScore(priority, createdAt)).ConfigureAwait(false);
         }
 
-        await _db.KeyDeleteAsync(continuationKey);
+        await _db.KeyDeleteAsync(continuationKey).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -450,9 +450,9 @@ public sealed class RedisStorageProvider : IStorageProvider
         var counts = new Dictionary<string, int>(StringComparer.Ordinal);
         var recentFailures = new List<JobRecord>();
 
-        await foreach (var key in ScanJobKeysAsync())
+        await foreach (var key in ScanJobKeysAsync().WithCancellation(cancellationToken).ConfigureAwait(false))
         {
-            var hash = await _db.HashGetAllAsync(key);
+            var hash = await _db.HashGetAllAsync(key).ConfigureAwait(false);
             if (hash.Length == 0)
             {
                 continue;
@@ -463,7 +463,7 @@ public sealed class RedisStorageProvider : IStorageProvider
             counts.TryGetValue(s, out var cnt);
             counts[s] = cnt + 1;
 
-            if (s == "Failed")
+            if (string.Equals(s, "Failed", StringComparison.Ordinal))
             {
                 recentFailures.Add(HashToRecord(dict));
             }
@@ -471,7 +471,7 @@ public sealed class RedisStorageProvider : IStorageProvider
 
         var cutoffMs = DateTimeOffset.UtcNow.AddHours(-24).ToUnixTimeMilliseconds();
         var throughputMembers = await _db.SortedSetRangeByScoreWithScoresAsync(
-            ThroughputKey, cutoffMs, double.PositiveInfinity);
+            ThroughputKey, cutoffMs, double.PositiveInfinity).ConfigureAwait(false);
 
         var hourBuckets = throughputMembers
             .GroupBy(m =>
@@ -483,7 +483,7 @@ public sealed class RedisStorageProvider : IStorageProvider
             .OrderBy(h => h.Hour)
             .ToList();
 
-        var recurringCount = (int)await _db.SetLengthAsync(RecurringAllKey);
+        var recurringCount = (int)await _db.SetLengthAsync(RecurringAllKey).ConfigureAwait(false);
 
         return new JobMetrics
         {
@@ -508,9 +508,9 @@ public sealed class RedisStorageProvider : IStorageProvider
     {
         var all = new List<JobRecord>();
 
-        await foreach (var key in ScanJobKeysAsync())
+        await foreach (var key in ScanJobKeysAsync().WithCancellation(cancellationToken).ConfigureAwait(false))
         {
-            var hash = await _db.HashGetAllAsync(key);
+            var hash = await _db.HashGetAllAsync(key).ConfigureAwait(false);
             if (hash.Length == 0)
             {
                 continue;
@@ -539,7 +539,7 @@ public sealed class RedisStorageProvider : IStorageProvider
     public async Task<JobRecord?> GetJobByIdAsync(
         JobId id, CancellationToken cancellationToken = default)
     {
-        var hash = await _db.HashGetAllAsync(JobKey(id.Value.ToString()));
+        var hash = await _db.HashGetAllAsync(JobKey(id.Value.ToString())).ConfigureAwait(false);
         return hash.Length == 0 ? null : HashToRecord(ParseHash(hash));
     }
 
@@ -547,16 +547,16 @@ public sealed class RedisStorageProvider : IStorageProvider
     public async Task DeleteJobAsync(JobId id, CancellationToken cancellationToken = default)
     {
         var idStr = id.Value.ToString();
-        await _db.KeyDeleteAsync(JobKey(idStr));
-        await _db.KeyDeleteAsync(LogsKey(idStr));
-        await _db.HashDeleteAsync(ProcessingKey, idStr);
+        await _db.KeyDeleteAsync(JobKey(idStr)).ConfigureAwait(false);
+        await _db.KeyDeleteAsync(LogsKey(idStr)).ConfigureAwait(false);
+        await _db.HashDeleteAsync(ProcessingKey, idStr).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
     public async Task RequeueJobAsync(JobId id, CancellationToken cancellationToken = default)
     {
         var idStr = id.Value.ToString();
-        var hash = await _db.HashGetAllAsync(JobKey(idStr));
+        var hash = await _db.HashGetAllAsync(JobKey(idStr)).ConfigureAwait(false);
         if (hash.Length == 0)
         {
             return;
@@ -576,8 +576,8 @@ public sealed class RedisStorageProvider : IStorageProvider
             new HashEntry("completedAt", string.Empty),
             new HashEntry("exceptionMessage", string.Empty),
             new HashEntry("exceptionStackTrace", string.Empty),
-        });
-        await _db.SortedSetAddAsync(QueueKey(queue), idStr, QueueScore(3, createdAt));
+        }).ConfigureAwait(false);
+        await _db.SortedSetAddAsync(QueueKey(queue), idStr, QueueScore(3, createdAt)).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -586,9 +586,9 @@ public sealed class RedisStorageProvider : IStorageProvider
     {
         var metrics = new Dictionary<string, (int Enqueued, int Processing)>(StringComparer.Ordinal);
 
-        await foreach (var key in ScanJobKeysAsync())
+        await foreach (var key in ScanJobKeysAsync().WithCancellation(cancellationToken).ConfigureAwait(false))
         {
-            var fields = await _db.HashGetAsync(key, new RedisValue[] { "status", "queue" });
+            var fields = await _db.HashGetAsync(key, new RedisValue[] { "status", "queue" }).ConfigureAwait(false);
             var status = fields[0].ToString();
             var queue = fields[1].ToString();
             if (string.IsNullOrEmpty(queue))
@@ -612,7 +612,7 @@ public sealed class RedisStorageProvider : IStorageProvider
                 Enqueued = kvp.Value.Enqueued,
                 Processing = kvp.Value.Processing,
             })
-            .OrderBy(q => q.Queue)
+            .OrderBy(q => q.Queue, StringComparer.Ordinal)
             .ToList();
     }
 
@@ -623,8 +623,8 @@ public sealed class RedisStorageProvider : IStorageProvider
     {
         var json = JsonSerializer.Serialize(logs, JsonOpts);
         var idStr = jobId.Value.ToString();
-        await _db.StringSetAsync(LogsKey(idStr), json);
-        await _db.HashSetAsync(JobKey(idStr), "executionLogs", json);
+        await _db.StringSetAsync(LogsKey(idStr), json).ConfigureAwait(false);
+        await _db.HashSetAsync(JobKey(idStr), "executionLogs", json).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -632,7 +632,7 @@ public sealed class RedisStorageProvider : IStorageProvider
         string recurringJobId, TimeSpan ttl, CancellationToken ct = default)
     {
         var key = (RedisKey)$"nexjob:lock:recurring:{recurringJobId}";
-        return await _db.StringSetAsync(key, "1", ttl, When.NotExists);
+        return await _db.StringSetAsync(key, "1", ttl, When.NotExists).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -640,7 +640,7 @@ public sealed class RedisStorageProvider : IStorageProvider
         string recurringJobId, CancellationToken ct = default)
     {
         var key = (RedisKey)$"nexjob:lock:recurring:{recurringJobId}";
-        await _db.KeyDeleteAsync(key);
+        await _db.KeyDeleteAsync(key).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -650,9 +650,9 @@ public sealed class RedisStorageProvider : IStorageProvider
         var key = (RedisKey)JobKey(jobId.Value.ToString());
         await _db.HashSetAsync(key,
         [
-            new HashEntry("progressPercent", percent.ToString()),
+            new HashEntry("progressPercent", percent.ToString(CultureInfo.InvariantCulture)),
             new HashEntry("progressMessage", message ?? string.Empty),
-        ]);
+        ]).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -660,9 +660,9 @@ public sealed class RedisStorageProvider : IStorageProvider
         string tag, CancellationToken cancellationToken = default)
     {
         var results = new List<JobRecord>();
-        await foreach (var key in ScanJobKeysAsync())
+        await foreach (var key in ScanJobKeysAsync().WithCancellation(cancellationToken).ConfigureAwait(false))
         {
-            var hash = await _db.HashGetAllAsync(key);
+            var hash = await _db.HashGetAllAsync(key).ConfigureAwait(false);
             if (hash.Length == 0)
             {
                 continue;
@@ -689,41 +689,41 @@ public sealed class RedisStorageProvider : IStorageProvider
         var fields = new HashEntry[]
         {
             new("id", server.Id),
-            new("workerCount", server.WorkerCount.ToString()),
+            new("workerCount", server.WorkerCount.ToString(CultureInfo.InvariantCulture)),
             new("queues", JsonSerializer.Serialize(server.Queues, JsonOpts)),
             new("startedAt", server.StartedAt.ToString("O", CultureInfo.InvariantCulture)),
             new("heartbeatAt", server.HeartbeatAt.ToString("O", CultureInfo.InvariantCulture)),
         };
 
-        await _db.HashSetAsync(key, fields);
-        await _db.SetAddAsync(ServersAllKey, server.Id);
+        await _db.HashSetAsync(key, fields).ConfigureAwait(false);
+        await _db.SetAddAsync(ServersAllKey, server.Id).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
     public async Task HeartbeatServerAsync(string serverId, CancellationToken cancellationToken = default)
     {
         var now = DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture);
-        await _db.HashSetAsync(ServerKey(serverId), "heartbeatAt", now);
+        await _db.HashSetAsync(ServerKey(serverId), "heartbeatAt", now).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
     public async Task DeregisterServerAsync(string serverId, CancellationToken cancellationToken = default)
     {
-        await _db.KeyDeleteAsync(ServerKey(serverId));
-        await _db.SetRemoveAsync(ServersAllKey, serverId);
+        await _db.KeyDeleteAsync(ServerKey(serverId)).ConfigureAwait(false);
+        await _db.SetRemoveAsync(ServersAllKey, serverId).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
     public async Task<IReadOnlyList<ServerRecord>> GetActiveServersAsync(TimeSpan activeTimeout, CancellationToken cancellationToken = default)
     {
         var cutoff = DateTimeOffset.UtcNow - activeTimeout;
-        var allIds = await _db.SetMembersAsync(ServersAllKey);
+        var allIds = await _db.SetMembersAsync(ServersAllKey).ConfigureAwait(false);
         var result = new List<ServerRecord>();
 
         foreach (var idVal in allIds)
         {
             var id = idVal.ToString();
-            var hash = await _db.HashGetAllAsync(ServerKey(id));
+            var hash = await _db.HashGetAllAsync(ServerKey(id)).ConfigureAwait(false);
             if (hash.Length == 0)
             {
                 continue;
@@ -750,7 +750,7 @@ public sealed class RedisStorageProvider : IStorageProvider
             result.Add(new ServerRecord
             {
                 Id = id,
-                WorkerCount = int.TryParse(dict.GetValueOrDefault("workerCount", "1"), out var wc) ? wc : 1,
+                WorkerCount = int.TryParse(dict.GetValueOrDefault("workerCount", "1"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var wc) ? wc : 1,
                 Queues = queues,
                 StartedAt = DateTimeOffset.TryParse(dict.GetValueOrDefault("startedAt"), CultureInfo.InvariantCulture,
                     DateTimeStyles.RoundtripKind, out var sa) ? sa : DateTimeOffset.UtcNow,
@@ -758,7 +758,7 @@ public sealed class RedisStorageProvider : IStorageProvider
             });
         }
 
-        return result.OrderBy(s => s.Id).ToList();
+        return result.OrderBy(s => s.Id, StringComparer.Ordinal).ToList();
     }
 
     // ── Private static helpers ────────────────────────────────────────────────
@@ -791,12 +791,12 @@ public sealed class RedisStorageProvider : IStorageProvider
             return false;
         }
 
-        if (!string.IsNullOrWhiteSpace(filter.Queue) && record.Queue != filter.Queue)
+        if (!string.IsNullOrWhiteSpace(filter.Queue) && !string.Equals(record.Queue, filter.Queue, StringComparison.Ordinal))
         {
             return false;
         }
 
-        if (!string.IsNullOrEmpty(filter.RecurringJobId) && record.RecurringJobId != filter.RecurringJobId)
+        if (!string.IsNullOrEmpty(filter.RecurringJobId) && !string.Equals(record.RecurringJobId, filter.RecurringJobId, StringComparison.Ordinal))
         {
             return false;
         }
@@ -839,7 +839,7 @@ public sealed class RedisStorageProvider : IStorageProvider
         new("recurringJobId", job.RecurringJobId ?? string.Empty),
         new("executionLogs", string.Empty),
         new("tags", JsonSerializer.Serialize(job.Tags, JsonOpts)),
-        new("progressPercent", job.ProgressPercent?.ToString() ?? string.Empty),
+        new("progressPercent", job.ProgressPercent?.ToString(CultureInfo.InvariantCulture) ?? string.Empty),
         new("progressMessage", job.ProgressMessage ?? string.Empty),
     ];
 
@@ -880,7 +880,7 @@ public sealed class RedisStorageProvider : IStorageProvider
 
         var priorityRaw = d.GetValueOrDefault("priority", "3");
         JobPriority priority;
-        if (int.TryParse(priorityRaw, out var priInt))
+        if (int.TryParse(priorityRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var priInt))
         {
             priority = (JobPriority)priInt;
         }
@@ -895,13 +895,13 @@ public sealed class RedisStorageProvider : IStorageProvider
             JobType = d.GetValueOrDefault("jobType", string.Empty),
             InputType = d.GetValueOrDefault("inputType", string.Empty),
             InputJson = d.GetValueOrDefault("inputJson", string.Empty),
-            SchemaVersion = int.TryParse(d.GetValueOrDefault("schemaVersion"), out var sv) ? sv : 1,
+            SchemaVersion = int.TryParse(d.GetValueOrDefault("schemaVersion"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var sv) ? sv : 1,
             Queue = d.GetValueOrDefault("queue", "default"),
             Priority = priority,
             Status = Enum.Parse<JobStatus>(d.GetValueOrDefault("status", "Enqueued")),
             IdempotencyKey = NullIfEmpty(d.GetValueOrDefault("idempotencyKey")),
-            Attempts = int.TryParse(d.GetValueOrDefault("attempts"), out var att) ? att : 0,
-            MaxAttempts = int.TryParse(d.GetValueOrDefault("maxAttempts"), out var ma) ? ma : 10,
+            Attempts = int.TryParse(d.GetValueOrDefault("attempts"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var att) ? att : 0,
+            MaxAttempts = int.TryParse(d.GetValueOrDefault("maxAttempts"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var ma) ? ma : 10,
             CreatedAt = DateTimeOffset.Parse(d["createdAt"], CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind),
             ScheduledAt = ParseDate("scheduledAt"),
             ProcessingStartedAt = ParseDate("processingStartedAt"),
@@ -914,7 +914,7 @@ public sealed class RedisStorageProvider : IStorageProvider
             RecurringJobId = NullIfEmpty(d.GetValueOrDefault("recurringJobId")),
             ExecutionLogs = logs,
             Tags = DeserializeTags(d.GetValueOrDefault("tags", string.Empty)),
-            ProgressPercent = int.TryParse(d.GetValueOrDefault("progressPercent"), out var pp) ? pp : null,
+            ProgressPercent = int.TryParse(d.GetValueOrDefault("progressPercent"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var pp) ? pp : null,
             ProgressMessage = NullIfEmpty(d.GetValueOrDefault("progressMessage")),
         };
     }
@@ -963,8 +963,8 @@ public sealed class RedisStorageProvider : IStorageProvider
             ConcurrencyPolicy = cp,
             CreatedAt = createdAt,
             CronOverride = NullIfEmpty(d.GetValueOrDefault("cronOverride")),
-            Enabled = d.GetValueOrDefault("enabled", "true") == "true",
-            DeletedByUser = d.GetValueOrDefault("deletedByUser", "false") == "true",
+            Enabled = string.Equals(d.GetValueOrDefault("enabled", "true"), "true", StringComparison.Ordinal),
+            DeletedByUser = string.Equals(d.GetValueOrDefault("deletedByUser", "false"), "true", StringComparison.Ordinal),
         };
     }
 
@@ -974,7 +974,7 @@ public sealed class RedisStorageProvider : IStorageProvider
     {
         var endpoints = _db.Multiplexer.GetEndPoints();
         var server = _db.Multiplexer.GetServer(endpoints[0]);
-        await foreach (var key in server.KeysAsync(database: _db.Database, pattern: "nexjob:jobs:*"))
+        await foreach (var key in server.KeysAsync(database: _db.Database, pattern: "nexjob:jobs:*").ConfigureAwait(false))
         {
             yield return key;
         }
@@ -984,15 +984,15 @@ public sealed class RedisStorageProvider : IStorageProvider
     {
         var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         var dueMembers = await _db.SortedSetRangeByScoreWithScoresAsync(
-            ScheduledKey, double.NegativeInfinity, nowMs);
+            ScheduledKey, double.NegativeInfinity, nowMs).ConfigureAwait(false);
 
         foreach (var member in dueMembers)
         {
             var id = member.Element.ToString();
-            var jobHash = await _db.HashGetAllAsync(JobKey(id));
+            var jobHash = await _db.HashGetAllAsync(JobKey(id)).ConfigureAwait(false);
             if (jobHash.Length == 0)
             {
-                await _db.SortedSetRemoveAsync(ScheduledKey, id);
+                await _db.SortedSetRemoveAsync(ScheduledKey, id).ConfigureAwait(false);
                 continue;
             }
 
@@ -1000,13 +1000,13 @@ public sealed class RedisStorageProvider : IStorageProvider
             var queue = dict.GetValueOrDefault("queue", "default");
             var priorityStr = dict.GetValueOrDefault("priority", "3");
             var createdAtStr = dict.GetValueOrDefault("createdAt", DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture));
-            var priority = int.TryParse(priorityStr, out var p) ? p : 3;
+            var priority = int.TryParse(priorityStr, NumberStyles.Integer, CultureInfo.InvariantCulture, out var p) ? p : 3;
             var createdAt = DateTimeOffset.TryParse(createdAtStr, CultureInfo.InvariantCulture,
                 DateTimeStyles.RoundtripKind, out var ca) ? ca : DateTimeOffset.UtcNow;
 
-            await _db.HashSetAsync(JobKey(id), "status", "Enqueued");
-            await _db.SortedSetRemoveAsync(ScheduledKey, id);
-            await _db.SortedSetAddAsync(QueueKey(queue), id, QueueScore(priority, createdAt));
+            await _db.HashSetAsync(JobKey(id), "status", "Enqueued").ConfigureAwait(false);
+            await _db.SortedSetRemoveAsync(ScheduledKey, id).ConfigureAwait(false);
+            await _db.SortedSetAddAsync(QueueKey(queue), id, QueueScore(priority, createdAt)).ConfigureAwait(false);
         }
     }
 }

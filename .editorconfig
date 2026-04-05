@@ -120,11 +120,73 @@ dotnet_diagnostic.SA1001.severity = none
 # Related to SA1116/SA1117; same reason for suppression.
 dotnet_diagnostic.SA1114.severity = none
 
+# membership ordering rules
+dotnet_diagnostic.SA1201.severity = none
+dotnet_diagnostic.SA1202.severity = none
+dotnet_diagnostic.SA1204.severity = none
+
+# ── Meziantou.Analyzer ────────────────────────────────────────────────────────
+
+# MA0051 — Method is too long.
+# Increased from 60 to 150 to accommodate complex dispatcher logic.
+dotnet_diagnostic.MA0051.severity = suggestion
+
+# MA0016 — Prefer using collection abstraction instead of implementation.
+# In library options, List<T> is often preferred for easy direct manipulation by users.
+dotnet_diagnostic.MA0016.severity = suggestion
+
+# MA0048 — File name must match type name.
+# Sometimes we group small related interfaces in one file.
+dotnet_diagnostic.MA0048.severity = suggestion
+
+# Suppress MA0011 (IFormatProvider) for Dashboard as it is too noisy for UI rendering
+[src/NexJob.Dashboard/**/*.cs]
+dotnet_diagnostic.MA0011.severity = none
+
+# Suppress MA0004 (ConfigureAwait) for Postgres due to type conflicts with await using and Dapper
+[src/NexJob.Postgres/**/*.cs]
+dotnet_diagnostic.MA0004.severity = none
+
 # ── Test project overrides ────────────────────────────────────────────────────
 # Tests have different style requirements: readability > formality.
-# StyleCop rules are suppressed; Sonar rules that catch real bugs remain active.
+# StyleCop and async result rules are suppressed; Sonar rules remain.
 [tests/**/*.cs]
 dotnet_diagnostic.SA0001.severity = none
+dotnet_diagnostic.SA1402.severity = none
+dotnet_diagnostic.MA0004.severity = none
+dotnet_diagnostic.MA0006.severity = none
+dotnet_diagnostic.MA0002.severity = none
+dotnet_diagnostic.MA0011.severity = none
+dotnet_diagnostic.MA0074.severity = none
+dotnet_diagnostic.MA0134.severity = none
+
+[benchmarks/**/*.cs]
+dotnet_diagnostic.SA0001.severity = none
+dotnet_diagnostic.SA1402.severity = none
+dotnet_diagnostic.MA0004.severity = none
+dotnet_diagnostic.MA0006.severity = none
+dotnet_diagnostic.MA0002.severity = none
+dotnet_diagnostic.MA0011.severity = none
+dotnet_diagnostic.MA0134.severity = none
+
+[src/NexJob.Dashboard.Standalone/**/*.cs]
+dotnet_diagnostic.MA0004.severity = none
+
+[src/NexJob.Dashboard.Standalone/*.cs]
+dotnet_diagnostic.MA0004.severity = none
+
+[samples/**/*.cs]
+dotnet_diagnostic.SA0001.severity = none
+dotnet_diagnostic.SA1402.severity = none
+dotnet_diagnostic.MA0004.severity = none
+dotnet_diagnostic.MA0006.severity = none
+dotnet_diagnostic.MA0002.severity = none
+dotnet_diagnostic.MA0011.severity = none
+dotnet_diagnostic.MA0074.severity = none
+dotnet_diagnostic.MA0134.severity = none
+dotnet_diagnostic.MA0047.severity = none
+dotnet_diagnostic.RS0030.severity = none
+dotnet_diagnostic.SCS0005.severity = none
 dotnet_diagnostic.SA1200.severity = none
 dotnet_diagnostic.SA1201.severity = none
 dotnet_diagnostic.SA1202.severity = none

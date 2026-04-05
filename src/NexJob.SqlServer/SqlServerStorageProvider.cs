@@ -1,3 +1,4 @@
+#pragma warning disable MA0004
 using System.Text.Json;
 using Dapper;
 using Microsoft.Data.SqlClient;
@@ -22,8 +23,10 @@ public sealed class SqlServerStorageProvider : IStorageProvider
     {
         _connectionString = connectionString;
         Dapper.DefaultTypeMap.MatchNamesWithUnderscores = true;
+#pragma warning disable RS0030
         // Sync-over-async is acceptable here: runs once at startup, before any requests are served.
         new SchemaMigrator().MigrateAsync(_connectionString).GetAwaiter().GetResult();
+#pragma warning restore RS0030
     }
 
     // ── EnqueueAsync ──────────────────────────────────────────────────────────
@@ -32,7 +35,7 @@ public sealed class SqlServerStorageProvider : IStorageProvider
     public async Task<JobId> EnqueueAsync(JobRecord job, CancellationToken cancellationToken = default)
     {
         await using var conn = Open();
-        await conn.OpenAsync(cancellationToken);
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
 
         if (job.IdempotencyKey is not null)
         {
@@ -89,7 +92,7 @@ public sealed class SqlServerStorageProvider : IStorageProvider
         IReadOnlyList<string> queues, CancellationToken cancellationToken = default)
     {
         await using var conn = Open();
-        await conn.OpenAsync(cancellationToken);
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var tx = await conn.BeginTransactionAsync(cancellationToken);
 
         // Promote due scheduled/retry jobs first
@@ -125,7 +128,7 @@ public sealed class SqlServerStorageProvider : IStorageProvider
             """,
             transaction: tx);
 
-        await tx.CommitAsync(cancellationToken);
+        await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
         return row?.ToRecord();
     }
 
@@ -135,7 +138,7 @@ public sealed class SqlServerStorageProvider : IStorageProvider
     public async Task AcknowledgeAsync(JobId jobId, CancellationToken cancellationToken = default)
     {
         await using var conn = Open();
-        await conn.OpenAsync(cancellationToken);
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
         await conn.ExecuteAsync(
             """
             UPDATE nexjob_jobs
@@ -153,7 +156,7 @@ public sealed class SqlServerStorageProvider : IStorageProvider
         CancellationToken cancellationToken = default)
     {
         await using var conn = Open();
-        await conn.OpenAsync(cancellationToken);
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
 
         if (retryAt.HasValue)
         {
@@ -185,7 +188,7 @@ public sealed class SqlServerStorageProvider : IStorageProvider
     public async Task SetExpiredAsync(JobId jobId, CancellationToken cancellationToken = default)
     {
         await using var conn = Open();
-        await conn.OpenAsync(cancellationToken);
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
 
         await conn.ExecuteAsync(
             """
@@ -202,7 +205,7 @@ public sealed class SqlServerStorageProvider : IStorageProvider
     public async Task UpdateHeartbeatAsync(JobId jobId, CancellationToken cancellationToken = default)
     {
         await using var conn = Open();
-        await conn.OpenAsync(cancellationToken);
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
         await conn.ExecuteAsync(
             "UPDATE nexjob_jobs SET heartbeat_at = SYSUTCDATETIME() WHERE id = @id",
             new { id = jobId.Value });
@@ -215,7 +218,7 @@ public sealed class SqlServerStorageProvider : IStorageProvider
         RecurringJobRecord recurringJob, CancellationToken cancellationToken = default)
     {
         await using var conn = Open();
-        await conn.OpenAsync(cancellationToken);
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
         await conn.ExecuteAsync(
             """
             MERGE nexjob_recurring_jobs WITH (HOLDLOCK) AS target
@@ -260,7 +263,7 @@ public sealed class SqlServerStorageProvider : IStorageProvider
         DateTimeOffset utcNow, CancellationToken cancellationToken = default)
     {
         await using var conn = Open();
-        await conn.OpenAsync(cancellationToken);
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
         var rows = await conn.QueryAsync<RecurringJobRow>(
             "SELECT * FROM nexjob_recurring_jobs WHERE next_execution <= @now",
             new { now = utcNow });
@@ -273,7 +276,7 @@ public sealed class SqlServerStorageProvider : IStorageProvider
         CancellationToken cancellationToken = default)
     {
         await using var conn = Open();
-        await conn.OpenAsync(cancellationToken);
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
         await conn.ExecuteAsync(
             """
             UPDATE nexjob_recurring_jobs
@@ -289,7 +292,7 @@ public sealed class SqlServerStorageProvider : IStorageProvider
         CancellationToken cancellationToken = default)
     {
         await using var conn = Open();
-        await conn.OpenAsync(cancellationToken);
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
         await conn.ExecuteAsync(
             """
             UPDATE nexjob_recurring_jobs
@@ -304,7 +307,7 @@ public sealed class SqlServerStorageProvider : IStorageProvider
         string recurringJobId, CancellationToken cancellationToken = default)
     {
         await using var conn = Open();
-        await conn.OpenAsync(cancellationToken);
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
         await conn.ExecuteAsync(
             "DELETE FROM nexjob_recurring_jobs WHERE recurring_job_id = @id",
             new { id = recurringJobId });
@@ -314,7 +317,7 @@ public sealed class SqlServerStorageProvider : IStorageProvider
     public async Task<IReadOnlyList<RecurringJobRecord>> GetRecurringJobsAsync(CancellationToken cancellationToken = default)
     {
         await using var conn = Open();
-        await conn.OpenAsync(cancellationToken);
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
         var rows = await conn.QueryAsync<RecurringJobRow>(
             "SELECT * FROM nexjob_recurring_jobs ORDER BY recurring_job_id");
         return rows.Select(r => r.ToRecord()).ToList();
@@ -323,14 +326,14 @@ public sealed class SqlServerStorageProvider : IStorageProvider
     /// <inheritdoc/>
     public async Task<RecurringJobRecord?> GetRecurringJobByIdAsync(string recurringJobId, CancellationToken cancellationToken = default)
     {
-        return await GetRecurringJobAsync(recurringJobId, cancellationToken);
+        return await GetRecurringJobAsync(recurringJobId, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
     public async Task<RecurringJobRecord?> GetRecurringJobAsync(string recurringJobId, CancellationToken cancellationToken = default)
     {
         await using var conn = Open();
-        await conn.OpenAsync(cancellationToken);
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
         var row = await conn.QuerySingleOrDefaultAsync<RecurringJobRow>(
             "SELECT * FROM nexjob_recurring_jobs WHERE recurring_job_id = @Id",
             new { Id = recurringJobId });
@@ -343,7 +346,7 @@ public sealed class SqlServerStorageProvider : IStorageProvider
         CancellationToken cancellationToken = default)
     {
         await using var conn = Open();
-        await conn.OpenAsync(cancellationToken);
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
         await conn.ExecuteAsync(
             """
             UPDATE nexjob_recurring_jobs
@@ -358,7 +361,7 @@ public sealed class SqlServerStorageProvider : IStorageProvider
         string recurringJobId, CancellationToken cancellationToken = default)
     {
         await using var conn = Open();
-        await conn.OpenAsync(cancellationToken);
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
         await conn.ExecuteAsync(
             "DELETE FROM nexjob_jobs WHERE recurring_job_id = @id",
             new { id = recurringJobId });
@@ -376,7 +379,7 @@ public sealed class SqlServerStorageProvider : IStorageProvider
         string recurringJobId, CancellationToken cancellationToken = default)
     {
         await using var conn = Open();
-        await conn.OpenAsync(cancellationToken);
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
         await conn.ExecuteAsync(
             """
             UPDATE nexjob_recurring_jobs
@@ -394,7 +397,7 @@ public sealed class SqlServerStorageProvider : IStorageProvider
     {
         var cutoff = DateTimeOffset.UtcNow - heartbeatTimeout;
         await using var conn = Open();
-        await conn.OpenAsync(cancellationToken);
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
         await conn.ExecuteAsync(
             """
             UPDATE nexjob_jobs
@@ -411,7 +414,7 @@ public sealed class SqlServerStorageProvider : IStorageProvider
         JobId parentJobId, CancellationToken cancellationToken = default)
     {
         await using var conn = Open();
-        await conn.OpenAsync(cancellationToken);
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
         await conn.ExecuteAsync(
             """
             UPDATE nexjob_jobs
@@ -427,7 +430,7 @@ public sealed class SqlServerStorageProvider : IStorageProvider
     public async Task RegisterServerAsync(ServerRecord server, CancellationToken cancellationToken = default)
     {
         await using var conn = Open();
-        await conn.OpenAsync(cancellationToken);
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
         await conn.ExecuteAsync(
             """
             MERGE nexjob_servers WITH (HOLDLOCK) AS target
@@ -456,7 +459,7 @@ public sealed class SqlServerStorageProvider : IStorageProvider
     public async Task HeartbeatServerAsync(string serverId, CancellationToken cancellationToken = default)
     {
         await using var conn = Open();
-        await conn.OpenAsync(cancellationToken);
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
         await conn.ExecuteAsync(
             "UPDATE nexjob_servers SET heartbeat_at = SYSUTCDATETIME() WHERE id = @Id",
             new { Id = serverId });
@@ -466,7 +469,7 @@ public sealed class SqlServerStorageProvider : IStorageProvider
     public async Task DeregisterServerAsync(string serverId, CancellationToken cancellationToken = default)
     {
         await using var conn = Open();
-        await conn.OpenAsync(cancellationToken);
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
         await conn.ExecuteAsync(
             "DELETE FROM nexjob_servers WHERE id = @Id",
             new { Id = serverId });
@@ -477,7 +480,7 @@ public sealed class SqlServerStorageProvider : IStorageProvider
     {
         var cutoff = DateTimeOffset.UtcNow - activeTimeout;
         await using var conn = Open();
-        await conn.OpenAsync(cancellationToken);
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
 
         var rows = await conn.QueryAsync(
             "SELECT id, worker_count, queues, started_at, heartbeat_at FROM nexjob_servers WHERE heartbeat_at >= @Cutoff ORDER BY id",
@@ -499,11 +502,11 @@ public sealed class SqlServerStorageProvider : IStorageProvider
     public async Task<JobMetrics> GetMetricsAsync(CancellationToken cancellationToken = default)
     {
         await using var conn = Open();
-        await conn.OpenAsync(cancellationToken);
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
 
         var counts = (await conn.QueryAsync<(string Status, int Count)>(
             "SELECT status, COUNT(*) AS count FROM nexjob_jobs GROUP BY status"))
-            .ToDictionary(x => x.Status, x => x.Count);
+            .ToDictionary(x => x.Status, x => x.Count, StringComparer.Ordinal);
 
         var throughput = (await conn.QueryAsync<(DateTimeOffset Hour, int Count)>(
             """
@@ -545,7 +548,7 @@ public sealed class SqlServerStorageProvider : IStorageProvider
         CancellationToken cancellationToken = default)
     {
         await using var conn = Open();
-        await conn.OpenAsync(cancellationToken);
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
 
         var where = new List<string>();
         var p = new DynamicParameters();
@@ -556,7 +559,7 @@ public sealed class SqlServerStorageProvider : IStorageProvider
         if (!string.IsNullOrEmpty(filter.RecurringJobId)) { where.Add("recurring_job_id = @recurringJobId"); p.Add("recurringJobId", filter.RecurringJobId); }
 
         var clause = where.Count > 0 ? "WHERE " + string.Join(" AND ", where) : string.Empty;
-        var total = await conn.ExecuteScalarAsync<int>($"SELECT COUNT(*) FROM nexjob_jobs {clause}", p);
+        var total = await conn.ExecuteScalarAsync<int>($"SELECT COUNT(*) FROM nexjob_jobs {clause}", p).ConfigureAwait(false);
 
         var offset = (page - 1) * pageSize;
         p.Add("offset", offset);
@@ -574,7 +577,7 @@ public sealed class SqlServerStorageProvider : IStorageProvider
     public async Task<JobRecord?> GetJobByIdAsync(JobId id, CancellationToken cancellationToken = default)
     {
         await using var conn = Open();
-        await conn.OpenAsync(cancellationToken);
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
         var row = await conn.QuerySingleOrDefaultAsync<JobRow>(
             "SELECT * FROM nexjob_jobs WHERE id = @id", new { id = id.Value });
         return row?.ToRecord();
@@ -584,15 +587,15 @@ public sealed class SqlServerStorageProvider : IStorageProvider
     public async Task DeleteJobAsync(JobId id, CancellationToken cancellationToken = default)
     {
         await using var conn = Open();
-        await conn.OpenAsync(cancellationToken);
-        await conn.ExecuteAsync("DELETE FROM nexjob_jobs WHERE id = @id", new { id = id.Value });
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await conn.ExecuteAsync("DELETE FROM nexjob_jobs WHERE id = @id", new { id = id.Value }).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
     public async Task RequeueJobAsync(JobId id, CancellationToken cancellationToken = default)
     {
         await using var conn = Open();
-        await conn.OpenAsync(cancellationToken);
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
         await conn.ExecuteAsync(
             """
             UPDATE nexjob_jobs
@@ -608,7 +611,7 @@ public sealed class SqlServerStorageProvider : IStorageProvider
         CancellationToken cancellationToken = default)
     {
         await using var conn = Open();
-        await conn.OpenAsync(cancellationToken);
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
         var rows = await conn.QueryAsync<(string Queue, int Enqueued, int Processing)>(
             """
             SELECT queue,
@@ -631,7 +634,7 @@ public sealed class SqlServerStorageProvider : IStorageProvider
         CancellationToken cancellationToken = default)
     {
         await using var conn = Open();
-        await conn.OpenAsync(cancellationToken);
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
         await conn.ExecuteAsync(
             "UPDATE nexjob_jobs SET execution_logs = @Logs WHERE id = @Id",
             new { Id = jobId.Value, Logs = JsonSerializer.Serialize(logs) });
@@ -642,7 +645,7 @@ public sealed class SqlServerStorageProvider : IStorageProvider
         string recurringJobId, TimeSpan ttl, CancellationToken ct = default)
     {
         await using var conn = Open();
-        await conn.OpenAsync(ct);
+        await conn.OpenAsync(ct).ConfigureAwait(false);
         await conn.ExecuteAsync(
             "DELETE FROM nexjob_recurring_locks WHERE expires_at < SYSUTCDATETIME()");
         try
@@ -667,7 +670,7 @@ public sealed class SqlServerStorageProvider : IStorageProvider
         string recurringJobId, CancellationToken ct = default)
     {
         await using var conn = Open();
-        await conn.OpenAsync(ct);
+        await conn.OpenAsync(ct).ConfigureAwait(false);
         await conn.ExecuteAsync(
             "DELETE FROM nexjob_recurring_locks WHERE recurring_job_id = @id",
             new { id = recurringJobId });
@@ -678,7 +681,7 @@ public sealed class SqlServerStorageProvider : IStorageProvider
         JobId jobId, int percent, string? message, CancellationToken ct = default)
     {
         await using var conn = Open();
-        await conn.OpenAsync(ct);
+        await conn.OpenAsync(ct).ConfigureAwait(false);
         await conn.ExecuteAsync(
             "UPDATE nexjob_jobs SET progress_percent = @p, progress_message = @m WHERE id = @id",
             new { id = jobId.Value, p = percent, m = message });
@@ -689,7 +692,7 @@ public sealed class SqlServerStorageProvider : IStorageProvider
         string tag, CancellationToken cancellationToken = default)
     {
         await using var conn = Open();
-        await conn.OpenAsync(cancellationToken);
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
         // tags is stored as JSON array string, e.g. '["tenant:acme","region:us"]'
         var rows = await conn.QueryAsync<JobRow>(
             "SELECT * FROM nexjob_jobs WHERE tags LIKE @pattern",
@@ -701,3 +704,4 @@ public sealed class SqlServerStorageProvider : IStorageProvider
 
     private SqlConnection Open() => new(_connectionString);
 }
+#pragma warning restore MA0004

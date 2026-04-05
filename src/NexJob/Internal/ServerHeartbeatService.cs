@@ -47,7 +47,7 @@ internal sealed class ServerHeartbeatService : IHostedService, IDisposable
 
         try
         {
-            await _storage.RegisterServerAsync(serverInfo, cancellationToken);
+            await _storage.RegisterServerAsync(serverInfo, cancellationToken).ConfigureAwait(false);
 
             // Start the periodic heartbeat timer
             _timer = new Timer(
@@ -72,7 +72,7 @@ internal sealed class ServerHeartbeatService : IHostedService, IDisposable
             // Give 5 seconds for deregistration out of the total shutdown timeout
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             cts.CancelAfter(TimeSpan.FromSeconds(5));
-            await _storage.DeregisterServerAsync(_serverId, cts.Token);
+            await _storage.DeregisterServerAsync(_serverId, cts.Token).ConfigureAwait(false);
             _logger.LogInformation("Server node {ServerId} gracefully deregistered.", _serverId);
         }
         catch (Exception ex)
@@ -97,7 +97,7 @@ internal sealed class ServerHeartbeatService : IHostedService, IDisposable
         try
         {
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-            await _storage.HeartbeatServerAsync(_serverId, cts.Token);
+            await _storage.HeartbeatServerAsync(_serverId, cts.Token).ConfigureAwait(false);
         }
         catch (Exception ex)
         {

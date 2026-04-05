@@ -50,7 +50,7 @@ internal sealed class JobWakeUpChannel
 
         try
         {
-            await _channel.Reader.ReadAsync(cts.Token);
+            await _channel.Reader.ReadAsync(cts.Token).ConfigureAwait(false);
             return true;
         }
         catch (OperationCanceledException)

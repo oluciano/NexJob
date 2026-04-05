@@ -64,7 +64,7 @@ internal sealed class JobDispatcherService : BackgroundService
 
         while (_activeJobCount > 0 && !deadline.IsCompleted)
         {
-            await Task.Delay(250, CancellationToken.None);
+            await Task.Delay(250, CancellationToken.None).ConfigureAwait(false);
         }
 
         if (_activeJobCount > 0)
@@ -78,7 +78,7 @@ internal sealed class JobDispatcherService : BackgroundService
             _logger.LogInformation("All active jobs completed cleanly.");
         }
 
-        await base.StopAsync(cancellationToken);
+        await base.StopAsync(cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -91,13 +91,13 @@ internal sealed class JobDispatcherService : BackgroundService
 
         while (!stoppingToken.IsCancellationRequested)
         {
-            await workerSlots.WaitAsync(stoppingToken);
+            await workerSlots.WaitAsync(stoppingToken).ConfigureAwait(false);
 
             // Filter out paused queues and queues outside their execution window
             RuntimeSettings runtime;
             try
             {
-                runtime = await _runtimeStore.GetAsync(stoppingToken);
+                runtime = await _runtimeStore.GetAsync(stoppingToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -117,7 +117,7 @@ internal sealed class JobDispatcherService : BackgroundService
             JobRecord? job;
             try
             {
-                job = await _storage.FetchNextAsync(activeQueues, stoppingToken);
+                job = await _storage.FetchNextAsync(activeQueues, stoppingToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -128,7 +128,7 @@ internal sealed class JobDispatcherService : BackgroundService
             {
                 _logger.LogError(ex, "Error fetching next job from storage");
                 workerSlots.Release();
-                await Task.Delay(_options.PollingInterval, stoppingToken);
+                await Task.Delay(_options.PollingInterval, stoppingToken).ConfigureAwait(false);
                 continue;
             }
 
@@ -138,7 +138,7 @@ internal sealed class JobDispatcherService : BackgroundService
 
                 var pollingInterval = runtime.PollingInterval ?? _options.PollingInterval;
 
-                await _wakeUp.WaitAsync(pollingInterval, stoppingToken);
+                await _wakeUp.WaitAsync(pollingInterval, stoppingToken).ConfigureAwait(false);
 
                 continue;
             }
@@ -149,7 +149,7 @@ internal sealed class JobDispatcherService : BackgroundService
             {
                 try
                 {
-                    await ExecuteJobAsync(job);
+                    await ExecuteJobAsync(job).ConfigureAwait(false);
                 }
                 finally
                 {
@@ -221,7 +221,7 @@ internal sealed class JobDispatcherService : BackgroundService
                 "Job {JobId} ({JobType}) expired at {ExpiresAt} — discarding",
                 job.Id, job.JobType, job.ExpiresAt.Value);
 
-            await _storage.SetExpiredAsync(job.Id, CancellationToken.None);
+            await _storage.SetExpiredAsync(job.Id, CancellationToken.None).ConfigureAwait(false);
 
             NexJobMetrics.JobsExpired.Add(1,
                 new TagList { { "nexjob.job_type", job.JobType } });
@@ -277,13 +277,13 @@ internal sealed class JobDispatcherService : BackgroundService
             foreach (var attr in throttleAttrs)
             {
                 var sem = _throttleRegistry.GetOrCreate(attr.Resource, attr.MaxConcurrent);
-                await sem.WaitAsync(cts.Token);
+                await sem.WaitAsync(cts.Token).ConfigureAwait(false);
                 acquired.Add(sem);
             }
 
             try
             {
-                await invoker(jobInstance, input, cts.Token);
+                await invoker(jobInstance, input, cts.Token).ConfigureAwait(false);
             }
             finally
             {
@@ -298,14 +298,14 @@ internal sealed class JobDispatcherService : BackgroundService
             NexJobMetrics.JobsSucceeded.Add(1, new TagList { { "nexjob.job_type", job.JobType } });
             activity?.SetStatus(ActivityStatusCode.Ok);
 
-            await _storage.AcknowledgeAsync(job.Id, CancellationToken.None);
-            await _storage.SaveExecutionLogsAsync(job.Id, logScope.Entries, CancellationToken.None);
-            await _storage.EnqueueContinuationsAsync(job.Id, CancellationToken.None);
+            await _storage.AcknowledgeAsync(job.Id, CancellationToken.None).ConfigureAwait(false);
+            await _storage.SaveExecutionLogsAsync(job.Id, logScope.Entries, CancellationToken.None).ConfigureAwait(false);
+            await _storage.EnqueueContinuationsAsync(job.Id, CancellationToken.None).ConfigureAwait(false);
 
             if (job.RecurringJobId is not null)
             {
                 await _storage.SetRecurringJobLastExecutionResultAsync(
-                    job.RecurringJobId, JobStatus.Succeeded, null, CancellationToken.None);
+                    job.RecurringJobId, JobStatus.Succeeded, null, CancellationToken.None).ConfigureAwait(false);
             }
 
             _logger.LogDebug("Job {JobId} completed successfully", job.Id);
@@ -353,25 +353,25 @@ internal sealed class JobDispatcherService : BackgroundService
                     job.Id, effectiveMaxAttemptsForCatch);
             }
 
-            await _storage.SetFailedAsync(job.Id, ex, retryAt, CancellationToken.None);
-            await _storage.SaveExecutionLogsAsync(job.Id, logScope.Entries, CancellationToken.None);
+            await _storage.SetFailedAsync(job.Id, ex, retryAt, CancellationToken.None).ConfigureAwait(false);
+            await _storage.SaveExecutionLogsAsync(job.Id, logScope.Entries, CancellationToken.None).ConfigureAwait(false);
 
             if (job.RecurringJobId is not null && retryAt is null)
             {
                 await _storage.SetRecurringJobLastExecutionResultAsync(
-                    job.RecurringJobId, JobStatus.Failed, ex.Message, CancellationToken.None);
+                    job.RecurringJobId, JobStatus.Failed, ex.Message, CancellationToken.None).ConfigureAwait(false);
             }
 
             // Invoke dead-letter handler if job has permanently failed (no retry scheduled)
             if (retryAt is null)
             {
-                await InvokeDeadLetterHandlerAsync(job, ex, CancellationToken.None);
+                await InvokeDeadLetterHandlerAsync(job, ex, CancellationToken.None).ConfigureAwait(false);
             }
         }
         finally
         {
-            await cts.CancelAsync();
-            await heartbeatTask;
+            await cts.CancelAsync().ConfigureAwait(false);
+            await heartbeatTask.ConfigureAwait(false);
         }
     }
 
@@ -406,7 +406,7 @@ internal sealed class JobDispatcherService : BackgroundService
                         ?? throw new InvalidOperationException($"Cannot find HandleAsync method on {handlerType.Name}");
 
             var task = (Task)method.Invoke(handler, new object[] { job, lastException, cancellationToken })!;
-            await task;
+            await task.ConfigureAwait(false);
 
             _logger.LogDebug(
                 "Dead-letter handler {Handler} invoked for job {JobId}",
@@ -434,7 +434,7 @@ internal sealed class JobDispatcherService : BackgroundService
                     return false;
                 }
 
-                var s = _options.QueueSettings.Find(qs => qs.Name == q);
+                var s = _options.QueueSettings.Find(qs => string.Equals(qs.Name, q, StringComparison.Ordinal));
                 return s?.ExecutionWindow?.IsWithinWindow(now) ?? true;
             })
             .ToList();
@@ -446,8 +446,8 @@ internal sealed class JobDispatcherService : BackgroundService
         {
             while (!cancellationToken.IsCancellationRequested)
             {
-                await Task.Delay(_options.HeartbeatInterval, cancellationToken);
-                await _storage.UpdateHeartbeatAsync(jobId, CancellationToken.None);
+                await Task.Delay(_options.HeartbeatInterval, cancellationToken).ConfigureAwait(false);
+                await _storage.UpdateHeartbeatAsync(jobId, CancellationToken.None).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException)

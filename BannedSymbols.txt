@@ -1,0 +1,5 @@
+P:System.DateTime.Now;Use DateTimeOffset.UtcNow or DateTime.UtcNow instead to ensure consistent behavior across distributed systems.
+P:System.DateTime.Today;Use DateTimeOffset.UtcNow.Date or DateTime.UtcNow.Date instead.
+M:System.Threading.Tasks.Task.Wait;Use await instead to prevent deadlocks (NexJob mandate).
+M:System.Threading.Tasks.Task`1.get_Result;Use await instead to prevent deadlocks (NexJob mandate).
+M:System.Threading.Tasks.Task.GetAwaiter;Prefer await directly instead of GetAwaiter().GetResult().

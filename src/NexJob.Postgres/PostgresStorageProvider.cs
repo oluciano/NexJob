@@ -1,3 +1,4 @@
+#pragma warning disable MA0004
 using System.Data;
 using System.Text.Json;
 using Dapper;
@@ -26,7 +27,9 @@ public sealed class PostgresStorageProvider : IStorageProvider
         // (e.g., recurring_job_id → RecurringJobId, completed_at → CompletedAt)
         Dapper.DefaultTypeMap.MatchNamesWithUnderscores = true;
         // Sync-over-async is acceptable here: runs once at startup, before any requests are served.
+        #pragma warning disable RS0030
         new SchemaMigrator().MigrateAsync(connectionString).GetAwaiter().GetResult();
+#pragma warning restore RS0030
     }
 
     // ── EnqueueAsync ──────────────────────────────────────────────────────────
@@ -503,7 +506,7 @@ public sealed class PostgresStorageProvider : IStorageProvider
 
         var counts = (await conn.QueryAsync<(string Status, int Count)>(
             "SELECT status, COUNT(*)::int FROM nexjob_jobs GROUP BY status"))
-            .ToDictionary(x => x.Status, x => x.Count);
+            .ToDictionary(x => x.Status, x => x.Count, StringComparer.Ordinal);
 
         var throughput = (await conn.QueryAsync<(DateTimeOffset Hour, int Count)>(
             """
@@ -691,3 +694,4 @@ public sealed class PostgresStorageProvider : IStorageProvider
 
     private NpgsqlConnection Open() => new(_connectionString);
 }
+#pragma warning restore MA0004

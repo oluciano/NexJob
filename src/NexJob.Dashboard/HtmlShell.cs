@@ -628,9 +628,9 @@ internal static class HtmlShell
                 var targets = document.querySelectorAll('[data-refresh="true"]');
                 if (targets.length === 0) return;
                 try {
-                    var res = await fetch(window.location.href, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+                    var res = await fetch(window.location.href, { headers: { 'X-Requested-With': 'XMLHttpRequest' } }).ConfigureAwait(false);
                     if (!res.ok) return;
-                    var text = await res.text();
+                    var text = await res.text().ConfigureAwait(false);
                     var doc = new DOMParser().parseFromString(text, 'text/html');
                     targets.forEach(function(el) {
                         if (el.id) {
@@ -654,7 +654,7 @@ internal static class HtmlShell
             "<div class=\"empty-state\"><svg width=\"48\" height=\"48\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1\"><circle cx=\"12\" cy=\"12\" r=\"10\"/><line x1=\"12\" y1=\"8\" x2=\"12\" y2=\"12\"/><line x1=\"12\" y1=\"16\" x2=\"12.01\" y2=\"16\"/></svg><p>404 — Page not found</p></div>");
 
     private static string Active(string route, string page) =>
-        route == page ? "active" : string.Empty;
+        string.Equals(route, page, StringComparison.Ordinal) ? "active" : string.Empty;
 
     private static string HealthBadge(JobMetrics? m)
     {

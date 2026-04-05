@@ -88,7 +88,7 @@ public sealed class NexJobOptions
     /// This property cannot be set via <c>appsettings.json</c> — code only.
     /// </remarks>
     public Func<int, TimeSpan> RetryDelayFactory { get; set; } = attempt =>
-        TimeSpan.FromSeconds(Math.Pow(attempt, 4) + 15 + (Random.Shared.Next(30) * (attempt + 1)));
+        TimeSpan.FromSeconds(Math.Pow(attempt, 4) + 15 + (System.Security.Cryptography.RandomNumberGenerator.GetInt32(30) * (attempt + 1)));
 
     /// <summary>
     /// Dashboard-specific settings.

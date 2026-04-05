@@ -38,7 +38,7 @@ internal sealed class RecurringJobRegistrar
 
         foreach (var (config, effectiveId) in assignments)
         {
-            await RegisterRecurringJobAsync(config, effectiveId, cancellationToken);
+            await RegisterRecurringJobAsync(config, effectiveId, cancellationToken).ConfigureAwait(false);
         }
 
         _logger.LogInformation(
@@ -114,7 +114,7 @@ internal sealed class RecurringJobRegistrar
         IEnumerable<RecurringJobSettings> configs)
     {
         var list = configs.ToList();
-        var nameCount = new Dictionary<string, int>();
+        var nameCount = new Dictionary<string, int>(StringComparer.Ordinal);
 
         // Count how many times each unnamed job appears
         foreach (var name in list
@@ -124,7 +124,7 @@ internal sealed class RecurringJobRegistrar
             nameCount[name] = nameCount.GetValueOrDefault(name) + 1;
         }
 
-        var nameIndex = new Dictionary<string, int>();
+        var nameIndex = new Dictionary<string, int>(StringComparer.Ordinal);
         foreach (var c in list)
         {
             string id;
@@ -194,7 +194,7 @@ internal sealed class RecurringJobRegistrar
                 NextExecution = nextExecution,
             };
 
-            var existingJob = await _storage.GetRecurringJobByIdAsync(effectiveId, cancellationToken);
+            var existingJob = await _storage.GetRecurringJobByIdAsync(effectiveId, cancellationToken).ConfigureAwait(false);
             if (existingJob != null)
             {
                 _logger.LogWarning(
@@ -203,7 +203,7 @@ internal sealed class RecurringJobRegistrar
                 return;
             }
 
-            await _storage.UpsertRecurringJobAsync(recurringJob, cancellationToken);
+            await _storage.UpsertRecurringJobAsync(recurringJob, cancellationToken).ConfigureAwait(false);
 
             _registeredJobIds.Add(effectiveId);
             _logger.LogInformation(
@@ -224,7 +224,7 @@ internal sealed class RecurringJobRegistrar
     private Type ResolveJobTypeByName(string jobName)
     {
         var matches = _jobRegistry.Types
-            .Where(t => t.Name == jobName)
+            .Where(t => string.Equals(t.Name, jobName, StringComparison.Ordinal))
             .ToList();
 
         return matches.Count switch

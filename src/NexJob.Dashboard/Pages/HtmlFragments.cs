@@ -152,7 +152,7 @@ internal static class HtmlFragments
             ("Scheduled", "Scheduled"),
         }.Select(o =>
         {
-            var active = currentStatus == o.Item1 ? " active" : string.Empty;
+            var active = string.Equals(currentStatus, o.Item1, StringComparison.Ordinal) ? " active" : string.Empty;
             var qs = $"?status={Uri.EscapeDataString(o.Item1)}";
             return $"<a href=\"{baseUrl}{qs}\" class=\"status-pill{active}\">{o.Item2}</a>";
         }));
@@ -168,7 +168,7 @@ internal static class HtmlFragments
             ("Expired", "Expired"),
         }.Select(o =>
         {
-            var active = currentStatus == o.Item1 ? " active" : string.Empty;
+            var active = string.Equals(currentStatus, o.Item1, StringComparison.Ordinal) ? " active" : string.Empty;
             var qs = $"?status={Uri.EscapeDataString(o.Item1)}";
             return $"<a href=\"{baseUrl}{qs}\" class=\"status-pill{active}\">{o.Item2}</a>";
         }));
