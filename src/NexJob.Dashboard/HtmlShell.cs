@@ -165,33 +165,15 @@ internal static class HtmlShell
         .dot-awaiting   { background: var(--text-3); }
         .dot-expired    { background: rgba(148,163,184,.5); }
         .dot-default    { background: var(--text-3); }
-        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.35} }
 
-        /* Badges */
-        .badge {
-            display: inline-flex; align-items: center; gap: 4px;
-            padding: 3px 9px; border-radius: 5px;
-            font-size: 11px; font-weight: 700; line-height: 1.4; letter-spacing: .02em;
-        }
-        .badge-enqueued   { background: var(--info-bg);    color: var(--info); }
-        .badge-processing { background: var(--warning-bg); color: var(--warning); }
-        .badge-succeeded  { background: var(--success-bg); color: var(--success); }
-        .badge-failed     { background: var(--danger-bg);  color: var(--danger); }
-        .badge-scheduled  { background: var(--accent-glow);color: var(--accent-light); }
-        .badge-warning    { background: rgba(251,191,36,.15); color: var(--warning); }
-        .badge-awaiting   { background: rgba(148,163,184,.08); color: var(--text-2); }
-        .badge-deleted    { background: rgba(71,85,105,.12); color: var(--text-3); }
+        @keyframes pulse { 0% { opacity: 1; transform: scale(1); } 50% { opacity: .5; transform: scale(1.2); } 100% { opacity: 1; transform: scale(1); } }
 
         /* Tables */
-        .section {
-            margin-bottom: 28px;
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: var(--radius-lg);
-            padding: 20px;
-            box-shadow: 0 1px 3px rgba(0,0,0,.2), inset 0 1px 0 rgba(255,255,255,.02);
+        .table-wrap {
+            background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
+            overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.2);
         }
-        table { width: 100%; border-collapse: collapse; background: var(--surface); border-radius: var(--radius-md); overflow: hidden; border: 1px solid var(--border); }
+        table { width: 100%; border-collapse: collapse; }
         th {
             background: linear-gradient(to right, rgba(99,102,241,.08), transparent);
             padding: 12px 14px; text-align: left; font-size: 10px; text-transform: uppercase;
@@ -557,6 +539,16 @@ internal static class HtmlShell
         .nav-counter.ok     { background: var(--success-bg); color: var(--success); border-color: transparent; }
         """;
 
+    /// <summary>
+    /// Wraps the content in the standard HTML shell with sidebar and navigation.
+    /// </summary>
+    /// <param name="title">The page title.</param>
+    /// <param name="pathPrefix">The dashboard path prefix.</param>
+    /// <param name="activeRoute">The currently active route for highlighting.</param>
+    /// <param name="body">The main content HTML.</param>
+    /// <param name="counters">Optional sidebar counters.</param>
+    /// <param name="metrics">Optional metrics for health badge.</param>
+    /// <returns>The complete HTML string.</returns>
     internal static string Wrap(
         string title, string pathPrefix, string activeRoute, string body,
         NavCounters? counters = null, JobMetrics? metrics = null) =>
@@ -628,9 +620,9 @@ internal static class HtmlShell
                 var targets = document.querySelectorAll('[data-refresh="true"]');
                 if (targets.length === 0) return;
                 try {
-                    var res = await fetch(window.location.href, { headers: { 'X-Requested-With': 'XMLHttpRequest' } }).ConfigureAwait(false);
+                    var res = await fetch(window.location.href, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
                     if (!res.ok) return;
-                    var text = await res.text().ConfigureAwait(false);
+                    var text = await res.text();
                     var doc = new DOMParser().parseFromString(text, 'text/html');
                     targets.forEach(function(el) {
                         if (el.id) {
@@ -649,6 +641,12 @@ internal static class HtmlShell
         </html>
         """;
 
+    /// <summary>
+    /// Generates a standard 404 Not Found page.
+    /// </summary>
+    /// <param name="title">The page title.</param>
+    /// <param name="pathPrefix">The dashboard path prefix.</param>
+    /// <returns>The complete HTML string.</returns>
     internal static string NotFound(string title, string pathPrefix) =>
         Wrap(title, pathPrefix, string.Empty,
             "<div class=\"empty-state\"><svg width=\"48\" height=\"48\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1\"><circle cx=\"12\" cy=\"12\" r=\"10\"/><line x1=\"12\" y1=\"8\" x2=\"12\" y2=\"12\"/><line x1=\"12\" y1=\"16\" x2=\"12.01\" y2=\"16\"/></svg><p>404 — Page not found</p></div>");

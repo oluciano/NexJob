@@ -35,7 +35,7 @@ dotnet_diagnostic.SA1101.severity = none
 # SA1600/SA1601/SA1602 — elements must be documented.
 # Public members already have XML docs. Internal/private members are covered by
 # GenerateDocumentationFile = true; we do not require triple-slash on every private member.
-dotnet_diagnostic.SA1600.severity = none
+dotnet_diagnostic.SA1600.severity = warning
 dotnet_diagnostic.SA1601.severity = warning
 dotnet_diagnostic.SA1602.severity = warning
 
@@ -140,8 +140,17 @@ dotnet_diagnostic.MA0016.severity = suggestion
 dotnet_diagnostic.MA0048.severity = suggestion
 
 # Suppress MA0011 (IFormatProvider) for Dashboard as it is too noisy for UI rendering
-[src/NexJob.Dashboard/**/*.cs]
+[src/NexJob.Dashboard*/**/*.cs]
 dotnet_diagnostic.MA0011.severity = none
+dotnet_diagnostic.SA1600.severity = none
+dotnet_diagnostic.SA1601.severity = none
+dotnet_diagnostic.SA1602.severity = none
+
+# Suppress documentation rules for internal storage rows/documents
+[src/NexJob.*/{JobRow,RecurringJobRow,JobDocument,RecurringJobDocument,ServerDocument,ExecutionLogEntry,SchemaSQL,SchemaMigration,SqlServerSchemaSql}.cs]
+dotnet_diagnostic.SA1600.severity = none
+dotnet_diagnostic.SA1601.severity = none
+dotnet_diagnostic.SA1602.severity = none
 
 # Suppress MA0004 (ConfigureAwait) for Postgres due to type conflicts with await using and Dapper
 [src/NexJob.Postgres/**/*.cs]
