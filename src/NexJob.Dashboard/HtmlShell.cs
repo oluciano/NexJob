@@ -166,14 +166,33 @@ internal static class HtmlShell
         .dot-expired    { background: rgba(148,163,184,.5); }
         .dot-default    { background: var(--text-3); }
 
-        @keyframes pulse { 0% { opacity: 1; transform: scale(1); } 50% { opacity: .5; transform: scale(1.2); } 100% { opacity: 1; transform: scale(1); } }
+        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.35} }
+
+        /* Badges */
+        .badge {
+            display: inline-flex; align-items: center; gap: 4px;
+            padding: 3px 9px; border-radius: 5px;
+            font-size: 11px; font-weight: 700; line-height: 1.4; letter-spacing: .02em;
+        }
+        .badge-enqueued   { background: var(--info-bg);    color: var(--info); }
+        .badge-processing { background: var(--warning-bg); color: var(--warning); }
+        .badge-succeeded  { background: var(--success-bg); color: var(--success); }
+        .badge-failed     { background: var(--danger-bg);  color: var(--danger); }
+        .badge-scheduled  { background: var(--accent-glow);color: var(--accent-light); }
+        .badge-warning    { background: rgba(251,191,36,.15); color: var(--warning); }
+        .badge-awaiting   { background: rgba(148,163,184,.08); color: var(--text-2); }
+        .badge-deleted    { background: rgba(71,85,105,.12); color: var(--text-3); }
 
         /* Tables */
-        .table-wrap {
-            background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
-            overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.2);
+        .section {
+            margin-bottom: 28px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            padding: 20px;
+            box-shadow: 0 1px 3px rgba(0,0,0,.2), inset 0 1px 0 rgba(255,255,255,.02);
         }
-        table { width: 100%; border-collapse: collapse; }
+        table { width: 100%; border-collapse: collapse; background: var(--surface); border-radius: var(--radius-md); overflow: hidden; border: 1px solid var(--border); }
         th {
             background: linear-gradient(to right, rgba(99,102,241,.08), transparent);
             padding: 12px 14px; text-align: left; font-size: 10px; text-transform: uppercase;
@@ -620,9 +639,9 @@ internal static class HtmlShell
                 var targets = document.querySelectorAll('[data-refresh="true"]');
                 if (targets.length === 0) return;
                 try {
-                    var res = await fetch(window.location.href, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+                    var res = await fetch(window.location.href, { headers: { 'X-Requested-With': 'XMLHttpRequest' } }).ConfigureAwait(false);
                     if (!res.ok) return;
-                    var text = await res.text();
+                    var text = await res.text().ConfigureAwait(false);
                     var doc = new DOMParser().parseFromString(text, 'text/html');
                     targets.forEach(function(el) {
                         if (el.id) {
