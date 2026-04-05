@@ -553,10 +553,29 @@ public sealed class SqlServerStorageProvider : IStorageProvider
         var where = new List<string>();
         var p = new DynamicParameters();
 
-        if (filter.Status.HasValue) { where.Add("status = @status"); p.Add("status", filter.Status.Value.ToString()); }
-        if (!string.IsNullOrWhiteSpace(filter.Queue)) { where.Add("queue = @queue"); p.Add("queue", filter.Queue); }
-        if (!string.IsNullOrWhiteSpace(filter.Search)) { where.Add("(job_type LIKE @search OR CAST(id AS NVARCHAR(50)) LIKE @search)"); p.Add("search", $"%{filter.Search.Trim()}%"); }
-        if (!string.IsNullOrEmpty(filter.RecurringJobId)) { where.Add("recurring_job_id = @recurringJobId"); p.Add("recurringJobId", filter.RecurringJobId); }
+        if (filter.Status.HasValue)
+        {
+            where.Add("status = @status");
+            p.Add("status", filter.Status.Value.ToString());
+        }
+
+        if (!string.IsNullOrWhiteSpace(filter.Queue))
+        {
+            where.Add("queue = @queue");
+            p.Add("queue", filter.Queue);
+        }
+
+        if (!string.IsNullOrWhiteSpace(filter.Search))
+        {
+            where.Add("(job_type LIKE @search OR CAST(id AS NVARCHAR(50)) LIKE @search)");
+            p.Add("search", $"%{filter.Search.Trim()}%");
+        }
+
+        if (!string.IsNullOrEmpty(filter.RecurringJobId))
+        {
+            where.Add("recurring_job_id = @recurringJobId");
+            p.Add("recurringJobId", filter.RecurringJobId);
+        }
 
         var clause = where.Count > 0 ? "WHERE " + string.Join(" AND ", where) : string.Empty;
         var total = await conn.ExecuteScalarAsync<int>($"SELECT COUNT(*) FROM nexjob_jobs {clause}", p).ConfigureAwait(false);

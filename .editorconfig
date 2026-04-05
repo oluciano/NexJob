@@ -35,7 +35,7 @@ dotnet_diagnostic.SA1101.severity = none
 # SA1600/SA1601/SA1602 — elements must be documented.
 # Public members already have XML docs. Internal/private members are covered by
 # GenerateDocumentationFile = true; we do not require triple-slash on every private member.
-dotnet_diagnostic.SA1600.severity = warning
+dotnet_diagnostic.SA1600.severity = none
 dotnet_diagnostic.SA1601.severity = warning
 dotnet_diagnostic.SA1602.severity = warning
 
@@ -97,7 +97,7 @@ dotnet_diagnostic.S2094.severity = none
 # SA1501/SA1107 — statement on single line / multiple statements on one line.
 # Property accessors and short lambda bodies on a single line are valid style choices.
 dotnet_diagnostic.SA1501.severity = none
-dotnet_diagnostic.SA1107.severity = suggestion
+dotnet_diagnostic.SA1107.severity = warning
 
 # SA1009/SA1111 — closing parenthesis placement.
 # Multi-line method calls with trailing-paren style conflict with fluent call alignment.
@@ -114,7 +114,7 @@ dotnet_diagnostic.SA1134.severity = none
 
 # SA1001 — commas should be followed by whitespace.
 # False positives inside verbatim/interpolated HTML strings used in the dashboard renderer.
-dotnet_diagnostic.SA1001.severity = suggestion
+dotnet_diagnostic.SA1001.severity = warning
 
 # SA1114 — parameter list should follow declaration.
 # Related to SA1116/SA1117; same reason for suppression.
