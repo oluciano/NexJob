@@ -64,7 +64,7 @@ dotnet_diagnostic.SA1615.severity = none
 
 # SA1611 — parameter documentation missing.
 # CancellationToken parameters are conventional and self-documenting.
-dotnet_diagnostic.SA1611.severity = none
+dotnet_diagnostic.SA1611.severity = suggestion
 
 # SA1642 — constructor summary must begin with "Initializes a new instance of the <see cref=…/> class."
 # Our constructor docs are descriptive rather than following this formulaic wording.
@@ -87,7 +87,7 @@ dotnet_diagnostic.SA0001.severity = none
 # SA1516 — elements should be separated by blank line.
 # Row-mapping and BSON-document classes have 20-40 compact properties; adding a blank
 # line between each one doubles the file length without improving readability.
-dotnet_diagnostic.SA1516.severity = none
+dotnet_diagnostic.SA1516.severity = suggestion
 
 # S2094 — remove empty class/record.
 # Empty input records (e.g. record QuickInput;) are legitimate test fixtures.
@@ -97,12 +97,12 @@ dotnet_diagnostic.S2094.severity = none
 # SA1501/SA1107 — statement on single line / multiple statements on one line.
 # Property accessors and short lambda bodies on a single line are valid style choices.
 dotnet_diagnostic.SA1501.severity = none
-dotnet_diagnostic.SA1107.severity = none
+dotnet_diagnostic.SA1107.severity = suggestion
 
 # SA1009/SA1111 — closing parenthesis placement.
 # Multi-line method calls with trailing-paren style conflict with fluent call alignment.
-dotnet_diagnostic.SA1009.severity = none
-dotnet_diagnostic.SA1111.severity = none
+dotnet_diagnostic.SA1009.severity = suggestion
+dotnet_diagnostic.SA1111.severity = suggestion
 
 # SA1214 — readonly fields should appear before non-readonly fields.
 # Fields are organised by purpose, not by mutability.
@@ -114,7 +114,7 @@ dotnet_diagnostic.SA1134.severity = none
 
 # SA1001 — commas should be followed by whitespace.
 # False positives inside verbatim/interpolated HTML strings used in the dashboard renderer.
-dotnet_diagnostic.SA1001.severity = none
+dotnet_diagnostic.SA1001.severity = suggestion
 
 # SA1114 — parameter list should follow declaration.
 # Related to SA1116/SA1117; same reason for suppression.
