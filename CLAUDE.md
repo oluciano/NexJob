@@ -123,7 +123,11 @@ All AI-assisted tasks use the **NexJob AI Operating Model** — a structured, to
 - Classes `sealed` by default
 - Async/await everywhere (never `.Result` or `.Wait()`)
 - `CancellationToken` propagated in all async calls
+- Always use `.ConfigureAwait(false)` in library projects (`src/NexJob*`)
+- Use `StringComparison.Ordinal` or `OrdinalIgnoreCase` for all string comparisons
+- Prohibit banned APIs: `DateTime.Now` (use `UtcNow`), `.Result`, `.Wait()` (see `BannedSymbols.txt`)
 - StyleCop violations fail the build (SA1202, SA1204, SA1413, SA1508)
+- Always run `dotnet format` before committing changes
 
 ---
 
