@@ -35,9 +35,9 @@ dotnet_diagnostic.SA1101.severity = none
 # SA1600/SA1601/SA1602 — elements must be documented.
 # Public members already have XML docs. Internal/private members are covered by
 # GenerateDocumentationFile = true; we do not require triple-slash on every private member.
-dotnet_diagnostic.SA1600.severity = none
-dotnet_diagnostic.SA1601.severity = none
-dotnet_diagnostic.SA1602.severity = none
+dotnet_diagnostic.SA1600.severity = warning
+dotnet_diagnostic.SA1601.severity = warning
+dotnet_diagnostic.SA1602.severity = warning
 
 # SA1623 — property documentation must begin with "Gets" or "Gets or sets".
 # Too prescriptive; existing docs are clear without the mandatory verb prefix.
@@ -64,7 +64,7 @@ dotnet_diagnostic.SA1615.severity = none
 
 # SA1611 — parameter documentation missing.
 # CancellationToken parameters are conventional and self-documenting.
-dotnet_diagnostic.SA1611.severity = none
+dotnet_diagnostic.SA1611.severity = suggestion
 
 # SA1642 — constructor summary must begin with "Initializes a new instance of the <see cref=…/> class."
 # Our constructor docs are descriptive rather than following this formulaic wording.
@@ -81,13 +81,12 @@ dotnet_diagnostic.SA1503.severity = none
 dotnet_diagnostic.SA1519.severity = none
 
 # SA0001 — XML comment analysis disabled (fires when GenerateDocumentationFile=false).
-# Test projects intentionally omit doc generation; suppress the resulting SA0001.
-dotnet_diagnostic.SA0001.severity = none
+dotnet_diagnostic.SA0001.severity = warning
 
 # SA1516 — elements should be separated by blank line.
 # Row-mapping and BSON-document classes have 20-40 compact properties; adding a blank
 # line between each one doubles the file length without improving readability.
-dotnet_diagnostic.SA1516.severity = none
+dotnet_diagnostic.SA1516.severity = suggestion
 
 # S2094 — remove empty class/record.
 # Empty input records (e.g. record QuickInput;) are legitimate test fixtures.
@@ -97,34 +96,120 @@ dotnet_diagnostic.S2094.severity = none
 # SA1501/SA1107 — statement on single line / multiple statements on one line.
 # Property accessors and short lambda bodies on a single line are valid style choices.
 dotnet_diagnostic.SA1501.severity = none
-dotnet_diagnostic.SA1107.severity = none
+dotnet_diagnostic.SA1107.severity = warning
 
 # SA1009/SA1111 — closing parenthesis placement.
 # Multi-line method calls with trailing-paren style conflict with fluent call alignment.
-dotnet_diagnostic.SA1009.severity = none
-dotnet_diagnostic.SA1111.severity = none
+dotnet_diagnostic.SA1009.severity = warning
+dotnet_diagnostic.SA1111.severity = warning
 
 # SA1214 — readonly fields should appear before non-readonly fields.
 # Fields are organised by purpose, not by mutability.
 dotnet_diagnostic.SA1214.severity = none
 
 # SA1134 — each attribute should be on its own line.
-# Blazor [Parameter] attributes on the same line as the property is standard Blazor convention.
-dotnet_diagnostic.SA1134.severity = none
+dotnet_diagnostic.SA1134.severity = warning
 
 # SA1001 — commas should be followed by whitespace.
 # False positives inside verbatim/interpolated HTML strings used in the dashboard renderer.
-dotnet_diagnostic.SA1001.severity = none
+dotnet_diagnostic.SA1001.severity = warning
 
 # SA1114 — parameter list should follow declaration.
 # Related to SA1116/SA1117; same reason for suppression.
 dotnet_diagnostic.SA1114.severity = none
 
+# membership ordering rules
+dotnet_diagnostic.SA1201.severity = warning
+dotnet_diagnostic.SA1202.severity = warning
+dotnet_diagnostic.SA1204.severity = warning
+
+# ── Meziantou.Analyzer ────────────────────────────────────────────────────────
+
+# MA0051 — Method is too long.
+# Increased from 60 to 150 to accommodate complex dispatcher logic.
+dotnet_diagnostic.MA0051.severity = suggestion
+
+# MA0016 — Prefer using collection abstraction instead of implementation.
+# In library options, List<T> is often preferred for easy direct manipulation by users.
+dotnet_diagnostic.MA0016.severity = suggestion
+
+# MA0048 — File name must match type name.
+# Sometimes we group small related interfaces in one file.
+dotnet_diagnostic.MA0048.severity = suggestion
+
+# Suppress MA0011 (IFormatProvider) for Dashboard as it is too noisy for UI rendering
+[src/NexJob.Dashboard*/**/*.cs]
+dotnet_diagnostic.MA0011.severity = none
+dotnet_diagnostic.SA1600.severity = none
+dotnet_diagnostic.SA1601.severity = none
+dotnet_diagnostic.SA1602.severity = none
+dotnet_diagnostic.SA1134.severity = none
+dotnet_diagnostic.SA1201.severity = none
+dotnet_diagnostic.SA1202.severity = none
+dotnet_diagnostic.SA1204.severity = none
+
+# Suppress documentation rules for internal storage rows/documents
+[src/NexJob.*/{JobRow,RecurringJobRow,JobDocument,RecurringJobDocument,ServerDocument,ExecutionLogEntry,SchemaSQL,SchemaMigration,SqlServerSchemaSql}.cs]
+dotnet_diagnostic.SA1600.severity = none
+dotnet_diagnostic.SA1601.severity = none
+dotnet_diagnostic.SA1602.severity = none
+
+# Suppress MA0004 (ConfigureAwait) for Postgres due to type conflicts with await using and Dapper
+[src/NexJob.Postgres/**/*.cs]
+dotnet_diagnostic.MA0004.severity = none
+
 # ── Test project overrides ────────────────────────────────────────────────────
 # Tests have different style requirements: readability > formality.
-# StyleCop rules are suppressed; Sonar rules that catch real bugs remain active.
+# StyleCop and async result rules are suppressed; Sonar rules remain.
 [tests/**/*.cs]
 dotnet_diagnostic.SA0001.severity = none
+dotnet_diagnostic.SA1402.severity = none
+dotnet_diagnostic.MA0004.severity = none
+dotnet_diagnostic.MA0006.severity = none
+dotnet_diagnostic.MA0002.severity = none
+dotnet_diagnostic.MA0011.severity = none
+dotnet_diagnostic.MA0074.severity = none
+dotnet_diagnostic.MA0134.severity = none
+dotnet_diagnostic.SA1600.severity = none
+dotnet_diagnostic.SA1601.severity = none
+dotnet_diagnostic.SA1602.severity = none
+dotnet_diagnostic.SA1201.severity = none
+dotnet_diagnostic.SA1202.severity = none
+dotnet_diagnostic.SA1204.severity = none
+
+[benchmarks/**/*.cs]
+dotnet_diagnostic.SA0001.severity = none
+dotnet_diagnostic.SA1402.severity = none
+dotnet_diagnostic.MA0004.severity = none
+dotnet_diagnostic.MA0006.severity = none
+dotnet_diagnostic.MA0002.severity = none
+dotnet_diagnostic.MA0011.severity = none
+dotnet_diagnostic.MA0134.severity = none
+dotnet_diagnostic.SA1600.severity = none
+dotnet_diagnostic.SA1601.severity = none
+dotnet_diagnostic.SA1602.severity = none
+dotnet_diagnostic.SA1201.severity = none
+dotnet_diagnostic.SA1202.severity = none
+dotnet_diagnostic.SA1204.severity = none
+
+[src/NexJob.Dashboard.Standalone/**/*.cs]
+dotnet_diagnostic.MA0004.severity = none
+
+[src/NexJob.Dashboard.Standalone/*.cs]
+dotnet_diagnostic.MA0004.severity = none
+
+[samples/**/*.cs]
+dotnet_diagnostic.SA0001.severity = none
+dotnet_diagnostic.SA1402.severity = none
+dotnet_diagnostic.MA0004.severity = none
+dotnet_diagnostic.MA0006.severity = none
+dotnet_diagnostic.MA0002.severity = none
+dotnet_diagnostic.MA0011.severity = none
+dotnet_diagnostic.MA0074.severity = none
+dotnet_diagnostic.MA0134.severity = none
+dotnet_diagnostic.MA0047.severity = none
+dotnet_diagnostic.RS0030.severity = none
+dotnet_diagnostic.SCS0005.severity = none
 dotnet_diagnostic.SA1200.severity = none
 dotnet_diagnostic.SA1201.severity = none
 dotnet_diagnostic.SA1202.severity = none

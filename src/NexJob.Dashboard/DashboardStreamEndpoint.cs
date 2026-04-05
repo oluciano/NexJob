@@ -35,10 +35,10 @@ internal static class DashboardStreamEndpoint
         {
             while (!ct.IsCancellationRequested)
             {
-                var metrics = await storage.GetMetricsAsync(ct);
+                var metrics = await storage.GetMetricsAsync(ct).ConfigureAwait(false);
 
                 var activeResult = await storage.GetJobsAsync(
-                    new JobFilter { Status = JobStatus.Processing }, 1, 20, ct);
+                    new JobFilter { Status = JobStatus.Processing }, 1, 20, ct).ConfigureAwait(false);
 
                 var payload = JsonSerializer.Serialize(new
                 {
@@ -57,10 +57,10 @@ internal static class DashboardStreamEndpoint
                     }),
                 }, JsonOptions);
 
-                await context.Response.WriteAsync($"data: {payload}\n\n", ct);
-                await context.Response.Body.FlushAsync(ct);
+                await context.Response.WriteAsync($"data: {payload}\n\n", ct).ConfigureAwait(false);
+                await context.Response.Body.FlushAsync(ct).ConfigureAwait(false);
 
-                await Task.Delay(PollInterval, ct);
+                await Task.Delay(PollInterval, ct).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException)

@@ -46,7 +46,7 @@ internal sealed class DefaultScheduler : IScheduler
 
         using var activity = NexJobActivitySource.StartEnqueue(typeof(TJob).FullName ?? typeof(TJob).Name, job.Queue);
 
-        var jobId = await _storage.EnqueueAsync(job, cancellationToken);
+        var jobId = await _storage.EnqueueAsync(job, cancellationToken).ConfigureAwait(false);
 
         activity?.SetTag("nexjob.job_id", jobId.Value.ToString());
         NexJobMetrics.JobsEnqueued.Add(1, new TagList { { "nexjob.job_type", typeof(TJob).Name }, { "nexjob.queue", job.Queue } });
@@ -56,6 +56,7 @@ internal sealed class DefaultScheduler : IScheduler
         return jobId;
     }
 
+    /// <inheritdoc/>
     public async Task<JobId> EnqueueAsync<TJob>(
         string? queue = null,
         JobPriority priority = JobPriority.Normal,
@@ -85,7 +86,7 @@ internal sealed class DefaultScheduler : IScheduler
 
         using var activity = NexJobActivitySource.StartEnqueue(typeof(TJob).FullName ?? typeof(TJob).Name, job.Queue);
 
-        var jobId = await _storage.EnqueueAsync(job, cancellationToken);
+        var jobId = await _storage.EnqueueAsync(job, cancellationToken).ConfigureAwait(false);
 
         activity?.SetTag("nexjob.job_id", jobId.Value.ToString());
         NexJobMetrics.JobsEnqueued.Add(1, new TagList { { "nexjob.job_type", typeof(TJob).Name }, { "nexjob.queue", job.Queue } });
@@ -109,7 +110,7 @@ internal sealed class DefaultScheduler : IScheduler
             status: JobStatus.Scheduled, scheduledAt: scheduledAt);
 
         using var activity = NexJobActivitySource.StartEnqueue(typeof(TJob).FullName ?? typeof(TJob).Name, job.Queue);
-        var jobId = await _storage.EnqueueAsync(job, cancellationToken);
+        var jobId = await _storage.EnqueueAsync(job, cancellationToken).ConfigureAwait(false);
 
         activity?.SetTag("nexjob.job_id", jobId.Value.ToString());
         activity?.SetTag("nexjob.delay_seconds", delay.TotalSeconds);
@@ -118,6 +119,7 @@ internal sealed class DefaultScheduler : IScheduler
         return jobId;
     }
 
+    /// <inheritdoc/>
     public async Task<JobId> ScheduleAsync<TJob>(
         TimeSpan delay,
         string? queue = null,
@@ -143,7 +145,7 @@ internal sealed class DefaultScheduler : IScheduler
         };
 
         using var activity = NexJobActivitySource.StartEnqueue(typeof(TJob).FullName ?? typeof(TJob).Name, job.Queue);
-        var jobId = await _storage.EnqueueAsync(job, cancellationToken);
+        var jobId = await _storage.EnqueueAsync(job, cancellationToken).ConfigureAwait(false);
 
         activity?.SetTag("nexjob.job_id", jobId.Value.ToString());
         activity?.SetTag("nexjob.delay_seconds", delay.TotalSeconds);
@@ -165,7 +167,7 @@ internal sealed class DefaultScheduler : IScheduler
             status: JobStatus.Scheduled, scheduledAt: runAt);
 
         using var activity = NexJobActivitySource.StartEnqueue(typeof(TJob).FullName ?? typeof(TJob).Name, job.Queue);
-        var jobId = await _storage.EnqueueAsync(job, cancellationToken);
+        var jobId = await _storage.EnqueueAsync(job, cancellationToken).ConfigureAwait(false);
 
         activity?.SetTag("nexjob.job_id", jobId.Value.ToString());
         activity?.SetTag("nexjob.scheduled_at", runAt.ToString("o"));
@@ -174,6 +176,7 @@ internal sealed class DefaultScheduler : IScheduler
         return jobId;
     }
 
+    /// <inheritdoc/>
     public async Task<JobId> ScheduleAtAsync<TJob>(
         DateTimeOffset runAt,
         string? queue = null,
@@ -198,7 +201,7 @@ internal sealed class DefaultScheduler : IScheduler
         };
 
         using var activity = NexJobActivitySource.StartEnqueue(typeof(TJob).FullName ?? typeof(TJob).Name, job.Queue);
-        var jobId = await _storage.EnqueueAsync(job, cancellationToken);
+        var jobId = await _storage.EnqueueAsync(job, cancellationToken).ConfigureAwait(false);
 
         activity?.SetTag("nexjob.job_id", jobId.Value.ToString());
         activity?.SetTag("nexjob.scheduled_at", runAt.ToString("o"));
@@ -237,7 +240,7 @@ internal sealed class DefaultScheduler : IScheduler
         };
 
         using var activity = NexJobActivitySource.StartRecurring(typeof(TJob).FullName ?? typeof(TJob).Name, recurringJobId);
-        await _storage.UpsertRecurringJobAsync(record, cancellationToken);
+        await _storage.UpsertRecurringJobAsync(record, cancellationToken).ConfigureAwait(false);
 
         activity?.SetTag("nexjob.queue", record.Queue);
         activity?.SetTag("nexjob.cron", cron);
@@ -273,7 +276,7 @@ internal sealed class DefaultScheduler : IScheduler
         };
 
         using var activity = NexJobActivitySource.StartRecurring(typeof(TJob).FullName ?? typeof(TJob).Name, recurringJobId);
-        await _storage.UpsertRecurringJobAsync(record, cancellationToken);
+        await _storage.UpsertRecurringJobAsync(record, cancellationToken).ConfigureAwait(false);
 
         activity?.SetTag("nexjob.queue", record.Queue);
         activity?.SetTag("nexjob.cron", cron);
@@ -306,7 +309,7 @@ internal sealed class DefaultScheduler : IScheduler
         };
 
         using var activity = NexJobActivitySource.StartEnqueue(typeof(TJob).FullName ?? typeof(TJob).Name, job.Queue);
-        var jobId = await _storage.EnqueueAsync(job, cancellationToken);
+        var jobId = await _storage.EnqueueAsync(job, cancellationToken).ConfigureAwait(false);
 
         activity?.SetTag("nexjob.job_id", jobId.Value.ToString());
         activity?.SetTag("nexjob.parent_job_id", parentJobId.Value.ToString());
@@ -325,6 +328,11 @@ internal sealed class DefaultScheduler : IScheduler
 
     // ─── helpers ─────────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Parses a cron expression, supporting both standard (5-field) and extended (6-field with seconds) formats.
+    /// </summary>
+    /// <param name="cron">The cron expression to parse.</param>
+    /// <returns>The parsed <see cref="CronExpression"/>.</returns>
     internal static CronExpression ParseCron(string cron)
     {
         // Try 6-field (with seconds) first; fall back to standard 5-field

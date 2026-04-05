@@ -17,6 +17,12 @@ internal sealed class ServerHeartbeatService : IHostedService, IDisposable
     private readonly string _serverId;
     private Timer? _timer;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="ServerHeartbeatService"/> class.
+    /// </summary>
+    /// <param name="storage">The storage provider.</param>
+    /// <param name="options">The NexJob options.</param>
+    /// <param name="logger">The logger.</param>
     public ServerHeartbeatService(
         IStorageProvider storage,
         IOptions<NexJobOptions> options,
@@ -32,6 +38,7 @@ internal sealed class ServerHeartbeatService : IHostedService, IDisposable
             : $"{Environment.MachineName}:{Environment.ProcessId}:{Guid.NewGuid():N}";
     }
 
+    /// <inheritdoc/>
     public async Task StartAsync(CancellationToken cancellationToken)
     {
         _logger.LogDebug("Registering active server node in cluster...");
@@ -47,7 +54,7 @@ internal sealed class ServerHeartbeatService : IHostedService, IDisposable
 
         try
         {
-            await _storage.RegisterServerAsync(serverInfo, cancellationToken);
+            await _storage.RegisterServerAsync(serverInfo, cancellationToken).ConfigureAwait(false);
 
             // Start the periodic heartbeat timer
             _timer = new Timer(
@@ -62,6 +69,7 @@ internal sealed class ServerHeartbeatService : IHostedService, IDisposable
         }
     }
 
+    /// <inheritdoc/>
     public async Task StopAsync(CancellationToken cancellationToken)
     {
         _logger.LogDebug("Deregistering active server node...");
@@ -72,7 +80,7 @@ internal sealed class ServerHeartbeatService : IHostedService, IDisposable
             // Give 5 seconds for deregistration out of the total shutdown timeout
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             cts.CancelAfter(TimeSpan.FromSeconds(5));
-            await _storage.DeregisterServerAsync(_serverId, cts.Token);
+            await _storage.DeregisterServerAsync(_serverId, cts.Token).ConfigureAwait(false);
             _logger.LogInformation("Server node {ServerId} gracefully deregistered.", _serverId);
         }
         catch (Exception ex)
@@ -81,23 +89,32 @@ internal sealed class ServerHeartbeatService : IHostedService, IDisposable
         }
     }
 
+    /// <inheritdoc/>
     public void Dispose()
     {
         _timer?.Dispose();
     }
 
+    /// <summary>
+    /// Periodically updates the global heartbeat for the current server node.
+    /// </summary>
+    /// <param name="state">The timer state.</param>
     private void DoWork(object? state)
     {
         // Fire and forget the heartbeat as the timer runs synchronously
         _ = HeartbeatAsync();
     }
 
+    /// <summary>
+    /// Updates the global heartbeat for the current server node.
+    /// </summary>
+    /// <returns>A task representing the asynchronous operation.</returns>
     private async Task HeartbeatAsync()
     {
         try
         {
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-            await _storage.HeartbeatServerAsync(_serverId, cts.Token);
+            await _storage.HeartbeatServerAsync(_serverId, cts.Token).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
