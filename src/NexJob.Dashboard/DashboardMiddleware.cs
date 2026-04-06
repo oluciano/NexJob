@@ -174,7 +174,7 @@ public sealed class DashboardMiddleware
             var recurringId = Uri.UnescapeDataString(subPath.Split('/')[1]);
             await storage.SetRecurringJobNextExecutionAsync(
                 recurringId, DateTimeOffset.UtcNow.AddSeconds(-1), context.RequestAborted).ConfigureAwait(false);
-            LocalRedirect(context, $"{_pathPrefix}/recurring/{Uri.EscapeDataString(recurringId)}");
+            LocalRedirect(context, $"{_pathPrefix}/recurring/{Uri.UnescapeDataString(recurringId)}");
             return true;
         }
 
@@ -188,7 +188,7 @@ public sealed class DashboardMiddleware
                 await storage.UpdateRecurringJobConfigAsync(recurringId, existing.CronOverride, enabled: false, context.RequestAborted).ConfigureAwait(false);
             }
 
-            LocalRedirect(context, $"{_pathPrefix}/recurring/{Uri.EscapeDataString(recurringId)}");
+            LocalRedirect(context, $"{_pathPrefix}/recurring/{Uri.UnescapeDataString(recurringId)}");
             return true;
         }
 
@@ -202,7 +202,7 @@ public sealed class DashboardMiddleware
                 await storage.UpdateRecurringJobConfigAsync(recurringId, existing.CronOverride, enabled: true, context.RequestAborted).ConfigureAwait(false);
             }
 
-            LocalRedirect(context, $"{_pathPrefix}/recurring/{Uri.EscapeDataString(recurringId)}");
+            LocalRedirect(context, $"{_pathPrefix}/recurring/{Uri.UnescapeDataString(recurringId)}");
             return true;
         }
 

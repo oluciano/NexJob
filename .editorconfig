@@ -118,7 +118,7 @@ dotnet_diagnostic.SA1001.severity = warning
 # Related to SA1116/SA1117; same reason for suppression.
 dotnet_diagnostic.SA1114.severity = none
 
-# membership ordering rules
+# membership ordering rules (Wave 3)
 dotnet_diagnostic.SA1201.severity = warning
 dotnet_diagnostic.SA1202.severity = warning
 dotnet_diagnostic.SA1204.severity = warning
@@ -137,7 +137,7 @@ dotnet_diagnostic.MA0016.severity = suggestion
 # Sometimes we group small related interfaces in one file.
 dotnet_diagnostic.MA0048.severity = suggestion
 
-# Suppress MA0011 (IFormatProvider) for Dashboard as it is too noisy for UI rendering
+# Suppress MA0011 (IFormatProvider) and documentation for Dashboard UI
 [src/NexJob.Dashboard*/**/*.cs]
 dotnet_diagnostic.MA0011.severity = none
 dotnet_diagnostic.SA1600.severity = none
@@ -225,7 +225,7 @@ dotnet_diagnostic.SA1519.severity = none
 dotnet_diagnostic.SA1600.severity = none
 dotnet_diagnostic.SA1601.severity = none
 dotnet_diagnostic.SA1602.severity = none
-dotnet_diagnostic.SA1611.severity = none
+dotnet_diagnostic.SA1611.severity = suggestion
 dotnet_diagnostic.SA1615.severity = none
 dotnet_diagnostic.SA1623.severity = none
 dotnet_diagnostic.SA1633.severity = none
