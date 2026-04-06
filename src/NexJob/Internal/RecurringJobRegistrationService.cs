@@ -29,7 +29,7 @@ internal sealed class RecurringJobRegistrationService : BackgroundService
 
         try
         {
-            await _registrar.RegisterRecurringJobsAsync(_options.RecurringJobs, stoppingToken);
+            await _registrar.RegisterRecurringJobsAsync(_options.RecurringJobs, stoppingToken).ConfigureAwait(false);
 
             _logger.LogInformation(
                 "Registered {Count} recurring jobs from configuration.",

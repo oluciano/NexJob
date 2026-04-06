@@ -24,14 +24,14 @@ internal sealed class JobsPage : IComponent
     {
         parameters.SetParameterProperties(this);
         var filter = new JobFilter { Status = StatusFilter, Search = Search };
-        var result = await Storage.GetJobsAsync(filter, Page, 25);
+        var result = await Storage.GetJobsAsync(filter, Page, 50, CancellationToken.None).ConfigureAwait(false);
 
         // Apply in-memory queue filter
         if (!string.IsNullOrWhiteSpace(QueueFilter))
         {
             result = new PagedResult<JobRecord>
             {
-                Items = result.Items.Where(j => j.Queue == QueueFilter).ToList(),
+                Items = result.Items.Where(j => string.Equals(j.Queue, QueueFilter, StringComparison.Ordinal)).ToList(),
                 TotalCount = result.TotalCount,
                 Page = result.Page,
                 PageSize = result.PageSize,
@@ -42,7 +42,7 @@ internal sealed class JobsPage : IComponent
         // but we need paged results, so filter client-side from the already-paged set here)
         if (!string.IsNullOrWhiteSpace(TagFilter))
         {
-            var taggedIds = (await Storage.GetJobsByTagAsync(TagFilter.Trim()))
+            var taggedIds = (await Storage.GetJobsByTagAsync(TagFilter.Trim()).ConfigureAwait(false))
                 .Select(j => j.Id)
                 .ToHashSet();
             result = new PagedResult<JobRecord>

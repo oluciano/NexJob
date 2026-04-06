@@ -77,7 +77,7 @@ public sealed class RetryAttribute : Attribute
         }
 
         // Add ±10% jitter
-        var jitterFactor = 1.0 + (0.1 * ((Random.Shared.NextDouble() * 2.0) - 1.0));
+        var jitterFactor = 1.0 + (0.1 * ((((double)System.Security.Cryptography.RandomNumberGenerator.GetInt32(int.MaxValue) / int.MaxValue) * 2.0) - 1.0));
         return TimeSpan.FromTicks((long)(delay.Ticks * jitterFactor));
     }
 }

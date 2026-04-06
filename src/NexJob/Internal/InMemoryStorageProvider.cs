@@ -97,7 +97,7 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
         }
 
         // No job available — yield briefly so callers can back off
-        await Task.Delay(100, cancellationToken);
+        await Task.Delay(100, cancellationToken).ConfigureAwait(false);
         return null;
     }
 
@@ -255,7 +255,7 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
         }
 
         var toRemove = _jobs.Values
-            .Where(j => j.RecurringJobId == recurringJobId)
+            .Where(j => string.Equals(j.RecurringJobId, recurringJobId, StringComparison.Ordinal))
             .Select(j => j.Id.Value)
             .ToList();
 
@@ -468,7 +468,7 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
 
         if (!string.IsNullOrEmpty(filter.RecurringJobId))
         {
-            query = query.Where(j => j.RecurringJobId == filter.RecurringJobId);
+            query = query.Where(j => string.Equals(j.RecurringJobId, filter.RecurringJobId, StringComparison.Ordinal));
         }
 
         var ordered = query.OrderByDescending(j => j.CreatedAt).ToList();
@@ -524,14 +524,14 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
     public Task<IReadOnlyList<QueueMetrics>> GetQueueMetricsAsync(CancellationToken cancellationToken = default)
     {
         IReadOnlyList<QueueMetrics> result = _jobs.Values
-            .GroupBy(j => j.Queue)
+            .GroupBy(j => j.Queue, StringComparer.Ordinal)
             .Select(g => new QueueMetrics
             {
                 Queue = g.Key,
                 Enqueued = g.Count(j => j.Status == JobStatus.Enqueued),
                 Processing = g.Count(j => j.Status == JobStatus.Processing),
             })
-            .OrderBy(q => q.Queue)
+            .OrderBy(q => q.Queue, StringComparer.Ordinal)
             .ToList();
 
         return Task.FromResult(result);
