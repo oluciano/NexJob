@@ -56,6 +56,7 @@ internal sealed class DefaultScheduler : IScheduler
         return jobId;
     }
 
+    /// <inheritdoc/>
     public async Task<JobId> EnqueueAsync<TJob>(
         string? queue = null,
         JobPriority priority = JobPriority.Normal,
@@ -118,6 +119,7 @@ internal sealed class DefaultScheduler : IScheduler
         return jobId;
     }
 
+    /// <inheritdoc/>
     public async Task<JobId> ScheduleAsync<TJob>(
         TimeSpan delay,
         string? queue = null,
@@ -174,6 +176,7 @@ internal sealed class DefaultScheduler : IScheduler
         return jobId;
     }
 
+    /// <inheritdoc/>
     public async Task<JobId> ScheduleAtAsync<TJob>(
         DateTimeOffset runAt,
         string? queue = null,
@@ -325,6 +328,11 @@ internal sealed class DefaultScheduler : IScheduler
 
     // ─── helpers ─────────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Parses a cron expression, supporting both standard (5-field) and extended (6-field with seconds) formats.
+    /// </summary>
+    /// <param name="cron">The cron expression to parse.</param>
+    /// <returns>The parsed <see cref="CronExpression"/>.</returns>
     internal static CronExpression ParseCron(string cron)
     {
         // Try 6-field (with seconds) first; fall back to standard 5-field

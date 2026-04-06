@@ -101,6 +101,29 @@ public sealed class DashboardMiddleware
         await context.Response.WriteAsync(html).ConfigureAwait(false);
     }
 
+    private static async Task<string> RenderAsync<TComponent>(
+        HtmlRenderer renderer, ParameterView parameters)
+        where TComponent : IComponent
+#pragma warning disable MA0004
+    {
+        return await renderer.Dispatcher.InvokeAsync(async () =>
+        {
+            var output = await renderer.RenderComponentAsync<TComponent>(parameters).ConfigureAwait(false);
+            return output.ToHtmlString();
+#pragma warning restore MA0004
+        }).ConfigureAwait(false);
+    }
+
+#pragma warning disable SCS0027
+    private static void LocalRedirect(HttpContext context, string location)
+    {
+        if (location.StartsWith("/", StringComparison.Ordinal) && !location.StartsWith("//", StringComparison.Ordinal))
+        {
+            context.Response.Redirect(location);
+        }
+    }
+#pragma warning restore SCS0027
+
     private async Task<bool> HandleActionsAsync(HttpContext context, string subPath)
     {
         var storage = context.RequestServices.GetRequiredService<IStorageProvider>();
@@ -151,7 +174,7 @@ public sealed class DashboardMiddleware
             var recurringId = Uri.UnescapeDataString(subPath.Split('/')[1]);
             await storage.SetRecurringJobNextExecutionAsync(
                 recurringId, DateTimeOffset.UtcNow.AddSeconds(-1), context.RequestAborted).ConfigureAwait(false);
-            LocalRedirect(context, $"{_pathPrefix}/recurring/{Uri.EscapeDataString(recurringId)}");
+            LocalRedirect(context, $"{_pathPrefix}/recurring/{Uri.UnescapeDataString(recurringId)}");
             return true;
         }
 
@@ -165,7 +188,7 @@ public sealed class DashboardMiddleware
                 await storage.UpdateRecurringJobConfigAsync(recurringId, existing.CronOverride, enabled: false, context.RequestAborted).ConfigureAwait(false);
             }
 
-            LocalRedirect(context, $"{_pathPrefix}/recurring/{Uri.EscapeDataString(recurringId)}");
+            LocalRedirect(context, $"{_pathPrefix}/recurring/{Uri.UnescapeDataString(recurringId)}");
             return true;
         }
 
@@ -179,7 +202,7 @@ public sealed class DashboardMiddleware
                 await storage.UpdateRecurringJobConfigAsync(recurringId, existing.CronOverride, enabled: true, context.RequestAborted).ConfigureAwait(false);
             }
 
-            LocalRedirect(context, $"{_pathPrefix}/recurring/{Uri.EscapeDataString(recurringId)}");
+            LocalRedirect(context, $"{_pathPrefix}/recurring/{Uri.UnescapeDataString(recurringId)}");
             return true;
         }
 
@@ -584,27 +607,4 @@ public sealed class DashboardMiddleware
 
         return HtmlShell.NotFound(_options.Title, _pathPrefix);
     }
-
-    private static async Task<string> RenderAsync<TComponent>(
-        HtmlRenderer renderer, ParameterView parameters)
-        where TComponent : IComponent
-#pragma warning disable MA0004
-    {
-        return await renderer.Dispatcher.InvokeAsync(async () =>
-        {
-            var output = await renderer.RenderComponentAsync<TComponent>(parameters).ConfigureAwait(false);
-            return output.ToHtmlString();
-#pragma warning restore MA0004
-        }).ConfigureAwait(false);
-    }
-
-#pragma warning disable SCS0027
-    private static void LocalRedirect(HttpContext context, string location)
-    {
-        if (location.StartsWith("/", StringComparison.Ordinal) && !location.StartsWith("//", StringComparison.Ordinal))
-        {
-            context.Response.Redirect(location);
-        }
-    }
-#pragma warning restore SCS0027
 }

@@ -12,6 +12,7 @@ public static class NexJobActivitySource
     /// <summary>The name of the NexJob activity source, for use with OpenTelemetry SDK configuration.</summary>
     public const string Name = "NexJob";
 
+    /// <summary>The shared activity source instance.</summary>
     internal static readonly ActivitySource Source =
         new(Name, Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "0.0.0");
 
@@ -21,6 +22,7 @@ public static class NexJobActivitySource
     /// </summary>
     /// <param name="jobType">The fully-qualified job type name.</param>
     /// <param name="queue">The target queue name.</param>
+    /// <returns>The started activity or null.</returns>
     internal static Activity? StartEnqueue(string jobType, string queue) =>
         Source.StartActivity(
             "nexjob.enqueue",
