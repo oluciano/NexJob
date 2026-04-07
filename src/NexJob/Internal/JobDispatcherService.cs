@@ -254,15 +254,12 @@ internal sealed class JobDispatcherService : BackgroundService
             RecordSuccessMetrics(job.JobType, sw.Elapsed);
             activity?.SetStatus(ActivityStatusCode.Ok);
 
-            await _storage.AcknowledgeAsync(job.Id, CancellationToken.None).ConfigureAwait(false);
-            await _storage.SaveExecutionLogsAsync(job.Id, logScope.Entries, CancellationToken.None).ConfigureAwait(false);
-            await _storage.EnqueueContinuationsAsync(job.Id, CancellationToken.None).ConfigureAwait(false);
-
-            if (job.RecurringJobId is not null)
+            await _storage.CommitJobResultAsync(job.Id, new JobExecutionResult
             {
-                await _storage.SetRecurringJobLastExecutionResultAsync(
-                    job.RecurringJobId, JobStatus.Succeeded, null, CancellationToken.None).ConfigureAwait(false);
-            }
+                Succeeded = true,
+                Logs = logScope.Entries,
+                RecurringJobId = job.RecurringJobId,
+            }, CancellationToken.None).ConfigureAwait(false);
 
             _logger.LogDebug("Job {JobId} completed successfully", job.Id);
         }
@@ -271,14 +268,14 @@ internal sealed class JobDispatcherService : BackgroundService
             sw.Stop();
             var retryAt = await HandleFailureAsync(job, ex, activity).ConfigureAwait(false);
 
-            await _storage.SetFailedAsync(job.Id, ex, retryAt, CancellationToken.None).ConfigureAwait(false);
-            await _storage.SaveExecutionLogsAsync(job.Id, logScope.Entries, CancellationToken.None).ConfigureAwait(false);
-
-            if (job.RecurringJobId is not null && retryAt is null)
+            await _storage.CommitJobResultAsync(job.Id, new JobExecutionResult
             {
-                await _storage.SetRecurringJobLastExecutionResultAsync(
-                    job.RecurringJobId, JobStatus.Failed, ex.Message, CancellationToken.None).ConfigureAwait(false);
-            }
+                Succeeded = false,
+                Logs = logScope.Entries,
+                Exception = ex,
+                RetryAt = retryAt,
+                RecurringJobId = job.RecurringJobId,
+            }, CancellationToken.None).ConfigureAwait(false);
 
             if (retryAt is null)
             {
