@@ -62,6 +62,7 @@ public sealed class PostgresStorageProvider : IStorageProvider
 
                 if (IsActiveState(existingStatus))
                 {
+                    await tx.RollbackAsync(cancellationToken).ConfigureAwait(false);
                     return new EnqueueResult(existingId, WasRejected: false);
                 }
 
@@ -71,6 +72,7 @@ public sealed class PostgresStorageProvider : IStorageProvider
 
                 if (reject)
                 {
+                    await tx.RollbackAsync(cancellationToken).ConfigureAwait(false);
                     return new EnqueueResult(existingId, WasRejected: true);
                 }
             }
