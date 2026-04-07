@@ -22,7 +22,7 @@ public static class JobContextExtensions
         [EnumeratorCancellation] CancellationToken ct = default)
     {
         var items = new List<T>();
-        await foreach (var item in source.WithCancellation(ct))
+        await foreach (var item in source.WithCancellation(ct).ConfigureAwait(false))
         {
             items.Add(item);
         }
@@ -30,7 +30,7 @@ public static class JobContextExtensions
         for (var i = 0; i < items.Count; i++)
         {
             var percent = (int)((i + 1) * 100.0 / items.Count);
-            await context.ReportProgressAsync(percent, ct: ct);
+            await context.ReportProgressAsync(percent, ct: ct).ConfigureAwait(false);
             yield return items[i];
         }
     }

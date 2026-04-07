@@ -165,6 +165,7 @@ internal static class HtmlShell
         .dot-awaiting   { background: var(--text-3); }
         .dot-expired    { background: rgba(148,163,184,.5); }
         .dot-default    { background: var(--text-3); }
+
         @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.35} }
 
         /* Badges */
@@ -557,6 +558,16 @@ internal static class HtmlShell
         .nav-counter.ok     { background: var(--success-bg); color: var(--success); border-color: transparent; }
         """;
 
+    /// <summary>
+    /// Wraps the content in the standard HTML shell with sidebar and navigation.
+    /// </summary>
+    /// <param name="title">The page title.</param>
+    /// <param name="pathPrefix">The dashboard path prefix.</param>
+    /// <param name="activeRoute">The currently active route for highlighting.</param>
+    /// <param name="body">The main content HTML.</param>
+    /// <param name="counters">Optional sidebar counters.</param>
+    /// <param name="metrics">Optional metrics for health badge.</param>
+    /// <returns>The complete HTML string.</returns>
     internal static string Wrap(
         string title, string pathPrefix, string activeRoute, string body,
         NavCounters? counters = null, JobMetrics? metrics = null) =>
@@ -628,9 +639,9 @@ internal static class HtmlShell
                 var targets = document.querySelectorAll('[data-refresh="true"]');
                 if (targets.length === 0) return;
                 try {
-                    var res = await fetch(window.location.href, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+                    var res = await fetch(window.location.href, { headers: { 'X-Requested-With': 'XMLHttpRequest' } }).ConfigureAwait(false);
                     if (!res.ok) return;
-                    var text = await res.text();
+                    var text = await res.text().ConfigureAwait(false);
                     var doc = new DOMParser().parseFromString(text, 'text/html');
                     targets.forEach(function(el) {
                         if (el.id) {
@@ -649,12 +660,18 @@ internal static class HtmlShell
         </html>
         """;
 
+    /// <summary>
+    /// Generates a standard 404 Not Found page.
+    /// </summary>
+    /// <param name="title">The page title.</param>
+    /// <param name="pathPrefix">The dashboard path prefix.</param>
+    /// <returns>The complete HTML string.</returns>
     internal static string NotFound(string title, string pathPrefix) =>
         Wrap(title, pathPrefix, string.Empty,
             "<div class=\"empty-state\"><svg width=\"48\" height=\"48\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1\"><circle cx=\"12\" cy=\"12\" r=\"10\"/><line x1=\"12\" y1=\"8\" x2=\"12\" y2=\"12\"/><line x1=\"12\" y1=\"16\" x2=\"12.01\" y2=\"16\"/></svg><p>404 — Page not found</p></div>");
 
     private static string Active(string route, string page) =>
-        route == page ? "active" : string.Empty;
+        string.Equals(route, page, StringComparison.Ordinal) ? "active" : string.Empty;
 
     private static string HealthBadge(JobMetrics? m)
     {

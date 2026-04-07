@@ -13,6 +13,7 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
 {
     // ─── state ───────────────────────────────────────────────────────────────
 
+    private readonly object _lock = new();
     private readonly ConcurrentDictionary<Guid, JobRecord> _jobs = new();
     private readonly ConcurrentDictionary<string, Guid> _idempotencyIndex = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, RecurringJobRecord> _recurringJobs = new(StringComparer.Ordinal);
@@ -27,36 +28,48 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
     // ─── IStorageProvider ────────────────────────────────────────────────────
 
     /// <inheritdoc/>
-    public Task<JobId> EnqueueAsync(JobRecord job, CancellationToken cancellationToken = default)
+    public Task<EnqueueResult> EnqueueAsync(JobRecord job, DuplicatePolicy duplicatePolicy = DuplicatePolicy.AllowAfterFailed, CancellationToken cancellationToken = default)
     {
-        // Idempotency check
-        if (job.IdempotencyKey is not null)
+        lock (_lock)
         {
-            if (_idempotencyIndex.TryGetValue(job.IdempotencyKey, out var existingId) &&
-                _jobs.TryGetValue(existingId, out var existingJob) &&
-                existingJob.Status is JobStatus.Enqueued or JobStatus.Scheduled or JobStatus.Processing)
+            if (job.IdempotencyKey is not null)
             {
-                return Task.FromResult(existingJob.Id);
+                var existingJob = FindExistingJobByKey(job.IdempotencyKey);
+
+                if (existingJob is not null)
+                {
+                    if (IsActiveState(existingJob.Status))
+                    {
+                        return Task.FromResult(new EnqueueResult(existingJob.Id, WasRejected: false));
+                    }
+
+                    var reject = existingJob.Status == JobStatus.Failed
+                        ? duplicatePolicy is DuplicatePolicy.RejectIfFailed or DuplicatePolicy.RejectAlways
+                        : duplicatePolicy == DuplicatePolicy.RejectAlways;
+
+                    if (reject)
+                    {
+                        return Task.FromResult(new EnqueueResult(existingJob.Id, WasRejected: true));
+                    }
+
+                    _idempotencyIndex.TryRemove(job.IdempotencyKey, out _);
+                }
             }
 
-            // Expired or missing — clean up stale entry
-            _idempotencyIndex.TryRemove(job.IdempotencyKey, out _);
+            _jobs[job.Id.Value] = job;
+
+            if (job.IdempotencyKey is not null)
+            {
+                _idempotencyIndex[job.IdempotencyKey] = job.Id.Value;
+            }
+
+            if (job.Status == JobStatus.Enqueued && job.ScheduledAt is null)
+            {
+                WriteToChannel(job);
+            }
+
+            return Task.FromResult(new EnqueueResult(job.Id, WasRejected: false));
         }
-
-        _jobs[job.Id.Value] = job;
-
-        if (job.IdempotencyKey is not null)
-        {
-            _idempotencyIndex[job.IdempotencyKey] = job.Id.Value;
-        }
-
-        // Only push to channel when immediately runnable (not scheduled for future)
-        if (job.Status == JobStatus.Enqueued && job.ScheduledAt is null)
-        {
-            WriteToChannel(job);
-        }
-
-        return Task.FromResult(job.Id);
     }
 
     /// <inheritdoc/>
@@ -97,7 +110,7 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
         }
 
         // No job available — yield briefly so callers can back off
-        await Task.Delay(100, cancellationToken);
+        await Task.Delay(100, cancellationToken).ConfigureAwait(false);
         return null;
     }
 
@@ -255,7 +268,7 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
         }
 
         var toRemove = _jobs.Values
-            .Where(j => j.RecurringJobId == recurringJobId)
+            .Where(j => string.Equals(j.RecurringJobId, recurringJobId, StringComparison.Ordinal))
             .Select(j => j.Id.Value)
             .ToList();
 
@@ -468,7 +481,7 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
 
         if (!string.IsNullOrEmpty(filter.RecurringJobId))
         {
-            query = query.Where(j => j.RecurringJobId == filter.RecurringJobId);
+            query = query.Where(j => string.Equals(j.RecurringJobId, filter.RecurringJobId, StringComparison.Ordinal));
         }
 
         var ordered = query.OrderByDescending(j => j.CreatedAt).ToList();
@@ -524,14 +537,14 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
     public Task<IReadOnlyList<QueueMetrics>> GetQueueMetricsAsync(CancellationToken cancellationToken = default)
     {
         IReadOnlyList<QueueMetrics> result = _jobs.Values
-            .GroupBy(j => j.Queue)
+            .GroupBy(j => j.Queue, StringComparer.Ordinal)
             .Select(g => new QueueMetrics
             {
                 Queue = g.Key,
                 Enqueued = g.Count(j => j.Status == JobStatus.Enqueued),
                 Processing = g.Count(j => j.Status == JobStatus.Processing),
             })
-            .OrderBy(q => q.Queue)
+            .OrderBy(q => q.Queue, StringComparer.Ordinal)
             .ToList();
 
         return Task.FromResult(result);
@@ -547,6 +560,78 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
             lock (job)
             {
                 job.ExecutionLogs = logs;
+            }
+        }
+
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc/>
+    public Task CommitJobResultAsync(JobId jobId, JobExecutionResult result, CancellationToken cancellationToken = default)
+    {
+        if (!_jobs.TryGetValue(jobId.Value, out var job))
+        {
+            return Task.CompletedTask; // idempotent: job not found, nothing to do
+        }
+
+        lock (job)
+        {
+            // Idempotency guard: if already in a terminal state, skip
+            if (job.Status is JobStatus.Succeeded or JobStatus.Failed or JobStatus.Expired)
+            {
+                return Task.CompletedTask;
+            }
+
+            if (result.Succeeded)
+            {
+                job.Status = JobStatus.Succeeded;
+                job.CompletedAt = DateTimeOffset.UtcNow;
+                job.HeartbeatAt = null;
+                job.ExecutionLogs = result.Logs;
+
+                // Enqueue continuations inline
+                foreach (var child in _jobs.Values.Where(j => j.ParentJobId == jobId && j.Status == JobStatus.AwaitingContinuation))
+                {
+                    lock (child)
+                    {
+                        if (child.Status == JobStatus.AwaitingContinuation)
+                        {
+                            child.Status = JobStatus.Enqueued;
+                            WriteToChannel(child);
+                        }
+                    }
+                }
+
+                // Update recurring result
+                if (result.RecurringJobId is not null && _recurringJobs.TryGetValue(result.RecurringJobId, out var rj))
+                {
+                    rj.LastExecutionStatus = JobStatus.Succeeded;
+                    rj.LastExecutionError = null;
+                }
+            }
+            else
+            {
+                job.ExecutionLogs = result.Logs;
+                job.LastErrorMessage = result.Exception?.Message;
+                job.LastErrorStackTrace = result.Exception?.StackTrace;
+                job.HeartbeatAt = null;
+
+                if (result.RetryAt.HasValue)
+                {
+                    job.Status = JobStatus.Scheduled;
+                    job.RetryAt = result.RetryAt.Value;
+                }
+                else
+                {
+                    job.Status = JobStatus.Failed;
+                    job.CompletedAt = DateTimeOffset.UtcNow;
+
+                    if (result.RecurringJobId is not null && _recurringJobs.TryGetValue(result.RecurringJobId, out var rj))
+                    {
+                        rj.LastExecutionStatus = JobStatus.Failed;
+                        rj.LastExecutionError = result.Exception?.Message;
+                    }
+                }
             }
         }
 
@@ -609,6 +694,12 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
         JobPriority.Low => 3,
         _ => 2,
     };
+
+    private static bool IsActiveState(JobStatus status) =>
+        status is JobStatus.Enqueued or JobStatus.Processing or JobStatus.Scheduled or JobStatus.AwaitingContinuation;
+
+    private JobRecord? FindExistingJobByKey(string idempotencyKey) =>
+        _jobs.Values.FirstOrDefault(j => string.Equals(j.IdempotencyKey, idempotencyKey, StringComparison.Ordinal));
 
     private Channel<Guid>[] GetOrCreateQueueChannels(string queue) =>
         _queues.GetOrAdd(queue, static _ =>

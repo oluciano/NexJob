@@ -13,6 +13,12 @@ internal sealed class RecurringJobRegistrationService : BackgroundService
     private readonly RecurringJobRegistrar _registrar;
     private readonly ILogger<RecurringJobRegistrationService> _logger;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="RecurringJobRegistrationService"/> class.
+    /// </summary>
+    /// <param name="options">The NexJob options.</param>
+    /// <param name="registrar">The recurring job registrar.</param>
+    /// <param name="logger">The logger.</param>
     public RecurringJobRegistrationService(
         NexJobOptions options,
         RecurringJobRegistrar registrar,
@@ -23,13 +29,18 @@ internal sealed class RecurringJobRegistrationService : BackgroundService
         _logger = logger;
     }
 
+    /// <summary>
+    /// Registers recurring jobs from configuration at startup.
+    /// </summary>
+    /// <param name="stoppingToken">Triggered when the host is shutting down.</param>
+    /// <returns>A task representing the asynchronous operation.</returns>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         _logger.LogInformation("Starting recurring job registration from configuration...");
 
         try
         {
-            await _registrar.RegisterRecurringJobsAsync(_options.RecurringJobs, stoppingToken);
+            await _registrar.RegisterRecurringJobsAsync(_options.RecurringJobs, stoppingToken).ConfigureAwait(false);
 
             _logger.LogInformation(
                 "Registered {Count} recurring jobs from configuration.",

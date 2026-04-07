@@ -49,5 +49,11 @@ public enum JobStatus
     AwaitingContinuation,
 
     /// <summary>The job was not executed before its deadline and was discarded.</summary>
+    /// <remarks>
+    /// Expiry is intentional and observable — the job is marked <see cref="Expired"/>,
+    /// visible in the dashboard, and tracked via the <c>nexjob.jobs.expired</c> metric.
+    /// Unlike execution failures, expiry does not trigger retry or dead-letter handling.
+    /// If you did not set <c>deadlineAfter</c>, this state will never occur.
+    /// </remarks>
     Expired,
 }

@@ -12,6 +12,7 @@ public static class NexJobMetrics
     /// <summary>The meter name for use with the OpenTelemetry SDK.</summary>
     public const string MeterName = "NexJob";
 
+    /// <summary>The shared metrics meter instance.</summary>
     internal static readonly Meter Meter =
         new(MeterName, Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "0.0.0");
 

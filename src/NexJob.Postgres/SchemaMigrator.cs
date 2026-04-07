@@ -1,3 +1,4 @@
+#pragma warning disable MA0004
 using Dapper;
 using Npgsql;
 
@@ -33,10 +34,10 @@ internal sealed class SchemaMigrator
     public async Task MigrateAsync(string connectionString, CancellationToken ct = default)
     {
         await using var conn = new NpgsqlConnection(connectionString);
-        await conn.OpenAsync(ct);
+        await conn.OpenAsync(ct).ConfigureAwait(false);
 
         // Acquire advisory lock — blocks until acquired
-        await conn.ExecuteAsync($"SELECT pg_advisory_lock({AdvisoryLockKey})");
+        await conn.ExecuteAsync($"SELECT pg_advisory_lock({AdvisoryLockKey})").ConfigureAwait(false);
 
         try
         {
@@ -48,10 +49,10 @@ internal sealed class SchemaMigrator
                     applied_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                     description TEXT        NOT NULL
                 )
-                """);
+                """).ConfigureAwait(false);
 
             var applied = (await conn.QueryAsync<int>(
-                "SELECT version FROM nexjob_schema_version"))
+                "SELECT version FROM nexjob_schema_version").ConfigureAwait(false))
                 .ToHashSet();
 
             foreach (var migration in AllMigrations)
@@ -61,26 +62,26 @@ internal sealed class SchemaMigrator
                     continue;
                 }
 
-                await using var tx = await conn.BeginTransactionAsync(ct);
+                await using var tx = await conn.BeginTransactionAsync(ct).ConfigureAwait(false);
                 try
                 {
-                    await conn.ExecuteAsync(migration.Sql, transaction: tx);
+                    await conn.ExecuteAsync(migration.Sql, transaction: tx).ConfigureAwait(false);
                     await conn.ExecuteAsync(
                         "INSERT INTO nexjob_schema_version (version, description) VALUES (@v, @d)",
                         new { v = migration.Version, d = migration.Description },
-                        transaction: tx);
-                    await tx.CommitAsync(ct);
+                        transaction: tx).ConfigureAwait(false);
+                    await tx.CommitAsync(ct).ConfigureAwait(false);
                 }
                 catch
                 {
-                    await tx.RollbackAsync(ct);
+                    await tx.RollbackAsync(ct).ConfigureAwait(false);
                     throw;
                 }
             }
         }
         finally
         {
-            await conn.ExecuteAsync($"SELECT pg_advisory_unlock({AdvisoryLockKey})");
+            await conn.ExecuteAsync($"SELECT pg_advisory_unlock({AdvisoryLockKey})").ConfigureAwait(false);
         }
     }
 
@@ -96,3 +97,4 @@ internal sealed class SchemaMigrator
         => all.Where(m => !applied.Contains(m.Version))
               .OrderBy(m => m.Version);
 }
+#pragma warning restore MA0004

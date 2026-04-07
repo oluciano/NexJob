@@ -42,16 +42,16 @@ internal sealed class RecurringJobSchedulerService : BackgroundService
         {
             try
             {
-                var runtime = await _runtimeStore.GetAsync(stoppingToken);
+                var runtime = await _runtimeStore.GetAsync(stoppingToken).ConfigureAwait(false);
                 if (runtime.RecurringJobsPaused)
                 {
                     _logger.LogDebug("Recurring jobs are globally paused; skipping scheduling cycle.");
-                    await Task.Delay(runtime.PollingInterval ?? _options.PollingInterval, stoppingToken);
+                    await Task.Delay(runtime.PollingInterval ?? _options.PollingInterval, stoppingToken).ConfigureAwait(false);
                     continue;
                 }
 
-                await EnqueueDueJobsAsync(stoppingToken);
-                await Task.Delay(runtime.PollingInterval ?? _options.PollingInterval, stoppingToken);
+                await EnqueueDueJobsAsync(stoppingToken).ConfigureAwait(false);
+                await Task.Delay(runtime.PollingInterval ?? _options.PollingInterval, stoppingToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -82,7 +82,7 @@ internal sealed class RecurringJobSchedulerService : BackgroundService
     private async Task EnqueueDueJobsAsync(CancellationToken cancellationToken)
     {
         var now = DateTimeOffset.UtcNow;
-        var dueJobs = await _storage.GetDueRecurringJobsAsync(now, cancellationToken);
+        var dueJobs = await _storage.GetDueRecurringJobsAsync(now, cancellationToken).ConfigureAwait(false);
 
         foreach (var recurring in dueJobs)
         {
@@ -120,14 +120,14 @@ internal sealed class RecurringJobSchedulerService : BackgroundService
                         : null,
                 };
 
-                await _storage.EnqueueAsync(jobRecord, cancellationToken);
+                await _storage.EnqueueAsync(jobRecord, DuplicatePolicy.AllowAfterFailed, cancellationToken).ConfigureAwait(false);
 
                 var nextExecution = CalculateNextExecution(recurring);
 
                 if (nextExecution.HasValue)
                 {
                     await _storage.SetRecurringJobNextExecutionAsync(
-                        recurring.RecurringJobId, nextExecution.Value, cancellationToken);
+                        recurring.RecurringJobId, nextExecution.Value, cancellationToken).ConfigureAwait(false);
                 }
 
                 _logger.LogDebug(

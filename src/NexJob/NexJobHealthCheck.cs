@@ -36,9 +36,9 @@ public sealed class NexJobHealthCheck : IHealthCheck
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             cts.CancelAfter(TimeSpan.FromSeconds(2));
 
-            var metrics = await _storage.GetMetricsAsync(cts.Token);
+            var metrics = await _storage.GetMetricsAsync(cts.Token).ConfigureAwait(false);
 
-            var data = new Dictionary<string, object>
+            var data = new Dictionary<string, object>(StringComparer.Ordinal)
             {
                 ["enqueued"] = metrics.Enqueued,
                 ["processing"] = metrics.Processing,

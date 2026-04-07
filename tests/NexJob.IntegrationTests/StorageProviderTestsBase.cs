@@ -582,6 +582,125 @@ public abstract class StorageProviderTestsBase
         active.Should().NotContain(s => s.Id == staleId);
     }
 
+    // ── CommitJobResultAsync ────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task CommitJobResultAsync_Success_WithContinuation_EnqueuesContinuation()
+    {
+        var storage = await CreateStorageAsync();
+
+        // Create and fetch parent job
+        var parent = MakeJob();
+        await storage.EnqueueAsync(parent);
+        var parentFetched = (await storage.FetchNextAsync(["default"]))!;
+
+        // Create child awaiting parent continuation
+        var child = MakeJob(status: JobStatus.AwaitingContinuation, parentJobId: parentFetched.Id);
+        await storage.EnqueueAsync(child);
+
+        // Commit parent as succeeded
+        var logs = new[] { new JobExecutionLog { Timestamp = DateTimeOffset.UtcNow, Level = "Information", Message = "Success" } };
+        await storage.CommitJobResultAsync(parentFetched.Id, new JobExecutionResult
+        {
+            Succeeded = true,
+            Logs = logs,
+            RecurringJobId = null,
+        });
+
+        // Verify parent is succeeded and child is now enqueued
+        var parentResult = await storage.GetJobByIdAsync(parentFetched.Id);
+        parentResult!.Status.Should().Be(JobStatus.Succeeded);
+        parentResult.ExecutionLogs.Should().HaveCount(1);
+
+        var childResult = await storage.GetJobByIdAsync(child.Id);
+        childResult!.Status.Should().Be(JobStatus.Enqueued);
+    }
+
+    [Fact]
+    public async Task CommitJobResultAsync_Failure_WithRetry_SetsScheduled()
+    {
+        var storage = await CreateStorageAsync();
+
+        var job = MakeJob();
+        await storage.EnqueueAsync(job);
+        var fetched = (await storage.FetchNextAsync(["default"]))!;
+
+        var ex = new InvalidOperationException("test failure");
+        var retryAt = DateTimeOffset.UtcNow.AddMinutes(5);
+        var logs = new[] { new JobExecutionLog { Timestamp = DateTimeOffset.UtcNow, Level = "Error", Message = "Failure" } };
+
+        await storage.CommitJobResultAsync(fetched.Id, new JobExecutionResult
+        {
+            Succeeded = false,
+            Logs = logs,
+            Exception = ex,
+            RetryAt = retryAt,
+            RecurringJobId = null,
+        });
+
+        var result = await storage.GetJobByIdAsync(fetched.Id);
+        result!.Status.Should().Be(JobStatus.Scheduled);
+        result.RetryAt.Should().BeCloseTo(retryAt, TimeSpan.FromMilliseconds(1));
+        result.LastErrorMessage.Should().Contain("test failure");
+        result.ExecutionLogs.Should().HaveCount(1);
+    }
+
+    [Fact]
+    public async Task CommitJobResultAsync_Failure_NoRetry_SetsFailed()
+    {
+        var storage = await CreateStorageAsync();
+
+        var job = MakeJob();
+        await storage.EnqueueAsync(job);
+        var fetched = (await storage.FetchNextAsync(["default"]))!;
+
+        var ex = new InvalidOperationException("permanent failure");
+        var logs = new[] { new JobExecutionLog { Timestamp = DateTimeOffset.UtcNow, Level = "Error", Message = "Dead letter" } };
+
+        await storage.CommitJobResultAsync(fetched.Id, new JobExecutionResult
+        {
+            Succeeded = false,
+            Logs = logs,
+            Exception = ex,
+            RetryAt = null,
+            RecurringJobId = null,
+        });
+
+        var result = await storage.GetJobByIdAsync(fetched.Id);
+        result!.Status.Should().Be(JobStatus.Failed);
+        result.CompletedAt.Should().NotBeNull();
+        result.LastErrorMessage.Should().Contain("permanent failure");
+    }
+
+    [Fact]
+    public async Task CommitJobResultAsync_IsIdempotent_WhenCalledTwice()
+    {
+        var storage = await CreateStorageAsync();
+
+        var job = MakeJob();
+        await storage.EnqueueAsync(job);
+        var fetched = (await storage.FetchNextAsync(["default"]))!;
+
+        var logs1 = new[] { new JobExecutionLog { Timestamp = DateTimeOffset.UtcNow, Level = "Information", Message = "First call" } };
+
+        var result = new JobExecutionResult
+        {
+            Succeeded = true,
+            Logs = logs1,
+            RecurringJobId = null,
+        };
+
+        // Call twice with same job id
+        await storage.CommitJobResultAsync(fetched.Id, result);
+        await storage.CommitJobResultAsync(fetched.Id, result); // Should be no-op
+
+        var final = await storage.GetJobByIdAsync(fetched.Id);
+        final!.Status.Should().Be(JobStatus.Succeeded);
+        // Logs should be from first call only (second commit was no-op)
+        final.ExecutionLogs.Should().HaveCount(1);
+        final.ExecutionLogs[0].Message.Should().Be("First call");
+    }
+
     // ── Helpers ────────────────────────────────────────────────────────────────
 
     private static JobRecord MakeJob(
@@ -635,6 +754,6 @@ public abstract class StorageProviderTestsBase
     private static bool IsServerTrackingNotSupported(IStorageProvider storage)
     {
         var name = storage.GetType().Name;
-        return name.Contains("Redis") || name.Contains("SqlServer") || name.Contains("Oracle");
+        return name.Contains("Redis") || name.Contains("SqlServer");
     }
 }
