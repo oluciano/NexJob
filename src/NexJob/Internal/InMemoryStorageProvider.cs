@@ -554,6 +554,78 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
     }
 
     /// <inheritdoc/>
+    public Task CommitJobResultAsync(JobId jobId, JobExecutionResult result, CancellationToken cancellationToken = default)
+    {
+        if (!_jobs.TryGetValue(jobId.Value, out var job))
+        {
+            return Task.CompletedTask; // idempotent: job not found, nothing to do
+        }
+
+        lock (job)
+        {
+            // Idempotency guard: if already in a terminal state, skip
+            if (job.Status is JobStatus.Succeeded or JobStatus.Failed or JobStatus.Expired)
+            {
+                return Task.CompletedTask;
+            }
+
+            if (result.Succeeded)
+            {
+                job.Status = JobStatus.Succeeded;
+                job.CompletedAt = DateTimeOffset.UtcNow;
+                job.HeartbeatAt = null;
+                job.ExecutionLogs = result.Logs;
+
+                // Enqueue continuations inline
+                foreach (var child in _jobs.Values.Where(j => j.ParentJobId == jobId && j.Status == JobStatus.AwaitingContinuation))
+                {
+                    lock (child)
+                    {
+                        if (child.Status == JobStatus.AwaitingContinuation)
+                        {
+                            child.Status = JobStatus.Enqueued;
+                            WriteToChannel(child);
+                        }
+                    }
+                }
+
+                // Update recurring result
+                if (result.RecurringJobId is not null && _recurringJobs.TryGetValue(result.RecurringJobId, out var rj))
+                {
+                    rj.LastExecutionStatus = JobStatus.Succeeded;
+                    rj.LastExecutionError = null;
+                }
+            }
+            else
+            {
+                job.ExecutionLogs = result.Logs;
+                job.LastErrorMessage = result.Exception?.Message;
+                job.LastErrorStackTrace = result.Exception?.StackTrace;
+                job.HeartbeatAt = null;
+
+                if (result.RetryAt.HasValue)
+                {
+                    job.Status = JobStatus.Scheduled;
+                    job.RetryAt = result.RetryAt.Value;
+                }
+                else
+                {
+                    job.Status = JobStatus.Failed;
+                    job.CompletedAt = DateTimeOffset.UtcNow;
+
+                    if (result.RecurringJobId is not null && _recurringJobs.TryGetValue(result.RecurringJobId, out var rj))
+                    {
+                        rj.LastExecutionStatus = JobStatus.Failed;
+                        rj.LastExecutionError = result.Exception?.Message;
+                    }
+                }
+            }
+        }
+
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc/>
     public Task<bool> TryAcquireRecurringJobLockAsync(
         string recurringJobId, TimeSpan ttl, CancellationToken ct = default)
     {

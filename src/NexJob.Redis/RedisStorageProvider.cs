@@ -42,6 +42,60 @@ public sealed class RedisStorageProvider : IStorageProvider
         return false
         """);
 
+    private static readonly LuaScript CommitJobResultScript = LuaScript.Prepare(
+        """
+        local jobKey = 'nexjob:jobs:' .. ARGV[1]
+        local status = redis.call('HGET', jobKey, 'status')
+
+        -- Idempotency guard: if already terminal, return without error
+        if status == 'Succeeded' or status == 'Failed' or status == 'Expired' or not status then
+          return 0
+        end
+
+        if ARGV[2] == 'true' then
+          -- Success path
+          redis.call('HSET', jobKey, 'status', 'Succeeded', 'completedAt', ARGV[3], 'heartbeatAt', '')
+          redis.call('HDEL', 'nexjob:processing', ARGV[1])
+
+          -- Enqueue continuations
+          local contKey = 'nexjob:continuations:' .. ARGV[1]
+          local continuations = redis.call('SMEMBERS', contKey)
+          for i = 1, #continuations do
+            local childId = continuations[i]
+            redis.call('HSET', 'nexjob:jobs:' .. childId, 'status', 'Enqueued', 'scheduledAt', '')
+            -- Requeue the child (simple approach: add back to queue with priority)
+          end
+
+          -- Update recurring job if applicable
+          if ARGV[4] ~= '' then
+            local rKey = 'nexjob:recurring:' .. ARGV[4]
+            redis.call('HSET', rKey, 'lastExecutionStatus', 'Succeeded', 'lastExecutionError', '', 'updatedAt', ARGV[3])
+          end
+        else
+          -- Failure path
+          if ARGV[5] ~= '' then
+            -- Has retry
+            redis.call('HSET', jobKey, 'status', 'Scheduled', 'retryAt', ARGV[5],
+                       'exceptionMessage', ARGV[6], 'exceptionStackTrace', ARGV[7], 'heartbeatAt', '')
+            redis.call('ZADD', 'nexjob:scheduled', tonumber(ARGV[8]), ARGV[1])
+            redis.call('HDEL', 'nexjob:processing', ARGV[1])
+          else
+            -- No retry — dead letter
+            redis.call('HSET', jobKey, 'status', 'Failed', 'completedAt', ARGV[3],
+                       'exceptionMessage', ARGV[6], 'exceptionStackTrace', ARGV[7], 'heartbeatAt', '')
+            redis.call('HDEL', 'nexjob:processing', ARGV[1])
+
+            -- Update recurring job if applicable and no retry
+            if ARGV[4] ~= '' then
+              local rKey = 'nexjob:recurring:' .. ARGV[4]
+              redis.call('HSET', rKey, 'lastExecutionStatus', 'Failed', 'lastExecutionError', ARGV[6], 'updatedAt', ARGV[3])
+            end
+          end
+        end
+
+        return 1
+        """);
+
     private readonly IDatabase _db;
 
     /// <summary>
@@ -625,6 +679,34 @@ public sealed class RedisStorageProvider : IStorageProvider
         var idStr = jobId.Value.ToString();
         await _db.StringSetAsync(LogsKey(idStr), json).ConfigureAwait(false);
         await _db.HashSetAsync(JobKey(idStr), "executionLogs", json).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc/>
+    public async Task CommitJobResultAsync(
+        JobId jobId, JobExecutionResult result, CancellationToken cancellationToken = default)
+    {
+        var idStr = jobId.Value.ToString();
+        var now = DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture);
+        var logsJson = JsonSerializer.Serialize(result.Logs, JsonOpts);
+
+        var args = new RedisValue[]
+        {
+            idStr,
+            result.Succeeded ? "true" : "false",
+            now,
+            result.RecurringJobId ?? string.Empty,
+            result.RetryAt?.ToString("O", CultureInfo.InvariantCulture) ?? string.Empty,
+            result.Exception?.Message ?? string.Empty,
+            result.Exception?.StackTrace ?? string.Empty,
+            result.RetryAt?.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture) ?? "0",
+        };
+
+        // Execute atomic state transitions via Lua script
+        await _db.ScriptEvaluateAsync(CommitJobResultScript.ExecutableScript, keys: null, values: args).ConfigureAwait(false);
+
+        // Persist logs (non-critical for atomicity)
+        await _db.StringSetAsync(LogsKey(idStr), logsJson).ConfigureAwait(false);
+        await _db.HashSetAsync(JobKey(idStr), "executionLogs", logsJson).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>

@@ -532,6 +532,97 @@ public sealed class MongoStorageProvider : IStorageProvider
     }
 
     /// <inheritdoc/>
+    public async Task CommitJobResultAsync(
+        JobId jobId, JobExecutionResult result, CancellationToken cancellationToken = default)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var entries = result.Logs.Select(e => new ExecutionLogEntry
+        {
+            Timestamp = e.Timestamp,
+            Level = e.Level,
+            Message = e.Message,
+        }).ToList();
+
+        // Idempotency guard: check if job is already in terminal state
+        var currentJob = await _jobs.Find(ById(jobId)).FirstOrDefaultAsync(cancellationToken).ConfigureAwait(false);
+        if (currentJob is null || currentJob.Status is JobStatus.Succeeded or JobStatus.Failed or JobStatus.Expired)
+        {
+            return; // Already terminal, idempotent no-op
+        }
+
+        if (result.Succeeded)
+        {
+            var update = Builders<JobDocument>.Update
+                .Set(d => d.Status, JobStatus.Succeeded)
+                .Set(d => d.CompletedAt, now)
+                .Unset(d => d.HeartbeatAt)
+                .Set(d => d.ExecutionLogs, entries);
+
+            await _jobs.UpdateOneAsync(ById(jobId), update, cancellationToken: cancellationToken).ConfigureAwait(false);
+
+            // Enqueue continuations
+            var contFilter = Builders<JobDocument>.Filter.And(
+                Builders<JobDocument>.Filter.Eq(d => d.Status, JobStatus.AwaitingContinuation),
+                Builders<JobDocument>.Filter.Eq(d => d.ParentJobId, jobId));
+
+            var contUpdate = Builders<JobDocument>.Update
+                .Set(d => d.Status, JobStatus.Enqueued)
+                .Unset(d => d.ScheduledAt);
+
+            await _jobs.UpdateManyAsync(contFilter, contUpdate, cancellationToken: cancellationToken).ConfigureAwait(false);
+
+            // Update recurring result
+            if (result.RecurringJobId is not null)
+            {
+                var recurFilter = Builders<RecurringJobDocument>.Filter.Eq(d => d.RecurringJobId, result.RecurringJobId);
+                var recurUpdate = Builders<RecurringJobDocument>.Update
+                    .Set(d => d.LastExecutionStatus, JobStatus.Succeeded)
+                    .Unset(d => d.LastExecutionError);
+
+                await _recurringJobs.UpdateOneAsync(recurFilter, recurUpdate, cancellationToken: cancellationToken).ConfigureAwait(false);
+            }
+        }
+        else
+        {
+            UpdateDefinition<JobDocument> jobUpdate;
+
+            if (result.RetryAt.HasValue)
+            {
+                jobUpdate = Builders<JobDocument>.Update
+                    .Set(d => d.Status, JobStatus.Scheduled)
+                    .Set(d => d.RetryAt, result.RetryAt.Value)
+                    .Set(d => d.LastErrorMessage, result.Exception?.Message)
+                    .Set(d => d.LastErrorStackTrace, result.Exception?.StackTrace)
+                    .Unset(d => d.HeartbeatAt)
+                    .Set(d => d.ExecutionLogs, entries);
+            }
+            else
+            {
+                jobUpdate = Builders<JobDocument>.Update
+                    .Set(d => d.Status, JobStatus.Failed)
+                    .Set(d => d.CompletedAt, now)
+                    .Set(d => d.LastErrorMessage, result.Exception?.Message)
+                    .Set(d => d.LastErrorStackTrace, result.Exception?.StackTrace)
+                    .Unset(d => d.HeartbeatAt)
+                    .Set(d => d.ExecutionLogs, entries);
+            }
+
+            await _jobs.UpdateOneAsync(ById(jobId), jobUpdate, cancellationToken: cancellationToken).ConfigureAwait(false);
+
+            // Update recurring result (only on dead-letter)
+            if (result.RecurringJobId is not null && !result.RetryAt.HasValue)
+            {
+                var recurFilter = Builders<RecurringJobDocument>.Filter.Eq(d => d.RecurringJobId, result.RecurringJobId);
+                var recurUpdate = Builders<RecurringJobDocument>.Update
+                    .Set(d => d.LastExecutionStatus, JobStatus.Failed)
+                    .Set(d => d.LastExecutionError, result.Exception?.Message);
+
+                await _recurringJobs.UpdateOneAsync(recurFilter, recurUpdate, cancellationToken: cancellationToken).ConfigureAwait(false);
+            }
+        }
+    }
+
+    /// <inheritdoc/>
     public async Task<bool> TryAcquireRecurringJobLockAsync(
         string recurringJobId, TimeSpan ttl, CancellationToken ct = default)
     {
