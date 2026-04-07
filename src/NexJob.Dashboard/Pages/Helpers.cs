@@ -64,7 +64,11 @@ internal static class Helpers
         Regex.Replace(
             System.Web.HttpUtility.HtmlEncode(json),
             @"""((?:[^""\\]|\\.)*)""(\s*:)?|(-?\d+\.?\d*(?:[eE][+-]?\d+)?)|(\btrue\b|\bfalse\b|\bnull\b)",
-            ColorizeMatch);
+#pragma warning disable MA0023
+            ColorizeMatch,
+            RegexOptions.None,
+#pragma warning restore MA0023
+            TimeSpan.FromMilliseconds(100));
 
     internal static string ColorizeMatch(Match m)
     {

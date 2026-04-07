@@ -20,6 +20,12 @@ internal sealed class StandaloneDashboardHostedService : IHostedService
     private readonly ILogger<StandaloneDashboardHostedService> _logger;
     private WebApplication? _app;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="StandaloneDashboardHostedService"/> class.
+    /// </summary>
+    /// <param name="options">The standalone dashboard options.</param>
+    /// <param name="rootProvider">The root service provider.</param>
+    /// <param name="logger">The logger.</param>
     public StandaloneDashboardHostedService(
         StandaloneDashboardOptions options,
         IServiceProvider rootProvider,
@@ -30,6 +36,7 @@ internal sealed class StandaloneDashboardHostedService : IHostedService
         _logger = logger;
     }
 
+    /// <inheritdoc/>
     public async Task StartAsync(CancellationToken cancellationToken)
     {
         var listenUrl = _options.LocalhostOnly
@@ -66,6 +73,7 @@ internal sealed class StandaloneDashboardHostedService : IHostedService
             listenUrl, _options.Path);
     }
 
+    /// <inheritdoc/>
     public async Task StopAsync(CancellationToken cancellationToken)
     {
         if (_app is not null)

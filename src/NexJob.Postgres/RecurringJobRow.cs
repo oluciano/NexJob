@@ -27,7 +27,7 @@ internal sealed class RecurringJobRow
         InputType = InputType,
         InputJson = InputJson,
         Cron = Cron,
-        TimeZoneId = TimeZoneId == "UTC" ? null : TimeZoneId,
+        TimeZoneId = string.Equals(TimeZoneId, "UTC", StringComparison.Ordinal) ? null : TimeZoneId,
         Queue = Queue,
         NextExecution = NextExecution,
         CreatedAt = CreatedAt,

@@ -18,6 +18,17 @@ public interface IScheduler
     /// Optional deduplication key. If a job with this key already exists in
     /// <see cref="JobStatus.Enqueued"/> or <see cref="JobStatus.Processing"/> state,
     /// the existing <see cref="JobId"/> is returned and no new job is created.
+    /// Idempotency only applies to active states (<see cref="JobStatus.Enqueued"/>
+    /// and <see cref="JobStatus.Processing"/>). Jobs in terminal states
+    /// (<see cref="JobStatus.Failed"/>, <see cref="JobStatus.Succeeded"/>,
+    /// <see cref="JobStatus.Expired"/>) are considered complete — a new job
+    /// will be created if the same key is enqueued again.
+    /// If your job has side effects, ensure it is idempotent before re-enqueuing.
+    /// </param>
+    /// <param name="duplicatePolicy">
+    /// Controls the behaviour when a job with the same <paramref name="idempotencyKey"/>
+    /// already exists in a terminal failure state (<see cref="JobStatus.Failed"/>).
+    /// Defaults to <see cref="DuplicatePolicy.AllowAfterFailed"/>.
     /// </param>
     /// <param name="tags">
     /// Optional list of searchable tags attached to the job.
@@ -34,6 +45,7 @@ public interface IScheduler
         string? queue = null,
         JobPriority priority = JobPriority.Normal,
         string? idempotencyKey = null,
+        DuplicatePolicy duplicatePolicy = DuplicatePolicy.AllowAfterFailed,
         IReadOnlyList<string>? tags = null,
         TimeSpan? deadlineAfter = null,
         CancellationToken cancellationToken = default)
@@ -53,6 +65,17 @@ public interface IScheduler
     /// Optional deduplication key. If a job with this key already exists in
     /// <see cref="JobStatus.Enqueued"/> or <see cref="JobStatus.Processing"/> state,
     /// the existing <see cref="JobId"/> is returned and no new job is created.
+    /// Idempotency only applies to active states (<see cref="JobStatus.Enqueued"/>
+    /// and <see cref="JobStatus.Processing"/>). Jobs in terminal states
+    /// (<see cref="JobStatus.Failed"/>, <see cref="JobStatus.Succeeded"/>,
+    /// <see cref="JobStatus.Expired"/>) are considered complete — a new job
+    /// will be created if the same key is enqueued again.
+    /// If your job has side effects, ensure it is idempotent before re-enqueuing.
+    /// </param>
+    /// <param name="duplicatePolicy">
+    /// Controls the behaviour when a job with the same <paramref name="idempotencyKey"/>
+    /// already exists in a terminal failure state (<see cref="JobStatus.Failed"/>).
+    /// Defaults to <see cref="DuplicatePolicy.AllowAfterFailed"/>.
     /// </param>
     /// <param name="tags">
     /// Optional list of searchable tags attached to the job.
@@ -70,6 +93,7 @@ public interface IScheduler
         string? queue = null,
         JobPriority priority = JobPriority.Normal,
         string? idempotencyKey = null,
+        DuplicatePolicy duplicatePolicy = DuplicatePolicy.AllowAfterFailed,
         IReadOnlyList<string>? tags = null,
         TimeSpan? deadlineAfter = null,
         CancellationToken cancellationToken = default)

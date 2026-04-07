@@ -97,7 +97,7 @@ Production-ready:
 
 Planned:
 
-- Oracle (exists but NOT packable yet)
+(Oracle removed — no implementation, no roadmap)
 
 ---
 

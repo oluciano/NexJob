@@ -1,3 +1,4 @@
+#pragma warning disable MA0004
 using System.Data;
 using System.Text.Json;
 using Dapper;
@@ -26,32 +27,88 @@ public sealed class PostgresStorageProvider : IStorageProvider
         // (e.g., recurring_job_id → RecurringJobId, completed_at → CompletedAt)
         Dapper.DefaultTypeMap.MatchNamesWithUnderscores = true;
         // Sync-over-async is acceptable here: runs once at startup, before any requests are served.
+#pragma warning disable RS0030
         new SchemaMigrator().MigrateAsync(connectionString).GetAwaiter().GetResult();
+#pragma warning restore RS0030
     }
 
     // ── EnqueueAsync ──────────────────────────────────────────────────────────
 
     /// <inheritdoc/>
-    public async Task<JobId> EnqueueAsync(JobRecord job, CancellationToken cancellationToken = default)
+    public async Task<EnqueueResult> EnqueueAsync(JobRecord job, DuplicatePolicy duplicatePolicy = DuplicatePolicy.AllowAfterFailed, CancellationToken cancellationToken = default)
     {
         await using var conn = Open();
-        await conn.OpenAsync(cancellationToken);
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
 
         if (job.IdempotencyKey is not null)
         {
-            var existing = await conn.QuerySingleOrDefaultAsync<Guid?>(
-                """
-                SELECT id FROM nexjob_jobs
-                WHERE idempotency_key = @key
-                  AND status IN ('Enqueued','Processing','Scheduled','AwaitingContinuation')
-                LIMIT 1
-                """,
-                new { key = job.IdempotencyKey });
+            await using var tx = await conn.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
-            if (existing.HasValue)
+            var existing = await conn.QueryFirstOrDefaultAsync<(Guid Id, string Status)>(
+                """
+                SELECT id, status FROM nexjob_jobs
+                WHERE idempotency_key = @key
+                ORDER BY created_at DESC
+                LIMIT 1
+                FOR UPDATE
+                """,
+                new { key = job.IdempotencyKey },
+                tx);
+
+            if (existing.Id != Guid.Empty)
             {
-                return new JobId(existing.Value);
+                var existingId = new JobId(existing.Id);
+                var existingStatus = ParseStatus(existing.Status);
+
+                if (IsActiveState(existingStatus))
+                {
+                    await tx.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                    return new EnqueueResult(existingId, WasRejected: false);
+                }
+
+                var reject = existingStatus == JobStatus.Failed
+                    ? duplicatePolicy is DuplicatePolicy.RejectIfFailed or DuplicatePolicy.RejectAlways
+                    : duplicatePolicy == DuplicatePolicy.RejectAlways;
+
+                if (reject)
+                {
+                    await tx.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                    return new EnqueueResult(existingId, WasRejected: true);
+                }
             }
+
+            await conn.ExecuteAsync(
+                """
+                INSERT INTO nexjob_jobs
+                    (id, job_type, input_type, input_json, schema_version, queue, priority, status,
+                     idempotency_key, attempts, max_attempts, created_at, scheduled_at, parent_job_id, recurring_job_id, tags)
+                VALUES
+                    (@Id, @JobType, @InputType, @InputJson::jsonb, @SchemaVersion, @Queue, @Priority,
+                     @Status, @IdempotencyKey, @Attempts, @MaxAttempts, @CreatedAt, @ScheduledAt, @ParentJobId, @RecurringJobId, @Tags)
+                """,
+                new
+                {
+                    Id = job.Id.Value,
+                    job.JobType,
+                    job.InputType,
+                    job.InputJson,
+                    job.SchemaVersion,
+                    job.Queue,
+                    Priority = (int)job.Priority,
+                    Status = job.Status.ToString(),
+                    job.IdempotencyKey,
+                    job.Attempts,
+                    job.MaxAttempts,
+                    job.CreatedAt,
+                    job.ScheduledAt,
+                    ParentJobId = job.ParentJobId?.Value,
+                    job.RecurringJobId,
+                    Tags = job.Tags.ToArray(),
+                },
+                tx);
+
+            await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
+            return new EnqueueResult(job.Id, WasRejected: false);
         }
 
         await conn.ExecuteAsync(
@@ -83,7 +140,7 @@ public sealed class PostgresStorageProvider : IStorageProvider
                 Tags = job.Tags.ToArray(),
             });
 
-        return job.Id;
+        return new EnqueueResult(job.Id, WasRejected: false);
     }
 
     // ── FetchNextAsync ────────────────────────────────────────────────────────
@@ -503,7 +560,7 @@ public sealed class PostgresStorageProvider : IStorageProvider
 
         var counts = (await conn.QueryAsync<(string Status, int Count)>(
             "SELECT status, COUNT(*)::int FROM nexjob_jobs GROUP BY status"))
-            .ToDictionary(x => x.Status, x => x.Count);
+            .ToDictionary(x => x.Status, x => x.Count, StringComparer.Ordinal);
 
         var throughput = (await conn.QueryAsync<(DateTimeOffset Hour, int Count)>(
             """
@@ -549,10 +606,29 @@ public sealed class PostgresStorageProvider : IStorageProvider
         var where = new List<string>();
         var p = new DynamicParameters();
 
-        if (filter.Status.HasValue) { where.Add("status = @status"); p.Add("status", filter.Status.Value.ToString()); }
-        if (!string.IsNullOrWhiteSpace(filter.Queue)) { where.Add("queue = @queue"); p.Add("queue", filter.Queue); }
-        if (!string.IsNullOrWhiteSpace(filter.Search)) { where.Add("(job_type ILIKE @search OR id::text ILIKE @search)"); p.Add("search", $"%{filter.Search.Trim()}%"); }
-        if (!string.IsNullOrEmpty(filter.RecurringJobId)) { where.Add("recurring_job_id = @recurringJobId"); p.Add("recurringJobId", filter.RecurringJobId); }
+        if (filter.Status.HasValue)
+        {
+            where.Add("status = @status");
+            p.Add("status", filter.Status.Value.ToString());
+        }
+
+        if (!string.IsNullOrWhiteSpace(filter.Queue))
+        {
+            where.Add("queue = @queue");
+            p.Add("queue", filter.Queue);
+        }
+
+        if (!string.IsNullOrWhiteSpace(filter.Search))
+        {
+            where.Add("(job_type ILIKE @search OR id::text ILIKE @search)");
+            p.Add("search", $"%{filter.Search.Trim()}%");
+        }
+
+        if (!string.IsNullOrEmpty(filter.RecurringJobId))
+        {
+            where.Add("recurring_job_id = @recurringJobId");
+            p.Add("recurringJobId", filter.RecurringJobId);
+        }
 
         var clause = where.Count > 0 ? "WHERE " + string.Join(" AND ", where) : string.Empty;
         var total = await conn.ExecuteScalarAsync<int>($"SELECT COUNT(*)::int FROM nexjob_jobs {clause}", p);
@@ -636,6 +712,119 @@ public sealed class PostgresStorageProvider : IStorageProvider
     }
 
     /// <inheritdoc/>
+    public async Task CommitJobResultAsync(
+        JobId jobId, JobExecutionResult result, CancellationToken cancellationToken = default)
+    {
+        await using var conn = Open();
+        await conn.OpenAsync(cancellationToken);
+        await using var tx = await conn.BeginTransactionAsync(cancellationToken);
+
+        // Idempotency guard
+        var currentStatus = await conn.ExecuteScalarAsync<string?>(
+            "SELECT status FROM nexjob_jobs WHERE id = @id FOR UPDATE",
+            new { id = jobId.Value }, transaction: tx);
+
+        if (currentStatus is null or "Succeeded" or "Failed" or "Expired")
+        {
+            await tx.RollbackAsync(cancellationToken);
+            return;
+        }
+
+        var logsJson = JsonSerializer.Serialize(result.Logs);
+
+        if (result.Succeeded)
+        {
+            await conn.ExecuteAsync(
+                """
+                UPDATE nexjob_jobs
+                SET status = 'Succeeded', completed_at = NOW(), heartbeat_at = NULL, execution_logs = @Logs::jsonb
+                WHERE id = @id
+                """,
+                new { id = jobId.Value, Logs = logsJson },
+                transaction: tx);
+
+            // Enqueue continuations
+            await conn.ExecuteAsync(
+                """
+                UPDATE nexjob_jobs
+                SET status = 'Enqueued', scheduled_at = NULL
+                WHERE parent_job_id = @id AND status = 'AwaitingContinuation'
+                """,
+                new { id = jobId.Value },
+                transaction: tx);
+
+            // Update recurring result
+            if (result.RecurringJobId is not null)
+            {
+                await conn.ExecuteAsync(
+                    """
+                    UPDATE nexjob_recurring_jobs
+                    SET last_execution_status = 'Succeeded', last_execution_error = NULL, updated_at = NOW()
+                    WHERE recurring_job_id = @rid
+                    """,
+                    new { rid = result.RecurringJobId },
+                    transaction: tx);
+            }
+        }
+        else
+        {
+            if (result.RetryAt.HasValue)
+            {
+                await conn.ExecuteAsync(
+                    """
+                    UPDATE nexjob_jobs
+                    SET status = 'Scheduled', retry_at = @retryAt,
+                        exception_message = @msg, exception_stack_trace = @stack,
+                        heartbeat_at = NULL, execution_logs = @Logs::jsonb
+                    WHERE id = @id
+                    """,
+                    new
+                    {
+                        id = jobId.Value,
+                        retryAt = result.RetryAt.Value,
+                        msg = result.Exception?.Message,
+                        stack = result.Exception?.StackTrace,
+                        Logs = logsJson,
+                    },
+                    transaction: tx);
+            }
+            else
+            {
+                await conn.ExecuteAsync(
+                    """
+                    UPDATE nexjob_jobs
+                    SET status = 'Failed', completed_at = NOW(),
+                        exception_message = @msg, exception_stack_trace = @stack,
+                        heartbeat_at = NULL, execution_logs = @Logs::jsonb
+                    WHERE id = @id
+                    """,
+                    new
+                    {
+                        id = jobId.Value,
+                        msg = result.Exception?.Message,
+                        stack = result.Exception?.StackTrace,
+                        Logs = logsJson,
+                    },
+                    transaction: tx);
+
+                if (result.RecurringJobId is not null)
+                {
+                    await conn.ExecuteAsync(
+                        """
+                        UPDATE nexjob_recurring_jobs
+                        SET last_execution_status = 'Failed', last_execution_error = @msg, updated_at = NOW()
+                        WHERE recurring_job_id = @rid
+                        """,
+                        new { rid = result.RecurringJobId, msg = result.Exception?.Message },
+                        transaction: tx);
+                }
+            }
+        }
+
+        await tx.CommitAsync(cancellationToken);
+    }
+
+    /// <inheritdoc/>
     public async Task<bool> TryAcquireRecurringJobLockAsync(
         string recurringJobId, TimeSpan ttl, CancellationToken ct = default)
     {
@@ -689,5 +878,12 @@ public sealed class PostgresStorageProvider : IStorageProvider
 
     // ── Schema ────────────────────────────────────────────────────────────────
 
+    private static JobStatus ParseStatus(string status) =>
+        Enum.TryParse<JobStatus>(status, out var parsed) ? parsed : JobStatus.Failed;
+
+    private static bool IsActiveState(JobStatus status) =>
+        status is JobStatus.Enqueued or JobStatus.Processing or JobStatus.Scheduled or JobStatus.AwaitingContinuation;
+
     private NpgsqlConnection Open() => new(_connectionString);
 }
+#pragma warning restore MA0004

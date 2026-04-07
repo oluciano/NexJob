@@ -5,6 +5,9 @@ using NexJob.Storage;
 
 namespace NexJob.Internal;
 
+/// <summary>
+/// Orchestrates the registration and update of recurring jobs from configuration.
+/// </summary>
 internal sealed class RecurringJobRegistrar
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -17,6 +20,12 @@ internal sealed class RecurringJobRegistrar
     private readonly ILogger<RecurringJobRegistrar> _logger;
     private readonly List<string> _registeredJobIds = [];
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="RecurringJobRegistrar"/> class.
+    /// </summary>
+    /// <param name="storage">The storage provider.</param>
+    /// <param name="jobRegistry">The job registry.</param>
+    /// <param name="logger">The logger.</param>
     public RecurringJobRegistrar(
         IStorageProvider storage,
         NexJobJobRegistry jobRegistry,
@@ -27,8 +36,15 @@ internal sealed class RecurringJobRegistrar
         _logger = logger;
     }
 
+    /// <summary>Gets the list of IDs that were successfully registered during the current session.</summary>
     public IReadOnlyList<string> RegisteredJobIds => _registeredJobIds;
 
+    /// <summary>
+    /// Registers a collection of recurring jobs.
+    /// </summary>
+    /// <param name="recurringJobs">The settings for the jobs to register.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>A task representing the asynchronous operation.</returns>
     public async Task RegisterRecurringJobsAsync(
         IEnumerable<RecurringJobSettings> recurringJobs,
         CancellationToken cancellationToken = default)
@@ -38,7 +54,7 @@ internal sealed class RecurringJobRegistrar
 
         foreach (var (config, effectiveId) in assignments)
         {
-            await RegisterRecurringJobAsync(config, effectiveId, cancellationToken);
+            await RegisterRecurringJobAsync(config, effectiveId, cancellationToken).ConfigureAwait(false);
         }
 
         _logger.LogInformation(
@@ -50,6 +66,10 @@ internal sealed class RecurringJobRegistrar
     // Static Helpers
     // ────────────────────────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Validates the configuration for a recurring job.
+    /// </summary>
+    /// <param name="jobConfig">The job configuration to validate.</param>
     private static void ValidateJobConfiguration(RecurringJobSettings jobConfig)
     {
         if (string.IsNullOrWhiteSpace(jobConfig.Job))
@@ -63,11 +83,20 @@ internal sealed class RecurringJobRegistrar
         }
     }
 
+    /// <summary>
+    /// Parses and validates a cron expression.
+    /// </summary>
+    /// <param name="cronExpression">The cron expression to validate.</param>
     private static void ParseAndValidateCron(string cronExpression)
     {
         DefaultScheduler.ParseCron(cronExpression);
     }
 
+    /// <summary>
+    /// Calculates the next execution time for a job.
+    /// </summary>
+    /// <param name="jobConfig">The job configuration.</param>
+    /// <returns>The calculated next execution time, or null if invalid.</returns>
     private static DateTimeOffset? CalculateNextExecution(RecurringJobSettings jobConfig)
     {
         try
@@ -81,6 +110,11 @@ internal sealed class RecurringJobRegistrar
         }
     }
 
+    /// <summary>
+    /// Resolves the input type for a given job type.
+    /// </summary>
+    /// <param name="jobType">The job type.</param>
+    /// <returns>The resolved input type, or null if none.</returns>
     private static Type? ResolveInputType(Type jobType)
     {
         var jobInterface = Array.Find(
@@ -89,6 +123,12 @@ internal sealed class RecurringJobRegistrar
         return jobInterface?.GetGenericArguments()[0];
     }
 
+    /// <summary>
+    /// Serializes input for a job based on its type.
+    /// </summary>
+    /// <param name="inputJson">The raw input JSON.</param>
+    /// <param name="inputType">The resolved input type.</param>
+    /// <returns>The serialized input JSON.</returns>
     private static string SerializeInput(string? inputJson, Type? inputType)
     {
         if (inputType == null || string.IsNullOrWhiteSpace(inputJson))
@@ -110,11 +150,16 @@ internal sealed class RecurringJobRegistrar
         }
     }
 
+    /// <summary>
+    /// Assigns effective IDs to job configurations, handling duplicates and defaults.
+    /// </summary>
+    /// <param name="configs">The job configurations.</param>
+    /// <returns>A collection of configurations with their assigned effective IDs.</returns>
     private static IEnumerable<(RecurringJobSettings Config, string EffectiveId)> AssignEffectiveIds(
         IEnumerable<RecurringJobSettings> configs)
     {
         var list = configs.ToList();
-        var nameCount = new Dictionary<string, int>();
+        var nameCount = new Dictionary<string, int>(StringComparer.Ordinal);
 
         // Count how many times each unnamed job appears
         foreach (var name in list
@@ -124,7 +169,7 @@ internal sealed class RecurringJobRegistrar
             nameCount[name] = nameCount.GetValueOrDefault(name) + 1;
         }
 
-        var nameIndex = new Dictionary<string, int>();
+        var nameIndex = new Dictionary<string, int>(StringComparer.Ordinal);
         foreach (var c in list)
         {
             string id;
@@ -161,6 +206,13 @@ internal sealed class RecurringJobRegistrar
     // Instance Methods
     // ────────────────────────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Registers a single recurring job.
+    /// </summary>
+    /// <param name="jobConfig">The job configuration.</param>
+    /// <param name="effectiveId">The effective ID assigned to this job.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>A task representing the asynchronous operation.</returns>
     private async Task RegisterRecurringJobAsync(
         RecurringJobSettings jobConfig,
         string effectiveId,
@@ -194,7 +246,7 @@ internal sealed class RecurringJobRegistrar
                 NextExecution = nextExecution,
             };
 
-            var existingJob = await _storage.GetRecurringJobByIdAsync(effectiveId, cancellationToken);
+            var existingJob = await _storage.GetRecurringJobByIdAsync(effectiveId, cancellationToken).ConfigureAwait(false);
             if (existingJob != null)
             {
                 _logger.LogWarning(
@@ -203,7 +255,7 @@ internal sealed class RecurringJobRegistrar
                 return;
             }
 
-            await _storage.UpsertRecurringJobAsync(recurringJob, cancellationToken);
+            await _storage.UpsertRecurringJobAsync(recurringJob, cancellationToken).ConfigureAwait(false);
 
             _registeredJobIds.Add(effectiveId);
             _logger.LogInformation(
@@ -221,10 +273,15 @@ internal sealed class RecurringJobRegistrar
         }
     }
 
+    /// <summary>
+    /// Resolves a job type by its name using the job registry.
+    /// </summary>
+    /// <param name="jobName">The name of the job to resolve.</param>
+    /// <returns>The resolved job type.</returns>
     private Type ResolveJobTypeByName(string jobName)
     {
         var matches = _jobRegistry.Types
-            .Where(t => t.Name == jobName)
+            .Where(t => string.Equals(t.Name, jobName, StringComparison.Ordinal))
             .ToList();
 
         return matches.Count switch

@@ -93,8 +93,7 @@ public static class NexJobServiceCollectionExtensions
                         i.IsGenericType && i.GetGenericTypeDefinition() == jobGenericInterface)
                     ||
                     // IJob (no-input)
-                    Array.Exists(t.GetInterfaces(), i => i == jobSimpleInterface)
-                ));
+                    Array.Exists(t.GetInterfaces(), i => i == jobSimpleInterface)));
 
         var registry = GetOrCreateRegistry(services);
         foreach (var jobType in jobTypes)
