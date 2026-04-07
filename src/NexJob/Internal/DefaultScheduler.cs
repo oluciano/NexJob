@@ -338,6 +338,41 @@ internal sealed class DefaultScheduler : IScheduler
     }
 
     /// <inheritdoc/>
+    public async Task<JobId> ContinueWithAsync<TJob>(
+        JobId parentJobId,
+        string? queue = null,
+        CancellationToken cancellationToken = default)
+        where TJob : IJob
+    {
+        var traceParent = Activity.Current?.Id;
+
+        var job = new JobRecord
+        {
+            Id = JobId.New(),
+            JobType = typeof(TJob).AssemblyQualifiedName!,
+            InputType = typeof(NoInput).AssemblyQualifiedName!,
+            InputJson = JsonSerializer.Serialize(NoInput.Instance),
+            Queue = queue ?? "default",
+            Priority = JobPriority.Normal,
+            Status = JobStatus.AwaitingContinuation,
+            ParentJobId = parentJobId,
+            CreatedAt = DateTimeOffset.UtcNow,
+            MaxAttempts = _options.MaxAttempts,
+            TraceParent = traceParent,
+            Tags = [],
+        };
+
+        using var activity = NexJobActivitySource.StartEnqueue(typeof(TJob).FullName ?? typeof(TJob).Name, job.Queue);
+        var jobId = await _storage.EnqueueAsync(job, DuplicatePolicy.AllowAfterFailed, cancellationToken).ConfigureAwait(false);
+
+        activity?.SetTag("nexjob.job_id", jobId.JobId.Value.ToString());
+        activity?.SetTag("nexjob.parent_job_id", parentJobId.Value.ToString());
+        NexJobMetrics.JobsEnqueued.Add(1, new TagList { { "nexjob.job_type", typeof(TJob).Name }, { "nexjob.queue", job.Queue }, { "nexjob.continuation", "true" } });
+
+        return jobId.JobId;
+    }
+
+    /// <inheritdoc/>
     public Task RemoveRecurringAsync(string recurringJobId, CancellationToken cancellationToken = default) =>
         _storage.DeleteRecurringJobAsync(recurringJobId, cancellationToken);
 

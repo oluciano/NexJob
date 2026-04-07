@@ -8,6 +8,9 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`ContinueWithAsync<TJob>`** — new no-input overload for chaining `IJob` continuations after a parent job completes.
+- **`ThrottleAttribute` documentation** — clarified that concurrency limits are enforced per worker process (local), not cluster-wide.
+
 ### Changed
 
 ### Fixed
