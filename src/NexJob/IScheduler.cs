@@ -249,6 +249,20 @@ public interface IScheduler
         where TJob : IJob<TInput>;
 
     /// <summary>
+    /// Schedules a no-input job to execute immediately after the specified parent job succeeds.
+    /// </summary>
+    /// <typeparam name="TJob">The <see cref="IJob"/> implementation to execute.</typeparam>
+    /// <param name="parentJobId">The identifier of the job that must complete before this one runs.</param>
+    /// <param name="queue">Target queue name. Uses the default queue when <see langword="null"/>.</param>
+    /// <param name="cancellationToken">Token to cancel the operation.</param>
+    /// <returns>The identifier of the continuation job.</returns>
+    Task<JobId> ContinueWithAsync<TJob>(
+        JobId parentJobId,
+        string? queue = null,
+        CancellationToken cancellationToken = default)
+        where TJob : IJob;
+
+    /// <summary>
     /// Removes a recurring job definition. Any already-enqueued instances are not affected.
     /// </summary>
     /// <param name="recurringJobId">The identifier of the recurring job to remove.</param>
