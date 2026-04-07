@@ -754,6 +754,6 @@ public abstract class StorageProviderTestsBase
     private static bool IsServerTrackingNotSupported(IStorageProvider storage)
     {
         var name = storage.GetType().Name;
-        return name.Contains("Redis") || name.Contains("SqlServer") || name.Contains("Oracle");
+        return name.Contains("Redis") || name.Contains("SqlServer");
     }
 }

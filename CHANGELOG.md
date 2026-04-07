@@ -7,6 +7,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **NexJob.Oracle removed** — stub project with no implementation removed from the solution. Oracle support may be contributed as a community provider in the future.
 - **`DuplicatePolicy` — idempotency key duplicate control** — new enum (`AllowAfterFailed`, `RejectIfFailed`, `RejectAlways`) controls what happens when a job with the same `idempotencyKey` already exists in a terminal failure state. Default is `AllowAfterFailed` (at-least-once semantics). `RejectAlways` guarantees exactly-once across the full job lifetime.
 - **`EnqueueResult`** — rich return type from `IStorageProvider.EnqueueAsync` containing `JobId` and `WasRejected` flag.
 - **`DuplicateJobException`** — thrown by `IScheduler.EnqueueAsync` when enqueue is rejected by `DuplicatePolicy`. Contains `IdempotencyKey`, `ExistingJobId`, and `Policy`.
@@ -136,7 +137,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 - **README reorganized** — Quick Start and Features sections separated. Registration step now shows only service configuration (no dashboard middleware mixed in). Dashboard setup moved to dedicated step. Example code updated to use correct recurring job API (`RecurringAsync<TJob, TInput>` with input parameter). No-input job example now self-contained with constructor.
-- **Storage providers table** — clarified implementation status: four providers marked "Production ready" (In-memory, Postgres, SQL Server, Redis, MongoDB); Oracle marked "Planned".
+- **Storage providers table** — clarified implementation status: all five providers marked "Production ready" (In-memory, Postgres, SQL Server, Redis, MongoDB).
 
 ### Fixed
 - Recurring job examples in README now match actual `IScheduler` API (requires `TInput` parameter).
@@ -246,7 +247,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 - Core: `IJob<TInput>`, `IScheduler`, `IStorageProvider`
-- Storage: InMemory, PostgreSQL, SQL Server, Redis, MongoDB, Oracle (stub)
+- Storage: InMemory, PostgreSQL, SQL Server, Redis, MongoDB
 - Dashboard (Blazor SSR) with live updates, dark mode, settings page
 - `appsettings.json` configuration with `IRuntimeSettingsStore` hot-reload
 - Execution windows per queue (supports midnight-crossing ranges)
