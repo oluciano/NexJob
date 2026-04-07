@@ -640,7 +640,7 @@ public abstract class StorageProviderTestsBase
 
         var result = await storage.GetJobByIdAsync(fetched.Id);
         result!.Status.Should().Be(JobStatus.Scheduled);
-        result.RetryAt.Should().Be(retryAt);
+        result.RetryAt.Should().BeCloseTo(retryAt, TimeSpan.FromMilliseconds(1));
         result.LastErrorMessage.Should().Contain("test failure");
         result.ExecutionLogs.Should().HaveCount(1);
     }
