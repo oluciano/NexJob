@@ -34,6 +34,30 @@ Failed → Dead-letter (terminal, handler invoked)
 
 ---
 
+## Storage Contract
+
+### Execution result must be committed atomically
+All job finalisation mutations — status, logs, continuations, recurring result — must be
+persisted in a single call to `CommitJobResultAsync`. Never call `AcknowledgeAsync`,
+`SaveExecutionLogsAsync`, and `EnqueueContinuationsAsync` as separate steps from the dispatcher.
+
+**Rule:** Partial persistence is not acceptable. Either all finalisation mutations apply or none.
+
+### CommitJobResultAsync is idempotent
+Calling `CommitJobResultAsync` twice with the same `JobId` on a job already in a terminal
+state (`Succeeded`, `Failed`, `Expired`) must be a no-op — no exception, no duplicate mutations.
+
+**Rule:** Every provider implementation must include an idempotency guard at the start of `CommitJobResultAsync`.
+
+### DuplicatePolicy governs re-enqueue on terminal failure
+When `idempotencyKey` is supplied, `EnqueueAsync` checks for an existing job with the same key.
+Active states (`Enqueued`, `Processing`, `Scheduled`, `AwaitingContinuation`) always deduplicate.
+Terminal states (`Failed`, `Succeeded`, `Expired`) are governed by `DuplicatePolicy`.
+
+**Rule:** `DuplicatePolicy` default is `AllowAfterFailed`. Rejection throws `DuplicateJobException` from the scheduler — never from the storage provider directly.
+
+---
+
 ## Execution Constraints
 
 1. **Deadline** — calculated at enqueue, stored as `ExpiresAt`, checked before execution

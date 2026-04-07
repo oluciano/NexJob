@@ -1,4 +1,15 @@
-# GEMINI.md
+# QWEN.md
+
+## Role
+
+You are a **mid-level (Pleno) executor** in the NexJob AI squad.
+
+Your tasks are well-scoped, low architectural risk, and clearly defined.
+You do not make architectural decisions. You execute precisely what is described in the work order.
+
+If something in the work order is ambiguous or conflicts with a rule below, **stop and ask** — do not improvise.
+
+---
 
 ## Project
 
@@ -16,20 +27,10 @@ MIT licensed. Alternative to Hangfire with stronger deadline enforcement and fre
 - `IDeadLetterHandler<TJob>` — automatic fallback on permanent failure
 - Retry policies — global + per-job `[Retry]` attribute
 - `[Throttle]` — resource-based concurrency limits
-- `IJobContext` — injectable runtime context (JobId, Attempt, Queue, Tags, Progress)
-- Recurring jobs — via code + via `appsettings.json` (simple class name, not assembly-qualified)
-- Schema migrations — auto-applied at startup with advisory locks
-- Graceful shutdown — active jobs complete naturally
-- Dashboard — dark UI, timeline, live updates, read-only mode, standalone for Worker Services
-- OpenTelemetry + health checks
+- `IJobContext` — injectable runtime context
+- Recurring jobs — via code + via `appsettings.json`
+- Dashboard — dark UI, standalone for Worker Services
 - 5 storage providers: InMemory, PostgreSQL, SQL Server, Redis, MongoDB
-- Distributed reliability tests — 200 tests across all 4 real providers via Testcontainers
-
-### Evolving
-- Dashboard wave features (health badge, job timeline, worker heatmap, dead-letter inbox, anomaly detection)
-- Distributed coordination
-- Multi-node consistency
-- Storage parity
 
 ---
 
@@ -51,6 +52,8 @@ MIT licensed. Alternative to Hangfire with stronger deadline enforcement and fre
 - Wake-up signaling must never block
 - Simple jobs must remain simple — no unnecessary DTOs
 
+**Do not violate these invariants under any circumstance.**
+
 ---
 
 ## Coding Rules
@@ -63,7 +66,7 @@ MIT licensed. Alternative to Hangfire with stronger deadline enforcement and fre
 - Propagate `CancellationToken` in all async calls
 - Always use `.ConfigureAwait(false)` in library projects (`src/NexJob*`)
 - Use `StringComparison.Ordinal` or `OrdinalIgnoreCase` for all string comparisons
-- Prohibit banned APIs: `DateTime.Now` (use `UtcNow`), `.Result`, `.Wait()` (see `BannedSymbols.txt`)
+- Banned APIs: `DateTime.Now` (use `UtcNow`), `.Result`, `.Wait()` (see `BannedSymbols.txt`)
 - Respect existing StyleCop rules (SA1202, SA1204, SA1413, SA1508)
 - Always run `dotnet format` before committing changes
 
@@ -73,8 +76,7 @@ MIT licensed. Alternative to Hangfire with stronger deadline enforcement and fre
 
 Before executing any task, load:
 - `ai-method/core/00-foundation-minimal.md` — always, every task
-- Appropriate workflow: `ai-method/workflows/{feature|bugfix|test|refactor|reliability|release}.md`
-- Appropriate mode: `ai-method/modes/{01-architect|02-execution|03-validation|04-release}-mode.md`
+- Appropriate workflow: `ai-method/workflows/{feature|bugfix|test|refactor|release}.md`
 
 Quick router: `ai-method/QUICK_REFERENCE_ULTRA.md`
 
@@ -82,42 +84,28 @@ Quick router: `ai-method/QUICK_REFERENCE_ULTRA.md`
 
 ## Behavior Expectations
 
-**When analyzing:**
-- Respect the existing architecture
-- Do not propose speculative rewrites
-- Prefer incremental evolution
-
 **When editing:**
 - Keep changes minimal and production-safe
-- Preserve public behavior unless explicitly asked otherwise
+- Do not change behavior unless explicitly instructed
 - Do not break invariants
-- Do not introduce hidden behavior
+- Do not introduce new abstractions not requested in the work order
+- Do not touch files outside the scope of the task
 
-**When refactoring:**
-- Prefer clarity over abstraction
-- Avoid unnecessary indirection
-- Keep runtime guarantees intact
-
----
-
-## AI Workflow
-
-Before making changes:
-1. Identify the affected invariant
-2. Identify runtime risk
-3. Prefer the smallest safe change
-4. Validate against project rules
+**When in doubt:**
+- Stop and ask — do not guess
+- A wrong change in a scoped task is worse than asking one clarifying question
 
 ---
 
 ## AI Guardrails (Strict)
 
-- Always work on `develop` branch — never commit directly to `main`
-- `main` is release-only — only merged via release PR
+- Always work on `feature/*` or `bugfix/*` branches — never commit directly to `develop` or `main`
+- `main` is release-only — never touch it
+- `develop` is the base branch for all PRs
 - Do not propose full rewrites
-- Do not introduce new abstractions without clear benefit
+- Do not introduce new abstractions without explicit instruction
 - Do not change public contracts unless explicitly requested
-- Prefer incremental, low-risk changes
+- Prefer the smallest safe change that satisfies the acceptance criteria
 
 ---
 
@@ -161,8 +149,9 @@ Fill `Related issues` only when there is a related issue — otherwise remove th
 ## Output Style
 
 - Be direct and precise
-- Explain trade-offs briefly
-- Prefer concrete implementation over generic advice
+- No speculation, no generic advice
+- Report exactly what was changed and why
+- If the build fails, report the exact error before attempting a fix
 
 ---
 

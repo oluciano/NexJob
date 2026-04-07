@@ -4,11 +4,13 @@ using MongoDB.Bson.Serialization.Serializers;
 
 namespace NexJob.MongoDB;
 
-/// <summary>Serializes <see cref="Nullable{JobId}"/> for optional parent references.</summary>
+/// <summary>Serializes nullable <see cref="JobId"/> as a BSON string (UUID format) or Null.</summary>
 internal sealed class NullableJobIdSerializer : SerializerBase<JobId?>
 {
+    /// <summary>The singleton instance of the serializer.</summary>
     public static readonly NullableJobIdSerializer Instance = new();
 
+    /// <inheritdoc/>
     public override JobId? Deserialize(BsonDeserializationContext context, BsonDeserializationArgs args)
     {
         if (context.Reader.CurrentBsonType == BsonType.Null)
@@ -17,12 +19,14 @@ internal sealed class NullableJobIdSerializer : SerializerBase<JobId?>
             return null;
         }
 
-        return new JobId(Guid.Parse(context.Reader.ReadString()));
+        var value = context.Reader.ReadString();
+        return new JobId(Guid.Parse(value));
     }
 
+    /// <inheritdoc/>
     public override void Serialize(BsonSerializationContext context, BsonSerializationArgs args, JobId? value)
     {
-        if (value is null)
+        if (value == null)
         {
             context.Writer.WriteNull();
         }

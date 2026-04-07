@@ -38,7 +38,6 @@ src/
   NexJob.MongoDB/
   NexJob.Redis/
   NexJob.SqlServer/
-  NexJob.Oracle/
   NexJob.Dashboard/
 
 tests/

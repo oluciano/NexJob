@@ -10,6 +10,31 @@ See `ARCHITECTURE.md` for the authoritative system design.
 
 ---
 
+## Dispatcher Architecture
+
+### JobDispatcherService is an orchestrator
+`ExecuteJobAsync` is a thin orchestrator — it calls private named methods for each stage.
+Do not add inline business logic to it. Each stage has a single responsibility:
+
+- `TryHandleExpirationAsync` — deadline check only
+- `PrepareInvocationAsync` — type resolution, migration, deserialization, DI scope
+- `ExecuteWithThrottlingAsync` — throttle acquisition + job invocation
+- `HandleFailureAsync` — retry calculation + decision logging
+- `RecordSuccessMetrics` — metrics only
+
+### JobInvocationContext owns the DI scope
+`JobInvocationContext` implements `IDisposable` and disposes the DI scope on `Dispose()`.
+Always use `using var context = await PrepareInvocationAsync(job)` — never dispose manually.
+
+### Decision logging is mandatory at decision points
+The dispatcher must log the *reason* for every automatic decision:
+- Queue skipped (paused or outside window) → `LogDebug`
+- Throttle wait started → `LogDebug`
+- Retry scheduled → `LogInformation` with delay and scheduled time
+- Dead-letter → `LogError`
+
+---
+
 ## Design Constraints (Runtime Guarantees)
 
 1. Wake-up signaling must never block (bounded channel, capacity 1, collapses signals)

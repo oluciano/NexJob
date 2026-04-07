@@ -1,3 +1,4 @@
+#pragma warning disable MA0004
 using Dapper;
 using Microsoft.Data.SqlClient;
 
@@ -30,7 +31,7 @@ internal sealed class SchemaMigrator
     public async Task MigrateAsync(string connectionString, CancellationToken ct = default)
     {
         await using var conn = new SqlConnection(connectionString);
-        await conn.OpenAsync(ct);
+        await conn.OpenAsync(ct).ConfigureAwait(false);
         await using var tx = (SqlTransaction)await conn.BeginTransactionAsync(ct);
 
         try
@@ -72,7 +73,7 @@ internal sealed class SchemaMigrator
                     var trimmed = statement.Trim();
                     if (trimmed.Length > 0)
                     {
-                        await conn.ExecuteAsync(trimmed, transaction: tx);
+                        await conn.ExecuteAsync(trimmed, transaction: tx).ConfigureAwait(false);
                     }
                 }
 
@@ -82,11 +83,11 @@ internal sealed class SchemaMigrator
                     transaction: tx);
             }
 
-            await tx.CommitAsync(ct);
+            await tx.CommitAsync(ct).ConfigureAwait(false);
         }
         catch
         {
-            await tx.RollbackAsync(ct);
+            await tx.RollbackAsync(ct).ConfigureAwait(false);
             throw;
         }
     }
@@ -103,3 +104,4 @@ internal sealed class SchemaMigrator
         => all.Where(m => !applied.Contains(m.Version))
               .OrderBy(m => m.Version);
 }
+#pragma warning restore MA0004

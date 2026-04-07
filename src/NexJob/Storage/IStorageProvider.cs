@@ -12,16 +12,22 @@ namespace NexJob.Storage;
 public interface IStorageProvider
 {
     /// <summary>
-    /// Persists a new job record and, if it is immediately eligible (status =
-    /// <see cref="JobStatus.Enqueued"/>), makes it available for workers to claim.
+    /// Persists a new job record and makes it available for execution.
     /// </summary>
     /// <param name="job">The job record to persist.</param>
+    /// <param name="duplicatePolicy">
+    /// Controls the behaviour when a job with the same <see cref="JobRecord.IdempotencyKey"/>
+    /// already exists in a terminal failure state. Ignored when <see cref="JobRecord.IdempotencyKey"/>
+    /// is <see langword="null"/>.
+    /// </param>
     /// <param name="cancellationToken">Token to cancel the operation.</param>
     /// <returns>
-    /// The <see cref="JobId"/> of the persisted job, or the <see cref="JobId"/> of the
-    /// existing job when an idempotency key collision is detected.
+    /// An <see cref="EnqueueResult"/> containing the job identifier and whether the enqueue was rejected.
     /// </returns>
-    Task<JobId> EnqueueAsync(JobRecord job, CancellationToken cancellationToken = default);
+    Task<EnqueueResult> EnqueueAsync(
+        JobRecord job,
+        DuplicatePolicy duplicatePolicy = DuplicatePolicy.AllowAfterFailed,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Atomically claims the next available job from the specified queues and marks it
@@ -253,6 +259,25 @@ public interface IStorageProvider
     /// <param name="logs">Captured log entries to persist.</param>
     /// <param name="cancellationToken">Token to cancel the operation.</param>
     Task SaveExecutionLogsAsync(JobId jobId, IReadOnlyList<JobExecutionLog> logs, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Atomically persists the complete outcome of a job execution.
+    /// On success: marks the job as <see cref="JobStatus.Succeeded"/>, saves execution logs,
+    /// enqueues any waiting continuations, and updates the recurring job result if applicable.
+    /// On failure: calls <see cref="SetFailedAsync"/> semantics, saves execution logs,
+    /// and updates the recurring job result if the job is permanently dead-lettered.
+    /// </summary>
+    /// <remarks>
+    /// Implementations must guarantee that all mutations are applied as a single atomic unit.
+    /// If the process crashes after this call is issued but before it returns, the storage layer
+    /// must either apply all changes or none — partial state is not acceptable.
+    /// Re-invoking this method with the same <paramref name="jobId"/> and a result that matches
+    /// the already-persisted terminal state must be treated as a no-op (idempotent).
+    /// </remarks>
+    /// <param name="jobId">The identifier of the job whose result is being committed.</param>
+    /// <param name="result">The complete execution outcome.</param>
+    /// <param name="cancellationToken">Token to cancel the operation.</param>
+    Task CommitJobResultAsync(JobId jobId, JobExecutionResult result, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Returns per-queue metrics (enqueued + processing counts) for all active queues.

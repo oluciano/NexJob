@@ -1,7 +1,7 @@
 [config]
-model = "gemini/gemini-1.5-pro"
-model_weak = "gemini/gemini-1.5-flash"
-fallback_models = ["gemini/gemini-1.5-pro", "gemini/gemini-1.5-flash"]
+model = "gemini/gemini-1.5-pro-latest"
+model_weak = "gemini/gemini-1.5-flash-latest"
+fallback_models = ["gemini/gemini-1.5-pro-latest"]
 use_repo_settings_file = true
 
 [pr_reviewer]
