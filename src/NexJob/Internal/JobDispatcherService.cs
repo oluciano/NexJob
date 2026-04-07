@@ -229,7 +229,9 @@ internal sealed class JobDispatcherService : BackgroundService
     private async Task ExecuteJobAsync(JobRecord job)
     {
         if (await TryHandleExpirationAsync(job).ConfigureAwait(false))
+        {
             return;
+        }
 
         _logger.LogDebug("Executing job {JobId} ({JobType}), attempt {Attempt}/{Max}",
             job.Id, job.JobType, job.Attempts, job.MaxAttempts);
@@ -279,7 +281,9 @@ internal sealed class JobDispatcherService : BackgroundService
             }
 
             if (retryAt is null)
+            {
                 await InvokeDeadLetterHandlerAsync(job, ex, CancellationToken.None).ConfigureAwait(false);
+            }
         }
         finally
         {
@@ -295,7 +299,9 @@ internal sealed class JobDispatcherService : BackgroundService
     private async Task<bool> TryHandleExpirationAsync(JobRecord job)
     {
         if (!job.ExpiresAt.HasValue || DateTimeOffset.UtcNow <= job.ExpiresAt.Value)
+        {
             return false;
+        }
 
         _logger.LogInformation(
             "Job {JobId} ({JobType}) expired at {ExpiresAt} — discarding",
@@ -363,7 +369,9 @@ internal sealed class JobDispatcherService : BackgroundService
         finally
         {
             foreach (var sem in acquired)
+            {
                 sem.Release();
+            }
         }
     }
 
