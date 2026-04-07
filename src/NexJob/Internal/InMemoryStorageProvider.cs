@@ -13,6 +13,7 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
 {
     // ─── state ───────────────────────────────────────────────────────────────
 
+    private readonly object _lock = new();
     private readonly ConcurrentDictionary<Guid, JobRecord> _jobs = new();
     private readonly ConcurrentDictionary<string, Guid> _idempotencyIndex = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, RecurringJobRecord> _recurringJobs = new(StringComparer.Ordinal);
@@ -27,36 +28,48 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
     // ─── IStorageProvider ────────────────────────────────────────────────────
 
     /// <inheritdoc/>
-    public Task<JobId> EnqueueAsync(JobRecord job, CancellationToken cancellationToken = default)
+    public Task<EnqueueResult> EnqueueAsync(JobRecord job, DuplicatePolicy duplicatePolicy = DuplicatePolicy.AllowAfterFailed, CancellationToken cancellationToken = default)
     {
-        // Idempotency check
-        if (job.IdempotencyKey is not null)
+        lock (_lock)
         {
-            if (_idempotencyIndex.TryGetValue(job.IdempotencyKey, out var existingId) &&
-                _jobs.TryGetValue(existingId, out var existingJob) &&
-                existingJob.Status is JobStatus.Enqueued or JobStatus.Scheduled or JobStatus.Processing)
+            if (job.IdempotencyKey is not null)
             {
-                return Task.FromResult(existingJob.Id);
+                var existingJob = FindExistingJobByKey(job.IdempotencyKey);
+
+                if (existingJob is not null)
+                {
+                    if (IsActiveState(existingJob.Status))
+                    {
+                        return Task.FromResult(new EnqueueResult(existingJob.Id, WasRejected: false));
+                    }
+
+                    var reject = existingJob.Status == JobStatus.Failed
+                        ? duplicatePolicy is DuplicatePolicy.RejectIfFailed or DuplicatePolicy.RejectAlways
+                        : duplicatePolicy == DuplicatePolicy.RejectAlways;
+
+                    if (reject)
+                    {
+                        return Task.FromResult(new EnqueueResult(existingJob.Id, WasRejected: true));
+                    }
+
+                    _idempotencyIndex.TryRemove(job.IdempotencyKey, out _);
+                }
             }
 
-            // Expired or missing — clean up stale entry
-            _idempotencyIndex.TryRemove(job.IdempotencyKey, out _);
+            _jobs[job.Id.Value] = job;
+
+            if (job.IdempotencyKey is not null)
+            {
+                _idempotencyIndex[job.IdempotencyKey] = job.Id.Value;
+            }
+
+            if (job.Status == JobStatus.Enqueued && job.ScheduledAt is null)
+            {
+                WriteToChannel(job);
+            }
+
+            return Task.FromResult(new EnqueueResult(job.Id, WasRejected: false));
         }
-
-        _jobs[job.Id.Value] = job;
-
-        if (job.IdempotencyKey is not null)
-        {
-            _idempotencyIndex[job.IdempotencyKey] = job.Id.Value;
-        }
-
-        // Only push to channel when immediately runnable (not scheduled for future)
-        if (job.Status == JobStatus.Enqueued && job.ScheduledAt is null)
-        {
-            WriteToChannel(job);
-        }
-
-        return Task.FromResult(job.Id);
     }
 
     /// <inheritdoc/>
@@ -681,6 +694,12 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
         JobPriority.Low => 3,
         _ => 2,
     };
+
+    private static bool IsActiveState(JobStatus status) =>
+        status is JobStatus.Enqueued or JobStatus.Processing or JobStatus.Scheduled or JobStatus.AwaitingContinuation;
+
+    private JobRecord? FindExistingJobByKey(string idempotencyKey) =>
+        _jobs.Values.FirstOrDefault(j => string.Equals(j.IdempotencyKey, idempotencyKey, StringComparison.Ordinal));
 
     private Channel<Guid>[] GetOrCreateQueueChannels(string queue) =>
         _queues.GetOrAdd(queue, static _ =>

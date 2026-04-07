@@ -32,25 +32,76 @@ public sealed class SqlServerStorageProvider : IStorageProvider
     // ── EnqueueAsync ──────────────────────────────────────────────────────────
 
     /// <inheritdoc/>
-    public async Task<JobId> EnqueueAsync(JobRecord job, CancellationToken cancellationToken = default)
+    public async Task<EnqueueResult> EnqueueAsync(JobRecord job, DuplicatePolicy duplicatePolicy = DuplicatePolicy.AllowAfterFailed, CancellationToken cancellationToken = default)
     {
         await using var conn = Open();
         await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
 
         if (job.IdempotencyKey is not null)
         {
-            var existing = await conn.QuerySingleOrDefaultAsync<Guid?>(
-                """
-                SELECT TOP 1 id FROM nexjob_jobs
-                WHERE idempotency_key = @key
-                  AND status IN ('Enqueued','Processing','Scheduled','AwaitingContinuation')
-                """,
-                new { key = job.IdempotencyKey });
+            await using var tx = await conn.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
-            if (existing.HasValue)
+            var existing = await conn.QueryFirstOrDefaultAsync<(Guid Id, string Status)>(
+                """
+                SELECT TOP 1 id, status FROM nexjob_jobs WITH (UPDLOCK, ROWLOCK)
+                WHERE idempotency_key = @key
+                ORDER BY created_at DESC
+                """,
+                new { key = job.IdempotencyKey },
+                tx);
+
+            if (existing.Id != Guid.Empty)
             {
-                return new JobId(existing.Value);
+                var existingId = new JobId(existing.Id);
+                var existingStatus = ParseStatus(existing.Status);
+
+                if (IsActiveState(existingStatus))
+                {
+                    return new EnqueueResult(existingId, WasRejected: false);
+                }
+
+                var reject = existingStatus == JobStatus.Failed
+                    ? duplicatePolicy is DuplicatePolicy.RejectIfFailed or DuplicatePolicy.RejectAlways
+                    : duplicatePolicy == DuplicatePolicy.RejectAlways;
+
+                if (reject)
+                {
+                    return new EnqueueResult(existingId, WasRejected: true);
+                }
             }
+
+            await conn.ExecuteAsync(
+                """
+                INSERT INTO nexjob_jobs
+                    (id, job_type, input_type, input_json, schema_version, queue, priority, status,
+                     idempotency_key, attempts, max_attempts, created_at, scheduled_at, parent_job_id, recurring_job_id, tags)
+                VALUES
+                    (@Id, @JobType, @InputType, @InputJson, @SchemaVersion, @Queue, @Priority,
+                     @Status, @IdempotencyKey, @Attempts, @MaxAttempts, @CreatedAt, @ScheduledAt, @ParentJobId, @RecurringJobId, @Tags)
+                """,
+                new
+                {
+                    Id = job.Id.Value,
+                    job.JobType,
+                    job.InputType,
+                    job.InputJson,
+                    job.SchemaVersion,
+                    job.Queue,
+                    Priority = (int)job.Priority,
+                    Status = job.Status.ToString(),
+                    job.IdempotencyKey,
+                    job.Attempts,
+                    job.MaxAttempts,
+                    job.CreatedAt,
+                    job.ScheduledAt,
+                    ParentJobId = job.ParentJobId?.Value,
+                    job.RecurringJobId,
+                    Tags = System.Text.Json.JsonSerializer.Serialize(job.Tags),
+                },
+                tx);
+
+            await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
+            return new EnqueueResult(job.Id, WasRejected: false);
         }
 
         await conn.ExecuteAsync(
@@ -82,7 +133,7 @@ public sealed class SqlServerStorageProvider : IStorageProvider
                 Tags = System.Text.Json.JsonSerializer.Serialize(job.Tags),
             });
 
-        return job.Id;
+        return new EnqueueResult(job.Id, WasRejected: false);
     }
 
     // ── FetchNextAsync ────────────────────────────────────────────────────────
@@ -833,6 +884,12 @@ public sealed class SqlServerStorageProvider : IStorageProvider
     }
 
     // ── Schema ────────────────────────────────────────────────────────────────
+
+    private static JobStatus ParseStatus(string status) =>
+        Enum.TryParse<JobStatus>(status, out var parsed) ? parsed : JobStatus.Failed;
+
+    private static bool IsActiveState(JobStatus status) =>
+        status is JobStatus.Enqueued or JobStatus.Processing or JobStatus.Scheduled or JobStatus.AwaitingContinuation;
 
     private SqlConnection Open() => new(_connectionString);
 }

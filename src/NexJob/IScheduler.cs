@@ -25,6 +25,11 @@ public interface IScheduler
     /// will be created if the same key is enqueued again.
     /// If your job has side effects, ensure it is idempotent before re-enqueuing.
     /// </param>
+    /// <param name="duplicatePolicy">
+    /// Controls the behaviour when a job with the same <paramref name="idempotencyKey"/>
+    /// already exists in a terminal failure state (<see cref="JobStatus.Failed"/>).
+    /// Defaults to <see cref="DuplicatePolicy.AllowAfterFailed"/>.
+    /// </param>
     /// <param name="tags">
     /// Optional list of searchable tags attached to the job.
     /// Tags can be used to filter jobs in the dashboard or via
@@ -40,6 +45,7 @@ public interface IScheduler
         string? queue = null,
         JobPriority priority = JobPriority.Normal,
         string? idempotencyKey = null,
+        DuplicatePolicy duplicatePolicy = DuplicatePolicy.AllowAfterFailed,
         IReadOnlyList<string>? tags = null,
         TimeSpan? deadlineAfter = null,
         CancellationToken cancellationToken = default)
@@ -66,6 +72,11 @@ public interface IScheduler
     /// will be created if the same key is enqueued again.
     /// If your job has side effects, ensure it is idempotent before re-enqueuing.
     /// </param>
+    /// <param name="duplicatePolicy">
+    /// Controls the behaviour when a job with the same <paramref name="idempotencyKey"/>
+    /// already exists in a terminal failure state (<see cref="JobStatus.Failed"/>).
+    /// Defaults to <see cref="DuplicatePolicy.AllowAfterFailed"/>.
+    /// </param>
     /// <param name="tags">
     /// Optional list of searchable tags attached to the job.
     /// Tags can be used to filter jobs in the dashboard or via
@@ -82,6 +93,7 @@ public interface IScheduler
         string? queue = null,
         JobPriority priority = JobPriority.Normal,
         string? idempotencyKey = null,
+        DuplicatePolicy duplicatePolicy = DuplicatePolicy.AllowAfterFailed,
         IReadOnlyList<string>? tags = null,
         TimeSpan? deadlineAfter = null,
         CancellationToken cancellationToken = default)

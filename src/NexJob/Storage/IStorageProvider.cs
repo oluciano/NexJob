@@ -12,16 +12,22 @@ namespace NexJob.Storage;
 public interface IStorageProvider
 {
     /// <summary>
-    /// Persists a new job record and, if it is immediately eligible (status =
-    /// <see cref="JobStatus.Enqueued"/>), makes it available for workers to claim.
+    /// Persists a new job record and makes it available for execution.
     /// </summary>
     /// <param name="job">The job record to persist.</param>
+    /// <param name="duplicatePolicy">
+    /// Controls the behaviour when a job with the same <see cref="JobRecord.IdempotencyKey"/>
+    /// already exists in a terminal failure state. Ignored when <see cref="JobRecord.IdempotencyKey"/>
+    /// is <see langword="null"/>.
+    /// </param>
     /// <param name="cancellationToken">Token to cancel the operation.</param>
     /// <returns>
-    /// The <see cref="JobId"/> of the persisted job, or the <see cref="JobId"/> of the
-    /// existing job when an idempotency key collision is detected.
+    /// An <see cref="EnqueueResult"/> containing the job identifier and whether the enqueue was rejected.
     /// </returns>
-    Task<JobId> EnqueueAsync(JobRecord job, CancellationToken cancellationToken = default);
+    Task<EnqueueResult> EnqueueAsync(
+        JobRecord job,
+        DuplicatePolicy duplicatePolicy = DuplicatePolicy.AllowAfterFailed,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Atomically claims the next available job from the specified queues and marks it
