@@ -107,15 +107,34 @@ public sealed class RedisStorageProvider : IStorageProvider
     }
 
     /// <inheritdoc/>
-    public async Task<JobId> EnqueueAsync(JobRecord job, CancellationToken cancellationToken = default)
+    public async Task<EnqueueResult> EnqueueAsync(JobRecord job, DuplicatePolicy duplicatePolicy = DuplicatePolicy.AllowAfterFailed, CancellationToken cancellationToken = default)
     {
         if (job.IdempotencyKey is not null)
         {
-            var idemRedisKey = IdempotencyRedisKey(job.IdempotencyKey);
-            var existing = await _db.StringGetAsync(idemRedisKey).ConfigureAwait(false);
-            if (existing.HasValue && Guid.TryParse(existing.ToString(), out var existingGuid))
+            var idemKey = IdempotencyRedisKey(job.IdempotencyKey);
+            var existingIdStr = await _db.StringGetAsync(idemKey).ConfigureAwait(false);
+
+            if (existingIdStr.HasValue)
             {
-                return new JobId(existingGuid);
+                var existingId = new JobId(Guid.Parse(existingIdStr.ToString()!));
+                var jobHash = await _db.HashGetAllAsync(JobKey(existingIdStr.ToString()!)).ConfigureAwait(false);
+                var existingStatus = GetStatusFromHash(jobHash);
+
+                if (IsActiveState(existingStatus))
+                {
+                    return new EnqueueResult(existingId, WasRejected: false);
+                }
+
+                var reject = existingStatus == JobStatus.Failed
+                    ? duplicatePolicy is DuplicatePolicy.RejectIfFailed or DuplicatePolicy.RejectAlways
+                    : duplicatePolicy == DuplicatePolicy.RejectAlways;
+
+                if (reject)
+                {
+                    return new EnqueueResult(existingId, WasRejected: true);
+                }
+
+                await _db.KeyDeleteAsync(idemKey).ConfigureAwait(false);
             }
         }
 
@@ -140,7 +159,7 @@ public sealed class RedisStorageProvider : IStorageProvider
             await _db.SortedSetAddAsync(QueueKey(job.Queue), id, QueueScore((int)job.Priority, job.CreatedAt)).ConfigureAwait(false);
         }
 
-        return job.Id;
+        return new EnqueueResult(job.Id, WasRejected: false);
     }
 
     /// <inheritdoc/>
@@ -924,6 +943,26 @@ public sealed class RedisStorageProvider : IStorageProvider
         new("progressPercent", job.ProgressPercent?.ToString(CultureInfo.InvariantCulture) ?? string.Empty),
         new("progressMessage", job.ProgressMessage ?? string.Empty),
     ];
+
+    private static bool IsActiveState(JobStatus status) =>
+        status is JobStatus.Enqueued or JobStatus.Processing or JobStatus.Scheduled or JobStatus.AwaitingContinuation;
+
+    private static JobStatus GetStatusFromHash(HashEntry[] hash)
+    {
+        var statusEntry = Array.Find(hash, e => e.Name == "status");
+        if (statusEntry.Name.IsNull)
+        {
+            return JobStatus.Failed;
+        }
+
+        var statusStr = statusEntry.Value.ToString();
+        if (Enum.TryParse<JobStatus>(statusStr, out var parsed))
+        {
+            return parsed;
+        }
+
+        return JobStatus.Failed;
+    }
 
     private static Dictionary<string, string> ParseHash(HashEntry[] entries) =>
         entries.ToDictionary(e => e.Name.ToString(), e => e.Value.ToString(), StringComparer.Ordinal);

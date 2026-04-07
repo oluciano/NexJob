@@ -47,25 +47,39 @@ public sealed class MongoStorageProvider : IStorageProvider
     // ── EnqueueAsync ─────────────────────────────────────────────────────────
 
     /// <inheritdoc/>
-    public async Task<JobId> EnqueueAsync(JobRecord job, CancellationToken cancellationToken = default)
+    public async Task<EnqueueResult> EnqueueAsync(JobRecord job, DuplicatePolicy duplicatePolicy = DuplicatePolicy.AllowAfterFailed, CancellationToken cancellationToken = default)
     {
-        // Idempotency check — return existing job if key already active
         if (job.IdempotencyKey is not null)
         {
             var existing = await _jobs.Find(
-                Builders<JobDocument>.Filter.And(
-                    Builders<JobDocument>.Filter.Eq(d => d.IdempotencyKey, job.IdempotencyKey),
-                    Builders<JobDocument>.Filter.In(d => d.Status, new[] { JobStatus.Enqueued, JobStatus.Processing, JobStatus.Scheduled, JobStatus.AwaitingContinuation })))
+                Builders<JobDocument>.Filter.Eq(d => d.IdempotencyKey, job.IdempotencyKey))
+                .Sort(Builders<JobDocument>.Sort.Descending(d => d.CreatedAt))
+                .Limit(1)
                 .FirstOrDefaultAsync(cancellationToken).ConfigureAwait(false);
 
             if (existing is not null)
             {
-                return existing.Id;
+                var existingId = existing.Id;
+                var existingStatus = existing.Status;
+
+                if (IsActiveState(existingStatus))
+                {
+                    return new EnqueueResult(existingId, WasRejected: false);
+                }
+
+                var reject = existingStatus == JobStatus.Failed
+                    ? duplicatePolicy is DuplicatePolicy.RejectIfFailed or DuplicatePolicy.RejectAlways
+                    : duplicatePolicy == DuplicatePolicy.RejectAlways;
+
+                if (reject)
+                {
+                    return new EnqueueResult(existingId, WasRejected: true);
+                }
             }
         }
 
         await _jobs.InsertOneAsync(JobDocument.FromRecord(job), cancellationToken: cancellationToken).ConfigureAwait(false);
-        return job.Id;
+        return new EnqueueResult(job.Id, WasRejected: false);
     }
 
     // ── FetchNextAsync ────────────────────────────────────────────────────────
@@ -677,6 +691,9 @@ public sealed class MongoStorageProvider : IStorageProvider
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────
+
+    private static bool IsActiveState(JobStatus status) =>
+        status is JobStatus.Enqueued or JobStatus.Processing or JobStatus.Scheduled or JobStatus.AwaitingContinuation;
 
     private static FilterDefinition<JobDocument> ById(JobId id) =>
         Builders<JobDocument>.Filter.Eq(d => d.Id, id);

@@ -18,7 +18,7 @@ public sealed class InMemoryStorageProviderTests
 
         var returned = await _sut.EnqueueAsync(job);
 
-        returned.Should().Be(job.Id);
+        returned.JobId.Should().Be(job.Id);
     }
 
     [Fact]
@@ -30,7 +30,7 @@ public sealed class InMemoryStorageProviderTests
         var id1 = await _sut.EnqueueAsync(job1);
         var id2 = await _sut.EnqueueAsync(job2);
 
-        id2.Should().Be(id1, "a duplicate idempotency key must return the original job id");
+        id2.JobId.Should().Be(id1.JobId, "a duplicate idempotency key must return the original job id");
     }
 
     [Fact]
@@ -47,7 +47,7 @@ public sealed class InMemoryStorageProviderTests
         var job2 = MakeJob(idempotencyKey: "key-1");
         var id2 = await _sut.EnqueueAsync(job2);
 
-        id2.Should().Be(job2.Id, "previous job is no longer active so a new one should be accepted");
+        id2.JobId.Should().Be(job2.Id, "previous job is no longer active so a new one should be accepted");
     }
 
     // ─── FetchNextAsync ───────────────────────────────────────────────────────

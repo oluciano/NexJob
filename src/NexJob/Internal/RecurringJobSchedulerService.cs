@@ -120,7 +120,7 @@ internal sealed class RecurringJobSchedulerService : BackgroundService
                         : null,
                 };
 
-                await _storage.EnqueueAsync(jobRecord, cancellationToken).ConfigureAwait(false);
+                await _storage.EnqueueAsync(jobRecord, DuplicatePolicy.AllowAfterFailed, cancellationToken).ConfigureAwait(false);
 
                 var nextExecution = CalculateNextExecution(recurring);
 
