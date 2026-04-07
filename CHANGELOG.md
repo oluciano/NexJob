@@ -11,11 +11,21 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **`DuplicatePolicy` — idempotency key duplicate control** — new enum (`AllowAfterFailed`, `RejectIfFailed`, `RejectAlways`) controls what happens when a job with the same `idempotencyKey` already exists in a terminal failure state. Default is `AllowAfterFailed` (at-least-once semantics). `RejectAlways` guarantees exactly-once across the full job lifetime.
 - **`EnqueueResult`** — rich return type from `IStorageProvider.EnqueueAsync` containing `JobId` and `WasRejected` flag.
 - **`DuplicateJobException`** — thrown by `IScheduler.EnqueueAsync` when enqueue is rejected by `DuplicatePolicy`. Contains `IdempotencyKey`, `ExistingJobId`, and `Policy`.
-- **`duplicatePolicy` parameter on `IScheduler.EnqueueAsync`** — optional parameter (default `AllowAfterFailed`) on both overloads, positioned after `idempotencyKey`.
-- Implemented in all 5 storage providers (InMemory, PostgreSQL, SQL Server, Redis, MongoDB).
+- **`duplicatePolicy` parameter on `IScheduler.EnqueueAsync`** — optional parameter (default `AllowAfterFailed`) on both overloads, positioned after `idempotencyKey`. `DuplicatePolicy` implemented in all 5 storage providers (InMemory, PostgreSQL, SQL Server, Redis, MongoDB).
+- **`CommitJobResultAsync` on `IStorageProvider`** — new atomic commit method that persists all execution outcome mutations (status, logs, continuations, recurring result) as a single transactional unit. Eliminates partial-state risk on process crash during finalisation. Idempotent by contract — safe to call twice on the same terminal job.
+- **`JobExecutionResult`** — value type carrying the complete execution outcome passed to `CommitJobResultAsync`. Fields: `Succeeded`, `Logs`, `Exception`, `RetryAt`, `RecurringJobId`.
+- **xunit.analyzers v1.16.0** — added to all test projects via `Directory.Build.props`. Catches xUnit-specific mistakes (wrong assertion patterns, `async void` tests, incorrect fixture usage) that generic analyzers miss.
 
-### Changed (Breaking)
+### Changed
 - **AI execution system migrated to `ai-method/`** — modular, token-efficient framework replaces monolithic `prompts/` folder. Load only what each task needs (200–3000 tokens) instead of all-or-nothing (5000–8000 tokens). See `ai-method/README.md` for full documentation.
+- **`JobDispatcherService` refactored into named stages** — `ExecuteJobAsync` is now a thin orchestrator delegating to `TryHandleExpirationAsync`, `PrepareInvocationAsync`, `ExecuteWithThrottlingAsync`, `HandleFailureAsync`, and `RecordSuccessMetrics`. Behaviour unchanged; cognitive load and MTTR reduced significantly.
+- **Decision logging added to dispatcher** — queues skipped due to pause or execution window, throttle waits, retry scheduling with exact delay and time, and dead-letter transitions are now logged explicitly. Dispatcher decisions are fully reconstructable from `Information`-level logs.
+- **NexJob.Oracle removed** — stub project with no implementation removed from the solution. Oracle support may be contributed as a community provider in the future.
+
+### Fixed
+- **Transaction leak in `EnqueueAsync` (PostgreSQL, SQL Server)** — early-return paths inside the idempotency transaction block now call `RollbackAsync` explicitly before returning. Previously, the transaction was abandoned on dispose without an explicit rollback, which is not guaranteed to roll back in all driver versions.
+- **CI double-trigger removed** — `ci.yml` no longer fires on `push` to `develop`. CI now runs only on `pull_request`, eliminating duplicate runs on every PR push.
+- **`release.yml` PAT fix** — tag creation now uses `RELEASE_PAT` secret instead of `GITHUB_TOKEN`. Pushes made with `GITHUB_TOKEN` do not trigger other workflows by GitHub design; switching to PAT ensures `publish.yml` (NuGet) fires automatically on every release tag.
 
 ## [0.6.0] — April 2026
 
