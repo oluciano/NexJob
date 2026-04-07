@@ -298,15 +298,12 @@ internal sealed class JobDispatcherService : BackgroundService
             NexJobMetrics.JobsSucceeded.Add(1, new TagList { { "nexjob.job_type", job.JobType } });
             activity?.SetStatus(ActivityStatusCode.Ok);
 
-            await _storage.AcknowledgeAsync(job.Id, CancellationToken.None).ConfigureAwait(false);
-            await _storage.SaveExecutionLogsAsync(job.Id, logScope.Entries, CancellationToken.None).ConfigureAwait(false);
-            await _storage.EnqueueContinuationsAsync(job.Id, CancellationToken.None).ConfigureAwait(false);
-
-            if (job.RecurringJobId is not null)
+            await _storage.CommitJobResultAsync(job.Id, new JobExecutionResult
             {
-                await _storage.SetRecurringJobLastExecutionResultAsync(
-                    job.RecurringJobId, JobStatus.Succeeded, null, CancellationToken.None).ConfigureAwait(false);
-            }
+                Succeeded = true,
+                Logs = logScope.Entries,
+                RecurringJobId = job.RecurringJobId,
+            }, CancellationToken.None).ConfigureAwait(false);
 
             _logger.LogDebug("Job {JobId} completed successfully", job.Id);
         }
@@ -353,14 +350,14 @@ internal sealed class JobDispatcherService : BackgroundService
                     job.Id, effectiveMaxAttemptsForCatch);
             }
 
-            await _storage.SetFailedAsync(job.Id, ex, retryAt, CancellationToken.None).ConfigureAwait(false);
-            await _storage.SaveExecutionLogsAsync(job.Id, logScope.Entries, CancellationToken.None).ConfigureAwait(false);
-
-            if (job.RecurringJobId is not null && retryAt is null)
+            await _storage.CommitJobResultAsync(job.Id, new JobExecutionResult
             {
-                await _storage.SetRecurringJobLastExecutionResultAsync(
-                    job.RecurringJobId, JobStatus.Failed, ex.Message, CancellationToken.None).ConfigureAwait(false);
-            }
+                Succeeded = false,
+                Logs = logScope.Entries,
+                Exception = ex,
+                RetryAt = retryAt,
+                RecurringJobId = job.RecurringJobId,
+            }, CancellationToken.None).ConfigureAwait(false);
 
             // Invoke dead-letter handler if job has permanently failed (no retry scheduled)
             if (retryAt is null)

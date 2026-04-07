@@ -255,6 +255,25 @@ public interface IStorageProvider
     Task SaveExecutionLogsAsync(JobId jobId, IReadOnlyList<JobExecutionLog> logs, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Atomically persists the complete outcome of a job execution.
+    /// On success: marks the job as <see cref="JobStatus.Succeeded"/>, saves execution logs,
+    /// enqueues any waiting continuations, and updates the recurring job result if applicable.
+    /// On failure: calls <see cref="SetFailedAsync"/> semantics, saves execution logs,
+    /// and updates the recurring job result if the job is permanently dead-lettered.
+    /// </summary>
+    /// <remarks>
+    /// Implementations must guarantee that all mutations are applied as a single atomic unit.
+    /// If the process crashes after this call is issued but before it returns, the storage layer
+    /// must either apply all changes or none — partial state is not acceptable.
+    /// Re-invoking this method with the same <paramref name="jobId"/> and a result that matches
+    /// the already-persisted terminal state must be treated as a no-op (idempotent).
+    /// </remarks>
+    /// <param name="jobId">The identifier of the job whose result is being committed.</param>
+    /// <param name="result">The complete execution outcome.</param>
+    /// <param name="cancellationToken">Token to cancel the operation.</param>
+    Task CommitJobResultAsync(JobId jobId, JobExecutionResult result, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Returns per-queue metrics (enqueued + processing counts) for all active queues.
     /// </summary>
     Task<IReadOnlyList<QueueMetrics>> GetQueueMetricsAsync(CancellationToken cancellationToken = default);
