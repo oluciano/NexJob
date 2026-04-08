@@ -885,46 +885,46 @@ public sealed class RedisStorageProvider : IStorageProvider
             switch (status)
             {
                 case JobStatus.Succeeded when policy.RetainSucceeded > TimeSpan.Zero:
-                {
-                    var completedAtStr = dict.GetValueOrDefault("completedAt");
-                    if (completedAtStr != null
-                        && DateTimeOffset.TryParse(completedAtStr, CultureInfo.InvariantCulture,
-                            DateTimeStyles.RoundtripKind, out var dt))
                     {
-                        cutoff = dt;
-                    }
+                        var completedAtStr = dict.GetValueOrDefault("completedAt");
+                        if (completedAtStr != null
+                            && DateTimeOffset.TryParse(completedAtStr, CultureInfo.InvariantCulture,
+                                DateTimeStyles.RoundtripKind, out var dt))
+                        {
+                            cutoff = dt;
+                        }
 
-                    retention = policy.RetainSucceeded;
-                    break;
-                }
+                        retention = policy.RetainSucceeded;
+                        break;
+                    }
 
                 case JobStatus.Failed when policy.RetainFailed > TimeSpan.Zero:
-                {
-                    var completedAtStr = dict.GetValueOrDefault("completedAt");
-                    if (completedAtStr != null
-                        && DateTimeOffset.TryParse(completedAtStr, CultureInfo.InvariantCulture,
-                            DateTimeStyles.RoundtripKind, out var dt))
                     {
-                        cutoff = dt;
-                    }
+                        var completedAtStr = dict.GetValueOrDefault("completedAt");
+                        if (completedAtStr != null
+                            && DateTimeOffset.TryParse(completedAtStr, CultureInfo.InvariantCulture,
+                                DateTimeStyles.RoundtripKind, out var dt))
+                        {
+                            cutoff = dt;
+                        }
 
-                    retention = policy.RetainFailed;
-                    break;
-                }
+                        retention = policy.RetainFailed;
+                        break;
+                    }
 
                 case JobStatus.Expired when policy.RetainExpired > TimeSpan.Zero:
-                {
-                    var createdAtStr = dict.GetValueOrDefault("createdAt");
-                    if (createdAtStr != null
-                        && DateTimeOffset.TryParse(createdAtStr, CultureInfo.InvariantCulture,
-                            DateTimeStyles.RoundtripKind, out var dt))
                     {
-                        cutoff = dt;
-                    }
+                        var createdAtStr = dict.GetValueOrDefault("createdAt");
+                        if (createdAtStr != null
+                            && DateTimeOffset.TryParse(createdAtStr, CultureInfo.InvariantCulture,
+                                DateTimeStyles.RoundtripKind, out var dt))
+                        {
+                            cutoff = dt;
+                        }
 
-                    retention = policy.RetainExpired;
-                    break;
-                }
+                        retention = policy.RetainExpired;
+                        break;
+                    }
             }
 
             if (cutoff.HasValue && now - cutoff.Value > retention)
