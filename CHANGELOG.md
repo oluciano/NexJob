@@ -8,6 +8,14 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+### Changed
+
+### Fixed
+
+## [0.8.0] — April 2026
+
+### Added
+
 - **`IJobExecutionFilter`** — middleware pipeline for job execution. Implement and register in DI to add cross-cutting behaviour: logging, tenant injection, audit trails, metrics, circuit breakers. Filters wrap the job execution in registration order. A filter that throws is treated as a job failure — the normal retry and dead-letter flow applies. Filters are resolved from the job's DI scope.
 - **`JobExecutingContext`** — context passed to each filter containing the `JobRecord`, `IServiceProvider` (job scope), and the execution outcome (`Succeeded`, `Exception`) set after the pipeline runs.
 - **`JobExecutionDelegate`** — delegate type representing the next component in the job execution filter pipeline. Returned from `IJobExecutionFilter.OnExecutingAsync` and invoked by the filter to pass control.
