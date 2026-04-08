@@ -20,6 +20,7 @@
   <ItemGroup>
     <ProjectReference Include="..\NexJob\NexJob.csproj" />
     <PackageReference Include="MongoDB.Driver" Version="2.30.0" />
+    <PackageReference Include="System.Text.Encodings.Web" Version="8.0.0" />
   </ItemGroup>
 
 </Project>

@@ -63,7 +63,8 @@ internal sealed class StandaloneDashboardHostedService : IHostedService
         _app.UseNexJobDashboard(_options.Path, opt =>
         {
             opt.Title = _options.Title;
-            opt.RequireAuth = false;   // auth not supported in standalone mode
+            // IDashboardAuthorizationHandler is not supported in standalone mode
+            // Register auth middleware in a WebApplication host instead
         });
 
         await _app.StartAsync(cancellationToken);

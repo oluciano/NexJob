@@ -8,10 +8,13 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`IDashboardAuthorizationHandler`** — pluggable authorization interface for the NexJob dashboard. Implement and register in DI to control access with any strategy: role-based, claims, API key, IP whitelist, or custom logic. No handler registered = open access (suitable for development and internal networks).
 - **`ContinueWithAsync<TJob>`** — new no-input overload for chaining `IJob` continuations after a parent job completes.
 - **`ThrottleAttribute` documentation** — clarified that concurrency limits are enforced per worker process (local), not cluster-wide.
 
 ### Changed
+
+- **`DashboardOptions.RequireAuth` removed** — replaced by `IDashboardAuthorizationHandler`. The boolean flag only supported ASP.NET Core authentication; the new interface supports any authorization strategy.
 
 ### Fixed
 

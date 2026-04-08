@@ -10,6 +10,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\NexJob\NexJob.csproj" />
     <ProjectReference Include="..\..\src\NexJob.Dashboard\NexJob.Dashboard.csproj" />
+    <PackageReference Include="System.Text.Encodings.Web" Version="8.0.0" />
   </ItemGroup>
 
 </Project>

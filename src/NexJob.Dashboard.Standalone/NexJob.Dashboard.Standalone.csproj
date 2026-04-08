@@ -14,6 +14,7 @@
   <ItemGroup>
     <ProjectReference Include="..\NexJob.Dashboard\NexJob.Dashboard.csproj" />
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="System.Text.Encodings.Web" Version="8.0.0" />
   </ItemGroup>
   
 </Project>

@@ -41,7 +41,8 @@ public sealed class DashboardMiddleware
             return;
         }
 
-        if (_options.RequireAuth && context.User?.Identity?.IsAuthenticated != true)
+        var authHandler = context.RequestServices.GetService<IDashboardAuthorizationHandler>();
+        if (authHandler is not null && !await authHandler.AuthorizeAsync(context).ConfigureAwait(false))
         {
             context.Response.StatusCode = 401;
             return;
