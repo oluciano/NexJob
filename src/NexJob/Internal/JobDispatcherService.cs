@@ -30,6 +30,7 @@ internal sealed class JobDispatcherService : BackgroundService
     private readonly NexJobOptions _options;
     private readonly JobWakeUpChannel _wakeUp;
     private readonly ILogger<JobDispatcherService> _logger;
+    private readonly IReadOnlyList<IJobExecutionFilter> _filters;
     private int _activeJobCount;
 
     /// <summary>
@@ -42,7 +43,8 @@ internal sealed class JobDispatcherService : BackgroundService
         IRuntimeSettingsStore runtimeStore,
         NexJobOptions options,
         JobWakeUpChannel wakeUp,
-        ILogger<JobDispatcherService> logger)
+        ILogger<JobDispatcherService> logger,
+        IEnumerable<IJobExecutionFilter> filters)
     {
         _storage = storage;
         _scopeFactory = scopeFactory;
@@ -51,6 +53,7 @@ internal sealed class JobDispatcherService : BackgroundService
         _options = options;
         _wakeUp = wakeUp;
         _logger = logger;
+        _filters = filters.ToList().AsReadOnly();
     }
 
     /// <inheritdoc/>
@@ -248,7 +251,7 @@ internal sealed class JobDispatcherService : BackgroundService
         try
         {
             using var context = await PrepareInvocationAsync(job).ConfigureAwait(false);
-            await ExecuteWithThrottlingAsync(context, cts.Token).ConfigureAwait(false);
+            await ExecuteWithThrottlingAndFiltersAsync(context, job, cts.Token).ConfigureAwait(false);
 
             sw.Stop();
             RecordSuccessMetrics(job.JobType, sw.Elapsed);
@@ -343,10 +346,14 @@ internal sealed class JobDispatcherService : BackgroundService
     }
 
     /// <summary>
-    /// Acquires all throttle semaphores declared on the job type, invokes the job,
-    /// then releases the semaphores. Throttle semaphores are always released in the finally block.
+    /// Acquires all throttle semaphores declared on the job type, invokes the job through
+    /// the filter pipeline, then releases the semaphores. Throttle semaphores are always
+    /// released in the finally block.
     /// </summary>
-    private async Task ExecuteWithThrottlingAsync(JobInvocationContext ctx, CancellationToken cancellationToken)
+    private async Task ExecuteWithThrottlingAndFiltersAsync(
+        JobInvocationContext ctx,
+        JobRecord job,
+        CancellationToken cancellationToken)
     {
         var acquired = new List<SemaphoreSlim>();
 
@@ -361,7 +368,33 @@ internal sealed class JobDispatcherService : BackgroundService
 
         try
         {
-            await ctx.Invoker(ctx.JobInstance, ctx.Input, cancellationToken).ConfigureAwait(false);
+            // Terminal delegate: invokes the actual job
+            JobExecutionDelegate jobInvoker = ct =>
+                ctx.Invoker(ctx.JobInstance, ctx.Input, ct);
+
+            if (_filters.Count == 0)
+            {
+                // Fast path: no filters registered
+                await jobInvoker(cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                var context = new JobExecutingContext(job, ctx.Scope.ServiceProvider);
+
+                var pipeline = JobFilterPipeline.Build(_filters, context, jobInvoker);
+
+                try
+                {
+                    await pipeline(cancellationToken).ConfigureAwait(false);
+                    context.Succeeded = true;
+                }
+                catch (Exception ex)
+                {
+                    context.Exception = ex;
+                    context.Succeeded = false;
+                    throw; // re-throw so dispatcher handles retry/dead-letter normally
+                }
+            }
         }
         finally
         {

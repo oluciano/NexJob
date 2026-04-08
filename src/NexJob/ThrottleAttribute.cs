@@ -6,8 +6,15 @@ namespace NexJob;
 /// resource exhaustion on shared external systems.
 /// </summary>
 /// <remarks>
+/// <para>
+/// The concurrency limit is enforced <strong>per worker process</strong> using an in-memory
+/// semaphore. In a multi-node deployment each node maintains its own independent limit —
+/// the effective cluster-wide concurrency is <c>maxConcurrent × nodeCount</c>.
+/// </para>
+/// <para>
 /// Multiple <see cref="ThrottleAttribute"/> instances may be applied to the same job
 /// to throttle against several independent resources simultaneously.
+/// </para>
 /// </remarks>
 /// <example>
 /// <code>

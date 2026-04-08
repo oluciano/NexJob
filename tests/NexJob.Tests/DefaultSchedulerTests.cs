@@ -179,6 +179,19 @@ public sealed class DefaultSchedulerTests
         cont.Should().NotBeNull("continuation should now be runnable");
     }
 
+    [Fact]
+    public async Task ContinueWithAsync_NoInput_JobStaysAwaitingUntilParentCompletes()
+    {
+        var parentId = await _sut.EnqueueAsync<StubNoInputJob>();
+        await _sut.ContinueWithAsync<StubNoInputJob>(parentId);
+
+        var jobs = await _storage.GetJobsAsync(new JobFilter(), 1, 10);
+        var child = jobs.Items.FirstOrDefault(j => j.ParentJobId == parentId);
+
+        child.Should().NotBeNull();
+        child!.Status.Should().Be(JobStatus.AwaitingContinuation);
+    }
+
     // ─── RemoveRecurringAsync ─────────────────────────────────────────────────
 
     [Fact]

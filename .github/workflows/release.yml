@@ -44,12 +44,19 @@ jobs:
           git tag "${{ steps.version.outputs.tag }}"
           git push origin "${{ steps.version.outputs.tag }}"
 
-      - name: Create GitHub Release
-        if: steps.tag_check.outputs.skip == 'false'
+      - name: Create or update GitHub Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "${{ steps.version.outputs.tag }}" \
-            --title "${{ steps.version.outputs.tag }}" \
-            --generate-notes \
-            --prerelease=${{ contains(steps.version.outputs.tag, '-') }}
+          if gh release view "${{ steps.version.outputs.tag }}" >/dev/null 2>&1; then
+            echo "Release ${{ steps.version.outputs.tag }} already exists — updating notes."
+            gh release edit "${{ steps.version.outputs.tag }}" \
+              --title "${{ steps.version.outputs.tag }}" \
+              --generate-notes \
+              --prerelease=${{ contains(steps.version.outputs.tag, '-') }}
+          else
+            gh release create "${{ steps.version.outputs.tag }}" \
+              --title "${{ steps.version.outputs.tag }}" \
+              --generate-notes \
+              --prerelease=${{ contains(steps.version.outputs.tag, '-') }}
+          fi

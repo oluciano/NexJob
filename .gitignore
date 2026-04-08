@@ -25,3 +25,8 @@ TestResults/
 
 # BenchmarkDotNet
 BenchmarkDotNet.Artifacts/
+
+# AI agents (local-only)
+.qwen/
+.claude/
+.gemini/

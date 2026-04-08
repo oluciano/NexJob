@@ -690,6 +690,48 @@ public sealed class MongoStorageProvider : IStorageProvider
         return docs.Select(d => d.ToRecord()).ToList();
     }
 
+    /// <inheritdoc/>
+    public async Task<int> PurgeJobsAsync(RetentionPolicy policy, CancellationToken cancellationToken = default)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var deleted = 0;
+
+        if (policy.RetainSucceeded > TimeSpan.Zero)
+        {
+            var cutoff = now - policy.RetainSucceeded;
+            var result = await _jobs.DeleteManyAsync(
+                Builders<JobDocument>.Filter.And(
+                    Builders<JobDocument>.Filter.Eq(j => j.Status, JobStatus.Succeeded),
+                    Builders<JobDocument>.Filter.Lt(j => j.CompletedAt, cutoff)),
+                cancellationToken).ConfigureAwait(false);
+            deleted += (int)result.DeletedCount;
+        }
+
+        if (policy.RetainFailed > TimeSpan.Zero)
+        {
+            var cutoff = now - policy.RetainFailed;
+            var result = await _jobs.DeleteManyAsync(
+                Builders<JobDocument>.Filter.And(
+                    Builders<JobDocument>.Filter.Eq(j => j.Status, JobStatus.Failed),
+                    Builders<JobDocument>.Filter.Lt(j => j.CompletedAt, cutoff)),
+                cancellationToken).ConfigureAwait(false);
+            deleted += (int)result.DeletedCount;
+        }
+
+        if (policy.RetainExpired > TimeSpan.Zero)
+        {
+            var cutoff = now - policy.RetainExpired;
+            var result = await _jobs.DeleteManyAsync(
+                Builders<JobDocument>.Filter.And(
+                    Builders<JobDocument>.Filter.Eq(j => j.Status, JobStatus.Expired),
+                    Builders<JobDocument>.Filter.Lt(j => j.CreatedAt, cutoff)),
+                cancellationToken).ConfigureAwait(false);
+            deleted += (int)result.DeletedCount;
+        }
+
+        return deleted;
+    }
+
     // ── Private helpers ───────────────────────────────────────────────────────
 
     private static bool IsActiveState(JobStatus status) =>
@@ -715,6 +757,8 @@ public sealed class MongoStorageProvider : IStorageProvider
 
         await _jobs.UpdateManyAsync(filter, update, cancellationToken: ct).ConfigureAwait(false);
     }
+
+    // ── Private helpers ────────────────────────────────────────────────────────
 
     private void EnsureIndexes()
     {

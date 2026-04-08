@@ -684,7 +684,43 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
         return Task.FromResult(result);
     }
 
+    /// <inheritdoc/>
+    public Task<int> PurgeJobsAsync(RetentionPolicy policy, CancellationToken cancellationToken = default)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var toDelete = new List<Guid>();
+
+        lock (_lock)
+        {
+            toDelete = _jobs.Values
+                .Where(job => ShouldPurgeJob(job, now, policy))
+                .Select(job => job.Id.Value)
+                .ToList();
+
+            foreach (var id in toDelete)
+            {
+                _jobs.TryRemove(id, out _);
+            }
+        }
+
+        return Task.FromResult(toDelete.Count);
+    }
+
     // ─── private helpers ─────────────────────────────────────────────────────
+
+    private static bool ShouldPurgeJob(JobRecord job, DateTimeOffset now, RetentionPolicy policy) =>
+        job.Status switch
+        {
+            JobStatus.Succeeded when policy.RetainSucceeded > TimeSpan.Zero
+                && job.CompletedAt.HasValue
+                && now - job.CompletedAt.Value > policy.RetainSucceeded => true,
+            JobStatus.Failed when policy.RetainFailed > TimeSpan.Zero
+                && job.CompletedAt.HasValue
+                && now - job.CompletedAt.Value > policy.RetainFailed => true,
+            JobStatus.Expired when policy.RetainExpired > TimeSpan.Zero
+                && now - job.CreatedAt > policy.RetainExpired => true,
+            _ => false,
+        };
 
     private static int PriorityIndex(JobPriority priority) => priority switch
     {

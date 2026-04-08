@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using NexJob.Configuration;
 using NexJob.Storage;
 
 namespace NexJob.Postgres;
@@ -19,6 +20,7 @@ public static class NexJobPostgresExtensions
         string connectionString)
     {
         services.AddSingleton<IStorageProvider>(_ => new PostgresStorageProvider(connectionString));
+        services.AddSingleton<IRuntimeSettingsStore>(_ => new PostgresRuntimeSettingsStore(connectionString));
         return services;
     }
 }

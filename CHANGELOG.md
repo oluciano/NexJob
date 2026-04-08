@@ -12,6 +12,25 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+## [0.8.0] — April 2026
+
+### Added
+
+- **`IJobExecutionFilter`** — middleware pipeline for job execution. Implement and register in DI to add cross-cutting behaviour: logging, tenant injection, audit trails, metrics, circuit breakers. Filters wrap the job execution in registration order. A filter that throws is treated as a job failure — the normal retry and dead-letter flow applies. Filters are resolved from the job's DI scope.
+- **`JobExecutingContext`** — context passed to each filter containing the `JobRecord`, `IServiceProvider` (job scope), and the execution outcome (`Succeeded`, `Exception`) set after the pipeline runs.
+- **`JobExecutionDelegate`** — delegate type representing the next component in the job execution filter pipeline. Returned from `IJobExecutionFilter.OnExecutingAsync` and invoked by the filter to pass control.
+- **`IDashboardAuthorizationHandler`** — pluggable authorization interface for the NexJob dashboard. Implement and register in DI to control access with any strategy: role-based, claims, API key, IP whitelist, or custom logic. No handler registered = open access (suitable for development and internal networks).
+- **`ContinueWithAsync<TJob>`** — new no-input overload for chaining `IJob` continuations after a parent job completes.
+- **`ThrottleAttribute` documentation** — clarified that concurrency limits are enforced per worker process (local), not cluster-wide.
+- **Persistent `IRuntimeSettingsStore`** — all four storage providers (PostgreSQL, SQL Server, Redis, MongoDB) now implement `IRuntimeSettingsStore`, persisting runtime configuration (worker count, polling interval, paused queues, recurring jobs paused) across application restarts. Dashboard overrides no longer require reapplication after each deploy. The in-memory store remains as fallback when no persistent provider is configured.
+- **Job Retention — automatic cleanup of terminal jobs** — new `JobRetentionService` periodically purges `Succeeded`, `Failed`, and `Expired` jobs older than configurable retention thresholds. Defaults: Succeeded 7 days, Failed 30 days, Expired 7 days. Thresholds are configurable via `NexJobOptions` (code/appsettings) and overridable at runtime through the dashboard Settings page without restart. Setting a threshold to zero disables purging for that status. `RetentionPolicy` type and `IStorageProvider.PurgeJobsAsync` implemented in all five storage providers.
+
+### Changed
+
+- **`DashboardOptions.RequireAuth` removed** — replaced by `IDashboardAuthorizationHandler`. The boolean flag only supported ASP.NET Core authentication; the new interface supports any authorization strategy.
+
+### Fixed
+
 ## [0.7.0] — April 2026
 
 ### Added

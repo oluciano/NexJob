@@ -756,4 +756,64 @@ public abstract class StorageProviderTestsBase
         var name = storage.GetType().Name;
         return name.Contains("Redis") || name.Contains("SqlServer");
     }
+
+    [Fact]
+    public async Task PurgeJobsAsync_DeletesTerminalJobsBeyondRetention()
+    {
+        var storage = await CreateStorageAsync();
+
+        // Use RetainSucceeded = 1 second to make test deterministic
+        var policy = new RetentionPolicy
+        {
+            RetainSucceeded = TimeSpan.FromSeconds(1),
+            RetainFailed = TimeSpan.Zero,
+            RetainExpired = TimeSpan.Zero,
+        };
+
+        var job = MakeJob();
+        await storage.EnqueueAsync(job);
+        var fetched = await storage.FetchNextAsync(["default"]);
+        await storage.CommitJobResultAsync(fetched!.Id, new JobExecutionResult
+        {
+            Succeeded = true,
+            Logs = [],
+        });
+
+        // Wait for threshold to pass
+        await Task.Delay(TimeSpan.FromSeconds(2));
+
+        var deleted = await storage.PurgeJobsAsync(policy);
+
+        deleted.Should().Be(1);
+        var remaining = await storage.GetJobByIdAsync(job.Id);
+        remaining.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task PurgeJobsAsync_PreservesJobsWithinRetention()
+    {
+        var storage = await CreateStorageAsync();
+
+        var policy = new RetentionPolicy
+        {
+            RetainSucceeded = TimeSpan.FromDays(7), // Long — won't purge
+            RetainFailed = TimeSpan.Zero,
+            RetainExpired = TimeSpan.Zero,
+        };
+
+        var job = MakeJob();
+        await storage.EnqueueAsync(job);
+        var fetched = await storage.FetchNextAsync(["default"]);
+        await storage.CommitJobResultAsync(fetched!.Id, new JobExecutionResult
+        {
+            Succeeded = true,
+            Logs = [],
+        });
+
+        var deleted = await storage.PurgeJobsAsync(policy);
+
+        deleted.Should().Be(0);
+        var remaining = await storage.GetJobByIdAsync(job.Id);
+        remaining.Should().NotBeNull();
+    }
 }
