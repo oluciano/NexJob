@@ -7,6 +7,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\NexJob\NexJob.csproj" />
     <ProjectReference Include="..\..\src\NexJob.Dashboard.Standalone\NexJob.Dashboard.Standalone.csproj" />
+    <PackageReference Include="System.Text.Encodings.Web" Version="8.0.0" />
   </ItemGroup>
   <ItemGroup>
     <Folder Include="Jobs/" />
