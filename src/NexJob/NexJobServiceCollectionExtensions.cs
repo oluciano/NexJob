@@ -157,6 +157,7 @@ public static class NexJobServiceCollectionExtensions
         services.AddHostedService<RecurringJobSchedulerService>();
         services.AddHostedService<ServerHeartbeatService>();
         services.AddHostedService<OrphanedJobWatcherService>();
+        services.AddHostedService<JobRetentionService>();
         services.AddSingleton<RecurringJobRegistrar>();
         services.AddHostedService(provider =>
             new RecurringJobRegistrationService(

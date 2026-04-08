@@ -876,6 +876,50 @@ public sealed class PostgresStorageProvider : IStorageProvider
         return rows.Select(r => r.ToRecord()).ToList();
     }
 
+    /// <inheritdoc/>
+    public async Task<int> PurgeJobsAsync(RetentionPolicy policy, CancellationToken cancellationToken = default)
+    {
+        await using var conn = Open();
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+
+        var deleted = 0;
+
+        if (policy.RetainSucceeded > TimeSpan.Zero)
+        {
+            deleted += await conn.ExecuteAsync(
+                """
+                DELETE FROM nexjob_jobs
+                WHERE status = 'Succeeded'
+                  AND completed_at < NOW() - @retention::interval
+                """,
+                new { retention = policy.RetainSucceeded, }).ConfigureAwait(false);
+        }
+
+        if (policy.RetainFailed > TimeSpan.Zero)
+        {
+            deleted += await conn.ExecuteAsync(
+                """
+                DELETE FROM nexjob_jobs
+                WHERE status = 'Failed'
+                  AND completed_at < NOW() - @retention::interval
+                """,
+                new { retention = policy.RetainFailed, }).ConfigureAwait(false);
+        }
+
+        if (policy.RetainExpired > TimeSpan.Zero)
+        {
+            deleted += await conn.ExecuteAsync(
+                """
+                DELETE FROM nexjob_jobs
+                WHERE status = 'Expired'
+                  AND created_at < NOW() - @retention::interval
+                """,
+                new { retention = policy.RetainExpired, }).ConfigureAwait(false);
+        }
+
+        return deleted;
+    }
+
     // ── Schema ────────────────────────────────────────────────────────────────
 
     private static JobStatus ParseStatus(string status) =>

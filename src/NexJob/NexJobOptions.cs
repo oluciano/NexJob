@@ -101,6 +101,30 @@ public sealed class NexJobOptions
     public int MaxJobLogLines { get; set; } = 200;
 
     /// <summary>
+    /// How long to retain <see cref="JobStatus.Succeeded"/> jobs before automatic deletion.
+    /// Defaults to 7 days. Set to <see cref="TimeSpan.Zero"/> to disable purging for this status.
+    /// </summary>
+    public TimeSpan RetentionSucceeded { get; set; } = TimeSpan.FromDays(7);
+
+    /// <summary>
+    /// How long to retain <see cref="JobStatus.Failed"/> jobs before automatic deletion.
+    /// Defaults to 30 days. Set to <see cref="TimeSpan.Zero"/> to disable purging for this status.
+    /// </summary>
+    public TimeSpan RetentionFailed { get; set; } = TimeSpan.FromDays(30);
+
+    /// <summary>
+    /// How long to retain <see cref="JobStatus.Expired"/> jobs before automatic deletion.
+    /// Defaults to 7 days. Set to <see cref="TimeSpan.Zero"/> to disable purging for this status.
+    /// </summary>
+    public TimeSpan RetentionExpired { get; set; } = TimeSpan.FromDays(7);
+
+    /// <summary>
+    /// How often the retention service runs to purge old terminal jobs.
+    /// Defaults to 1 hour.
+    /// </summary>
+    public TimeSpan RetentionInterval { get; set; } = TimeSpan.FromHours(1);
+
+    /// <summary>
     /// Per-queue settings loaded from <c>appsettings.json</c>, used for execution windows.
     /// Populated by <see cref="ApplySettings"/>.
     /// </summary>

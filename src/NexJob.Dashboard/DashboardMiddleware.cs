@@ -391,6 +391,33 @@ public sealed class DashboardMiddleware
             return true;
         }
 
+        if (string.Equals(subPath, "settings/retention", StringComparison.Ordinal))
+        {
+            var form = await context.Request.ReadFormAsync(context.RequestAborted).ConfigureAwait(false);
+
+            var rt = await runtimeStore.GetAsync(context.RequestAborted).ConfigureAwait(false);
+
+            if (int.TryParse(form["retentionSucceededDays"], NumberStyles.Integer, CultureInfo.InvariantCulture, out var succDays) && succDays >= 0)
+            {
+                rt.RetentionSucceeded = succDays == 0 ? TimeSpan.Zero : TimeSpan.FromDays(succDays);
+            }
+
+            if (int.TryParse(form["retentionFailedDays"], NumberStyles.Integer, CultureInfo.InvariantCulture, out var failDays) && failDays >= 0)
+            {
+                rt.RetentionFailed = failDays == 0 ? TimeSpan.Zero : TimeSpan.FromDays(failDays);
+            }
+
+            if (int.TryParse(form["retentionExpiredDays"], NumberStyles.Integer, CultureInfo.InvariantCulture, out var expDays) && expDays >= 0)
+            {
+                rt.RetentionExpired = expDays == 0 ? TimeSpan.Zero : TimeSpan.FromDays(expDays);
+            }
+
+            await runtimeStore.SaveAsync(rt, context.RequestAborted).ConfigureAwait(false);
+
+            LocalRedirect(context, $"{_pathPrefix}/settings");
+            return true;
+        }
+
         if (subPath.StartsWith("queues/", StringComparison.Ordinal) && subPath.EndsWith("/pause", StringComparison.Ordinal))
         {
             var queueName = Uri.UnescapeDataString(subPath.Split('/')[1]);

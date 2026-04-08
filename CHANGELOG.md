@@ -12,6 +12,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **`ContinueWithAsync<TJob>`** — new no-input overload for chaining `IJob` continuations after a parent job completes.
 - **`ThrottleAttribute` documentation** — clarified that concurrency limits are enforced per worker process (local), not cluster-wide.
 - **Persistent `IRuntimeSettingsStore`** — all four storage providers (PostgreSQL, SQL Server, Redis, MongoDB) now implement `IRuntimeSettingsStore`, persisting runtime configuration (worker count, polling interval, paused queues, recurring jobs paused) across application restarts. Dashboard overrides no longer require reapplication after each deploy. The in-memory store remains as fallback when no persistent provider is configured.
+- **Job Retention — automatic cleanup of terminal jobs** — new `JobRetentionService` periodically purges `Succeeded`, `Failed`, and `Expired` jobs older than configurable retention thresholds. Defaults: Succeeded 7 days, Failed 30 days, Expired 7 days. Thresholds are configurable via `NexJobOptions` (code/appsettings) and overridable at runtime through the dashboard Settings page without restart. Setting a threshold to zero disables purging for that status. `RetentionPolicy` type and `IStorageProvider.PurgeJobsAsync` implemented in all five storage providers.
 
 ### Changed
 
