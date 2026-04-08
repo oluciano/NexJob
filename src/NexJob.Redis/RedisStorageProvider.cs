@@ -862,6 +862,81 @@ public sealed class RedisStorageProvider : IStorageProvider
         return result.OrderBy(s => s.Id, StringComparer.Ordinal).ToList();
     }
 
+    /// <inheritdoc/>
+    public async Task<int> PurgeJobsAsync(RetentionPolicy policy, CancellationToken cancellationToken = default)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var deleted = 0;
+
+        await foreach (var key in ScanJobKeysAsync().WithCancellation(cancellationToken).ConfigureAwait(false))
+        {
+            var hash = await _db.HashGetAllAsync(key).ConfigureAwait(false);
+            if (hash.Length == 0)
+            {
+                continue;
+            }
+
+            var dict = ParseHash(hash);
+            var status = GetStatusFromHash(hash);
+
+            DateTimeOffset? cutoff = null;
+            TimeSpan retention = TimeSpan.Zero;
+
+            switch (status)
+            {
+                case JobStatus.Succeeded when policy.RetainSucceeded > TimeSpan.Zero:
+                {
+                    var completedAtStr = dict.GetValueOrDefault("completedAt");
+                    if (completedAtStr != null
+                        && DateTimeOffset.TryParse(completedAtStr, CultureInfo.InvariantCulture,
+                            DateTimeStyles.RoundtripKind, out var dt))
+                    {
+                        cutoff = dt;
+                    }
+
+                    retention = policy.RetainSucceeded;
+                    break;
+                }
+
+                case JobStatus.Failed when policy.RetainFailed > TimeSpan.Zero:
+                {
+                    var completedAtStr = dict.GetValueOrDefault("completedAt");
+                    if (completedAtStr != null
+                        && DateTimeOffset.TryParse(completedAtStr, CultureInfo.InvariantCulture,
+                            DateTimeStyles.RoundtripKind, out var dt))
+                    {
+                        cutoff = dt;
+                    }
+
+                    retention = policy.RetainFailed;
+                    break;
+                }
+
+                case JobStatus.Expired when policy.RetainExpired > TimeSpan.Zero:
+                {
+                    var createdAtStr = dict.GetValueOrDefault("createdAt");
+                    if (createdAtStr != null
+                        && DateTimeOffset.TryParse(createdAtStr, CultureInfo.InvariantCulture,
+                            DateTimeStyles.RoundtripKind, out var dt))
+                    {
+                        cutoff = dt;
+                    }
+
+                    retention = policy.RetainExpired;
+                    break;
+                }
+            }
+
+            if (cutoff.HasValue && now - cutoff.Value > retention)
+            {
+                await _db.KeyDeleteAsync(key).ConfigureAwait(false);
+                deleted++;
+            }
+        }
+
+        return deleted;
+    }
+
     // ── Private static helpers ────────────────────────────────────────────────
 
     private static string JobKey(string id) => $"nexjob:jobs:{id}";

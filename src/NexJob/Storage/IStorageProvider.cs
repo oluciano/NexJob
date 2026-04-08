@@ -316,4 +316,16 @@ public interface IStorageProvider
     /// <param name="tag">The tag to filter by.</param>
     /// <param name="cancellationToken">Token to cancel the operation.</param>
     Task<IReadOnlyList<JobRecord>> GetJobsByTagAsync(string tag, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Permanently deletes terminal jobs (<see cref="JobStatus.Succeeded"/>,
+    /// <see cref="JobStatus.Failed"/>, <see cref="JobStatus.Expired"/>) whose
+    /// <see cref="JobRecord.CompletedAt"/> (or <see cref="JobRecord.CreatedAt"/> for Expired)
+    /// is older than the thresholds defined in <paramref name="policy"/>.
+    /// A threshold of <see cref="TimeSpan.Zero"/> skips purging for that status.
+    /// </summary>
+    /// <param name="policy">Retention thresholds per terminal status.</param>
+    /// <param name="cancellationToken">Token to cancel the operation.</param>
+    /// <returns>Total number of jobs deleted.</returns>
+    Task<int> PurgeJobsAsync(RetentionPolicy policy, CancellationToken cancellationToken = default);
 }

@@ -31,6 +31,27 @@ public sealed class RuntimeSettings
     /// <summary>Override polling interval. <see langword="null"/> = use appsettings/code value.</summary>
     public TimeSpan? PollingInterval { get; set; }
 
+    /// <summary>
+    /// Override retention period for <see cref="JobStatus.Succeeded"/> jobs.
+    /// <see langword="null"/> = use <see cref="NexJobOptions.RetentionSucceeded"/> baseline.
+    /// <see cref="TimeSpan.Zero"/> = disable purging for this status.
+    /// </summary>
+    public TimeSpan? RetentionSucceeded { get; set; }
+
+    /// <summary>
+    /// Override retention period for <see cref="JobStatus.Failed"/> jobs.
+    /// <see langword="null"/> = use <see cref="NexJobOptions.RetentionFailed"/> baseline.
+    /// <see cref="TimeSpan.Zero"/> = disable purging for this status.
+    /// </summary>
+    public TimeSpan? RetentionFailed { get; set; }
+
+    /// <summary>
+    /// Override retention period for <see cref="JobStatus.Expired"/> jobs.
+    /// <see langword="null"/> = use <see cref="NexJobOptions.RetentionExpired"/> baseline.
+    /// <see cref="TimeSpan.Zero"/> = disable purging for this status.
+    /// </summary>
+    public TimeSpan? RetentionExpired { get; set; }
+
     /// <summary>Timestamp of the last save, set automatically by the store.</summary>
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
