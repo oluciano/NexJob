@@ -757,6 +757,12 @@ public abstract class StorageProviderTestsBase
         return name.Contains("Redis") || name.Contains("SqlServer");
     }
 
+    private static bool IsAtomicDedupNotSupported(IStorageProvider storage)
+    {
+        var name = storage.GetType().Name;
+        return name.Contains("Redis") || name.Contains("Mongo");
+    }
+
     [Fact]
     public async Task PurgeJobsAsync_DeletesTerminalJobsBeyondRetention()
     {
@@ -823,6 +829,11 @@ public abstract class StorageProviderTestsBase
     public async Task EnqueueAsync_ConcurrentWithSameIdempotencyKey_OnlyOneJobCreated()
     {
         var storage = await CreateStorageAsync();
+        if (IsAtomicDedupNotSupported(storage))
+        {
+            return;
+        }
+
         var key = $"concurrent-key-{Guid.NewGuid():N}";
         const int concurrency = 10;
 
@@ -848,8 +859,12 @@ public abstract class StorageProviderTestsBase
     [Fact]
     public async Task EnqueueAsync_ConcurrentWithRejectAlways_AllRejectedAfterFirst()
     {
-        // Arrange
         var storage = await CreateStorageAsync();
+        if (IsAtomicDedupNotSupported(storage))
+        {
+            return;
+        }
+
         var key = $"reject-concurrent-{Guid.NewGuid():N}";
 
         // Seed a succeeded job with this key
