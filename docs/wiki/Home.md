@@ -77,6 +77,7 @@ See [Getting Started](01-Getting-Started.md) for a complete walkthrough.
 - **`IDeadLetterHandler<T>`** — automatic fallback on permanent failure
 - **Recurring jobs** — via code or `appsettings.json`
 - **Continuations** — chain jobs with parent/child relationships
+- **Job Filters** — `IJobExecutionFilter` middleware pipeline for cross-cutting behaviour
 - **Idempotency** — `DuplicatePolicy` controls re-enqueue behavior
 - **Dashboard** — dark UI, standalone for Worker Services
 - **OpenTelemetry** — traces and metrics built-in
@@ -93,6 +94,7 @@ See [Getting Started](01-Getting-Started.md) for a complete walkthrough.
 | [Scheduling](03-Scheduling.md) | Enqueue, schedule, priority, deadline |
 | [Recurring Jobs](04-Recurring-Jobs.md) | Cron-based recurring execution |
 | [Continuations](05-Continuations.md) | Chain jobs together |
+| [Job Filters](02-Job-Types.md#job-execution-filters) | Cross-cutting middleware for job execution |
 | [Retry & Dead Letter](06-Retry-And-Dead-Letter.md) | Retry policies and fallback handlers |
 | [Throttling](07-Throttling.md) | Concurrency limits per resource |
 | [IJobContext](08-IJobContext.md) | Access runtime context inside jobs |
@@ -111,4 +113,4 @@ See [Getting Started](01-Getting-Started.md) for a complete walkthrough.
 
 ## Version
 
-**Current:** v0.6.0 | [Changelog](../../CHANGELOG.md) | [GitHub](https://github.com/nexjob/nexjob)
+**Current:** v0.8.0 | [Changelog](../../CHANGELOG.md) | [GitHub](https://github.com/oluciano/NexJob)

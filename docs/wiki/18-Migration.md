@@ -72,6 +72,49 @@ No configuration changes required for existing `NexJobOptions` usage.
 
 ---
 
+## v0.7.x → v0.8.0
+
+### Breaking Changes
+
+**`DashboardOptions.RequireAuth` removed**
+
+The `RequireAuth` boolean property has been removed from `DashboardOptions`. It only supported ASP.NET Core authentication and has been replaced by the more flexible `IDashboardAuthorizationHandler` interface.
+
+```csharp
+// BEFORE (v0.7.x) — no longer compiles
+app.UseNexJobDashboard("/dashboard", opt =>
+{
+    opt.RequireAuth = true;
+});
+
+// AFTER (v0.8.0) — implement IDashboardAuthorizationHandler
+public sealed class DashboardAuth : IDashboardAuthorizationHandler
+{
+    public Task<bool> AuthorizeAsync(HttpContext context) =>
+        Task.FromResult(context.User.Identity?.IsAuthenticated == true);
+}
+
+builder.Services.AddSingleton<IDashboardAuthorizationHandler, DashboardAuth>();
+app.UseNexJobDashboard("/dashboard");
+```
+
+See [Dashboard](10-Dashboard.md) for authorization examples.
+
+### New Features
+
+- **`IDashboardAuthorizationHandler`** — pluggable dashboard authorization. Implement and register in DI.
+- **Persistent `IRuntimeSettingsStore`** — all storage providers (PostgreSQL, SQL Server, Redis, MongoDB) now persist runtime settings across restarts. Dashboard overrides survive deploys.
+- **Job Retention** — automatic cleanup of terminal jobs (`Succeeded`, `Failed`, `Expired`) via configurable TTL. Configurable via `NexJobOptions` and the dashboard Settings page.
+- **`IJobExecutionFilter`** — middleware pipeline for cross-cutting job execution behaviour.
+
+### Schema Changes
+
+PostgreSQL and SQL Server providers apply two new migrations automatically on startup:
+
+- **V7** — `nexjob_settings` table for persistent runtime configuration
+
+---
+
 ## v0.4.x → v0.5.0
 
 ### Breaking Changes

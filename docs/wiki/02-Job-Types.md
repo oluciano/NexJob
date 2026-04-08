@@ -103,6 +103,59 @@ See [Retry & Dead Letter](06-Retry-And-Dead-Letter.md) for retry configuration.
 
 ---
 
+## Job Execution Filters
+
+Filters wrap job execution with cross-cutting behaviour — logging, tenant injection, audit trails, metrics, circuit breakers. Unlike dead-letter handlers which run after failure, filters run around every execution.
+
+```csharp
+public sealed class ExecutionLoggingFilter : IJobExecutionFilter
+{
+    private readonly ILogger<ExecutionLoggingFilter> _logger;
+
+    public ExecutionLoggingFilter(ILogger<ExecutionLoggingFilter> logger)
+        => _logger = logger;
+
+    public async Task OnExecutingAsync(
+        JobExecutingContext context,
+        JobExecutionDelegate next,
+        CancellationToken ct)
+    {
+        _logger.LogInformation(
+            "Starting job {JobType} attempt {Attempt}",
+            context.Job.JobType,
+            context.Job.Attempts);
+
+        await next(ct);
+
+        if (context.Succeeded)
+            _logger.LogInformation("Job {JobType} succeeded", context.Job.JobType);
+        else
+            _logger.LogWarning(
+                "Job {JobType} failed: {Error}",
+                context.Job.JobType,
+                context.Exception?.Message);
+    }
+}
+
+// Register — multiple filters execute in registration order
+builder.Services.AddSingleton<IJobExecutionFilter, ExecutionLoggingFilter>();
+```
+
+**Key behaviours:**
+
+- Call `await next(ct)` to pass control to the next filter or the job itself
+- `context.Succeeded` and `context.Exception` are set after `next` returns — check them after the call
+- Filters are resolved from the job's DI scope — scoped services are available via `context.Services`
+- A filter that throws is treated as a job failure — retry and dead-letter apply normally
+- Multiple filters execute in DI registration order
+- No filters registered = zero overhead on job execution
+
+**When to use filters vs dead-letter handlers:**
+
+Use a **filter** when you need to run code before and after every execution regardless of outcome. Use a **dead-letter handler** when you need to react specifically to permanent failure after all retries.
+
+---
+
 ## Auto-Registration
 
 `AddNexJobJobs(assembly)` scans the assembly and registers all `IJob` and `IJob<T>` implementations as transient services. No manual registration needed.
