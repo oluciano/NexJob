@@ -816,4 +816,67 @@ public abstract class StorageProviderTestsBase
         var remaining = await storage.GetJobByIdAsync(job.Id);
         remaining.Should().NotBeNull();
     }
+
+    // ── DuplicatePolicy concurrency ────────────────────────────────────────────
+
+    [Fact]
+    public async Task EnqueueAsync_ConcurrentWithSameIdempotencyKey_OnlyOneJobCreated()
+    {
+        var storage = await CreateStorageAsync();
+        var key = $"concurrent-key-{Guid.NewGuid():N}";
+        const int concurrency = 10;
+
+        // Act — enqueue the same key from multiple concurrent tasks
+        var tasks = Enumerable.Range(0, concurrency).Select(_ =>
+        {
+            var job = MakeJob(idempotencyKey: key);
+            return storage.EnqueueAsync(job, DuplicatePolicy.AllowAfterFailed);
+        });
+
+        var results = await Task.WhenAll(tasks);
+
+        // Assert — all results point to the same job
+        var distinctJobIds = results.Select(r => r.JobId).Distinct().ToList();
+        distinctJobIds.Should().HaveCount(1, "concurrent enqueues with same key must resolve to one job");
+
+        // Only one job should exist in storage
+        var filter = new JobFilter();
+        var jobs = await storage.GetJobsAsync(filter, 1, 100);
+        jobs.Items.Count(j => j.IdempotencyKey == key).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task EnqueueAsync_ConcurrentWithRejectAlways_AllRejectedAfterFirst()
+    {
+        // Arrange
+        var storage = await CreateStorageAsync();
+        var key = $"reject-concurrent-{Guid.NewGuid():N}";
+
+        // Seed a succeeded job with this key
+        var seed = MakeJob(idempotencyKey: key);
+        await storage.EnqueueAsync(seed, DuplicatePolicy.AllowAfterFailed);
+        var fetched = await storage.FetchNextAsync(["default"]);
+        await storage.CommitJobResultAsync(fetched!.Id, new JobExecutionResult
+        {
+            Succeeded = true,
+            Logs = [],
+        });
+
+        // Act — concurrent re-enqueue with RejectAlways
+        const int concurrency = 5;
+        var tasks = Enumerable.Range(0, concurrency).Select(_ =>
+        {
+            var job = MakeJob(idempotencyKey: key);
+            return storage.EnqueueAsync(job, DuplicatePolicy.RejectAlways);
+        });
+
+        var results = await Task.WhenAll(tasks);
+
+        // Assert — all rejected, pointing to the original seeded job
+        results.Should().AllSatisfy(r =>
+        {
+            r.WasRejected.Should().BeTrue();
+            r.JobId.Should().Be(seed.Id);
+        });
+    }
 }

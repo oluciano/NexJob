@@ -18,7 +18,7 @@ Do not add inline business logic to it. Each stage has a single responsibility:
 
 - `TryHandleExpirationAsync` — deadline check only
 - `PrepareInvocationAsync` — type resolution, migration, deserialization, DI scope
-- `ExecuteWithThrottlingAsync` — throttle acquisition + job invocation
+- `ExecuteWithThrottlingAndFiltersAsync` — throttle acquisition + filter pipeline + job invocation
 - `HandleFailureAsync` — retry calculation + decision logging
 - `RecordSuccessMetrics` — metrics only
 
@@ -32,6 +32,70 @@ The dispatcher must log the *reason* for every automatic decision:
 - Throttle wait started → `LogDebug`
 - Retry scheduled → `LogInformation` with delay and scheduled time
 - Dead-letter → `LogError`
+
+---
+
+## Job Filter Pipeline
+
+### IJobExecutionFilter wraps job execution
+Filters are resolved from the job's DI scope via `IEnumerable<IJobExecutionFilter>`.
+They execute in DI registration order. The job invocation is the terminal step.
+
+**Rule:** Never add inline cross-cutting logic to `ExecuteWithThrottlingAndFiltersAsync`.
+Register an `IJobExecutionFilter` instead.
+
+### Fast path when no filters registered
+When `_filters.Count == 0`, the job is invoked directly without allocating `JobExecutingContext`
+or building the pipeline. Zero overhead for the common case.
+
+**Rule:** Always check `_filters.Count == 0` before building the pipeline.
+
+### Filter exceptions propagate normally
+A filter that throws is treated as a job failure. The normal retry and dead-letter flow applies.
+Do not swallow exceptions in the dispatcher — let them propagate to `HandleFailureAsync`.
+
+### JobExecutingContext lifecycle
+`context.Succeeded` and `context.Exception` are set by the dispatcher after the pipeline runs,
+not by the filter itself. Filters read these values after calling `await next(ct)`.
+
+---
+
+## Retention Policy
+
+### JobRetentionService reads effective policy on every cycle
+The retention service reads `IRuntimeSettingsStore` on every purge cycle so that
+dashboard overrides take effect without a restart.
+
+**Rule:** Never cache the retention policy between cycles. Always read from the store.
+
+### PurgeJobsAsync never touches active jobs
+`PurgeJobsAsync` only deletes jobs in terminal states: `Succeeded`, `Failed`, `Expired`.
+Jobs in `Enqueued`, `Processing`, `Scheduled`, or `AwaitingContinuation` must never be deleted
+by the retention service.
+
+**Rule:** Every `PurgeJobsAsync` implementation must filter by terminal status before deleting.
+
+### TimeSpan.Zero disables purging for that status
+When a retention threshold is `TimeSpan.Zero`, skip purging for that status entirely.
+
+**Rule:** Check `policy.RetainX > TimeSpan.Zero` before executing any DELETE.
+
+---
+
+## Runtime Settings Persistence
+
+### IRuntimeSettingsStore is implemented by all persistent providers
+PostgreSQL, SQL Server, Redis, and MongoDB each implement `IRuntimeSettingsStore` and persist
+settings in a dedicated table/key (`nexjob_settings`). The in-memory store is volatile by design.
+
+**Rule:** When adding a new persistent storage provider, implement `IRuntimeSettingsStore`
+and register it in `AddNexJobXxx()`.
+
+### RegisterCore uses TryAdd — provider registration wins
+`NexJobServiceCollectionExtensions.RegisterCore` uses `TryAddSingleton<IRuntimeSettingsStore, InMemoryRuntimeSettingsStore>`.
+Provider extension methods register before `AddNexJob()` is called, so their registration takes precedence.
+
+**Rule:** Always register `IRuntimeSettingsStore` in `AddNexJobXxx()` alongside `IStorageProvider`.
 
 ---
 
