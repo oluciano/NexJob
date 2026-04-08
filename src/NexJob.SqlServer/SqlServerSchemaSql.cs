@@ -131,6 +131,17 @@ internal static class SqlServerSchemaSql
             WHERE heartbeat_at IS NOT NULL;
         """;
 
+    /// <summary>V7: Create nexjob_settings table for persistent runtime configuration.</summary>
+    internal const string V7CreateSettingsTable =
+        """
+        IF OBJECT_ID('nexjob_settings', 'U') IS NULL
+        CREATE TABLE nexjob_settings (
+            [key]      NVARCHAR(200) PRIMARY KEY,
+            [value]    NVARCHAR(MAX) NOT NULL,
+            updated_at DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET()
+        );
+        """;
+
     /// <summary>Full initial schema — kept for backward compatibility. Prefer the versioned consts.</summary>
     internal const string CreateTables = V1CreateTables;
 }

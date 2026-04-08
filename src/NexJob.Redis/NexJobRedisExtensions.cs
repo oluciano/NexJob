@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using NexJob.Configuration;
 using NexJob.Storage;
 using StackExchange.Redis;
 
@@ -19,11 +20,9 @@ public static class NexJobRedisExtensions
         this IServiceCollection services,
         string connectionString)
     {
-        services.AddSingleton<IStorageProvider>(_ =>
-        {
-            var mux = ConnectionMultiplexer.Connect(connectionString);
-            return new RedisStorageProvider(mux.GetDatabase());
-        });
+        var mux = ConnectionMultiplexer.Connect(connectionString);
+        services.AddSingleton<IStorageProvider>(_ => new RedisStorageProvider(mux.GetDatabase()));
+        services.AddSingleton<IRuntimeSettingsStore>(_ => new RedisRuntimeSettingsStore(mux.GetDatabase()));
 
         return services;
     }
@@ -41,6 +40,8 @@ public static class NexJobRedisExtensions
     {
         services.AddSingleton<IStorageProvider>(
             _ => new RedisStorageProvider(multiplexer.GetDatabase()));
+        services.AddSingleton<IRuntimeSettingsStore>(
+            _ => new RedisRuntimeSettingsStore(multiplexer.GetDatabase()));
 
         return services;
     }

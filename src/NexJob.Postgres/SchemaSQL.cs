@@ -115,6 +115,16 @@ internal static class SchemaSql
         );
         """;
 
+    /// <summary>V7: Create nexjob_settings table for persistent runtime configuration.</summary>
+    internal const string V7CreateSettingsTable =
+        """
+        CREATE TABLE IF NOT EXISTS nexjob_settings (
+            key        TEXT        PRIMARY KEY,
+            value      TEXT        NOT NULL,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        """;
+
     /// <summary>Full initial schema — kept for backward compatibility. Prefer the versioned consts.</summary>
     internal const string CreateTables = V1CreateTables;
 }
