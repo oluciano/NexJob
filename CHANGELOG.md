@@ -12,6 +12,18 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+## [1.0.0] — April 2026
+
+### Added
+- **NexJob wiki** — complete documentation in `docs/wiki/` covering all features, best practices, troubleshooting, common scenarios, and migration guides.
+- **Concurrency tests for `DuplicatePolicy`** — integration tests validating concurrent enqueue behaviour under `AllowAfterFailed` and `RejectAlways` policies across all storage providers.
+
+### Changed
+- **API freeze** — public API is now stable. Breaking changes require a major version bump.
+- **Roadmap updated** — v1.0.0 marks production-hardened status.
+
+### Fixed
+
 ## [0.8.0] — April 2026
 
 ### Added
