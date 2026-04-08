@@ -24,169 +24,140 @@
 
 ---
 
-## NexJob
+## What is NexJob?
 
-**Background jobs that execute reliably and enforce deadlines. No hidden state. No surprises in production.**
+NexJob is a reliable background job processing library for .NET 8.
+It gives you predictable execution, built-in retries, deadline enforcement, and operational visibility — without the complexity of traditional schedulers.
 
-Jobs expire if not started in time. Storage is authoritative. State transitions are persisted. This is how background processing should work.
-
----
-
-## Why NexJob
-
-- **Deadlines are enforced**: Jobs expiring before execution are marked `Expired` and skipped. No silent failures.
-- **Storage owns state**: All state persisted. Multi-instance safe from day one. Dispatcher is stateless.
-- **Predictable execution**: No serialization. Jobs run natively with async/await. One job instance per execution.
-- **Explicit failure handling**: Retries are configured. Dead-letter handlers trigger for permanent failures.
-- **Built for visibility**: Live timeline, execution history, failure tracking. OpenTelemetry integration.
-- **No hidden behavior**: What you see is what happens. Clear, deterministic execution model.
+If you need jobs that **must run, fail safely, and leave a trace**, NexJob handles it as a first-class concern.
 
 ---
 
-## Key Features
+## Why not Hangfire?
 
-- **Deadline enforcement** — jobs expire if not started in time
-- **Dead-letter handlers** — handle permanent failures automatically
-- **Retry policies** — global and per-job control
-- **Resource throttling** — limit concurrency per resource
-- **Live dashboard** — execution timeline, history, observability
-- **Graceful shutdown** — jobs complete naturally; strays are requeued
-- **All storage providers free** — PostgreSQL, SQL Server, Redis, MongoDB
-- **Live config** — pause/resume, adjust workers at runtime
+NexJob was built for developers who want Hangfire-like reliability without the paid storage providers or the hidden complexity.
+
+| Feature | NexJob | Hangfire |
+|---|---|---|
+| Storage providers | 5 free (PostgreSQL, SQL Server, Redis, MongoDB, InMemory) | Free InMemory only; others require paid license |
+| Deadline enforcement | Built-in (`deadlineAfter`) | Plugin required |
+| Dead-letter handling | Automatic after exhausted retries | Manual |
+| Dispatch latency | Near-zero (wake-up channel) | Polling-based |
+| Dashboard | Built-in, standalone UI | Built-in (Pro required for advanced) |
+| OpenTelemetry | Built-in traces and metrics | Plugin required |
+| Concurrency throttling | `[Throttle]` attribute per resource | Queue-level limits |
+| Ecosystem | Young library, focused scope | Mature ecosystem, many plugins |
+| Package size | ~50 KB | ~2 MB |
+
+NexJob is not a drop-in replacement for Hangfire. If you need calendar-based scheduling, distributed execution across untrusted networks, or enterprise plugin ecosystems, Hangfire is the better choice.
 
 ---
 
-## Quick Example
+## Quick Start
 
-Define a job:
+```bash
+dotnet add package NexJob
+```
 
 ```csharp
-public class SendInvoiceJob : IJob<SendInvoiceInput>
+// 1. Register NexJob and scan for jobs
+builder.Services.AddNexJob();
+builder.Services.AddNexJobJobs(typeof(Program).Assembly);
+```
+
+```csharp
+// 2. Define a job
+public sealed class SendInvoiceJob : IJob<SendInvoiceInput>
 {
     private readonly IEmailService _email;
+
     public SendInvoiceJob(IEmailService email) => _email = email;
 
     public async Task ExecuteAsync(SendInvoiceInput input, CancellationToken ct)
-        => await _email.SendAsync(input.Email, "Invoice attached", ct);
+        => await _email.SendAsync(input.Email, "Your invoice", ct);
 }
+
+public sealed record SendInvoiceInput(string Email);
 ```
 
-Register and enqueue with deadline:
-
 ```csharp
-builder.Services.AddNexJob(builder.Configuration)
-                .AddNexJobJobs(typeof(Program).Assembly);
-
+// 3. Enqueue from anywhere
 var scheduler = app.Services.GetRequiredService<IScheduler>();
-
-// Enqueue with 5-minute deadline. Job expires if not started in time.
 await scheduler.EnqueueAsync<SendInvoiceJob, SendInvoiceInput>(
-    new(orderId, email),
+    new SendInvoiceInput("customer@example.com"),
     deadlineAfter: TimeSpan.FromMinutes(5));
 ```
 
-Job executes immediately on an available worker. If it misses the deadline, it's marked `Expired` and skipped.
+The job expires if not started within 5 minutes — no silent failures, no zombie jobs.
+
+---
+
+## Core Features
+
+- **`IJob` / `IJob<T>`** — simple and structured job interfaces
+- **Predictable retries** — exponential backoff with configurable policies, global + per-job `[Retry]`
+- **Deadline enforcement** — jobs expire if not executed in time (`deadlineAfter`)
+- **Dead-letter handlers** — automatic fallback when all retries are exhausted
+- **Concurrency throttling** — `[Throttle]` attribute for per-resource limits
+- **Job continuations** — chain jobs with parent/child relationships
+- **Idempotency** — `DuplicatePolicy` controls re-enqueue behavior
+- **Recurring jobs** — via code or `appsettings.json`
+- **Job filters** — `IJobExecutionFilter` middleware for cross-cutting behaviour
+- **Job retention** — automatic cleanup of terminal jobs with configurable TTL
+- **OpenTelemetry** — traces and metrics built-in
+- **Built-in dashboard** — standalone dark UI, zero configuration
+
+---
+
+## Storage Providers
+
+| Provider | Package | Status |
+|---|---|---|
+| InMemory | `NexJob` (core) | Production ready |
+| PostgreSQL | `NexJob.Postgres` | Production ready |
+| SQL Server | `NexJob.SqlServer` | Production ready |
+| Redis | `NexJob.Redis` | Production ready |
+| MongoDB | `NexJob.MongoDB` | Production ready |
+
+All providers implement `IRuntimeSettingsStore` — runtime configuration persists across restarts.
 
 ---
 
 ## Dashboard
 
-![Dashboard Timeline](./assets/dashboard-timeline.png)
-
-**Visual timeline, not logs.**
-
-Logs force you to reconstruct what happened. The dashboard shows it directly: every job's exact state and when it transitioned. See failures, retries, expired jobs, and execution timing at a glance.
-
-**Live progress reporting** for long-running jobs:
-
-```csharp
-public async Task ExecuteAsync(ImportInput input, CancellationToken ct)
-{
-    await _ctx.ReportProgressAsync(0, "Starting...", ct);
-    // ... do work ...
-    await _ctx.ReportProgressAsync(100, "Done.", ct);
-}
-```
-
-**Enable it**:
+The dashboard provides a visual timeline of every job's lifecycle — no log reconstruction needed.
+See failures, retries, expired jobs, and execution timing at a glance.
 
 ```csharp
 app.UseNexJobDashboard("/dashboard");
 ```
 
-One dashboard view. Full system visibility. No investigation required.
+One line. No configuration required.
 
 ---
 
-## Core Concepts
+## Documentation
 
-### Job Types
+Complete documentation is in the [wiki](docs/wiki/). Key pages:
 
-- **`IJob`** — jobs with no input
-- **`IJob<T>`** — jobs with structured input
-
-### Lifecycle
-
-Jobs move through states: **Enqueued** → **Processing** → **Succeeded** (or **Failed** → retry).
-
-Terminal states: **Dead-letter** (exhausted retries), **Expired** (deadline missed).
-
-### Deadlines
-
-Set at enqueue. Checked before execution. Expired jobs are marked `Expired` and skipped:
-
-```csharp
-await scheduler.EnqueueAsync<PaymentJob, PaymentInput>(
-    input,
-    deadlineAfter: TimeSpan.FromMinutes(5));
-```
-
-### Retries
-
-Global policy. Per-job override:
-
-```csharp
-[Retry(5, InitialDelay = "00:00:30", Multiplier = 2.0, MaxDelay = "01:00:00")]
-public class PaymentJob : IJob<PaymentInput> { ... }
-```
-
-### Dead-Letter Handling
-
-Triggered when retries exhausted. Handler runs in isolated scope:
-
-```csharp
-public class PaymentDeadLetterHandler : IDeadLetterHandler<PaymentJob>
-{
-    public async Task HandleAsync(JobRecord failedJob, Exception lastException, CancellationToken ct)
-        => await _alerts.SendAsync("Payment failed", ct);
-}
-
-builder.Services.AddTransient<IDeadLetterHandler<PaymentJob>, PaymentDeadLetterHandler>();
-```
+- **[Mental Model](docs/wiki/00-Mental-Model.md)** — how NexJob works, read this first
+- **[Getting Started](docs/wiki/01-Getting-Started.md)** — run your first job in 2 minutes
+- **[Best Practices](docs/wiki/13-Best-Practices.md)** — production guidelines
+- **[Troubleshooting](docs/wiki/16-Troubleshooting.md)** — debug common issues
+- **[Common Scenarios](docs/wiki/15-Common-Scenarios.md)** — real-world use cases with code
 
 ---
 
-## Installation
+## Benchmarks
 
-```bash
-# Core
-dotnet add package NexJob
+Measured per individual enqueue operation:
 
-# Storage (pick one)
-dotnet add package NexJob.Postgres
-dotnet add package NexJob.SqlServer
-dotnet add package NexJob.Redis
-dotnet add package NexJob.MongoDB
+| Metric | NexJob | Hangfire |
+|---|---|---|
+| Latency | 9.3 µs | 26.6 µs |
+| Memory | 1.67 KB | 11.2 KB |
 
-# Dashboard (optional)
-dotnet add package NexJob.Dashboard
-```
-
----
-
-## Philosophy
-
-Explicit behavior over magic. Jobs execute natively. Storage owns state. Deadlines are enforced. Failures are handled, not hidden. If it's not obvious from the code, it's not in NexJob.
+NexJob is **2.87× faster** and uses **85% less memory** per enqueue. Benchmarks run with BenchmarkDotNet against comparable configurations.
 
 ---
 
@@ -194,7 +165,11 @@ Explicit behavior over magic. Jobs execute natively. Storage owns state. Deadlin
 
 ```
 v0.4.0  ✅ Deadlines, dead-letter handlers, wake-up signaling
-v1.0.0  ○ Stable API, production hardened, all providers tested
+v0.5.0  ✅ Wake-up channel, recurring jobs, dashboard timeline
+v0.6.0  ✅ Distributed reliability tests, recurring config redesign
+v0.7.0  ✅ DuplicatePolicy, atomic commits, AI execution system
+v0.8.0  ✅ Filters, persistent settings, job retention, wiki
+v1.0.0  ○ API freeze, production hardened
 v2.0.0  ○ Distributed coordination, multi-node consistency
 ```
 
