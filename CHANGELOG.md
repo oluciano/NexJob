@@ -8,6 +8,9 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`IJobExecutionFilter`** — middleware pipeline for job execution. Implement and register in DI to add cross-cutting behaviour: logging, tenant injection, audit trails, metrics, circuit breakers. Filters wrap the job execution in registration order. A filter that throws is treated as a job failure — the normal retry and dead-letter flow applies. Filters are resolved from the job's DI scope.
+- **`JobExecutingContext`** — context passed to each filter containing the `JobRecord`, `IServiceProvider` (job scope), and the execution outcome (`Succeeded`, `Exception`) set after the pipeline runs.
+- **`JobExecutionDelegate`** — delegate type representing the next component in the job execution filter pipeline. Returned from `IJobExecutionFilter.OnExecutingAsync` and invoked by the filter to pass control.
 - **`IDashboardAuthorizationHandler`** — pluggable authorization interface for the NexJob dashboard. Implement and register in DI to control access with any strategy: role-based, claims, API key, IP whitelist, or custom logic. No handler registered = open access (suitable for development and internal networks).
 - **`ContinueWithAsync<TJob>`** — new no-input overload for chaining `IJob` continuations after a parent job completes.
 - **`ThrottleAttribute` documentation** — clarified that concurrency limits are enforced per worker process (local), not cluster-wide.
