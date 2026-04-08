@@ -1,0 +1,109 @@
+# Migration
+
+Breaking changes, API updates, and schema migration between NexJob versions.
+
+---
+
+## Schema Migration (Job Payloads)
+
+When your job input type changes, existing jobs in storage may have incompatible payloads. NexJob handles this with automatic schema migration.
+
+### Define the Migration
+
+```csharp
+// Old input (v1)
+public sealed record SendEmailInputV1(string To, string Subject);
+
+// New input (v2)
+public sealed record SendEmailInputV2(string To, string Subject, string ReplyTo);
+
+// Migration implementation
+public sealed class SendEmailV1ToV2 : IJobMigration<SendEmailInputV1, SendEmailInputV2>
+{
+    public SendEmailInputV2 Migrate(SendEmailInputV1 old)
+    {
+        return new SendEmailInputV2(old.To, old.Subject, ReplyTo: "noreply@example.com");
+    }
+}
+```
+
+### Register the Migration
+
+```csharp
+builder.Services.AddJobMigration<SendEmailInputV1, SendEmailInputV2, SendEmailV1ToV2>();
+```
+
+### Declare Schema Version on Job
+
+```csharp
+[SchemaVersion(2)]
+public sealed class SendEmailJob : IJob<SendEmailInputV2>
+{
+    public async Task ExecuteAsync(SendEmailInputV2 input, CancellationToken ct)
+    {
+        // input is always v2 — old v1 payloads are migrated automatically
+    }
+}
+```
+
+When the dispatcher fetches a job with a mismatched schema version, it:
+
+1. Deserializes the stored payload as the old type
+2. Runs the migration
+3. Passes the new type to the job
+
+---
+
+## v0.5.x → v0.6.0
+
+### Breaking Changes
+
+- `AddNexJob()` now defaults to InMemory storage. Previously required explicit provider configuration.
+- `CommitJobResultAsync` is now the atomic commit path for all job finalization. Provider implementations that used separate calls to `AcknowledgeAsync` and `SaveExecutionLogsAsync` have been consolidated.
+
+### API Changes
+
+- `EnqueueAsync` now returns `JobId` directly instead of `EnqueueResult`. The `EnqueueResult` type is only used by `IStorageProvider`.
+- `DuplicatePolicy` default is now `AllowAfterFailed` (previously was implicit reject-on-duplicate behavior).
+
+### Config Changes
+
+No configuration changes required for existing `NexJobOptions` usage.
+
+---
+
+## v0.4.x → v0.5.0
+
+### Breaking Changes
+
+- `IJob<T>.ExecuteAsync` signature changed: `input` parameter is now the first parameter (before `cancellationToken`).
+- `RecurringJobSettings` moved from `NexJobOptions.RecurringJobs` to a separate collection configured via `AddRecurringJob` methods.
+
+### API Changes
+
+- `IScheduler.ContinueWithAsync` now returns `JobId` for the child job.
+- `IJobContext.Progress` replaced with `ReportProgressAsync`.
+
+---
+
+## General Migration Guidelines
+
+### Before Upgrading
+
+1. Review the [Changelog](../../CHANGELOG.md) for breaking changes
+2. Run tests against the new version
+3. Check storage provider compatibility (schema changes are handled by the provider)
+
+### After Upgrading
+
+1. Verify all jobs register correctly
+2. Check the dashboard for job execution
+3. Monitor metrics for any regression in `nexjob.jobs.failed`
+
+---
+
+## Next Steps
+
+- [Storage Providers](09-Storage-Providers.md) — Provider-specific migration notes
+- [Configuration Reference](11-Configuration-Reference.md) — Updated configuration options
+- [Changelog](../../CHANGELOG.md) — Full version history
