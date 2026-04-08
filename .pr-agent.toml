@@ -1,0 +1,23 @@
+[config]
+model = "gemini/gemini-1.5-pro"
+fallback_models = ["gemini/gemini-1.5-flash"]
+
+[github_action_config]
+auto_review = true
+handle_pr_actions = ["opened", "synchronize", "reopened", "ready_for_review"]
+
+[pr_reviewer]
+inline_code_comments = true
+extra_instructions = """
+You are reviewing NexJob, a .NET 8 background job processing library.
+Before reviewing, internalize these rules from CLAUDE.md and GEMINI.md:
+1. Storage is the single source of truth — no in-memory state overrides it.
+2. Dispatcher is stateless — all state transitions must be persisted.
+3. Deadline enforced before execution — expired jobs never execute.
+4. Dead-letter handlers must never crash the dispatcher — exceptions swallowed and logged only.
+5. Zero warnings in Release builds.
+6. Classes sealed by default. No .Result or .Wait(). CancellationToken always propagated.
+7. All public APIs must have XML documentation.
+Focus on: invariant violations, missing tests, StyleCop issues, missing XML docs, async violations.
+Do NOT comment on: formatting preferences, subjective style.
+"""
