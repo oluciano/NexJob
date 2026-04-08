@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using NexJob.Configuration;
 using NexJob.Storage;
 
 namespace NexJob.SqlServer;
@@ -19,6 +20,7 @@ public static class NexJobSqlServerExtensions
         string connectionString)
     {
         services.AddSingleton<IStorageProvider>(_ => new SqlServerStorageProvider(connectionString));
+        services.AddSingleton<IRuntimeSettingsStore>(_ => new SqlServerRuntimeSettingsStore(connectionString));
         return services;
     }
 }

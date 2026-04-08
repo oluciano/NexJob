@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using MongoDB.Bson.Serialization;
 using MongoDB.Driver;
+using NexJob.Configuration;
 using NexJob.Storage;
 
 namespace NexJob.MongoDB;
@@ -36,6 +37,7 @@ public static class MongoNexJobExtensions
         services.AddSingleton<IMongoDatabase>(sp =>
             sp.GetRequiredService<IMongoClient>().GetDatabase(databaseName));
         services.AddSingleton<IStorageProvider, MongoStorageProvider>();
+        services.AddSingleton<IRuntimeSettingsStore, MongoRuntimeSettingsStore>();
 
         return services;
     }
@@ -50,6 +52,7 @@ public static class MongoNexJobExtensions
         RegisterSerializers();
         services.AddSingleton(database);
         services.AddSingleton<IStorageProvider, MongoStorageProvider>();
+        services.AddSingleton<IRuntimeSettingsStore, MongoRuntimeSettingsStore>();
         return services;
     }
 
