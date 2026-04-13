@@ -22,8 +22,7 @@ internal sealed class AwsSqsTrigger : IHostedService
 {
     private readonly AwsSqsTriggerOptions _options;
     private readonly ISqsClient _sqsClient;
-    private readonly IStorageProvider _storage;
-    private readonly JobWakeUpChannel _wakeUpChannel;
+    private readonly IScheduler _scheduler;
     private readonly NexJobOptions _nexJobOptions;
     private readonly ILogger<AwsSqsTrigger> _logger;
 
@@ -33,18 +32,21 @@ internal sealed class AwsSqsTrigger : IHostedService
     /// <summary>
     /// Initializes a new <see cref="AwsSqsTrigger"/>.
     /// </summary>
+    /// <param name="options">AWS SQS trigger configuration.</param>
+    /// <param name="sqsClient">The SQS client for receiving messages.</param>
+    /// <param name="scheduler">The NexJob scheduler for enqueueing jobs.</param>
+    /// <param name="nexJobOptions">Global NexJob configuration options.</param>
+    /// <param name="logger">Logger for diagnostic output.</param>
     public AwsSqsTrigger(
         IOptions<AwsSqsTriggerOptions> options,
         ISqsClient sqsClient,
-        IStorageProvider storage,
-        JobWakeUpChannel wakeUpChannel,
+        IScheduler scheduler,
         NexJobOptions nexJobOptions,
         ILogger<AwsSqsTrigger> logger)
     {
         _options = options.Value;
         _sqsClient = sqsClient;
-        _storage = storage;
-        _wakeUpChannel = wakeUpChannel;
+        _scheduler = scheduler;
         _nexJobOptions = nexJobOptions;
         _logger = logger;
     }
@@ -183,11 +185,8 @@ internal sealed class AwsSqsTrigger : IHostedService
                 expiresAt: null,
                 traceParent: traceparent);
 
-            // Enqueue the job using storage provider
-            await _storage.EnqueueAsync(job, DuplicatePolicy.AllowAfterFailed, cancellationToken).ConfigureAwait(false);
-
-            // Signal wake-up channel after successful enqueue
-            _wakeUpChannel.Signal();
+            // Enqueue the job using scheduler — wake-up signal is handled internally
+            await _scheduler.EnqueueAsync(job, DuplicatePolicy.AllowAfterFailed, cancellationToken).ConfigureAwait(false);
 
             // Delete message only after successful enqueue
             var deleteRequest = new DeleteMessageRequest

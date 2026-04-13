@@ -20,8 +20,7 @@ public sealed class AwsSqsTriggerTests
     {
         // Arrange
         var sqsClient = new MockSqsClient();
-        var storageProvider = new MockStorageProvider();
-        var wakeUpChannel = new JobWakeUpChannel();
+        var scheduler = new MockScheduler();
         var options = Options.Create(new AwsSqsTriggerOptions
         {
             QueueUrl = "https://sqs.us-east-1.amazonaws.com/123456789/test-queue",
@@ -37,8 +36,7 @@ public sealed class AwsSqsTriggerTests
         var trigger = new AwsSqsTrigger(
             options,
             sqsClient,
-            storageProvider,
-            wakeUpChannel,
+            scheduler,
             nexJobOptions,
             logger);
 
@@ -54,12 +52,12 @@ public sealed class AwsSqsTriggerTests
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         await trigger.StartAsync(cts.Token);
 
-        await storageProvider.WaitForEnqueueAsync(cts.Token);
+        await scheduler.WaitForEnqueueAsync(cts.Token);
         await trigger.StopAsync(cts.Token);
 
         // Assert
-        storageProvider.EnqueueCalls.Should().HaveCount(1);
-        var enqueuedJob = storageProvider.EnqueueCalls[0];
+        scheduler.EnqueueCalls.Should().HaveCount(1);
+        var enqueuedJob = scheduler.EnqueueCalls[0];
         enqueuedJob.IdempotencyKey.Should().Be("test-msg-001");
         enqueuedJob.Queue.Should().Be("default");
         enqueuedJob.TraceParent.Should().BeNull();
@@ -73,8 +71,7 @@ public sealed class AwsSqsTriggerTests
     public async Task EnqueueFailure_MessageNotDeleted()
     {
         var sqsClient = new MockSqsClient();
-        var storageProvider = new MockStorageProvider { ShouldFailEnqueue = true };
-        var wakeUpChannel = new JobWakeUpChannel();
+        var scheduler = new MockScheduler { ShouldFailEnqueue = true };
         var options = Options.Create(new AwsSqsTriggerOptions
         {
             QueueUrl = "https://sqs.us-east-1.amazonaws.com/123456789/test-queue",
@@ -90,8 +87,7 @@ public sealed class AwsSqsTriggerTests
         var trigger = new AwsSqsTrigger(
             options,
             sqsClient,
-            storageProvider,
-            wakeUpChannel,
+            scheduler,
             nexJobOptions,
             logger);
 
@@ -106,10 +102,10 @@ public sealed class AwsSqsTriggerTests
         using var cts2 = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         await trigger.StartAsync(cts2.Token);
 
-        await storageProvider.WaitForEnqueueAttemptAsync(cts2.Token);
+        await scheduler.WaitForEnqueueAttemptAsync(cts2.Token);
         await trigger.StopAsync(cts2.Token);
 
-        storageProvider.EnqueueCalls.Should().HaveCount(1);
+        scheduler.EnqueueCalls.Should().HaveCount(1);
         sqsClient.DeleteCalls.Should().BeEmpty("enqueue failed — message should not be deleted");
     }
 
@@ -119,8 +115,7 @@ public sealed class AwsSqsTriggerTests
     public async Task VisibilityExtension_ExtendedWhileProcessing()
     {
         var sqsClient = new MockSqsClient();
-        var storageProvider = new MockStorageProvider { EnqueueDelay = TimeSpan.FromSeconds(4) };
-        var wakeUpChannel = new JobWakeUpChannel();
+        var scheduler = new MockScheduler { EnqueueDelay = TimeSpan.FromSeconds(4) };
         var options = Options.Create(new AwsSqsTriggerOptions
         {
             QueueUrl = "https://sqs.us-east-1.amazonaws.com/123456789/test-queue",
@@ -136,8 +131,7 @@ public sealed class AwsSqsTriggerTests
         var trigger = new AwsSqsTrigger(
             options,
             sqsClient,
-            storageProvider,
-            wakeUpChannel,
+            scheduler,
             nexJobOptions,
             logger);
 
@@ -152,7 +146,7 @@ public sealed class AwsSqsTriggerTests
         using var cts3 = new CancellationTokenSource(TimeSpan.FromSeconds(15));
         await trigger.StartAsync(cts3.Token);
 
-        await storageProvider.WaitForEnqueueAsync(cts3.Token);
+        await scheduler.WaitForEnqueueAsync(cts3.Token);
         await trigger.StopAsync(cts3.Token);
 
         sqsClient.VisibilityExtensionCalls.Should().BeGreaterThanOrEqualTo(
@@ -166,8 +160,7 @@ public sealed class AwsSqsTriggerTests
     public async Task GracefulShutdown_CancellationToken_StopsCleanly()
     {
         var sqsClient = new MockSqsClient { BlockOnReceive = true };
-        var storageProvider = new MockStorageProvider();
-        var wakeUpChannel = new JobWakeUpChannel();
+        var scheduler = new MockScheduler();
         var options = Options.Create(new AwsSqsTriggerOptions
         {
             QueueUrl = "https://sqs.us-east-1.amazonaws.com/123456789/test-queue",
@@ -183,8 +176,7 @@ public sealed class AwsSqsTriggerTests
         var trigger = new AwsSqsTrigger(
             options,
             sqsClient,
-            storageProvider,
-            wakeUpChannel,
+            scheduler,
             nexJobOptions,
             logger);
 
@@ -204,8 +196,7 @@ public sealed class AwsSqsTriggerTests
     public async Task TracePropagation_TraceparentSetOnJobRecord()
     {
         var sqsClient = new MockSqsClient();
-        var storageProvider = new MockStorageProvider();
-        var wakeUpChannel = new JobWakeUpChannel();
+        var scheduler = new MockScheduler();
         var options = Options.Create(new AwsSqsTriggerOptions
         {
             QueueUrl = "https://sqs.us-east-1.amazonaws.com/123456789/test-queue",
@@ -221,8 +212,7 @@ public sealed class AwsSqsTriggerTests
         var trigger = new AwsSqsTrigger(
             options,
             sqsClient,
-            storageProvider,
-            wakeUpChannel,
+            scheduler,
             nexJobOptions,
             logger);
 
@@ -244,11 +234,11 @@ public sealed class AwsSqsTriggerTests
         using var cts5 = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         await trigger.StartAsync(cts5.Token);
 
-        await storageProvider.WaitForEnqueueAsync(cts5.Token);
+        await scheduler.WaitForEnqueueAsync(cts5.Token);
         await trigger.StopAsync(cts5.Token);
 
-        storageProvider.EnqueueCalls.Should().HaveCount(1);
-        storageProvider.EnqueueCalls[0].TraceParent.Should().Be("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01");
+        scheduler.EnqueueCalls.Should().HaveCount(1);
+        scheduler.EnqueueCalls[0].TraceParent.Should().Be("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01");
     }
 
     // ─── Test job type ───────────────────────────────────────────────────────

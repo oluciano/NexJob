@@ -31,6 +31,42 @@ internal sealed class DefaultScheduler : IScheduler
     }
 
     /// <inheritdoc/>
+    public async Task<JobId> EnqueueAsync(
+        JobRecord job,
+        DuplicatePolicy duplicatePolicy = DuplicatePolicy.AllowAfterFailed,
+        CancellationToken cancellationToken = default)
+    {
+        using var activity = NexJobActivitySource.StartEnqueue(job.JobType, job.Queue);
+
+        var result = await _storage.EnqueueAsync(job, duplicatePolicy, cancellationToken).ConfigureAwait(false);
+
+        if (result.WasRejected && job.IdempotencyKey is not null)
+        {
+            throw new DuplicateJobException(job.IdempotencyKey, result.JobId, duplicatePolicy);
+        }
+
+        activity?.SetTag("nexjob.job_id", result.JobId.Value.ToString());
+
+        // Extract simple type name from assembly-qualified name (e.g., "MyNamespace.MyJob, ...")
+        var qualifiedName = job.JobType.Split(',')[0];
+        var simpleTypeName = qualifiedName[(qualifiedName.LastIndexOf('.') + 1)..];
+
+        NexJobMetrics.JobsEnqueued.Add(1,
+            new TagList
+            {
+                { "nexjob.job_type", simpleTypeName },
+                { "nexjob.queue", job.Queue },
+            });
+
+        if (!result.WasRejected)
+        {
+            _wakeUp.Signal();
+        }
+
+        return result.JobId;
+    }
+
+    /// <inheritdoc/>
     public async Task<JobId> EnqueueAsync<TJob, TInput>(
         TInput input,
         string? queue = null,
