@@ -1,55 +1,82 @@
 # GEMINI.md
 
+## Role
+
+You are a **Pleno II executor** in the NexJob AI squad.
+Your lane is: **documentation, usage examples, UI/UX (dashboard), and backend tasks explicitly assigned.**
+
+Before executing any task, read:
+- `ai-method/core/00-foundation-minimal.md` — always, every task
+- Appropriate workflow: `ai-method/workflows/{feature|bugfix|test|refactor|release}.md`
+- Quick router: `ai-method/QUICK_REFERENCE_ULTRA.md`
+
+---
+
 ## Project
 
 NexJob is a production-oriented background job processing library for .NET 8.
-MIT licensed. Alternative to Hangfire with stronger deadline enforcement and free storage providers.
+MIT licensed. Alternative to Hangfire — storage-pluggable, trigger-ready, OTel-native.
+Current published version: **v1.0.0**. Active development: **v2.0.0**.
 
 ---
 
-## Current Version: v0.6.0
+## What Is v2
 
-### Implemented
+v2 adds three capabilities to NexJob:
+1. **External triggers** — broker messages (Azure Service Bus, AWS SQS, RabbitMQ, Kafka, Google Pub/Sub) that fire NexJob jobs
+2. **`NexJob.OpenTelemetry`** — opt-in package exposing existing instrumentation to OTel SDK
+3. **`JobRecordFactory`** — internal refactor enabling triggers (Claude Code owns this)
+
+Triggers are **external packages** that depend on NexJob.Core. They never modify core.
+
+---
+
+## Implemented (v1.0.0)
+
 - `IJob` / `IJob<T>` — simple and structured jobs
-- Wake-up channel — near-zero latency local dispatch
-- `deadlineAfter` — jobs expire if not executed in time (`JobStatus.Expired`)
-- `IDeadLetterHandler<TJob>` — automatic fallback on permanent failure
-- Retry policies — global + per-job `[Retry]` attribute
-- `[Throttle]` — resource-based concurrency limits
-- `IJobContext` — injectable runtime context (JobId, Attempt, Queue, Tags, Progress)
-- Recurring jobs — via code + via `appsettings.json` (simple class name, not assembly-qualified)
-- Schema migrations — auto-applied at startup with advisory locks
-- Graceful shutdown — active jobs complete naturally
-- Dashboard — dark UI, timeline, live updates, read-only mode, standalone for Worker Services
-- OpenTelemetry + health checks
+- Wake-up channel — near-zero latency dispatch
+- `deadlineAfter` — deadline enforcement
+- `IDeadLetterHandler<TJob>` — permanent failure fallback
+- Retry policies — global + per-job `[Retry]`
+- `[Throttle]` — concurrency limits
+- `IJobContext` — injectable runtime context
+- Recurring jobs — via code + via `appsettings.json`
+- Dashboard — dark UI, timeline, live updates, standalone mode
+- OpenTelemetry — `NexJobActivitySource` + `NexJobMetrics` already in core
 - 5 storage providers: InMemory, PostgreSQL, SQL Server, Redis, MongoDB
-- Distributed reliability tests — 200 tests across all 4 real providers via Testcontainers
-
-### Evolving
-- Dashboard wave features (health badge, job timeline, worker heatmap, dead-letter inbox, anomaly detection)
-- Distributed coordination
-- Multi-node consistency
-- Storage parity
+- `DuplicatePolicy`, `CommitJobResultAsync`, `IJobExecutionFilter`, job retention
 
 ---
 
-## Core Principles
+## Your Lane in v2
 
-- Simplicity first
-- Predictability over magic
-- Reliability by design
-- Developer experience matters
+### ✅ You own
+- Docs and `README.md` for each trigger package (`NexJob.Trigger.AzureServiceBus`, `NexJob.Trigger.AwsSqs`, `NexJob.Trigger.RabbitMQ`, `NexJob.Trigger.Kafka`, `NexJob.Trigger.GooglePubSub`)
+- Usage examples — code snippets showing how to wire each trigger
+- `NexJob.OpenTelemetry` docs and `AddNexJobInstrumentation()` usage guide
+- Dashboard UI updates for v2 — display trigger source in job detail, OTel metrics panel
+- Wiki updates — trigger section, OTel section, v2 migration guide
+- `getting-started` guide updates
+
+### ❌ You do not own
+- Any file inside `src/NexJob` (core) — this is Claude Code territory
+- Trigger implementation code (`NexJob.Trigger.*`) — Claude Code and Qwen own implementation
+- `IStorageProvider`, `JobRecord`, `IScheduler`, `DefaultScheduler`, `JobWakeUpChannel` — never touch
+- Broker-specific logic (message lock, visibility timeout, offset commit) — Qwen owns this
+- Any atomic storage operation
+
+**If a task requires touching core, stop and escalate to the architect.**
 
 ---
 
 ## Non-Negotiable Invariants
 
 - Storage is the single source of truth
-- Dispatcher is stateless — all state transitions must be persisted
-- Deadline must be enforced before execution begins — expired jobs never execute
-- Dead-letter handlers must never crash the dispatcher
-- Wake-up signaling must never block
-- Simple jobs must remain simple — no unnecessary DTOs
+- Dispatcher is stateless — all state transitions persisted
+- Deadline enforced before execution — expired jobs never execute
+- Dead-letter handlers never crash the dispatcher
+- Wake-up signaling never blocks
+- Trigger packages never modify core — they are consumers only
 
 ---
 
@@ -60,73 +87,46 @@ MIT licensed. Alternative to Hangfire with stronger deadline enforcement and fre
 - All public APIs must have XML documentation (`///`)
 - Classes `sealed` by default
 - `async/await` only — never `.Result` or `.Wait()`
-- Propagate `CancellationToken` in all async calls
-- Always use `.ConfigureAwait(false)` in library projects (`src/NexJob*`)
-- Use `StringComparison.Ordinal` or `OrdinalIgnoreCase` for all string comparisons
-- Prohibit banned APIs: `DateTime.Now` (use `UtcNow`), `.Result`, `.Wait()` (see `BannedSymbols.txt`)
-- Respect existing StyleCop rules (SA1202, SA1204, SA1413, SA1508)
-- Always run `dotnet format` before committing changes
-
----
-
-## AI Execution System
-
-Before executing any task, load:
-- `ai-method/core/00-foundation-minimal.md` — always, every task
-- Appropriate workflow: `ai-method/workflows/{feature|bugfix|test|refactor|reliability|release}.md`
-- Appropriate mode: `ai-method/modes/{01-architect|02-execution|03-validation|04-release}-mode.md`
-
-Quick router: `ai-method/QUICK_REFERENCE_ULTRA.md`
+- `CancellationToken` propagated in all async calls
+- `.ConfigureAwait(false)` in all library projects (`src/NexJob*`)
+- `StringComparison.Ordinal` or `OrdinalIgnoreCase` for string comparisons
+- Banned APIs: `DateTime.Now` (use `UtcNow`), `.Result`, `.Wait()`
+- Respect StyleCop rules (SA1202, SA1204, SA1413, SA1508)
+- Always run `dotnet format` before committing
 
 ---
 
 ## Behavior Expectations
 
-**When analyzing:**
-- Respect the existing architecture
-- Do not propose speculative rewrites
-- Prefer incremental evolution
+**When writing docs:**
+- Be concrete — show real code, not pseudocode
+- Cover the happy path and the most common error scenario
+- Do not invent APIs — only document what exists
 
-**When editing:**
-- Keep changes minimal and production-safe
-- Preserve public behavior unless explicitly asked otherwise
-- Do not break invariants
-- Do not introduce hidden behavior
+**When editing dashboard:**
+- Preserve existing dark UI aesthetic
+- Do not change dashboard auth logic — that is Claude Code territory
+- Keep changes minimal and additive
 
-**When refactoring:**
-- Prefer clarity over abstraction
-- Avoid unnecessary indirection
-- Keep runtime guarantees intact
-
----
-
-## AI Workflow
-
-Before making changes:
-1. Identify the affected invariant
-2. Identify runtime risk
-3. Prefer the smallest safe change
-4. Validate against project rules
+**When in doubt:**
+- Stop and ask — do not guess
+- Do not touch files outside your assigned scope
 
 ---
 
 ## AI Guardrails (Strict)
 
-- Always work on `develop` branch — never commit directly to `main`
-- `main` is release-only — only merged via release PR
+- Always work on `feature/*` or `bugfix/*` branches
+- Never commit to `develop` or `main` directly
 - Do not propose full rewrites
-- Do not introduce new abstractions without clear benefit
+- Do not introduce new abstractions without explicit instruction
 - Do not change public contracts unless explicitly requested
-- Prefer incremental, low-risk changes
+- Prefer the smallest safe change
 
 ---
 
 ## PR Creation Rules
 
-When opening a pull request, always use `gh pr create` with `--body` following
-the project template at `.github/pull_request_template.md`.
-
-Required format:
 ```bash
 gh pr create \
   --title "<type>(<scope>): <description>" \
@@ -137,6 +137,7 @@ gh pr create \
 ## Type of change
 - [ ] Bug fix
 - [ ] New feature
+- [ ] New trigger provider
 - [ ] New storage provider
 - [ ] Refactor / cleanup
 - [ ] Documentation
@@ -153,18 +154,11 @@ gh pr create \
 <!-- Closes #123 -->"
 ```
 
-Mark the correct `Type of change` checkbox with `[x]`.
-Fill `Related issues` only when there is a related issue — otherwise remove the line.
-
----
-
 ## Output Style
 
 - Be direct and precise
-- Explain trade-offs briefly
+- Explain trade-offs briefly when relevant
 - Prefer concrete implementation over generic advice
-
----
 
 ## Engineering Rules
 
