@@ -9,6 +9,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 - `NexJob.Trigger.RabbitMQ` provider for enqueueing jobs from RabbitMQ messages.
 - `NexJob.Trigger.Kafka` provider for enqueueing jobs from Kafka messages.
+- `NexJob.Trigger.GooglePubSub` provider for enqueueing jobs from Google Pub/Sub messages.
 
 ### Changed
 
