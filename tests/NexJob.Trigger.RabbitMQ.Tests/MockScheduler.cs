@@ -57,6 +57,10 @@ internal sealed class MockScheduler : IScheduler
             _enqueueCalls.Add(job);
         }
 
+        // Note: job is added to _enqueueCalls before checking ShouldFailEnqueue.
+        // On simulated failure, EnqueueCalls will contain the job even though enqueue
+        // did not succeed. Tests checking failure scenarios should assert on the
+        // broker ack/nack behaviour, not on EnqueueCalls count.
         if (ShouldFailEnqueue)
         {
             throw new InvalidOperationException("Simulated enqueue failure");
