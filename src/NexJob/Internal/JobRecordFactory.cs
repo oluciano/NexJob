@@ -112,4 +112,59 @@ internal static class JobRecordFactory
             ParentJobId = parentJobId,
         };
     }
+
+    /// <summary>
+    /// Builds a <see cref="JobRecord"/> for a job with runtime-determined type and JSON input.
+    /// Used by external triggers that receive arbitrary job types from external sources.
+    /// </summary>
+    /// <param name="jobType">Assembly-qualified type name of the job implementation.</param>
+    /// <param name="inputType">Assembly-qualified type name of the input type.</param>
+    /// <param name="inputJson">JSON-serialized input payload.</param>
+    /// <param name="options">Global NexJob configuration.</param>
+    /// <param name="queue">Target queue name; defaults to "default" if null.</param>
+    /// <param name="priority">Execution priority; defaults to <see cref="JobPriority.Normal"/>.</param>
+    /// <param name="idempotencyKey">Optional idempotency key for deduplication.</param>
+    /// <param name="status">Job lifecycle status.</param>
+    /// <param name="scheduledAt">UTC timestamp when the job becomes eligible for execution; null for immediate.</param>
+    /// <param name="tags">Optional tags for dashboard filtering and lookup.</param>
+    /// <param name="expiresAt">Optional UTC deadline; job is marked <see cref="JobStatus.Expired"/> if fetched after this time.</param>
+    /// <param name="traceParent">Optional W3C traceparent header value; if null, captured from <see cref="Activity.Current"/> if available.</param>
+    /// <param name="parentJobId">Optional parent job ID for continuation jobs.</param>
+    /// <returns>A fully initialized <see cref="JobRecord"/> ready to persist.</returns>
+    internal static JobRecord Build(
+        string jobType,
+        string inputType,
+        string inputJson,
+        NexJobOptions options,
+        string? queue = null,
+        JobPriority priority = JobPriority.Normal,
+        string? idempotencyKey = null,
+        JobStatus status = JobStatus.Enqueued,
+        DateTimeOffset? scheduledAt = null,
+        IReadOnlyList<string>? tags = null,
+        DateTimeOffset? expiresAt = null,
+        string? traceParent = null,
+        JobId? parentJobId = null)
+    {
+        var capturedTraceParent = traceParent ?? Activity.Current?.Id;
+
+        return new JobRecord
+        {
+            Id = JobId.New(),
+            JobType = jobType,
+            InputType = inputType,
+            InputJson = inputJson,
+            Queue = queue ?? "default",
+            Priority = priority,
+            Status = status,
+            IdempotencyKey = idempotencyKey,
+            ScheduledAt = scheduledAt,
+            ExpiresAt = expiresAt,
+            CreatedAt = DateTimeOffset.UtcNow,
+            MaxAttempts = options.MaxAttempts,
+            TraceParent = capturedTraceParent,
+            Tags = tags ?? [],
+            ParentJobId = parentJobId,
+        };
+    }
 }
