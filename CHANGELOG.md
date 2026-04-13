@@ -10,6 +10,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `NexJob.Trigger.RabbitMQ` provider for enqueueing jobs from RabbitMQ messages.
 - `NexJob.Trigger.Kafka` provider for enqueueing jobs from Kafka messages.
 - `NexJob.Trigger.GooglePubSub` provider for enqueueing jobs from Google Pub/Sub messages.
+- `NexJob.OpenTelemetry` package for opt-in OpenTelemetry tracing and metrics instrumentation
 
 ### Changed
 
