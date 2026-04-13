@@ -14,8 +14,7 @@ namespace NexJob.Trigger.AzureServiceBus;
 internal sealed class AzureServiceBusTriggerHandler : IHostedService
 {
     private readonly AzureServiceBusTriggerOptions _options;
-    private readonly IStorageProvider _storage;
-    private readonly JobWakeUpChannel _wakeUpChannel;
+    private readonly IScheduler _scheduler;
     private readonly NexJobOptions _nexJobOptions;
     private readonly ILogger<AzureServiceBusTriggerHandler> _logger;
 
@@ -25,16 +24,18 @@ internal sealed class AzureServiceBusTriggerHandler : IHostedService
     /// <summary>
     /// Initializes a new <see cref="AzureServiceBusTriggerHandler"/>.
     /// </summary>
+    /// <param name="options">Azure Service Bus trigger configuration.</param>
+    /// <param name="scheduler">The NexJob scheduler for enqueueing jobs.</param>
+    /// <param name="nexJobOptions">Global NexJob configuration options.</param>
+    /// <param name="logger">Logger for diagnostic output.</param>
     public AzureServiceBusTriggerHandler(
         IOptions<AzureServiceBusTriggerOptions> options,
-        IStorageProvider storage,
-        JobWakeUpChannel wakeUpChannel,
+        IScheduler scheduler,
         NexJobOptions nexJobOptions,
         ILogger<AzureServiceBusTriggerHandler> logger)
     {
         _options = options.Value;
-        _storage = storage;
-        _wakeUpChannel = wakeUpChannel;
+        _scheduler = scheduler;
         _nexJobOptions = nexJobOptions;
         _logger = logger;
     }
@@ -139,11 +140,8 @@ internal sealed class AzureServiceBusTriggerHandler : IHostedService
                 expiresAt: null,
                 traceParent: traceparent);
 
-            // Enqueue the job using storage provider
-            await _storage.EnqueueAsync(job, DuplicatePolicy.AllowAfterFailed, args.CancellationToken).ConfigureAwait(false);
-
-            // Signal wake-up channel after successful enqueue
-            _wakeUpChannel.Signal();
+            // Enqueue the job using scheduler — wake-up signal is handled internally
+            await _scheduler.EnqueueAsync(job, DuplicatePolicy.AllowAfterFailed, args.CancellationToken).ConfigureAwait(false);
 
             // Complete message only after successful enqueue
             await args.CompleteMessageAsync(args.Message, args.CancellationToken).ConfigureAwait(false);
