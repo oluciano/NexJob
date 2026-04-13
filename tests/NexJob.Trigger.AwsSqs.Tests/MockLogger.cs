@@ -5,6 +5,7 @@ namespace NexJob.Trigger.AwsSqs.Tests;
 /// <summary>
 /// Minimal logger implementation for testing.
 /// </summary>
+/// <typeparam name="T">The category type for the logger.</typeparam>
 internal sealed class MockLogger<T> : ILogger<T>
 {
     public IDisposable? BeginScope<TState>(
