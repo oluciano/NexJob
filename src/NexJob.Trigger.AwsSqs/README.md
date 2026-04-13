@@ -82,6 +82,5 @@ await sqsClient.SendMessageAsync(new SendMessageRequest
 ## Known Limitations
 
 - **Fixed input type:** The `inputType` is fixed to `string` because broker triggers receive the message body as text (JSON, XML or plain text). Deserializing to a concrete type is the responsibility of the job handler. Support for custom `inputType` is planned for v2.2.
-- **No IScheduler integration:** The trigger uses `IStorageProvider.EnqueueAsync` directly because `IScheduler` is generic and requires the job type at compile time. A non-generic `IScheduler.EnqueueAsync(JobRecord)` overload is planned for v2.2.
 - **SQS FIFO queues:** Deduplication relies on SQS `MessageId`. For FIFO queues, `MessageDeduplicationId` can also be used — this is not yet exposed as an option.
 - **No batching:** Messages are processed one at a time to ensure visibility extension and proper ordering.
