@@ -810,7 +810,7 @@ public sealed class MongoStorageProvider : IStorageProvider
         // Sparse unique index for idempotency
         _jobs.Indexes.CreateOne(new CreateIndexModel<JobDocument>(
             Builders<JobDocument>.IndexKeys.Ascending(d => d.IdempotencyKey),
-            new CreateIndexOptions { Name = "idempotency_key", Sparse = true }));
+            new CreateIndexOptions { Name = "idempotency_key", Sparse = true, Unique = true }));
 
         // Index for orphan detection
         _jobs.Indexes.CreateOne(new CreateIndexModel<JobDocument>(
