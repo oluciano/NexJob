@@ -7,7 +7,7 @@ namespace NexJob.Internal;
 /// Resolves and applies a chain of <see cref="IJobMigration{TOld,TNew}"/> instances to
 /// upgrade a serialized job payload from its stored schema version to the current one.
 /// </summary>
-internal sealed class MigrationPipeline
+internal sealed class MigrationPipeline : IMigrationPipeline
 {
     private readonly IServiceProvider _serviceProvider;
     private readonly IEnumerable<MigrationDescriptor> _descriptors;
@@ -19,18 +19,7 @@ internal sealed class MigrationPipeline
         _descriptors = descriptors;
     }
 
-    /// <summary>
-    /// Migrates <paramref name="inputJson"/> from <paramref name="storedVersion"/> to
-    /// <paramref name="currentVersion"/> by resolving and invoking each
-    /// <see cref="IJobMigration{TOld,TNew}"/> registered in the DI container.
-    /// Returns the original JSON unchanged if the stored version matches the current version
-    /// or if no migrations are required.
-    /// </summary>
-    /// <param name="inputJson">The raw JSON payload stored with the job.</param>
-    /// <param name="storedVersion">The schema version stored alongside the job payload.</param>
-    /// <param name="currentVersion">The version declared by <see cref="SchemaVersionAttribute"/> on the job class (or 1 if absent).</param>
-    /// <param name="inputType">The current (target) input type the job expects.</param>
-    /// <returns>A JSON string representing the migrated payload at the current version.</returns>
+    /// <inheritdoc/>
     public string Migrate(string inputJson, int storedVersion, int currentVersion, Type inputType)
     {
         if (storedVersion >= currentVersion)

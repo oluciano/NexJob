@@ -155,9 +155,11 @@ public static class NexJobServiceCollectionExtensions
         GetOrCreateRegistry(services);  // Ensure registry is registered
         services.AddSingleton<JobWakeUpChannel>();
         services.AddSingleton<IScheduler, DefaultScheduler>();
-        services.AddSingleton<ThrottleRegistry>();
+        services.AddSingleton(sp => new ThrottleRegistry(sp.GetService<IDistributedThrottleStore>()));
+        services.AddSingleton<JobExecutor>();
         services.AddSingleton<JobCaptureLoggerProvider>();
         services.AddSingleton<ILoggerProvider>(sp => sp.GetRequiredService<JobCaptureLoggerProvider>());
+        services.AddSingleton<IJobControlService, DefaultJobControlService>();
         services.AddHostedService<JobDispatcherService>();
         services.AddHostedService<RecurringJobSchedulerService>();
         services.AddHostedService<ServerHeartbeatService>();
@@ -169,7 +171,7 @@ public static class NexJobServiceCollectionExtensions
                 provider.GetRequiredService<NexJobOptions>(),
                 provider.GetRequiredService<RecurringJobRegistrar>(),
                 provider.GetRequiredService<ILogger<RecurringJobRegistrationService>>()));
-        services.AddScoped<MigrationPipeline>();
+        services.AddScoped<IMigrationPipeline, MigrationPipeline>();
         services.AddScoped<NexJobHealthCheck>();
         services.AddScoped<IJobContextAccessor, JobContextAccessor>();
         services.AddScoped<IJobContext>(sp =>

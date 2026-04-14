@@ -14,6 +14,8 @@
     <PackageReference Include="Microsoft.AspNetCore.Http" Version="2.2.2" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="8.0.1" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.3" />
+    <PackageReference Include="Moq" Version="4.20.72" />
+    <PackageReference Include="StackExchange.Redis" Version="2.12.14" />
     <ProjectReference Include="..\..\src\NexJob\NexJob.csproj" />
     <ProjectReference Include="..\..\src\NexJob.Postgres\NexJob.Postgres.csproj" />
     <ProjectReference Include="..\..\src\NexJob.SqlServer\NexJob.SqlServer.csproj" />
@@ -28,6 +30,10 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\NexJob.Redis\NexJob.Redis.csproj" />
   </ItemGroup>
 
 </Project>
