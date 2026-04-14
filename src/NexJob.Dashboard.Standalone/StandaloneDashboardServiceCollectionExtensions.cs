@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -52,6 +53,7 @@ public static class StandaloneDashboardServiceCollectionExtensions
 
         configure?.Invoke(options);
 
+        services.AddMemoryCache();
         services.AddSingleton(options);
         services.AddHostedService<StandaloneDashboardHostedService>();
 
@@ -79,6 +81,7 @@ public static class StandaloneDashboardServiceCollectionExtensions
         var options = new StandaloneDashboardOptions();
         configure?.Invoke(options);
 
+        services.AddMemoryCache();
         services.AddSingleton(options);
         services.AddHostedService<StandaloneDashboardHostedService>();
 

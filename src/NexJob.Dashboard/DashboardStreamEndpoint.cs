@@ -1,5 +1,7 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.DependencyInjection;
 using NexJob.Storage;
 
 namespace NexJob.Dashboard;
@@ -29,13 +31,16 @@ internal static class DashboardStreamEndpoint
         context.Response.Headers["Cache-Control"] = "no-cache";
         context.Response.Headers["X-Accel-Buffering"] = "no"; // disable nginx proxy buffering
 
+        var cache = context.RequestServices.GetRequiredService<IMemoryCache>();
+        var dashboardOptions = context.RequestServices.GetRequiredService<DashboardOptions>();
+
         var ct = context.RequestAborted;
 
         try
         {
             while (!ct.IsCancellationRequested)
             {
-                var metrics = await storage.GetMetricsAsync(ct).ConfigureAwait(false);
+                var metrics = await GetCachedMetricsAsync(cache, storage, dashboardOptions, ct).ConfigureAwait(false);
 
                 var activeResult = await storage.GetJobsAsync(
                     new JobFilter { Status = JobStatus.Processing }, 1, 20, ct).ConfigureAwait(false);
@@ -67,5 +72,27 @@ internal static class DashboardStreamEndpoint
         {
             // Client disconnected or host shutting down — normal exit
         }
+    }
+
+    private static async Task<JobMetrics> GetCachedMetricsAsync(
+        IMemoryCache cache, IStorageProvider storage, DashboardOptions options, CancellationToken ct)
+    {
+        const string CacheKey = "nexjob:dashboard:metrics";
+
+        // If cache TTL is zero, disable caching
+        if (options.MetricsCacheTtl == TimeSpan.Zero)
+        {
+            return await storage.GetMetricsAsync(ct).ConfigureAwait(false);
+        }
+
+        if (cache.TryGetValue(CacheKey, out JobMetrics? cached) && cached is not null)
+        {
+            return cached;
+        }
+
+        var metrics = await storage.GetMetricsAsync(ct).ConfigureAwait(false);
+        cache.Set(CacheKey, metrics, options.MetricsCacheTtl);
+
+        return metrics;
     }
 }
