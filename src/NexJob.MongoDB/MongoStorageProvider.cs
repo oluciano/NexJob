@@ -59,10 +59,7 @@ public sealed class MongoStorageProvider : IStorageProvider
     {
         if (job.IdempotencyKey is not null)
         {
-            // Atomically check and apply duplicate policy for idempotency key using FindOne with sort.
-            // Multiple concurrent inserts will all see the winner after one succeeds.
-            var filter = Builders<JobDocument>.Filter.Eq(d => d.IdempotencyKey, job.IdempotencyKey);
-            var existing = await _jobs.Find(filter)
+            var existing = await _jobs.Find(Builders<JobDocument>.Filter.Eq(d => d.IdempotencyKey, job.IdempotencyKey))
                 .Sort(Builders<JobDocument>.Sort.Ascending(d => d.CreatedAt))
                 .Limit(1)
                 .FirstOrDefaultAsync(cancellationToken).ConfigureAwait(false);
@@ -88,24 +85,22 @@ public sealed class MongoStorageProvider : IStorageProvider
             }
         }
 
-        // Insert new job
-        await _jobs.InsertOneAsync(JobDocument.FromRecord(job), cancellationToken: cancellationToken).ConfigureAwait(false);
-
-        // Post-insert: if idempotency key exists, check if another concurrent insert beat us
-        // and return the earliest one (the true "winner")
-        if (job.IdempotencyKey is not null)
+        try
         {
-            var filter = Builders<JobDocument>.Filter.Eq(d => d.IdempotencyKey, job.IdempotencyKey);
-            var winner = await _jobs.Find(filter)
+            await _jobs.InsertOneAsync(JobDocument.FromRecord(job), cancellationToken: cancellationToken).ConfigureAwait(false);
+            return new EnqueueResult(job.Id, WasRejected: false);
+        }
+        catch (MongoWriteException ex) when (ex.WriteError.Category == ServerErrorCategory.DuplicateKey)
+        {
+            // Race condition: two processes passed the Find check simultaneously.
+            // The unique index blocked the second insert. Fetch the winner.
+            var winner = await _jobs.Find(Builders<JobDocument>.Filter.Eq(d => d.IdempotencyKey, job.IdempotencyKey))
                 .Sort(Builders<JobDocument>.Sort.Ascending(d => d.CreatedAt))
                 .Limit(1)
-                .FirstOrDefaultAsync(cancellationToken)
-                .ConfigureAwait(false);
+                .FirstOrDefaultAsync(cancellationToken).ConfigureAwait(false);
 
-            if (winner is not null && winner.Id != job.Id)
+            if (winner is not null)
             {
-                // Another job with same idempotency key exists and was created earlier.
-                // Apply duplicate policy to it instead of our insert.
                 var winnerStatus = winner.Status;
 
                 if (IsActiveState(winnerStatus))
@@ -117,16 +112,11 @@ public sealed class MongoStorageProvider : IStorageProvider
                     ? duplicatePolicy is DuplicatePolicy.RejectIfFailed or DuplicatePolicy.RejectAlways
                     : duplicatePolicy == DuplicatePolicy.RejectAlways;
 
-                if (reject)
-                {
-                    return new EnqueueResult(winner.Id, WasRejected: true);
-                }
-
-                return new EnqueueResult(winner.Id, WasRejected: false);
+                return new EnqueueResult(winner.Id, WasRejected: reject);
             }
-        }
 
-        return new EnqueueResult(job.Id, WasRejected: false);
+            throw;
+        }
     }
 
     // ── FetchNextAsync ────────────────────────────────────────────────────────
@@ -818,11 +808,24 @@ public sealed class MongoStorageProvider : IStorageProvider
                 .Ascending(d => d.CreatedAt),
             new CreateIndexOptions { Name = "queue_status_priority_created" }));
 
-        // Sparse index for idempotency: efficient querying for idempotency deduplication
-        // Race conditions handled at application level in EnqueueAsync via atomic FindOneAndUpdate operation
-        _jobs.Indexes.CreateOne(new CreateIndexModel<JobDocument>(
-            Builders<JobDocument>.IndexKeys.Ascending(d => d.IdempotencyKey),
-            new CreateIndexOptions { Name = "idempotency_key", Sparse = true }));
+        // Sparse + Unique index for idempotency: enforces uniqueness only for non-null keys
+        // Sparse = true → documents without IdempotencyKey are not indexed (multiple jobs without key allowed)
+        // Unique = true → documents WITH IdempotencyKey must have unique values
+        // Race condition: second concurrent insert throws DuplicateKey, caught and handled gracefully
+        try
+        {
+            _jobs.Indexes.CreateOne(new CreateIndexModel<JobDocument>(
+                Builders<JobDocument>.IndexKeys.Ascending(d => d.IdempotencyKey),
+                new CreateIndexOptions { Name = "idempotency_key", Sparse = true, Unique = true }));
+        }
+        catch (MongoCommandException ex) when (string.Equals(ex.CodeName, "IndexOptionsConflict", StringComparison.Ordinal))
+        {
+            // Existing deployments have old index without Unique. Drop and recreate.
+            _jobs.Indexes.DropOne("idempotency_key");
+            _jobs.Indexes.CreateOne(new CreateIndexModel<JobDocument>(
+                Builders<JobDocument>.IndexKeys.Ascending(d => d.IdempotencyKey),
+                new CreateIndexOptions { Name = "idempotency_key", Sparse = true, Unique = true }));
+        }
 
         // Index for orphan detection
         _jobs.Indexes.CreateOne(new CreateIndexModel<JobDocument>(
