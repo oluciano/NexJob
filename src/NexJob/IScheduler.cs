@@ -7,6 +7,23 @@ namespace NexJob;
 public interface IScheduler
 {
     /// <summary>
+    /// Enqueues a pre-built job record for background execution.
+    /// Use this overload when the job type is only known at runtime (e.g. broker triggers).
+    /// </summary>
+    /// <param name="job">The pre-built job record to enqueue.</param>
+    /// <param name="duplicatePolicy">
+    /// Controls behaviour when a job with the same <see cref="JobRecord.IdempotencyKey"/>
+    /// already exists in a terminal failure state. Ignored when
+    /// <see cref="JobRecord.IdempotencyKey"/> is <see langword="null"/>.
+    /// </param>
+    /// <param name="cancellationToken">Token to cancel the operation.</param>
+    /// <returns>The identifier of the enqueued (or existing, if idempotent) job.</returns>
+    Task<JobId> EnqueueAsync(
+        JobRecord job,
+        DuplicatePolicy duplicatePolicy = DuplicatePolicy.AllowAfterFailed,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Immediately enqueues a no-input job for background execution.
     /// </summary>
     /// <typeparam name="TJob">The <see cref="IJob"/> implementation to execute.</typeparam>

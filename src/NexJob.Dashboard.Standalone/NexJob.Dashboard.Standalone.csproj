@@ -2,6 +2,10 @@
 
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
+    <PackageId>NexJob.Dashboard.Standalone</PackageId>
+    <IsPackable>true</IsPackable>
+    <Description>Standalone dashboard for NexJob — self-hosted monitoring for Worker Services and Console Apps.</Description>
+    <PackageTags>background-jobs;scheduler;dashboard;worker-service;dotnet</PackageTags>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>

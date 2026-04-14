@@ -123,6 +123,19 @@ All providers implement `IRuntimeSettingsStore` — runtime configuration persis
 
 ---
 
+## Packages
+
+| Package | NuGet | Description |
+|---|---|---|
+| `NexJob.OpenTelemetry` | [![NuGet](https://img.shields.io/badge/nuget-v2.0.0-blue)](https://www.nuget.org/packages/NexJob.OpenTelemetry) | OTel SDK instrumentation |
+| `NexJob.Trigger.AzureServiceBus` | [![NuGet](https://img.shields.io/badge/nuget-v2.0.0-blue)](https://www.nuget.org/packages/NexJob.Trigger.AzureServiceBus) | Azure Service Bus trigger |
+| `NexJob.Trigger.AwsSqs` | [![NuGet](https://img.shields.io/badge/nuget-v2.0.0-blue)](https://www.nuget.org/packages/NexJob.Trigger.AwsSqs) | AWS SQS trigger |
+| `NexJob.Trigger.RabbitMQ` | [![NuGet](https://img.shields.io/badge/nuget-v2.0.0-blue)](https://www.nuget.org/packages/NexJob.Trigger.RabbitMQ) | RabbitMQ trigger |
+| `NexJob.Trigger.Kafka` | [![NuGet](https://img.shields.io/badge/nuget-v2.0.0-blue)](https://www.nuget.org/packages/NexJob.Trigger.Kafka) | Apache Kafka trigger |
+| `NexJob.Trigger.GooglePubSub` | [![NuGet](https://img.shields.io/badge/nuget-v2.0.0-blue)](https://www.nuget.org/packages/NexJob.Trigger.GooglePubSub) | Google Cloud Pub/Sub trigger |
+
+---
+
 ## Dashboard
 
 The dashboard provides a visual timeline of every job's lifecycle — no log reconstruction needed.
@@ -138,7 +151,7 @@ One line. No configuration required.
 
 ## Documentation
 
-Complete documentation is in the [wiki](docs/wiki/). Key pages:
+Complete documentation is in the [wiki](docs/wiki/Home.md). Key pages:
 
 - **[Mental Model](docs/wiki/00-Mental-Model.md)** — how NexJob works, read this first
 - **[Getting Started](docs/wiki/01-Getting-Started.md)** — run your first job in 2 minutes
@@ -169,8 +182,8 @@ v0.5.0  ✅ Wake-up channel, recurring jobs, dashboard timeline
 v0.6.0  ✅ Distributed reliability tests, recurring config redesign
 v0.7.0  ✅ DuplicatePolicy, atomic commits, AI execution system
 v0.8.0  ✅ Filters, persistent settings, job retention, wiki
-v1.0.0  ○ API freeze, production hardened
-v2.0.0  ○ Distributed coordination, multi-node consistency
+v1.0.0  ✅ API freeze, production hardened
+v2.0.0  ✅ External triggers, OpenTelemetry, metrics cache
 ```
 
 ---

@@ -1,7 +1,6 @@
 # NexJob — Project Context for Claude Code
 
 This file is automatically loaded by Claude Code.
-
 It defines architecture, constraints, and behavioral guarantees.
 
 ---
@@ -9,23 +8,55 @@ It defines architecture, constraints, and behavioral guarantees.
 ## Project Status
 
 NexJob is a production-oriented background job processing library.
+Current published version: **v1.0.0**
+Active development: **v2.0.0**
 
-### Implemented
+### Implemented (v1.0.0)
+- `IJob` / `IJob<T>` — simple and structured jobs
+- Wake-up channel — near-zero latency local dispatch
+- `deadlineAfter` — deadline enforcement before execution
+- `IDeadLetterHandler<TJob>` — permanent failure fallback
+- Retry policies — global + per-job `[Retry]` attribute
+- `[Throttle]` — resource-based concurrency limits
+- `IJobContext` — injectable runtime context
+- Recurring jobs — via code + via `appsettings.json`
+- Schema migrations — auto-applied at startup
+- Graceful shutdown
+- Dashboard — dark UI, timeline, live updates, standalone mode
+- OpenTelemetry — `NexJobActivitySource` + `NexJobMetrics` already in core
+- 5 storage providers: InMemory, PostgreSQL, SQL Server, Redis, MongoDB
+- `DuplicatePolicy` — atomic deduplication across all providers
+- `CommitJobResultAsync` — idempotent result commit
+- `IJobExecutionFilter` — middleware pipeline
+- Job retention + auto-cleanup
 
-* In-memory storage
-* `IJob` / `IJob<T>`
-* Wake-up dispatch
-* `deadlineAfter`
-* Dead-letter handler
-* Retry policies
-* Scheduling
-* Dashboard
+### In Development (v2.0.0)
+- `JobRecordFactory` — extracted factory for building `JobRecord` (prerequisite for triggers)
+- `NexJob.Trigger.*` — external trigger packages (Azure Service Bus, AWS SQS, RabbitMQ, Kafka, Google Pub/Sub)
+- `NexJob.OpenTelemetry` — opt-in instrumentation package exposing existing `ActivitySource` + `Meter`
 
-### Evolving
+---
 
-* Distributed coordination
-* Multi-node consistency
-* Storage parity
+## Squad Lanes — v2
+
+Claude Code owns:
+- All core (`src/NexJob`) changes — the only agent allowed to touch core
+- `JobRecordFactory` extraction
+- All `NexJob.Trigger.*` implementations (trigger packages are external to core — they depend on core, never the reverse)
+- `NexJob.OpenTelemetry` package
+- Testcontainers integration tests for all triggers
+- Benchmarks
+
+Qwen owns:
+- SDK client implementations within trigger packages (message lock renewal, visibility timeout, offset commit)
+- Review of trigger contracts and broker-specific guarantees
+
+Gemini owns:
+- Docs and usage examples for each trigger package
+- Dashboard updates for v2 metrics
+- Wiki updates
+
+**Hard rule:** trigger packages are external consumers of core. They call `IScheduler.EnqueueAsync` and `JobWakeUpChannel.Signal()`. They never modify `IStorageProvider`, `JobRecord`, or any core internal.
 
 ---
 
@@ -39,41 +70,65 @@ NexJob is a production-oriented background job processing library.
 
 ---
 
+## Trigger Architecture (v2)
+
+Triggers are adapters — they receive a broker message and translate it into a NexJob job.
+
+```
+[Broker message]
+      ↓
+NexJob.Trigger.{Broker}   ← external package, depends only on NexJob.Core
+      ↓
+JobRecordFactory.Build()  ← shared factory, no duplication
+      ↓
+IScheduler.EnqueueAsync() ← existing contract, unchanged
+      ↓
+JobWakeUpChannel.Signal() ← existing mechanism, unchanged
+      ↓
+[NexJob pipeline — unmodified]
+```
+
+Key invariants for trigger implementations:
+- Dead-letter the broker message if `EnqueueAsync` throws — never silently drop
+- Extract `traceparent` from broker message headers and pass via `JobRecord.TraceParent`
+- Use idempotency key from broker `MessageId` / deduplication ID to prevent double-enqueue on redelivery
+- Never hold a broker message lock longer than necessary — complete ack/nack before returning
+
+---
+
+## OTel — What Already Exists (do not recreate)
+
+`NexJobActivitySource` and `NexJobMetrics` are already in `src/NexJob/Telemetry/`.
+
+`NexJob.OpenTelemetry` package only needs to:
+- Expose `AddNexJobInstrumentation()` extension that registers `NexJobActivitySource.Name` and `NexJobMetrics.MeterName`
+- Add `nexjob.trigger_source` tag to existing spans when a trigger is the origin
+
+Do not create new `ActivitySource` or `Meter` instances — use the existing ones.
+
+---
+
 ## Job Model
 
-* `IJob` → simple jobs
-* `IJob<T>` → structured jobs
+- `IJob` → simple jobs (no input)
+- `IJob<T>` → structured jobs (typed input, JSON serialized)
 
 ---
 
 ## Dispatch Model
 
-* Wake-up signaling for local enqueue
-* Polling fallback for distributed scenarios
-
----
-
-## Deadline Model
-
-* Defined via `deadlineAfter`
-* Evaluated immediately after fetch and before execution
-* Expired jobs are skipped
-
----
-
-## Failure Model
-
-* Retryable failure
-* Permanent failure (dead-letter)
-* Expired
+- Wake-up signaling for local enqueue (`JobWakeUpChannel` — capacity 1, DropWrite)
+- Polling fallback for distributed scenarios
+- Triggers call `Signal()` after successful `EnqueueAsync` — same as `DefaultScheduler`
 
 ---
 
 ## Storage Model
 
-* Storage is the single source of truth
-* Dispatcher is stateless
-* All job state transitions must be persisted
+- Storage is the single source of truth
+- Dispatcher is stateless — all state transitions persisted
+- `IStorageProvider` is stable — do not add methods without explicit architectural decision
+- `JobRecord.TraceParent` already exists for W3C context propagation
 
 ---
 
@@ -86,68 +141,66 @@ NexJob is a production-oriented background job processing library.
 5. No unnecessary DTO requirements
 6. Storage is authoritative for all state
 7. Zero warnings in Release builds
+8. Trigger packages must not create circular dependencies with core
 
 ---
 
 ## AI Execution System
 
-All AI-assisted tasks use the **NexJob AI Operating Model** — a structured, token-efficient framework for predictable AI execution.
+All AI-assisted tasks use the **NexJob AI Operating Model**.
 
-### Quick Start
-
-**Entry point:** `ai-method/QUICK_REFERENCE.md` (2 minutes)
-**Full docs:** `ai-method/README.md` (complete guide)
-**Navigation:** `AI_METHOD_ENTRY.md` (quick links to all components)
+**Entry point:** `ai-method/QUICK_REFERENCE_ULTRA.md`
+**Full docs:** `ai-method/README.md`
 
 ### How to Use
 
-1. **Load foundation:** `ai-method/core/00-foundation-minimal.md` (every task, 200 tokens)
+1. **Load foundation:** `ai-method/core/00-foundation-minimal.md` (every task)
 2. **Choose workflow:** `ai-method/workflows/{feature|bugfix|test|refactor|reliability|release}.md`
 3. **Choose mode:** `ai-method/modes/{01-architect|02-execution|03-validation|04-release}-mode.md`
-4. **Use templates:** `ai-method/templates/` for standardized outputs
+4. **Load skill:** `skills/nexjob-trigger.md` for any trigger work, `skills/nexjob-core.md` for core work
 
 ### Core Invariants (Always Enforced)
 
-- **Storage is the single source of truth** — no in-memory state overrides it
-- **Dispatcher is stateless** — all state transitions must be persisted
-- **Deadline enforced before execution** — expired jobs never execute
-- **Dead-letter handlers never crash** — errors logged and swallowed
-- **Wake-up signaling never blocks** — bounded channel, collapses signals
+- Storage is the single source of truth
+- Dispatcher is stateless
+- Deadline enforced before execution
+- Dead-letter handlers never crash
+- Wake-up signaling never blocks
+- Trigger packages never modify core
 
-### Code Quality Enforced at Build Time
+---
 
-- Zero warnings in `Release` builds (`dotnet build --configuration Release`)
+## Code Quality
+
+- Zero warnings in `Release` builds
 - `<TreatWarningsAsErrors>true</TreatWarningsAsErrors>` must be respected
 - No `NotImplementedException` or placeholders
 - All public APIs must have XML documentation (`///`)
 - Classes `sealed` by default
-- Async/await everywhere (never `.Result` or `.Wait()`)
+- `async/await` everywhere — never `.Result` or `.Wait()`
 - `CancellationToken` propagated in all async calls
 - Always use `.ConfigureAwait(false)` in library projects (`src/NexJob*`)
-- Use `StringComparison.Ordinal` or `OrdinalIgnoreCase` for all string comparisons
-- Prohibit banned APIs: `DateTime.Now` (use `UtcNow`), `.Result`, `.Wait()` (see `BannedSymbols.txt`)
+- `StringComparison.Ordinal` or `OrdinalIgnoreCase` for all string comparisons
+- Banned APIs: `DateTime.Now` (use `UtcNow`), `.Result`, `.Wait()`
 - StyleCop violations fail the build (SA1202, SA1204, SA1413, SA1508)
-- Always run `dotnet format` before committing changes
+- Always run `dotnet format` before committing
 
 ---
 
 ## AI Guardrails (Strict)
 
 - Always work on `develop` branch — never commit directly to `main`
-- `main` is release-only — only merged via release PR
+- `main` is release-only
 - Do not propose full rewrites
 - Do not introduce new abstractions without clear benefit
 - Do not change public contracts unless explicitly requested
 - Prefer incremental, low-risk changes
+- Never touch `IStorageProvider` signature without explicit architect approval
 
 ---
 
 ## PR Creation Rules
 
-When opening a pull request, always use `gh pr create` with `--body` following
-the project template at `.github/pull_request_template.md`.
-
-Required format:
 ```bash
 gh pr create \
   --title "<type>(<scope>): <description>" \
@@ -158,6 +211,7 @@ gh pr create \
 ## Type of change
 - [ ] Bug fix
 - [ ] New feature
+- [ ] New trigger provider
 - [ ] New storage provider
 - [ ] Refactor / cleanup
 - [ ] Documentation
@@ -174,10 +228,6 @@ gh pr create \
 <!-- Closes #123 -->"
 ```
 
-Mark the correct `Type of change` checkbox with `[x]`.
-Fill `Related issues` only when there is a related issue — otherwise remove the line.
-
 ## Engineering Rules
 
 See `CONTRIBUTING.md`
-

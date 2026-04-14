@@ -21,6 +21,7 @@ internal sealed class SchemaMigrator
         new(5, "add progress_percent, progress_message, tags columns", SchemaSql.V5AddProgressAndTags),
         new(6, "create active servers table", SchemaSql.V6CreateServersTable),
         new(7, "create nexjob_settings table for runtime configuration", SchemaSql.V7CreateSettingsTable),
+        new(8, "add unique index for idempotency_key", SchemaSql.V8AddIdempotencyKeyIndex),
     ];
 
     // Arbitrary but stable numeric key for pg_advisory_lock: hash of 'nexjob'

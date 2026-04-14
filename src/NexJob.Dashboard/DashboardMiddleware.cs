@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
 using NexJob.Configuration;
 using NexJob.Dashboard.Pages;
@@ -124,6 +125,28 @@ public sealed class DashboardMiddleware
         }
     }
 #pragma warning restore SCS0027
+
+    private static async Task<JobMetrics> GetCachedMetricsAsync(
+        IMemoryCache cache, IStorageProvider storage, DashboardOptions options, CancellationToken ct)
+    {
+        const string CacheKey = "nexjob:dashboard:metrics";
+
+        // If cache TTL is zero, disable caching
+        if (options.MetricsCacheTtl == TimeSpan.Zero)
+        {
+            return await storage.GetMetricsAsync(ct).ConfigureAwait(false);
+        }
+
+        if (cache.TryGetValue(CacheKey, out JobMetrics? cached) && cached is not null)
+        {
+            return cached;
+        }
+
+        var metrics = await storage.GetMetricsAsync(ct).ConfigureAwait(false);
+        cache.Set(CacheKey, metrics, options.MetricsCacheTtl);
+
+        return metrics;
+    }
 
     private async Task<bool> HandleActionsAsync(HttpContext context, string subPath)
     {
@@ -463,12 +486,13 @@ public sealed class DashboardMiddleware
     {
 #pragma warning disable MA0004
         var storage = context.RequestServices.GetRequiredService<IStorageProvider>();
+        var cache = context.RequestServices.GetRequiredService<IMemoryCache>();
         await using var renderer = new HtmlRenderer(context.RequestServices,
             context.RequestServices.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>());
 #pragma warning restore MA0004
 
         // Compute shared counters once for all pages
-        var metrics = await storage.GetMetricsAsync().ConfigureAwait(false);
+        var metrics = await GetCachedMetricsAsync(cache, storage, _options, context.RequestAborted).ConfigureAwait(false);
         var servers = await storage.GetActiveServersAsync(TimeSpan.FromMinutes(1), context.RequestAborted).ConfigureAwait(false);
         var queues = await storage.GetQueueMetricsAsync(context.RequestAborted).ConfigureAwait(false);
         var nexJobOptions = context.RequestServices.GetRequiredService<NexJobOptions>();
