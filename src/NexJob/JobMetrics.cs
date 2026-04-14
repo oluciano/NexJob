@@ -39,7 +39,7 @@ public sealed class JobMetrics
     /// </summary>
     /// <remarks>
     /// Used by the dashboard overview page. Not paginated — for full list use
-    /// <see cref="NexJob.Storage.IStorageProvider.GetJobsAsync"/> with
+    /// <see cref="NexJob.Storage.IDashboardStorage.GetJobsAsync"/> with
     /// <see cref="JobFilter.Status"/> set to <see cref="JobStatus.Failed"/>.
     /// </remarks>
     public IReadOnlyList<JobRecord> RecentFailures { get; init; } = [];

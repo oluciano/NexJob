@@ -31,7 +31,7 @@ internal sealed class RecurringJobDocument
 
     /// <summary>
     /// When <see langword="true"/> this job was soft-deleted by the user via
-    /// <see cref="NexJob.Storage.IStorageProvider.ForceDeleteRecurringJobAsync"/>. Defaults to <see langword="false"/>.
+    /// <see cref="NexJob.Storage.IRecurringStorage.ForceDeleteRecurringJobAsync"/>. Defaults to <see langword="false"/>.
     /// </summary>
     [BsonElement("deleted_by_user")]
     public bool DeletedByUser { get; set; }

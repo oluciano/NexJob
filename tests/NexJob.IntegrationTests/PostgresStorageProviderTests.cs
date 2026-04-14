@@ -19,7 +19,7 @@ public sealed class PostgresStorageProviderTests : StorageProviderTestsBase, ICl
         _fixture = fixture;
     }
 
-    protected override async Task<IStorageProvider> CreateStorageAsync()
+    protected override async Task<(IJobStorage Job, IRecurringStorage Recurring, IDashboardStorage Dashboard, IStorageProvider Full)> CreateStorageAsync()
     {
         var baseConn = _fixture.Container.GetConnectionString();
         var dbName = $"nexjob_{Guid.NewGuid():N}";
@@ -37,6 +37,6 @@ public sealed class PostgresStorageProviderTests : StorageProviderTestsBase, ICl
 
         var provider = new PostgresStorageProvider(builder.ConnectionString);
 
-        return provider;
+        return (provider, provider, provider, provider);
     }
 }

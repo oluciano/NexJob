@@ -23,7 +23,7 @@ internal sealed class JobDispatcherService : BackgroundService
     private static readonly ConcurrentDictionary<(Type Job, Type Input), Func<object, object, CancellationToken, Task>>
         InvokerCache = new();
 
-    private readonly IStorageProvider _storage;
+    private readonly IJobStorage _storage;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ThrottleRegistry _throttleRegistry;
     private readonly IRuntimeSettingsStore _runtimeStore;
@@ -37,7 +37,7 @@ internal sealed class JobDispatcherService : BackgroundService
     /// Initializes a new <see cref="JobDispatcherService"/>.
     /// </summary>
     public JobDispatcherService(
-        IStorageProvider storage,
+        IJobStorage storage,
         IServiceScopeFactory scopeFactory,
         ThrottleRegistry throttleRegistry,
         IRuntimeSettingsStore runtimeStore,

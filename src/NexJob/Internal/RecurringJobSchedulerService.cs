@@ -12,7 +12,8 @@ namespace NexJob.Internal;
 /// </summary>
 internal sealed class RecurringJobSchedulerService : BackgroundService
 {
-    private readonly IStorageProvider _storage;
+    private readonly IJobStorage _jobStorage;
+    private readonly IRecurringStorage _recurringStorage;
     private readonly IRuntimeSettingsStore _runtimeStore;
     private readonly NexJobOptions _options;
     private readonly ILogger<RecurringJobSchedulerService> _logger;
@@ -21,12 +22,14 @@ internal sealed class RecurringJobSchedulerService : BackgroundService
     /// Initializes a new <see cref="RecurringJobSchedulerService"/>.
     /// </summary>
     public RecurringJobSchedulerService(
-        IStorageProvider storage,
+        IJobStorage jobStorage,
+        IRecurringStorage recurringStorage,
         IRuntimeSettingsStore runtimeStore,
         NexJobOptions options,
         ILogger<RecurringJobSchedulerService> logger)
     {
-        _storage = storage;
+        _jobStorage = jobStorage;
+        _recurringStorage = recurringStorage;
         _runtimeStore = runtimeStore;
         _options = options;
         _logger = logger;
@@ -82,7 +85,7 @@ internal sealed class RecurringJobSchedulerService : BackgroundService
     private async Task EnqueueDueJobsAsync(CancellationToken cancellationToken)
     {
         var now = DateTimeOffset.UtcNow;
-        var dueJobs = await _storage.GetDueRecurringJobsAsync(now, cancellationToken).ConfigureAwait(false);
+        var dueJobs = await _recurringStorage.GetDueRecurringJobsAsync(now, cancellationToken).ConfigureAwait(false);
 
         foreach (var recurring in dueJobs)
         {
@@ -120,13 +123,13 @@ internal sealed class RecurringJobSchedulerService : BackgroundService
                         : null,
                 };
 
-                await _storage.EnqueueAsync(jobRecord, DuplicatePolicy.AllowAfterFailed, cancellationToken).ConfigureAwait(false);
+                await _jobStorage.EnqueueAsync(jobRecord, DuplicatePolicy.AllowAfterFailed, cancellationToken).ConfigureAwait(false);
 
                 var nextExecution = CalculateNextExecution(recurring);
 
                 if (nextExecution.HasValue)
                 {
-                    await _storage.SetRecurringJobNextExecutionAsync(
+                    await _recurringStorage.SetRecurringJobNextExecutionAsync(
                         recurring.RecurringJobId, nextExecution.Value, cancellationToken).ConfigureAwait(false);
                 }
 

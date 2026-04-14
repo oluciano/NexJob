@@ -19,7 +19,12 @@ public static class NexJobPostgresExtensions
         this IServiceCollection services,
         string connectionString)
     {
-        services.AddSingleton<IStorageProvider>(_ => new PostgresStorageProvider(connectionString));
+        services.AddSingleton(_ => new PostgresStorageProvider(connectionString));
+        services.AddSingleton<IStorageProvider>(sp => sp.GetRequiredService<PostgresStorageProvider>());
+        services.AddSingleton<IJobStorage>(sp => sp.GetRequiredService<PostgresStorageProvider>());
+        services.AddSingleton<IRecurringStorage>(sp => sp.GetRequiredService<PostgresStorageProvider>());
+        services.AddSingleton<IDashboardStorage>(sp => sp.GetRequiredService<PostgresStorageProvider>());
+
         services.AddSingleton<IRuntimeSettingsStore>(_ => new PostgresRuntimeSettingsStore(connectionString));
         return services;
     }

@@ -80,10 +80,10 @@ public sealed class RecurringJobRecord
 
     /// <summary>
     /// When <see langword="true"/> this job was soft-deleted by the user via
-    /// <see cref="Storage.IStorageProvider.ForceDeleteRecurringJobAsync"/>. The scheduler skips
+    /// <see cref="Storage.IRecurringStorage.ForceDeleteRecurringJobAsync"/>. The scheduler skips
     /// it at every firing and it will not be resurrected by a subsequent call to
-    /// <see cref="Storage.IStorageProvider.UpsertRecurringJobAsync"/>.
-    /// Use <see cref="Storage.IStorageProvider.RestoreRecurringJobAsync"/> to reverse the deletion.
+    /// <see cref="Storage.IRecurringStorage.UpsertRecurringJobAsync"/>.
+    /// Use <see cref="Storage.IRecurringStorage.RestoreRecurringJobAsync"/> to reverse the deletion.
     /// </summary>
     public bool DeletedByUser { get; set; }
 }

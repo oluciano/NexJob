@@ -145,7 +145,12 @@ public static class NexJobServiceCollectionExtensions
     private static IServiceCollection RegisterCore(IServiceCollection services, NexJobOptions options)
     {
         services.AddSingleton(options);
-        services.TryAddSingleton<IStorageProvider, InMemoryStorageProvider>();
+        services.TryAddSingleton<InMemoryStorageProvider>();
+        services.TryAddSingleton<IStorageProvider>(sp => sp.GetRequiredService<InMemoryStorageProvider>());
+        services.TryAddSingleton<IJobStorage>(sp => sp.GetRequiredService<InMemoryStorageProvider>());
+        services.TryAddSingleton<IRecurringStorage>(sp => sp.GetRequiredService<InMemoryStorageProvider>());
+        services.TryAddSingleton<IDashboardStorage>(sp => sp.GetRequiredService<InMemoryStorageProvider>());
+
         services.TryAddSingleton<IRuntimeSettingsStore, InMemoryRuntimeSettingsStore>();
         GetOrCreateRegistry(services);  // Ensure registry is registered
         services.AddSingleton<JobWakeUpChannel>();

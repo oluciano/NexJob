@@ -125,7 +125,7 @@ public sealed class JobRecord
 
     /// <summary>
     /// Tags attached at enqueue time. Used for dashboard filtering and
-    /// programmatic lookup via <see cref="NexJob.Storage.IStorageProvider.GetJobsByTagAsync"/>.
+    /// programmatic lookup via <see cref="NexJob.Storage.IDashboardStorage.GetJobsByTagAsync"/>.
     /// </summary>
     public IReadOnlyList<string> Tags { get; init; } = [];
 

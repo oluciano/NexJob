@@ -12,14 +12,52 @@ namespace NexJob.IntegrationTests;
 public abstract class StorageProviderTestsBase
 {
     /// <summary>Creates and returns a ready-to-use storage provider for a clean test run.</summary>
-    protected abstract Task<IStorageProvider> CreateStorageAsync();
+    protected abstract Task<(IJobStorage Job, IRecurringStorage Recurring, IDashboardStorage Dashboard, IStorageProvider Full)> CreateStorageAsync();
+
+    [Fact]
+    public async Task IJobStorage_resolved_independently_executes_job_lifecycle()
+    {
+        var (job, _, dashboard, _) = await CreateStorageAsync();
+        var record = MakeJob();
+
+        await job.EnqueueAsync(record);
+        var fetched = await job.FetchNextAsync(["default"]);
+
+        fetched.Should().NotBeNull();
+        await job.CommitJobResultAsync(fetched!.Id, new JobExecutionResult { Succeeded = true, Logs = [] });
+
+        var updated = await dashboard.GetJobByIdAsync(record.Id);
+        updated!.Status.Should().Be(JobStatus.Succeeded);
+    }
+
+    [Fact]
+    public async Task IRecurringStorage_resolved_independently_manages_recurring_lifecycle()
+    {
+        var (_, recurring, _, _) = await CreateStorageAsync();
+        var record = MakeRecurring();
+
+        await recurring.UpsertRecurringJobAsync(record);
+        var all = await recurring.GetRecurringJobsAsync();
+
+        all.Should().ContainSingle(r => r.RecurringJobId == record.RecurringJobId);
+    }
+
+    [Fact]
+    public async Task IDashboardStorage_resolved_independently_queries_metrics()
+    {
+        var (job, _, dashboard, _) = await CreateStorageAsync();
+        await job.EnqueueAsync(MakeJob());
+
+        var metrics = await dashboard.GetMetricsAsync();
+        metrics.Enqueued.Should().Be(1);
+    }
 
     // ── Enqueue & fetch ────────────────────────────────────────────────────────
 
     [Fact]
     public async Task EnqueueAsync_then_FetchNextAsync_returns_the_job()
     {
-        var storage = await CreateStorageAsync();
+        var (storage, _, _, _) = await CreateStorageAsync();
         var record = MakeJob();
 
         await storage.EnqueueAsync(record);
@@ -33,7 +71,7 @@ public abstract class StorageProviderTestsBase
     [Fact]
     public async Task FetchNextAsync_respects_queue_filter()
     {
-        var storage = await CreateStorageAsync();
+        var (storage, _, _, _) = await CreateStorageAsync();
         await storage.EnqueueAsync(MakeJob(queue: "high"));
         await Task.Delay(1);
         await storage.EnqueueAsync(MakeJob(queue: "low"));
@@ -47,7 +85,7 @@ public abstract class StorageProviderTestsBase
     [Fact]
     public async Task FetchNextAsync_returns_null_when_queue_is_empty()
     {
-        var storage = await CreateStorageAsync();
+        var (storage, _, _, _) = await CreateStorageAsync();
 
         var fetched = await storage.FetchNextAsync(["default"]);
 
@@ -57,7 +95,7 @@ public abstract class StorageProviderTestsBase
     [Fact]
     public async Task FetchNextAsync_does_not_return_same_job_twice()
     {
-        var storage = await CreateStorageAsync();
+        var (storage, _, _, _) = await CreateStorageAsync();
         await storage.EnqueueAsync(MakeJob());
 
         var first = await storage.FetchNextAsync(["default"]);
@@ -70,7 +108,7 @@ public abstract class StorageProviderTestsBase
     [Fact]
     public async Task FetchNextAsync_returns_higher_priority_job_first()
     {
-        var storage = await CreateStorageAsync();
+        var (storage, _, _, _) = await CreateStorageAsync();
         await storage.EnqueueAsync(MakeJob(priority: JobPriority.Low));
         await Task.Delay(1); // ensure distinct CreatedAt for tiebreaker
         await storage.EnqueueAsync(MakeJob(priority: JobPriority.Critical));
@@ -85,7 +123,7 @@ public abstract class StorageProviderTestsBase
     [Fact]
     public async Task FetchNextAsync_increments_attempts_on_claim()
     {
-        var storage = await CreateStorageAsync();
+        var (storage, _, _, _) = await CreateStorageAsync();
         await storage.EnqueueAsync(MakeJob());
 
         var fetched = await storage.FetchNextAsync(["default"]);
@@ -98,12 +136,12 @@ public abstract class StorageProviderTestsBase
     [Fact]
     public async Task AcknowledgeAsync_sets_status_to_Succeeded()
     {
-        var storage = await CreateStorageAsync();
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
         await storage.EnqueueAsync(MakeJob());
         var fetched = (await storage.FetchNextAsync(["default"]))!;
 
         await storage.AcknowledgeAsync(fetched.Id);
-        var updated = await storage.GetJobByIdAsync(fetched.Id);
+        var updated = await dashboard.GetJobByIdAsync(fetched.Id);
 
         updated!.Status.Should().Be(JobStatus.Succeeded);
         updated.CompletedAt.Should().NotBeNull();
@@ -112,7 +150,7 @@ public abstract class StorageProviderTestsBase
     [Fact]
     public async Task SetFailedAsync_with_retryAt_re_enqueues_job()
     {
-        var storage = await CreateStorageAsync();
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
         await storage.EnqueueAsync(MakeJob());
         var fetched = (await storage.FetchNextAsync(["default"]))!;
 
@@ -120,7 +158,7 @@ public abstract class StorageProviderTestsBase
         await storage.SetFailedAsync(fetched.Id,
             new InvalidOperationException("boom"), retryAt);
 
-        var updated = await storage.GetJobByIdAsync(fetched.Id);
+        var updated = await dashboard.GetJobByIdAsync(fetched.Id);
         updated!.LastErrorMessage.Should().Contain("boom");
         updated.RetryAt.Should().NotBeNull();
     }
@@ -128,28 +166,28 @@ public abstract class StorageProviderTestsBase
     [Fact]
     public async Task SetFailedAsync_without_retryAt_moves_job_to_Failed()
     {
-        var storage = await CreateStorageAsync();
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
         await storage.EnqueueAsync(MakeJob());
         var fetched = (await storage.FetchNextAsync(["default"]))!;
 
         await storage.SetFailedAsync(fetched.Id,
             new InvalidOperationException("fatal"), retryAt: null);
 
-        var updated = await storage.GetJobByIdAsync(fetched.Id);
+        var updated = await dashboard.GetJobByIdAsync(fetched.Id);
         updated!.Status.Should().Be(JobStatus.Failed);
     }
 
     [Fact]
     public async Task UpdateHeartbeatAsync_updates_heartbeat_timestamp()
     {
-        var storage = await CreateStorageAsync();
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
         await storage.EnqueueAsync(MakeJob());
         var fetched = (await storage.FetchNextAsync(["default"]))!;
         var before = fetched.HeartbeatAt;
 
         await Task.Delay(10); // ensure clock advances
         await storage.UpdateHeartbeatAsync(fetched.Id);
-        var updated = await storage.GetJobByIdAsync(fetched.Id);
+        var updated = await dashboard.GetJobByIdAsync(fetched.Id);
 
         updated!.HeartbeatAt.Should().NotBeNull();
         updated.HeartbeatAt.Should().BeAfter(before ?? DateTimeOffset.MinValue);
@@ -160,14 +198,14 @@ public abstract class StorageProviderTestsBase
     [Fact]
     public async Task EnqueueAsync_with_same_idempotency_key_is_deduplicated()
     {
-        var storage = await CreateStorageAsync();
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
         var key = Guid.NewGuid().ToString();
 
         var id1 = await storage.EnqueueAsync(MakeJob(idempotencyKey: key));
         var id2 = await storage.EnqueueAsync(MakeJob(idempotencyKey: key));
 
-        id1.Should().Be(id2, "second enqueue with same key must return the existing job id");
-        var metrics = await storage.GetMetricsAsync();
+        id1.JobId.Should().Be(id2.JobId, "second enqueue with same key must return the existing job id");
+        var metrics = await dashboard.GetMetricsAsync();
         metrics.Enqueued.Should().Be(1);
     }
 
@@ -176,7 +214,7 @@ public abstract class StorageProviderTestsBase
     [Fact]
     public async Task RequeueOrphanedJobsAsync_requeues_stale_processing_job()
     {
-        var storage = await CreateStorageAsync();
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
         await storage.EnqueueAsync(MakeJob());
         var fetched = (await storage.FetchNextAsync(["default"]))!;
         fetched.Status.Should().Be(JobStatus.Processing);
@@ -186,7 +224,7 @@ public abstract class StorageProviderTestsBase
         await Task.Delay(10);
         await storage.RequeueOrphanedJobsAsync(TimeSpan.Zero);
 
-        var updated = await storage.GetJobByIdAsync(fetched.Id);
+        var updated = await dashboard.GetJobByIdAsync(fetched.Id);
         updated!.Status.Should().Be(JobStatus.Enqueued);
         updated.HeartbeatAt.Should().BeNull();
     }
@@ -194,14 +232,14 @@ public abstract class StorageProviderTestsBase
     [Fact]
     public async Task RequeueOrphanedJobsAsync_does_not_touch_fresh_heartbeat()
     {
-        var storage = await CreateStorageAsync();
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
         await storage.EnqueueAsync(MakeJob());
         var fetched = (await storage.FetchNextAsync(["default"]))!;
 
         // Large timeout — the job heartbeat is fresh, should not be requeued
         await storage.RequeueOrphanedJobsAsync(TimeSpan.FromMinutes(5));
 
-        var updated = await storage.GetJobByIdAsync(fetched.Id);
+        var updated = await dashboard.GetJobByIdAsync(fetched.Id);
         updated!.Status.Should().Be(JobStatus.Processing);
     }
 
@@ -210,21 +248,21 @@ public abstract class StorageProviderTestsBase
     [Fact]
     public async Task EnqueueContinuationsAsync_releases_awaiting_jobs()
     {
-        var storage = await CreateStorageAsync();
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
         var parentId = new JobId(Guid.NewGuid());
         var child = MakeJob(status: JobStatus.AwaitingContinuation, parentJobId: parentId);
         await storage.EnqueueAsync(child);
 
         await storage.EnqueueContinuationsAsync(parentId);
 
-        var updated = await storage.GetJobByIdAsync(child.Id);
+        var updated = await dashboard.GetJobByIdAsync(child.Id);
         updated!.Status.Should().Be(JobStatus.Enqueued);
     }
 
     [Fact]
     public async Task EnqueueContinuationsAsync_does_not_release_other_parents_jobs()
     {
-        var storage = await CreateStorageAsync();
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
         var parentA = new JobId(Guid.NewGuid());
         var parentB = new JobId(Guid.NewGuid());
         var childOfB = MakeJob(status: JobStatus.AwaitingContinuation, parentJobId: parentB);
@@ -232,7 +270,7 @@ public abstract class StorageProviderTestsBase
 
         await storage.EnqueueContinuationsAsync(parentA);
 
-        var updated = await storage.GetJobByIdAsync(childOfB.Id);
+        var updated = await dashboard.GetJobByIdAsync(childOfB.Id);
         updated!.Status.Should().Be(JobStatus.AwaitingContinuation, "only parentB's children should be released");
     }
 
@@ -241,12 +279,12 @@ public abstract class StorageProviderTestsBase
     [Fact]
     public async Task GetMetricsAsync_counts_enqueued_jobs()
     {
-        var storage = await CreateStorageAsync();
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
         await storage.EnqueueAsync(MakeJob());
         await Task.Delay(1);
         await storage.EnqueueAsync(MakeJob());
 
-        var metrics = await storage.GetMetricsAsync();
+        var metrics = await dashboard.GetMetricsAsync();
 
         metrics.Enqueued.Should().Be(2);
     }
@@ -254,7 +292,7 @@ public abstract class StorageProviderTestsBase
     [Fact]
     public async Task GetMetricsAsync_counts_all_statuses()
     {
-        var storage = await CreateStorageAsync();
+        var (storage, recurring, dashboard, _) = await CreateStorageAsync();
 
         // → Processing: fetch job A, leave it running
         await storage.EnqueueAsync(MakeJob());
@@ -268,17 +306,19 @@ public abstract class StorageProviderTestsBase
         await storage.AcknowledgeAsync(toSucceed.Id);
 
         // → Failed: fetch job C, fail it with no retry
+        await Task.Delay(1);
         await storage.EnqueueAsync(MakeJob());
         var toFail = (await storage.FetchNextAsync(["default"]))!;
         await storage.SetFailedAsync(toFail.Id, new Exception("x"), retryAt: null);
 
         // → Enqueued: job D — just enqueued, not fetched
+        await Task.Delay(1);
         await storage.EnqueueAsync(MakeJob());
 
         // → Recurring
-        await storage.UpsertRecurringJobAsync(MakeRecurring());
+        await recurring.UpsertRecurringJobAsync(MakeRecurring());
 
-        var metrics = await storage.GetMetricsAsync();
+        var metrics = await dashboard.GetMetricsAsync();
 
         metrics.Enqueued.Should().Be(1);
         metrics.Processing.Should().Be(1);
@@ -290,14 +330,14 @@ public abstract class StorageProviderTestsBase
     [Fact]
     public async Task GetJobsAsync_returns_paged_results()
     {
-        var storage = await CreateStorageAsync();
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
         for (var i = 0; i < 5; i++)
         {
             await storage.EnqueueAsync(MakeJob());
             await Task.Delay(1);
         }
 
-        var page = await storage.GetJobsAsync(new JobFilter(), page: 1, pageSize: 3);
+        var page = await dashboard.GetJobsAsync(new JobFilter(), page: 1, pageSize: 3);
 
         page.Items.Should().HaveCount(3);
         page.TotalCount.Should().Be(5);
@@ -307,13 +347,13 @@ public abstract class StorageProviderTestsBase
     [Fact]
     public async Task GetJobsAsync_filters_by_status()
     {
-        var storage = await CreateStorageAsync();
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
         await storage.EnqueueAsync(MakeJob());
         var fetched = (await storage.FetchNextAsync(["default"]))!;
         await storage.AcknowledgeAsync(fetched.Id);
         await storage.EnqueueAsync(MakeJob()); // still Enqueued
 
-        var page = await storage.GetJobsAsync(
+        var page = await dashboard.GetJobsAsync(
             new JobFilter { Status = JobStatus.Succeeded }, page: 1, pageSize: 10);
 
         page.Items.Should().HaveCount(1);
@@ -323,14 +363,14 @@ public abstract class StorageProviderTestsBase
     [Fact]
     public async Task GetJobsAsync_filters_by_queue()
     {
-        var storage = await CreateStorageAsync();
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
         await storage.EnqueueAsync(MakeJob(queue: "alpha"));
         await Task.Delay(1);
         await storage.EnqueueAsync(MakeJob(queue: "alpha"));
         await Task.Delay(1);
         await storage.EnqueueAsync(MakeJob(queue: "beta"));
 
-        var page = await storage.GetJobsAsync(
+        var page = await dashboard.GetJobsAsync(
             new JobFilter { Queue = "alpha" }, page: 1, pageSize: 10);
 
         page.TotalCount.Should().Be(2);
@@ -340,9 +380,9 @@ public abstract class StorageProviderTestsBase
     [Fact]
     public async Task GetJobByIdAsync_returns_null_for_unknown_id()
     {
-        var storage = await CreateStorageAsync();
+        var (_, _, dashboard, _) = await CreateStorageAsync();
 
-        var result = await storage.GetJobByIdAsync(new JobId(Guid.NewGuid()));
+        var result = await dashboard.GetJobByIdAsync(new JobId(Guid.NewGuid()));
 
         result.Should().BeNull();
     }
@@ -350,12 +390,12 @@ public abstract class StorageProviderTestsBase
     [Fact]
     public async Task DeleteJobAsync_removes_the_job()
     {
-        var storage = await CreateStorageAsync();
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
         var job = MakeJob();
         await storage.EnqueueAsync(job);
 
-        await storage.DeleteJobAsync(job.Id);
-        var result = await storage.GetJobByIdAsync(job.Id);
+        await dashboard.DeleteJobAsync(job.Id);
+        var result = await dashboard.GetJobByIdAsync(job.Id);
 
         result.Should().BeNull();
     }
@@ -363,14 +403,14 @@ public abstract class StorageProviderTestsBase
     [Fact]
     public async Task RequeueJobAsync_resets_failed_job_to_enqueued()
     {
-        var storage = await CreateStorageAsync();
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
         await storage.EnqueueAsync(MakeJob());
         var fetched = (await storage.FetchNextAsync(["default"]))!;
         await storage.SetFailedAsync(fetched.Id,
             new Exception("error"), retryAt: null);
 
-        await storage.RequeueJobAsync(fetched.Id);
-        var updated = await storage.GetJobByIdAsync(fetched.Id);
+        await dashboard.RequeueJobAsync(fetched.Id);
+        var updated = await dashboard.GetJobByIdAsync(fetched.Id);
 
         updated!.Status.Should().Be(JobStatus.Enqueued);
         updated.Attempts.Should().Be(0);
@@ -379,7 +419,7 @@ public abstract class StorageProviderTestsBase
     [Fact]
     public async Task GetQueueMetricsAsync_returns_counts_per_queue()
     {
-        var storage = await CreateStorageAsync();
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
         await storage.EnqueueAsync(MakeJob(queue: "alpha"));
         await Task.Delay(1);
         await storage.EnqueueAsync(MakeJob(queue: "alpha"));
@@ -389,7 +429,7 @@ public abstract class StorageProviderTestsBase
         await Task.Delay(1);
         await storage.FetchNextAsync(["alpha"]);
 
-        var metrics = await storage.GetQueueMetricsAsync();
+        var metrics = await dashboard.GetQueueMetricsAsync();
 
         var alpha = metrics.First(q => q.Queue == "alpha");
         var beta = metrics.First(q => q.Queue == "beta");
@@ -405,27 +445,27 @@ public abstract class StorageProviderTestsBase
     [Fact]
     public async Task UpsertRecurringJobAsync_and_GetRecurringJobsAsync_roundtrip()
     {
-        var storage = await CreateStorageAsync();
-        var recurring = MakeRecurring();
+        var (_, recurring, _, _) = await CreateStorageAsync();
+        var record = MakeRecurring();
 
-        await storage.UpsertRecurringJobAsync(recurring);
-        var all = await storage.GetRecurringJobsAsync();
+        await recurring.UpsertRecurringJobAsync(record);
+        var all = await recurring.GetRecurringJobsAsync();
 
-        var saved = all.Should().ContainSingle(r => r.RecurringJobId == recurring.RecurringJobId).Subject;
-        saved.Cron.Should().Be(recurring.Cron);
-        saved.Queue.Should().Be(recurring.Queue);
-        saved.ConcurrencyPolicy.Should().Be(recurring.ConcurrencyPolicy);
+        var saved = all.Should().ContainSingle(r => r.RecurringJobId == record.RecurringJobId).Subject;
+        saved.Cron.Should().Be(record.Cron);
+        saved.Queue.Should().Be(record.Queue);
+        saved.ConcurrencyPolicy.Should().Be(record.ConcurrencyPolicy);
     }
 
     [Fact]
     public async Task UpsertRecurringJobAsync_updates_existing_definition()
     {
-        var storage = await CreateStorageAsync();
+        var (_, recurring, _, _) = await CreateStorageAsync();
         var id = $"upsert-test-{Guid.NewGuid()}";
-        await storage.UpsertRecurringJobAsync(MakeRecurring(id: id, cron: "* * * * *"));
+        await recurring.UpsertRecurringJobAsync(MakeRecurring(id: id, cron: "* * * * *"));
 
-        await storage.UpsertRecurringJobAsync(MakeRecurring(id: id, cron: "0 9 * * *"));
-        var all = await storage.GetRecurringJobsAsync();
+        await recurring.UpsertRecurringJobAsync(MakeRecurring(id: id, cron: "0 9 * * *"));
+        var all = await recurring.GetRecurringJobsAsync();
 
         all.Should().ContainSingle(r => r.RecurringJobId == id)
            .Which.Cron.Should().Be("0 9 * * *");
@@ -434,16 +474,16 @@ public abstract class StorageProviderTestsBase
     [Fact]
     public async Task GetDueRecurringJobsAsync_returns_only_due_jobs()
     {
-        var storage = await CreateStorageAsync();
+        var (_, recurring, _, _) = await CreateStorageAsync();
         var dueId = $"due-{Guid.NewGuid()}";
         var futureId = $"future-{Guid.NewGuid()}";
 
-        await storage.UpsertRecurringJobAsync(
+        await recurring.UpsertRecurringJobAsync(
             MakeRecurring(id: dueId, nextExecution: DateTimeOffset.UtcNow.AddSeconds(-1)));
-        await storage.UpsertRecurringJobAsync(
+        await recurring.UpsertRecurringJobAsync(
             MakeRecurring(id: futureId, nextExecution: DateTimeOffset.UtcNow.AddHours(1)));
 
-        var due = await storage.GetDueRecurringJobsAsync(DateTimeOffset.UtcNow);
+        var due = await recurring.GetDueRecurringJobsAsync(DateTimeOffset.UtcNow);
 
         due.Should().Contain(r => r.RecurringJobId == dueId);
         due.Should().NotContain(r => r.RecurringJobId == futureId);
@@ -452,15 +492,15 @@ public abstract class StorageProviderTestsBase
     [Fact]
     public async Task SetRecurringJobNextExecutionAsync_persists_next_and_last_execution()
     {
-        var storage = await CreateStorageAsync();
-        var recurring = MakeRecurring();
-        await storage.UpsertRecurringJobAsync(recurring);
+        var (_, recurring, _, _) = await CreateStorageAsync();
+        var record = MakeRecurring();
+        await recurring.UpsertRecurringJobAsync(record);
 
         var next = DateTimeOffset.UtcNow.AddMinutes(5);
-        await storage.SetRecurringJobNextExecutionAsync(recurring.RecurringJobId, next);
+        await recurring.SetRecurringJobNextExecutionAsync(record.RecurringJobId, next);
 
-        var all = await storage.GetRecurringJobsAsync();
-        var saved = all.Single(r => r.RecurringJobId == recurring.RecurringJobId);
+        var all = await recurring.GetRecurringJobsAsync();
+        var saved = all.Single(r => r.RecurringJobId == record.RecurringJobId);
 
         saved.NextExecution.Should().NotBeNull();
         saved.LastExecutedAt.Should().NotBeNull();
@@ -469,15 +509,15 @@ public abstract class StorageProviderTestsBase
     [Fact]
     public async Task SetRecurringJobLastExecutionResultAsync_records_success()
     {
-        var storage = await CreateStorageAsync();
-        var recurring = MakeRecurring();
-        await storage.UpsertRecurringJobAsync(recurring);
+        var (_, recurring, _, _) = await CreateStorageAsync();
+        var record = MakeRecurring();
+        await recurring.UpsertRecurringJobAsync(record);
 
-        await storage.SetRecurringJobLastExecutionResultAsync(
-            recurring.RecurringJobId, JobStatus.Succeeded, errorMessage: null);
+        await recurring.SetRecurringJobLastExecutionResultAsync(
+            record.RecurringJobId, JobStatus.Succeeded, errorMessage: null);
 
-        var all = await storage.GetRecurringJobsAsync();
-        var saved = all.Single(r => r.RecurringJobId == recurring.RecurringJobId);
+        var all = await recurring.GetRecurringJobsAsync();
+        var saved = all.Single(r => r.RecurringJobId == record.RecurringJobId);
 
         saved.LastExecutionStatus.Should().Be(JobStatus.Succeeded);
         saved.LastExecutionError.Should().BeNull();
@@ -486,15 +526,15 @@ public abstract class StorageProviderTestsBase
     [Fact]
     public async Task SetRecurringJobLastExecutionResultAsync_records_failure_with_error()
     {
-        var storage = await CreateStorageAsync();
-        var recurring = MakeRecurring();
-        await storage.UpsertRecurringJobAsync(recurring);
+        var (_, recurring, _, _) = await CreateStorageAsync();
+        var record = MakeRecurring();
+        await recurring.UpsertRecurringJobAsync(record);
 
-        await storage.SetRecurringJobLastExecutionResultAsync(
-            recurring.RecurringJobId, JobStatus.Failed, errorMessage: "timeout");
+        await recurring.SetRecurringJobLastExecutionResultAsync(
+            record.RecurringJobId, JobStatus.Failed, errorMessage: "timeout");
 
-        var all = await storage.GetRecurringJobsAsync();
-        var saved = all.Single(r => r.RecurringJobId == recurring.RecurringJobId);
+        var all = await recurring.GetRecurringJobsAsync();
+        var saved = all.Single(r => r.RecurringJobId == record.RecurringJobId);
 
         saved.LastExecutionStatus.Should().Be(JobStatus.Failed);
         saved.LastExecutionError.Should().Be("timeout");
@@ -503,14 +543,14 @@ public abstract class StorageProviderTestsBase
     [Fact]
     public async Task DeleteRecurringJobAsync_removes_the_definition()
     {
-        var storage = await CreateStorageAsync();
-        var recurring = MakeRecurring();
-        await storage.UpsertRecurringJobAsync(recurring);
+        var (_, recurring, _, _) = await CreateStorageAsync();
+        var record = MakeRecurring();
+        await recurring.UpsertRecurringJobAsync(record);
 
-        await storage.DeleteRecurringJobAsync(recurring.RecurringJobId);
-        var all = await storage.GetRecurringJobsAsync();
+        await recurring.DeleteRecurringJobAsync(record.RecurringJobId);
+        var all = await recurring.GetRecurringJobsAsync();
 
-        all.Should().NotContain(r => r.RecurringJobId == recurring.RecurringJobId);
+        all.Should().NotContain(r => r.RecurringJobId == record.RecurringJobId);
     }
 
     // ── Server Tracking ────────────────────────────────────────────────────────
@@ -518,7 +558,7 @@ public abstract class StorageProviderTestsBase
     [Fact]
     public async Task RegisterServerAsync_AddsServer_WhenSupported()
     {
-        var storage = await CreateStorageAsync();
+        var (storage, _, _, _) = await CreateStorageAsync();
         if (IsServerTrackingNotSupported(storage))
         {
             return;
@@ -536,7 +576,7 @@ public abstract class StorageProviderTestsBase
     [Fact]
     public async Task HeartbeatServerAsync_UpdatesTimestamp_WhenSupported()
     {
-        var storage = await CreateStorageAsync();
+        var (storage, _, _, _) = await CreateStorageAsync();
         if (IsServerTrackingNotSupported(storage))
         {
             return;
@@ -558,7 +598,7 @@ public abstract class StorageProviderTestsBase
     [Fact]
     public async Task DeregisterServerAsync_RemovesServer_WhenSupported()
     {
-        var storage = await CreateStorageAsync();
+        var (storage, _, _, _) = await CreateStorageAsync();
         if (IsServerTrackingNotSupported(storage))
         {
             return;
@@ -576,7 +616,7 @@ public abstract class StorageProviderTestsBase
     [Fact]
     public async Task GetActiveServersAsync_FiltersStaleServers_WhenSupported()
     {
-        var storage = await CreateStorageAsync();
+        var (storage, _, _, _) = await CreateStorageAsync();
         if (IsServerTrackingNotSupported(storage))
         {
             return;
@@ -599,7 +639,7 @@ public abstract class StorageProviderTestsBase
     [Fact]
     public async Task CommitJobResultAsync_Success_WithContinuation_EnqueuesContinuation()
     {
-        var storage = await CreateStorageAsync();
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
 
         // Create and fetch parent job
         var parent = MakeJob();
@@ -622,21 +662,21 @@ public abstract class StorageProviderTestsBase
         });
 
         // Verify parent is succeeded and child is now enqueued
-        var parentResult = await storage.GetJobByIdAsync(parentFetched.Id);
+        var parentResult = await dashboard.GetJobByIdAsync(parentFetched.Id);
         parentResult!.Status.Should().Be(JobStatus.Succeeded);
         parentResult.ExecutionLogs.Should().HaveCount(1);
 
-        var childResult = await storage.GetJobByIdAsync(child.Id);
+        var childResult = await dashboard.GetJobByIdAsync(child.Id);
         childResult!.Status.Should().Be(JobStatus.Enqueued);
     }
 
     [Fact]
     public async Task CommitJobResultAsync_Failure_WithRetry_SetsScheduled()
     {
-        var storage = await CreateStorageAsync();
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
 
-        var job = MakeJob();
-        await storage.EnqueueAsync(job);
+        var record = MakeJob();
+        await storage.EnqueueAsync(record);
         var fetched = (await storage.FetchNextAsync(["default"]))!;
 
         var ex = new InvalidOperationException("test failure");
@@ -652,7 +692,7 @@ public abstract class StorageProviderTestsBase
             RecurringJobId = null,
         });
 
-        var result = await storage.GetJobByIdAsync(fetched.Id);
+        var result = await dashboard.GetJobByIdAsync(fetched.Id);
         result!.Status.Should().Be(JobStatus.Scheduled);
         result.RetryAt.Should().BeCloseTo(retryAt, TimeSpan.FromMilliseconds(1));
         result.LastErrorMessage.Should().Contain("test failure");
@@ -662,10 +702,10 @@ public abstract class StorageProviderTestsBase
     [Fact]
     public async Task CommitJobResultAsync_Failure_NoRetry_SetsFailed()
     {
-        var storage = await CreateStorageAsync();
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
 
-        var job = MakeJob();
-        await storage.EnqueueAsync(job);
+        var record = MakeJob();
+        await storage.EnqueueAsync(record);
         var fetched = (await storage.FetchNextAsync(["default"]))!;
 
         var ex = new InvalidOperationException("permanent failure");
@@ -680,7 +720,7 @@ public abstract class StorageProviderTestsBase
             RecurringJobId = null,
         });
 
-        var result = await storage.GetJobByIdAsync(fetched.Id);
+        var result = await dashboard.GetJobByIdAsync(fetched.Id);
         result!.Status.Should().Be(JobStatus.Failed);
         result.CompletedAt.Should().NotBeNull();
         result.LastErrorMessage.Should().Contain("permanent failure");
@@ -689,10 +729,10 @@ public abstract class StorageProviderTestsBase
     [Fact]
     public async Task CommitJobResultAsync_IsIdempotent_WhenCalledTwice()
     {
-        var storage = await CreateStorageAsync();
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
 
-        var job = MakeJob();
-        await storage.EnqueueAsync(job);
+        var record = MakeJob();
+        await storage.EnqueueAsync(record);
         var fetched = (await storage.FetchNextAsync(["default"]))!;
 
         var logs1 = new[] { new JobExecutionLog { Timestamp = DateTimeOffset.UtcNow, Level = "Information", Message = "First call" } };
@@ -708,7 +748,7 @@ public abstract class StorageProviderTestsBase
         await storage.CommitJobResultAsync(fetched.Id, result);
         await storage.CommitJobResultAsync(fetched.Id, result); // Should be no-op
 
-        var final = await storage.GetJobByIdAsync(fetched.Id);
+        var final = await dashboard.GetJobByIdAsync(fetched.Id);
         final!.Status.Should().Be(JobStatus.Succeeded);
         // Logs should be from first call only (second commit was no-op)
         final.ExecutionLogs.Should().HaveCount(1);
@@ -765,13 +805,13 @@ public abstract class StorageProviderTestsBase
             HeartbeatAt = heartbeatAt ?? DateTimeOffset.UtcNow,
         };
 
-    private static bool IsServerTrackingNotSupported(IStorageProvider storage)
+    private static bool IsServerTrackingNotSupported(IJobStorage storage)
     {
         var name = storage.GetType().Name;
         return name.Contains("Redis") || name.Contains("SqlServer");
     }
 
-    private static bool IsAtomicDedupNotSupported(IStorageProvider storage)
+    private static bool IsAtomicDedupNotSupported(IJobStorage storage)
     {
         var name = storage.GetType().Name;
         return name.Contains("Redis") || name.Contains("Mongo");
@@ -780,7 +820,7 @@ public abstract class StorageProviderTestsBase
     [Fact]
     public async Task PurgeJobsAsync_DeletesTerminalJobsBeyondRetention()
     {
-        var storage = await CreateStorageAsync();
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
 
         // Use RetainSucceeded = 1 second to make test deterministic
         var policy = new RetentionPolicy
@@ -790,8 +830,8 @@ public abstract class StorageProviderTestsBase
             RetainExpired = TimeSpan.Zero,
         };
 
-        var job = MakeJob();
-        await storage.EnqueueAsync(job);
+        var record = MakeJob();
+        await storage.EnqueueAsync(record);
         var fetched = await storage.FetchNextAsync(["default"]);
         await storage.CommitJobResultAsync(fetched!.Id, new JobExecutionResult
         {
@@ -805,14 +845,14 @@ public abstract class StorageProviderTestsBase
         var deleted = await storage.PurgeJobsAsync(policy);
 
         deleted.Should().Be(1);
-        var remaining = await storage.GetJobByIdAsync(job.Id);
+        var remaining = await dashboard.GetJobByIdAsync(record.Id);
         remaining.Should().BeNull();
     }
 
     [Fact]
     public async Task PurgeJobsAsync_PreservesJobsWithinRetention()
     {
-        var storage = await CreateStorageAsync();
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
 
         var policy = new RetentionPolicy
         {
@@ -821,8 +861,8 @@ public abstract class StorageProviderTestsBase
             RetainExpired = TimeSpan.Zero,
         };
 
-        var job = MakeJob();
-        await storage.EnqueueAsync(job);
+        var record = MakeJob();
+        await storage.EnqueueAsync(record);
         var fetched = await storage.FetchNextAsync(["default"]);
         await storage.CommitJobResultAsync(fetched!.Id, new JobExecutionResult
         {
@@ -833,7 +873,7 @@ public abstract class StorageProviderTestsBase
         var deleted = await storage.PurgeJobsAsync(policy);
 
         deleted.Should().Be(0);
-        var remaining = await storage.GetJobByIdAsync(job.Id);
+        var remaining = await dashboard.GetJobByIdAsync(record.Id);
         remaining.Should().NotBeNull();
     }
 
@@ -842,7 +882,7 @@ public abstract class StorageProviderTestsBase
     [Fact]
     public async Task EnqueueAsync_ConcurrentWithSameIdempotencyKey_OnlyOneJobCreated()
     {
-        var storage = await CreateStorageAsync();
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
         if (IsAtomicDedupNotSupported(storage))
         {
             return;
@@ -854,8 +894,8 @@ public abstract class StorageProviderTestsBase
         // Act — enqueue the same key from multiple concurrent tasks
         var tasks = Enumerable.Range(0, concurrency).Select(_ =>
         {
-            var job = MakeJob(idempotencyKey: key);
-            return storage.EnqueueAsync(job, DuplicatePolicy.AllowAfterFailed);
+            var record = MakeJob(idempotencyKey: key);
+            return storage.EnqueueAsync(record, DuplicatePolicy.AllowAfterFailed);
         });
 
         var results = await Task.WhenAll(tasks);
@@ -866,14 +906,14 @@ public abstract class StorageProviderTestsBase
 
         // Only one job should exist in storage
         var filter = new JobFilter();
-        var jobs = await storage.GetJobsAsync(filter, 1, 100);
+        var jobs = await dashboard.GetJobsAsync(filter, 1, 100);
         jobs.Items.Count(j => j.IdempotencyKey == key).Should().Be(1);
     }
 
     [Fact]
     public async Task EnqueueAsync_ConcurrentWithRejectAlways_AllRejectedAfterFirst()
     {
-        var storage = await CreateStorageAsync();
+        var (storage, _, _, _) = await CreateStorageAsync();
         if (IsAtomicDedupNotSupported(storage))
         {
             return;
@@ -895,8 +935,8 @@ public abstract class StorageProviderTestsBase
         const int concurrency = 5;
         var tasks = Enumerable.Range(0, concurrency).Select(_ =>
         {
-            var job = MakeJob(idempotencyKey: key);
-            return storage.EnqueueAsync(job, DuplicatePolicy.RejectAlways);
+            var record = MakeJob(idempotencyKey: key);
+            return storage.EnqueueAsync(record, DuplicatePolicy.RejectAlways);
         });
 
         var results = await Task.WhenAll(tasks);
@@ -914,15 +954,15 @@ public abstract class StorageProviderTestsBase
     [Fact]
     public async Task EnqueueAsync_concurrent_same_idempotencyKey_creates_only_one_job()
     {
-        var storage = await CreateStorageAsync();
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
         var key = "concurrent-race-test";
 
         // Act — fire multiple concurrent enqueues with the same idempotency key
         const int concurrency = 10;
         var tasks = Enumerable.Range(0, concurrency).Select(_ =>
         {
-            var job = MakeJob(idempotencyKey: key);
-            return storage.EnqueueAsync(job, DuplicatePolicy.AllowAfterFailed);
+            var record = MakeJob(idempotencyKey: key);
+            return storage.EnqueueAsync(record, DuplicatePolicy.AllowAfterFailed);
         });
 
         var results = await Task.WhenAll(tasks);
@@ -933,7 +973,7 @@ public abstract class StorageProviderTestsBase
 
         // Assert — the winner job can be fetched and is consistent
         var winningJobId = results[0].JobId;
-        var winningJob = await storage.GetJobByIdAsync(winningJobId);
+        var winningJob = await dashboard.GetJobByIdAsync(winningJobId);
         winningJob.Should().NotBeNull();
         winningJob!.IdempotencyKey.Should().Be(key);
 
@@ -948,15 +988,15 @@ public abstract class StorageProviderTestsBase
     [Fact]
     public async Task EnqueueAsync_concurrent_same_idempotencyKey_all_see_processing_status()
     {
-        var storage = await CreateStorageAsync();
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
         var key = "concurrent-processing-test";
 
         // Act — fire multiple concurrent enqueues with the same idempotency key
         const int concurrency = 5;
         var tasks = Enumerable.Range(0, concurrency).Select(_ =>
         {
-            var job = MakeJob(idempotencyKey: key);
-            return storage.EnqueueAsync(job, DuplicatePolicy.RejectIfFailed);
+            var record = MakeJob(idempotencyKey: key);
+            return storage.EnqueueAsync(record, DuplicatePolicy.RejectIfFailed);
         });
 
         var results = await Task.WhenAll(tasks);
@@ -970,9 +1010,9 @@ public abstract class StorageProviderTestsBase
         });
 
         // Verify only one job exists
-        var job = await storage.GetJobByIdAsync(winnerJobId);
-        job.Should().NotBeNull();
-        job!.IdempotencyKey.Should().Be(key);
-        job.Status.Should().Be(JobStatus.Enqueued);
+        var result = await dashboard.GetJobByIdAsync(winnerJobId);
+        result.Should().NotBeNull();
+        result!.IdempotencyKey.Should().Be(key);
+        result.Status.Should().Be(JobStatus.Enqueued);
     }
 }

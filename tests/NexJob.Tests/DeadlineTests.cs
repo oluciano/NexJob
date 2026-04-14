@@ -38,7 +38,7 @@ public sealed class DeadlineTests
     public async Task EnqueueAsync_WithDeadline_CalculatesExpiresAt()
     {
         var storage = new InMemoryStorageProvider();
-        var scheduler = new DefaultScheduler(storage, new NexJobOptions(), new JobWakeUpChannel());
+        var scheduler = new DefaultScheduler(storage, storage, storage, new NexJobOptions(), new JobWakeUpChannel());
 
         var deadline = TimeSpan.FromSeconds(10);
         var beforeEnqueue = DateTimeOffset.UtcNow;
@@ -56,7 +56,7 @@ public sealed class DeadlineTests
     public async Task EnqueueAsync_WithoutDeadline_HasNullExpiresAt()
     {
         var storage = new InMemoryStorageProvider();
-        var scheduler = new DefaultScheduler(storage, new NexJobOptions(), new JobWakeUpChannel());
+        var scheduler = new DefaultScheduler(storage, storage, storage, new NexJobOptions(), new JobWakeUpChannel());
 
         await scheduler.EnqueueAsync<SimpleJob>();
 
@@ -69,7 +69,7 @@ public sealed class DeadlineTests
     public async Task EnqueueAsync_WithInput_CalculatesExpiresAt()
     {
         var storage = new InMemoryStorageProvider();
-        var scheduler = new DefaultScheduler(storage, new NexJobOptions(), new JobWakeUpChannel());
+        var scheduler = new DefaultScheduler(storage, storage, storage, new NexJobOptions(), new JobWakeUpChannel());
 
         var deadline = TimeSpan.FromSeconds(5);
 
@@ -245,7 +245,7 @@ public sealed class DeadlineTests
     public async Task DeadlineAppliesOnlyToImmediate_NotScheduled()
     {
         var storage = new InMemoryStorageProvider();
-        var scheduler = new DefaultScheduler(storage, new NexJobOptions(), new JobWakeUpChannel());
+        var scheduler = new DefaultScheduler(storage, storage, storage, new NexJobOptions(), new JobWakeUpChannel());
 
         // Scheduled jobs should not have deadline applied (API shape ensures this)
         var jobId = await scheduler.ScheduleAsync<SimpleJob>(

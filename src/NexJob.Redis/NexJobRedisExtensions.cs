@@ -21,7 +21,12 @@ public static class NexJobRedisExtensions
         string connectionString)
     {
         var mux = ConnectionMultiplexer.Connect(connectionString);
-        services.AddSingleton<IStorageProvider>(_ => new RedisStorageProvider(mux.GetDatabase()));
+        services.AddSingleton(_ => new RedisStorageProvider(mux.GetDatabase()));
+        services.AddSingleton<IStorageProvider>(sp => sp.GetRequiredService<RedisStorageProvider>());
+        services.AddSingleton<IJobStorage>(sp => sp.GetRequiredService<RedisStorageProvider>());
+        services.AddSingleton<IRecurringStorage>(sp => sp.GetRequiredService<RedisStorageProvider>());
+        services.AddSingleton<IDashboardStorage>(sp => sp.GetRequiredService<RedisStorageProvider>());
+
         services.AddSingleton<IRuntimeSettingsStore>(_ => new RedisRuntimeSettingsStore(mux.GetDatabase()));
 
         return services;
@@ -38,8 +43,12 @@ public static class NexJobRedisExtensions
         this IServiceCollection services,
         IConnectionMultiplexer multiplexer)
     {
-        services.AddSingleton<IStorageProvider>(
-            _ => new RedisStorageProvider(multiplexer.GetDatabase()));
+        services.AddSingleton(_ => new RedisStorageProvider(multiplexer.GetDatabase()));
+        services.AddSingleton<IStorageProvider>(sp => sp.GetRequiredService<RedisStorageProvider>());
+        services.AddSingleton<IJobStorage>(sp => sp.GetRequiredService<RedisStorageProvider>());
+        services.AddSingleton<IRecurringStorage>(sp => sp.GetRequiredService<RedisStorageProvider>());
+        services.AddSingleton<IDashboardStorage>(sp => sp.GetRequiredService<RedisStorageProvider>());
+
         services.AddSingleton<IRuntimeSettingsStore>(
             _ => new RedisRuntimeSettingsStore(multiplexer.GetDatabase()));
 

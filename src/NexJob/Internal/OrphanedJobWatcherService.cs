@@ -11,7 +11,7 @@ namespace NexJob.Internal;
 /// </summary>
 internal sealed class OrphanedJobWatcherService : BackgroundService
 {
-    private readonly IStorageProvider _storage;
+    private readonly IJobStorage _storage;
     private readonly NexJobOptions _options;
     private readonly ILogger<OrphanedJobWatcherService> _logger;
 
@@ -19,7 +19,7 @@ internal sealed class OrphanedJobWatcherService : BackgroundService
     /// Initializes a new <see cref="OrphanedJobWatcherService"/>.
     /// </summary>
     public OrphanedJobWatcherService(
-        IStorageProvider storage,
+        IJobStorage storage,
         NexJobOptions options,
         ILogger<OrphanedJobWatcherService> logger)
     {

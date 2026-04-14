@@ -8,7 +8,7 @@ internal sealed class JobsPage : IComponent
 {
     private RenderHandle _handle;
 
-    [Parameter] public IStorageProvider Storage { get; set; } = default!;
+    [Parameter] public IDashboardStorage Storage { get; set; } = default!;
     [Parameter] public string PathPrefix { get; set; } = "/dashboard";
     [Parameter] public string Title { get; set; } = "NexJob";
     [Parameter] public NavCounters? Counters { get; set; }

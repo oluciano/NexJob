@@ -25,7 +25,7 @@ internal static class DashboardStreamEndpoint
     /// Each event carries a compact JSON object with counters, hourly throughput,
     /// and active job progress updates for live progress bars on the job detail page.
     /// </summary>
-    internal static async Task HandleAsync(HttpContext context, IStorageProvider storage)
+    internal static async Task HandleAsync(HttpContext context, IDashboardStorage storage)
     {
         context.Response.ContentType = "text/event-stream";
         context.Response.Headers["Cache-Control"] = "no-cache";
@@ -75,7 +75,7 @@ internal static class DashboardStreamEndpoint
     }
 
     private static async Task<JobMetrics> GetCachedMetricsAsync(
-        IMemoryCache cache, IStorageProvider storage, DashboardOptions options, CancellationToken ct)
+        IMemoryCache cache, IDashboardStorage storage, DashboardOptions options, CancellationToken ct)
     {
         const string CacheKey = "nexjob:dashboard:metrics";
 

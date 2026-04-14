@@ -19,7 +19,12 @@ public static class NexJobSqlServerExtensions
         this IServiceCollection services,
         string connectionString)
     {
-        services.AddSingleton<IStorageProvider>(_ => new SqlServerStorageProvider(connectionString));
+        services.AddSingleton(_ => new SqlServerStorageProvider(connectionString));
+        services.AddSingleton<IStorageProvider>(sp => sp.GetRequiredService<SqlServerStorageProvider>());
+        services.AddSingleton<IJobStorage>(sp => sp.GetRequiredService<SqlServerStorageProvider>());
+        services.AddSingleton<IRecurringStorage>(sp => sp.GetRequiredService<SqlServerStorageProvider>());
+        services.AddSingleton<IDashboardStorage>(sp => sp.GetRequiredService<SqlServerStorageProvider>());
+
         services.AddSingleton<IRuntimeSettingsStore>(_ => new SqlServerRuntimeSettingsStore(connectionString));
         return services;
     }

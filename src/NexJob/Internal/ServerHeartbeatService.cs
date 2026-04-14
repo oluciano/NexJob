@@ -11,7 +11,7 @@ namespace NexJob.Internal;
 /// </summary>
 internal sealed class ServerHeartbeatService : IHostedService, IDisposable
 {
-    private readonly IStorageProvider _storage;
+    private readonly IJobStorage _storage;
     private readonly NexJobOptions _options;
     private readonly ILogger<ServerHeartbeatService> _logger;
     private readonly string _serverId;
@@ -24,7 +24,7 @@ internal sealed class ServerHeartbeatService : IHostedService, IDisposable
     /// <param name="options">The NexJob options.</param>
     /// <param name="logger">The logger.</param>
     public ServerHeartbeatService(
-        IStorageProvider storage,
+        IJobStorage storage,
         IOptions<NexJobOptions> options,
         ILogger<ServerHeartbeatService> logger)
     {

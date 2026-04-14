@@ -9,6 +9,9 @@ namespace NexJob.IntegrationTests;
 /// </summary>
 public sealed class InMemoryStorageProviderTests : StorageProviderTestsBase
 {
-    protected override Task<IStorageProvider> CreateStorageAsync() =>
-        Task.FromResult<IStorageProvider>(new InMemoryStorageProvider());
+    protected override Task<(IJobStorage Job, IRecurringStorage Recurring, IDashboardStorage Dashboard, IStorageProvider Full)> CreateStorageAsync()
+    {
+        var provider = new InMemoryStorageProvider();
+        return Task.FromResult<(IJobStorage, IRecurringStorage, IDashboardStorage, IStorageProvider)>((provider, provider, provider, provider));
+    }
 }

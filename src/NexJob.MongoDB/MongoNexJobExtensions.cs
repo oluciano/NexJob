@@ -36,7 +36,12 @@ public static class MongoNexJobExtensions
         services.AddSingleton<IMongoClient>(_ => new MongoClient(connectionString));
         services.AddSingleton<IMongoDatabase>(sp =>
             sp.GetRequiredService<IMongoClient>().GetDatabase(databaseName));
-        services.AddSingleton<IStorageProvider, MongoStorageProvider>();
+        services.AddSingleton<MongoStorageProvider>();
+        services.AddSingleton<IStorageProvider>(sp => sp.GetRequiredService<MongoStorageProvider>());
+        services.AddSingleton<IJobStorage>(sp => sp.GetRequiredService<MongoStorageProvider>());
+        services.AddSingleton<IRecurringStorage>(sp => sp.GetRequiredService<MongoStorageProvider>());
+        services.AddSingleton<IDashboardStorage>(sp => sp.GetRequiredService<MongoStorageProvider>());
+
         services.AddSingleton<IRuntimeSettingsStore, MongoRuntimeSettingsStore>();
 
         return services;
@@ -51,7 +56,12 @@ public static class MongoNexJobExtensions
     {
         RegisterSerializers();
         services.AddSingleton(database);
-        services.AddSingleton<IStorageProvider, MongoStorageProvider>();
+        services.AddSingleton<MongoStorageProvider>();
+        services.AddSingleton<IStorageProvider>(sp => sp.GetRequiredService<MongoStorageProvider>());
+        services.AddSingleton<IJobStorage>(sp => sp.GetRequiredService<MongoStorageProvider>());
+        services.AddSingleton<IRecurringStorage>(sp => sp.GetRequiredService<MongoStorageProvider>());
+        services.AddSingleton<IDashboardStorage>(sp => sp.GetRequiredService<MongoStorageProvider>());
+
         services.AddSingleton<IRuntimeSettingsStore, MongoRuntimeSettingsStore>();
         return services;
     }

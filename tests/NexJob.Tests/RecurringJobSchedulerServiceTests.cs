@@ -22,7 +22,7 @@ public sealed class RecurringJobSchedulerServiceTests
             PollingInterval = pollingInterval ?? TimeSpan.FromMilliseconds(30),
         };
         return new RecurringJobSchedulerService(
-            storage, new InMemoryRuntimeSettingsStore(), options, NullLogger<RecurringJobSchedulerService>.Instance);
+            storage, storage, new InMemoryRuntimeSettingsStore(), options, NullLogger<RecurringJobSchedulerService>.Instance);
     }
 
     private static RecurringJobRecord MakeRecurring(

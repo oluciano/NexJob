@@ -23,7 +23,7 @@ public sealed class RecurringNoInputJobTests
 
     public RecurringNoInputJobTests()
     {
-        _sut = new DefaultScheduler(_storage, new NexJobOptions(), _wakeUp);
+        _sut = new DefaultScheduler(_storage, _storage, _storage, new NexJobOptions(), _wakeUp);
     }
 
     // ─── record creation ──────────────────────────────────────────────────────
