@@ -807,10 +807,16 @@ public sealed class MongoStorageProvider : IStorageProvider
                 .Ascending(d => d.CreatedAt),
             new CreateIndexOptions { Name = "queue_status_priority_created" }));
 
-        // Sparse unique index for idempotency
+        // Sparse unique index for idempotency — indexes only non-null values
+        // The try-catch in EnqueueAsync handles race conditions by catching DuplicateKey exceptions
         _jobs.Indexes.CreateOne(new CreateIndexModel<JobDocument>(
             Builders<JobDocument>.IndexKeys.Ascending(d => d.IdempotencyKey),
-            new CreateIndexOptions { Name = "idempotency_key", Sparse = true, Unique = true }));
+            new CreateIndexOptions
+            {
+                Name = "idempotency_key",
+                Unique = true,
+                Sparse = true,
+            }));
 
         // Index for orphan detection
         _jobs.Indexes.CreateOne(new CreateIndexModel<JobDocument>(
