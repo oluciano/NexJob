@@ -1,5 +1,6 @@
 using Amazon.SQS;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 
 namespace NexJob.Trigger.AwsSqs;
@@ -26,7 +27,7 @@ public static class ServiceCollectionExtensions
             .ValidateDataAnnotations()
             .ValidateOnStart();
 
-        services.AddTransient<ISqsClient>(_ => new SqsClient(new AmazonSQSClient()));
+        services.TryAddTransient<ISqsClient>(_ => new SqsClient(new AmazonSQSClient()));
         services.AddHostedService<AwsSqsTrigger>();
 
         return services;

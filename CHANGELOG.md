@@ -7,14 +7,33 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
-- `NexJob.Trigger.RabbitMQ` provider for enqueueing jobs from RabbitMQ messages.
-- `NexJob.Trigger.Kafka` provider for enqueueing jobs from Kafka messages.
-- `NexJob.Trigger.GooglePubSub` provider for enqueueing jobs from Google Pub/Sub messages.
-- `NexJob.OpenTelemetry` package for opt-in OpenTelemetry tracing and metrics instrumentation
 
 ### Changed
 
 ### Fixed
+
+## [2.0.0] - 2026-04-14
+
+### Added
+- `NexJob.Trigger.AzureServiceBus` — trigger package for Azure Service Bus queues and topics
+- `NexJob.Trigger.AwsSqs` — trigger package for AWS SQS queues
+- `NexJob.Trigger.RabbitMQ` — trigger package for RabbitMQ queues
+- `NexJob.Trigger.Kafka` — trigger package for Apache Kafka topics
+- `NexJob.Trigger.GooglePubSub` — trigger package for Google Cloud Pub/Sub subscriptions
+- `NexJob.OpenTelemetry` — opt-in package exposing NexJob tracing and metrics to the OTel SDK
+- `IScheduler.EnqueueAsync(JobRecord, DuplicatePolicy, CancellationToken)` — non-generic overload for broker triggers
+- `JobRecordFactory` — internal factory enabling trigger packages to build `JobRecord` instances
+- `DashboardOptions.MetricsCacheTtl` — configurable TTL for dashboard metrics cache (default: 3 seconds)
+- Testcontainers integration tests for RabbitMQ, AWS SQS, Kafka, and Azure Service Bus triggers
+
+### Fixed
+- Redis `EnqueueAsync` idempotency check is now atomic via Lua script — prevents duplicate jobs under concurrent load
+- MongoDB `EnqueueAsync` uses a partial unique index (`partialFilterExpression`) to enforce idempotency key uniqueness while allowing multiple jobs without keys (null keys)
+- MongoDB `EnqueueAsync` catch block now correctly guards against `DuplicateKey` errors on jobs with idempotency keys during race conditions
+- AWS SQS trigger `ServiceCollectionExtensions` uses `TryAddTransient` to respect user-registered `ISqsClient` implementations
+
+### Performance
+- Dashboard metrics are now cached with a configurable TTL (default: 3s) to prevent database overload when multiple users have the dashboard open
 
 ## [1.0.0] — April 2026
 
@@ -315,7 +334,11 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Recurring concurrency policy: `SkipIfRunning` / `AllowConcurrent`
 - CI/CD pipeline publishing all packages on `v*` tag push
 
-[Unreleased]: https://github.com/oluciano/NexJob/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/oluciano/NexJob/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/oluciano/NexJob/compare/v1.0.0...v2.0.0
+[1.0.0]: https://github.com/oluciano/NexJob/compare/v0.8.0...v1.0.0
+[0.8.0]: https://github.com/oluciano/NexJob/compare/v0.7.0...v0.8.0
+[0.7.0]: https://github.com/oluciano/NexJob/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/oluciano/NexJob/compare/v0.5.1...v0.6.0
 [0.5.2]: https://github.com/oluciano/NexJob/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/oluciano/NexJob/compare/v0.5.0...v0.5.1
