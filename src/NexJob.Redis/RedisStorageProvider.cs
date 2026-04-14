@@ -96,6 +96,40 @@ public sealed class RedisStorageProvider : IStorageProvider
         return 1
         """);
 
+    private static readonly LuaScript EnqueueScript = LuaScript.Prepare(
+        """
+        local idemKey = ARGV[1]
+        local jobId = ARGV[2]
+        local ttl = tonumber(ARGV[3])
+        local jobKey = 'nexjob:jobs:' .. jobId
+        local hashFieldCount = (#{ARGV} - 3) / 2
+
+        -- Only check idempotency if a key was provided
+        if idemKey ~= '' then
+          local existingId = redis.call('GET', idemKey)
+          if existingId then
+            return { 'EXISTS', existingId }
+          end
+        end
+
+        -- Set job hash fields (ARGV[4], ARGV[5], ARGV[6], ARGV[7], ...)
+        local hashArgs = {}
+        for i = 4, #ARGV do
+          table.insert(hashArgs, ARGV[i])
+        end
+
+        if #hashArgs > 0 then
+          redis.call('HSET', jobKey, unpack(hashArgs))
+        end
+
+        -- Set idempotency key atomically if provided
+        if idemKey ~= '' then
+          redis.call('SET', idemKey, jobId, 'EX', ttl)
+        end
+
+        return { 'NEW', jobId }
+        """);
+
     private readonly IDatabase _db;
 
     /// <summary>
@@ -109,43 +143,72 @@ public sealed class RedisStorageProvider : IStorageProvider
     /// <inheritdoc/>
     public async Task<EnqueueResult> EnqueueAsync(JobRecord job, DuplicatePolicy duplicatePolicy = DuplicatePolicy.AllowAfterFailed, CancellationToken cancellationToken = default)
     {
-        if (job.IdempotencyKey is not null)
+        var id = job.Id.Value.ToString();
+        var idemKey = job.IdempotencyKey is not null ? IdempotencyRedisKey(job.IdempotencyKey) : string.Empty;
+        var idemTtlSeconds = (int)TimeSpan.FromDays(7).TotalSeconds;
+
+        // Build hash fields for the Lua script
+        var hashFields = BuildJobHash(job);
+        var hashArgs = new List<RedisValue>();
+        foreach (var field in hashFields)
         {
-            var idemKey = IdempotencyRedisKey(job.IdempotencyKey);
-            var existingIdStr = await _db.StringGetAsync(idemKey).ConfigureAwait(false);
+            hashArgs.Add(field.Name.ToString());
+            hashArgs.Add(field.Value.ToString());
+        }
 
-            if (existingIdStr.HasValue)
+        // Execute atomic idempotency check + hash set via Lua script
+        var scriptArgs = new RedisValue[]
+        {
+            idemKey,
+            id,
+            idemTtlSeconds.ToString(CultureInfo.InvariantCulture),
+        };
+        var combinedArgs = scriptArgs.Concat(hashArgs).ToArray();
+
+        var rawResult = await _db.ScriptEvaluateAsync(EnqueueScript.ExecutableScript, keys: null, values: combinedArgs).ConfigureAwait(false);
+
+        if (!rawResult.IsNull)
+        {
+            var resultArray = (RedisValue[])rawResult!;
+            if (resultArray.Length == 2)
             {
-                var existingId = new JobId(Guid.Parse(existingIdStr.ToString()!));
-                var jobHash = await _db.HashGetAllAsync(JobKey(existingIdStr.ToString()!)).ConfigureAwait(false);
-                var existingStatus = GetStatusFromHash(jobHash);
+                var resultType = resultArray[0].ToString();
+                var returnedId = resultArray[1].ToString();
 
-                if (IsActiveState(existingStatus))
+                if (string.Equals(resultType, "EXISTS", StringComparison.Ordinal))
                 {
-                    return new EnqueueResult(existingId, WasRejected: false);
+                    // Existing job found — apply duplicate policy
+                    var existingJobId = new JobId(Guid.Parse(returnedId!));
+                    var jobHash = await _db.HashGetAllAsync(JobKey(returnedId!)).ConfigureAwait(false);
+                    var existingStatus = GetStatusFromHash(jobHash);
+
+                    if (IsActiveState(existingStatus))
+                    {
+                        return new EnqueueResult(existingJobId, WasRejected: false);
+                    }
+
+                    var reject = existingStatus == JobStatus.Failed
+                        ? duplicatePolicy is DuplicatePolicy.RejectIfFailed or DuplicatePolicy.RejectAlways
+                        : duplicatePolicy == DuplicatePolicy.RejectAlways;
+
+                    if (reject)
+                    {
+                        return new EnqueueResult(existingJobId, WasRejected: true);
+                    }
+
+                    // Duplicate policy allows re-enqueuing — delete old idempotency key and retry
+                    if (!string.IsNullOrEmpty(idemKey))
+                    {
+                        await _db.KeyDeleteAsync(idemKey).ConfigureAwait(false);
+                    }
+
+                    // Recursively call EnqueueAsync to re-attempt (prevents infinite loops by design)
+                    return await EnqueueAsync(job, duplicatePolicy, cancellationToken).ConfigureAwait(false);
                 }
-
-                var reject = existingStatus == JobStatus.Failed
-                    ? duplicatePolicy is DuplicatePolicy.RejectIfFailed or DuplicatePolicy.RejectAlways
-                    : duplicatePolicy == DuplicatePolicy.RejectAlways;
-
-                if (reject)
-                {
-                    return new EnqueueResult(existingId, WasRejected: true);
-                }
-
-                await _db.KeyDeleteAsync(idemKey).ConfigureAwait(false);
             }
         }
 
-        var id = job.Id.Value.ToString();
-        await _db.HashSetAsync(JobKey(id), BuildJobHash(job)).ConfigureAwait(false);
-
-        if (job.IdempotencyKey is not null)
-        {
-            await _db.StringSetAsync(IdempotencyRedisKey(job.IdempotencyKey), id, TimeSpan.FromDays(7)).ConfigureAwait(false);
-        }
-
+        // New job was created by the script — add it to appropriate queue/scheduled set
         if (job.Status == JobStatus.AwaitingContinuation && job.ParentJobId.HasValue)
         {
             await _db.SetAddAsync(ContinuationSetKey(job.ParentJobId.Value.Value), id).ConfigureAwait(false);

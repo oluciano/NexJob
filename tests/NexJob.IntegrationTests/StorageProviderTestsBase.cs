@@ -894,4 +894,71 @@ public abstract class StorageProviderTestsBase
             r.JobId.Should().Be(seed.Id);
         });
     }
+
+    // ── Concurrency tests (race condition fixes) ────────────────────────────────
+
+    [Fact]
+    public async Task EnqueueAsync_concurrent_same_idempotencyKey_creates_only_one_job()
+    {
+        var storage = await CreateStorageAsync();
+        var key = "concurrent-race-test";
+
+        // Act — fire multiple concurrent enqueues with the same idempotency key
+        const int concurrency = 10;
+        var tasks = Enumerable.Range(0, concurrency).Select(_ =>
+        {
+            var job = MakeJob(idempotencyKey: key);
+            return storage.EnqueueAsync(job, DuplicatePolicy.AllowAfterFailed);
+        });
+
+        var results = await Task.WhenAll(tasks);
+
+        // Assert — all should return the same JobId
+        results.Select(r => r.JobId).Distinct().Should().HaveCount(1,
+            "all concurrent enqueues with the same idempotency key should return the same JobId");
+
+        // Assert — the winner job can be fetched and is consistent
+        var winningJobId = results[0].JobId;
+        var winningJob = await storage.GetJobByIdAsync(winningJobId);
+        winningJob.Should().NotBeNull();
+        winningJob!.IdempotencyKey.Should().Be(key);
+
+        // All results should be non-rejected (first one creates, others see existing)
+        results.Should().AllSatisfy(r =>
+        {
+            r.WasRejected.Should().BeFalse();
+            r.JobId.Should().Be(results[0].JobId);
+        });
+    }
+
+    [Fact]
+    public async Task EnqueueAsync_concurrent_same_idempotencyKey_all_see_processing_status()
+    {
+        var storage = await CreateStorageAsync();
+        var key = "concurrent-processing-test";
+
+        // Act — fire multiple concurrent enqueues with the same idempotency key
+        const int concurrency = 5;
+        var tasks = Enumerable.Range(0, concurrency).Select(_ =>
+        {
+            var job = MakeJob(idempotencyKey: key);
+            return storage.EnqueueAsync(job, DuplicatePolicy.RejectIfFailed);
+        });
+
+        var results = await Task.WhenAll(tasks);
+
+        // Assert — all should return the same JobId
+        var winnerJobId = results[0].JobId;
+        results.Should().AllSatisfy(r =>
+        {
+            r.JobId.Should().Be(winnerJobId);
+            r.WasRejected.Should().BeFalse();
+        });
+
+        // Verify only one job exists
+        var job = await storage.GetJobByIdAsync(winnerJobId);
+        job.Should().NotBeNull();
+        job!.IdempotencyKey.Should().Be(key);
+        job.Status.Should().Be(JobStatus.Enqueued);
+    }
 }

@@ -78,8 +78,44 @@ public sealed class MongoStorageProvider : IStorageProvider
             }
         }
 
-        await _jobs.InsertOneAsync(JobDocument.FromRecord(job), cancellationToken: cancellationToken).ConfigureAwait(false);
-        return new EnqueueResult(job.Id, WasRejected: false);
+        try
+        {
+            await _jobs.InsertOneAsync(JobDocument.FromRecord(job), cancellationToken: cancellationToken).ConfigureAwait(false);
+            return new EnqueueResult(job.Id, WasRejected: false);
+        }
+        catch (MongoWriteException ex) when (ex.WriteError.Category == ServerErrorCategory.DuplicateKey)
+        {
+            // Race condition: another process inserted with the same idempotency key after we checked
+            // Retrieve the winner and apply duplicate policy
+            if (job.IdempotencyKey is not null)
+            {
+                var winner = await _jobs.Find(
+                    Builders<JobDocument>.Filter.Eq(d => d.IdempotencyKey, job.IdempotencyKey))
+                    .Sort(Builders<JobDocument>.Sort.Ascending(d => d.CreatedAt))
+                    .Limit(1)
+                    .FirstOrDefaultAsync(cancellationToken).ConfigureAwait(false);
+
+                if (winner is not null)
+                {
+                    var existingId = winner.Id;
+                    var existingStatus = winner.Status;
+
+                    if (IsActiveState(existingStatus))
+                    {
+                        return new EnqueueResult(existingId, WasRejected: false);
+                    }
+
+                    var reject = existingStatus == JobStatus.Failed
+                        ? duplicatePolicy is DuplicatePolicy.RejectIfFailed or DuplicatePolicy.RejectAlways
+                        : duplicatePolicy == DuplicatePolicy.RejectAlways;
+
+                    return new EnqueueResult(existingId, WasRejected: reject);
+                }
+            }
+
+            // Should not reach here — if DuplicateKey, the winning document should exist
+            throw;
+        }
     }
 
     // ── FetchNextAsync ────────────────────────────────────────────────────────
