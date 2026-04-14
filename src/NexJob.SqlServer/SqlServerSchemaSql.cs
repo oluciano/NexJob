@@ -142,6 +142,14 @@ internal static class SqlServerSchemaSql
         );
         """;
 
+    /// <summary>V8: Add unique sparse index for idempotency_key to prevent concurrent duplicates.</summary>
+    internal const string V8AddIdempotencyKeyIndex =
+        """
+        IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ux_nexjob_jobs_idempotency_key' AND object_id = OBJECT_ID('nexjob_jobs'))
+        CREATE UNIQUE INDEX ux_nexjob_jobs_idempotency_key ON nexjob_jobs (idempotency_key)
+            WHERE idempotency_key IS NOT NULL;
+        """;
+
     /// <summary>Full initial schema — kept for backward compatibility. Prefer the versioned consts.</summary>
     internal const string CreateTables = V1CreateTables;
 }

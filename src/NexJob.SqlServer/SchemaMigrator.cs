@@ -21,6 +21,7 @@ internal sealed class SchemaMigrator
         new(5, "add progress_percent, progress_message, tags columns", SqlServerSchemaSql.V5AddProgressAndTags),
         new(6, "add nexjob_servers table for active server tracking", SqlServerSchemaSql.V6CreateServersTable),
         new(7, "create nexjob_settings table for runtime configuration", SqlServerSchemaSql.V7CreateSettingsTable),
+        new(8, "add unique sparse index for idempotency_key", SqlServerSchemaSql.V8AddIdempotencyKeyIndex),
     ];
 
     /// <summary>

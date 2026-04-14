@@ -50,6 +50,7 @@ See [Getting Started](01-Getting-Started.md) for a complete walkthrough.
 - **Operational visibility** — built-in dashboard, traces, and metrics
 - **Low-latency dispatch** — wake-up channel for near-zero latency local enqueue
 - **Free storage providers** — PostgreSQL, SQL Server, Redis, MongoDB, InMemory
+- **Event-driven triggers** — enqueue jobs from Azure Service Bus, SQS, RabbitMQ, Kafka, or Pub/Sub
 
 ### NexJob vs Alternatives
 
@@ -76,6 +77,7 @@ See [Getting Started](01-Getting-Started.md) for a complete walkthrough.
 - **`IJob` / `IJob<T>`** — simple and structured execution
 - **Recurring jobs** — via code or `appsettings.json`
 - **Continuations** — chain jobs with parent/child relationships
+- **External Triggers** — enqueue jobs from message brokers automatically
 
 ### Reliability
 - **Retry policies** — global + per-job `[Retry]` with exponential backoff
@@ -111,6 +113,7 @@ See [Getting Started](01-Getting-Started.md) for a complete walkthrough.
 | [Recurring Jobs](04-Recurring-Jobs.md) | Cron-based recurring execution |
 | [Continuations](05-Continuations.md) | Chain jobs together |
 | [Job Filters](02-Job-Types.md#job-execution-filters) | Cross-cutting middleware for job execution |
+| [External Triggers](19-Triggers.md) | Enqueue jobs from message brokers |
 
 ### Operate in production
 
@@ -144,4 +147,4 @@ See [Getting Started](01-Getting-Started.md) for a complete walkthrough.
 
 ---
 
-**v0.8.0** · [Changelog](../../CHANGELOG.md) · [GitHub](https://github.com/oluciano/NexJob)
+**v2.0.0** · [Changelog](../../CHANGELOG.md) · [GitHub](https://github.com/oluciano/NexJob)

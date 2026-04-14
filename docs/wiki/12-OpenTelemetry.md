@@ -1,6 +1,36 @@
 # OpenTelemetry
 
-NexJob emits traces and metrics out of the box. Configure your OpenTelemetry SDK to collect them.
+NexJob emits traces and metrics out of the box. The `NexJob.OpenTelemetry` package provides an opt-in extension to register NexJob instrumentation with the OpenTelemetry SDK.
+
+---
+
+## Installation
+
+Add the `NexJob.OpenTelemetry` package to your project:
+
+```bash
+dotnet add package NexJob.OpenTelemetry
+```
+
+---
+
+## Usage
+
+Register NexJob instrumentation with the OpenTelemetry SDK in your `Program.cs`:
+
+```csharp
+using NexJob.OpenTelemetry;
+
+builder.Services.AddOpenTelemetry()
+    .WithTracing(tracing => tracing
+        .AddNexJobInstrumentation()        // ← registers NexJob spans
+        .AddAspNetCoreInstrumentation()
+        .AddOtlpExporter())
+    .WithMetrics(metrics => metrics
+        .AddNexJobInstrumentation()        // ← registers NexJob counters/histograms
+        .AddAspNetCoreInstrumentation()
+        .AddOtlpExporter());
+```
 
 ---
 
@@ -8,47 +38,26 @@ NexJob emits traces and metrics out of the box. Configure your OpenTelemetry SDK
 
 NexJob uses `ActivitySource` named `"NexJob"`.
 
-### Enqueue Span
+### Available Spans
 
-```
-nexjob.enqueue (Producer)
-  ├─ job.type: SendEmailJob
-  ├─ job.queue: default
-  ├─ job.id: {guid}
-  └─ messaging.operation: publish
-```
-
-Created when `EnqueueAsync`, `ScheduleAsync`, or `ScheduleAtAsync` is called.
-
-### Execution Span
-
-```
-nexjob.execute (Consumer)
-  ├─ job.type: SendEmailJob
-  ├─ job.queue: default
-  ├─ job.id: {guid}
-  ├─ job.attempt: 1
-  ├─ job.status: Succeeded
-  └─ messaging.operation: process
-```
-
-Created for each job execution. Includes status (`Succeeded`, `Failed`, `Expired`) and attempt number.
-
-### Recurring Registration Span
-
-```
-nexjob.recurring.register (Internal)
-  ├─ recurring.count: 5
-  └─ messaging.operation: create
-```
-
-Created once at startup when recurring jobs are registered.
+- **`nexjob.enqueue`** (Producer) — Fired when a job is enqueued via `EnqueueAsync`, `ScheduleAsync`, or `ScheduleAtAsync`.
+  - `job.type`: Assembly-qualified name of the job type.
+  - `job.queue`: Target queue name.
+  - `job.id`: Unique identifier of the job.
+- **`nexjob.execute`** (Consumer) — Fired for each job execution (links to enqueue span via W3C traceparent).
+  - `job.type`: Job type name.
+  - `job.queue`: Queue name.
+  - `job.id`: Job ID.
+  - `job.attempt`: Current attempt number.
+  - `job.status`: Execution outcome (`Succeeded`, `Failed`, `Expired`).
+- **`nexjob.recurring.register`** (Internal) — Fired at startup when recurring jobs are registered.
+  - `recurring.count`: Number of recurring jobs registered.
 
 ### Trace Propagation
 
 W3C `traceparent` context is propagated from enqueue to execution. When you call `EnqueueAsync`, the current activity context is stored in the `JobRecord`. When the dispatcher executes the job, it restores the context, creating a child span.
 
-This means you can trace a job from its HTTP request origin through the entire job execution in your APM tool.
+This means you can trace a job from its HTTP request origin through the entire job execution in your APM tool (Jaeger, Zipkin, Application Insights).
 
 ---
 
@@ -68,53 +77,15 @@ All metrics include `job.type` and `job.queue` as dimensions.
 
 ---
 
-## Configuration
+## Compatibility
 
-### Enable NexJob Telemetry
-
-NexJob telemetry is always active. Configure your app's OpenTelemetry pipeline to collect it.
-
-```csharp
-builder.Services.AddOpenTelemetry()
-    .WithTracing(tracing =>
-    {
-        tracing
-            .AddSource("NexJob") // Collect NexJob spans
-            .AddAspNetCoreInstrumentation()
-            .AddOtlpExporter();
-    })
-    .WithMetrics(metrics =>
-    {
-        metrics
-            .AddMeter("NexJob") // Collect NexJob metrics
-            .AddAspNetCoreInstrumentation()
-            .AddOtlpExporter();
-    });
-```
-
----
-
-## Example: Correlating HTTP Request to Job Execution
-
-```csharp
-// HTTP endpoint enqueues a job
-app.MapPost("/orders/{id}/process", async (Guid id, IScheduler scheduler, HttpContext ctx) =>
-{
-    // The current Activity flows into the job
-    await scheduler.EnqueueAsync<ProcessOrderJob, ProcessOrderInput>(
-        new ProcessOrderInput(id),
-        cancellationToken: ctx.RequestAborted);
-});
-```
-
-In your APM tool (Jaeger, Zipkin, Application Insights), you'll see:
-
-```
-POST /orders/{id}/process (HTTP span)
-  └─ nexjob.enqueue (Producer span)
-       └─ nexjob.execute (Consumer span) — executed by dispatcher
-            └─ Your job's internal spans (if you create them)
-```
+`NexJob.OpenTelemetry` works with any OpenTelemetry exporter, including:
+- OTLP (Collector, Honeycomb, Lightstep, etc.)
+- Jaeger / Zipkin
+- Prometheus
+- Azure Application Insights
+- AWS CloudWatch
+- Google Cloud Monitoring
 
 ---
 

@@ -72,38 +72,80 @@ public sealed class SqlServerStorageProvider : IStorageProvider
                 }
             }
 
-            await conn.ExecuteAsync(
-                """
-                INSERT INTO nexjob_jobs
-                    (id, job_type, input_type, input_json, schema_version, queue, priority, status,
-                     idempotency_key, attempts, max_attempts, created_at, scheduled_at, parent_job_id, recurring_job_id, tags)
-                VALUES
-                    (@Id, @JobType, @InputType, @InputJson, @SchemaVersion, @Queue, @Priority,
-                     @Status, @IdempotencyKey, @Attempts, @MaxAttempts, @CreatedAt, @ScheduledAt, @ParentJobId, @RecurringJobId, @Tags)
-                """,
-                new
-                {
-                    Id = job.Id.Value,
-                    job.JobType,
-                    job.InputType,
-                    job.InputJson,
-                    job.SchemaVersion,
-                    job.Queue,
-                    Priority = (int)job.Priority,
-                    Status = job.Status.ToString(),
-                    job.IdempotencyKey,
-                    job.Attempts,
-                    job.MaxAttempts,
-                    job.CreatedAt,
-                    job.ScheduledAt,
-                    ParentJobId = job.ParentJobId?.Value,
-                    job.RecurringJobId,
-                    Tags = System.Text.Json.JsonSerializer.Serialize(job.Tags),
-                },
-                tx);
+            try
+            {
+                await conn.ExecuteAsync(
+                    """
+                    INSERT INTO nexjob_jobs
+                        (id, job_type, input_type, input_json, schema_version, queue, priority, status,
+                         idempotency_key, attempts, max_attempts, created_at, scheduled_at, parent_job_id, recurring_job_id, tags)
+                    VALUES
+                        (@Id, @JobType, @InputType, @InputJson, @SchemaVersion, @Queue, @Priority,
+                         @Status, @IdempotencyKey, @Attempts, @MaxAttempts, @CreatedAt, @ScheduledAt, @ParentJobId, @RecurringJobId, @Tags)
+                    """,
+                    new
+                    {
+                        Id = job.Id.Value,
+                        job.JobType,
+                        job.InputType,
+                        job.InputJson,
+                        job.SchemaVersion,
+                        job.Queue,
+                        Priority = (int)job.Priority,
+                        Status = job.Status.ToString(),
+                        job.IdempotencyKey,
+                        job.Attempts,
+                        job.MaxAttempts,
+                        job.CreatedAt,
+                        job.ScheduledAt,
+                        ParentJobId = job.ParentJobId?.Value,
+                        job.RecurringJobId,
+                        Tags = System.Text.Json.JsonSerializer.Serialize(job.Tags),
+                    },
+                    tx);
 
-            await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
-            return new EnqueueResult(job.Id, WasRejected: false);
+                await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
+                return new EnqueueResult(job.Id, WasRejected: false);
+            }
+            catch (SqlException ex) when (IsUniqueConstraintViolation(ex))
+            {
+                // Race condition: unique constraint violation on idempotency_key.
+                // Another thread inserted a job with the same idempotency key after our check.
+                // Fetch the winning job and apply duplicate policy.
+                await tx.RollbackAsync(cancellationToken).ConfigureAwait(false);
+
+                var winner = await conn.QueryFirstOrDefaultAsync<(Guid Id, string Status)>(
+                    """
+                    SELECT TOP 1 id, status FROM nexjob_jobs
+                    WHERE idempotency_key = @key
+                    ORDER BY created_at ASC
+                    """,
+                    new { key = job.IdempotencyKey });
+
+                if (winner.Id == Guid.Empty)
+                {
+                    throw; // Should not happen; rethrow
+                }
+
+                var winnerId = new JobId(winner.Id);
+                var winnerStatus = ParseStatus(winner.Status);
+
+                if (IsActiveState(winnerStatus))
+                {
+                    return new EnqueueResult(winnerId, WasRejected: false);
+                }
+
+                var reject = winnerStatus == JobStatus.Failed
+                    ? duplicatePolicy is DuplicatePolicy.RejectIfFailed or DuplicatePolicy.RejectAlways
+                    : duplicatePolicy == DuplicatePolicy.RejectAlways;
+
+                if (reject)
+                {
+                    return new EnqueueResult(winnerId, WasRejected: true);
+                }
+
+                return new EnqueueResult(winnerId, WasRejected: false);
+            }
         }
 
         await conn.ExecuteAsync(
@@ -936,6 +978,13 @@ public sealed class SqlServerStorageProvider : IStorageProvider
 
     private static bool IsActiveState(JobStatus status) =>
         status is JobStatus.Enqueued or JobStatus.Processing or JobStatus.Scheduled or JobStatus.AwaitingContinuation;
+
+    private static bool IsUniqueConstraintViolation(SqlException ex)
+    {
+        // SQL Server error 2627: violation of PRIMARY KEY or UNIQUE constraint
+        // Error 2601: cannot insert duplicate key row (index-specific, but same root cause)
+        return ex.Number is 2627 or 2601;
+    }
 
     private SqlConnection Open() => new(_connectionString);
 }

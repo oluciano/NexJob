@@ -35,6 +35,7 @@ public abstract class StorageProviderTestsBase
     {
         var storage = await CreateStorageAsync();
         await storage.EnqueueAsync(MakeJob(queue: "high"));
+        await Task.Delay(1);
         await storage.EnqueueAsync(MakeJob(queue: "low"));
 
         var fetched = await storage.FetchNextAsync(["low"]);
@@ -71,7 +72,9 @@ public abstract class StorageProviderTestsBase
     {
         var storage = await CreateStorageAsync();
         await storage.EnqueueAsync(MakeJob(priority: JobPriority.Low));
+        await Task.Delay(1); // ensure distinct CreatedAt for tiebreaker
         await storage.EnqueueAsync(MakeJob(priority: JobPriority.Critical));
+        await Task.Delay(1);
         await storage.EnqueueAsync(MakeJob(priority: JobPriority.Normal));
 
         var first = await storage.FetchNextAsync(["default"]);
@@ -240,6 +243,7 @@ public abstract class StorageProviderTestsBase
     {
         var storage = await CreateStorageAsync();
         await storage.EnqueueAsync(MakeJob());
+        await Task.Delay(1);
         await storage.EnqueueAsync(MakeJob());
 
         var metrics = await storage.GetMetricsAsync();
@@ -254,9 +258,11 @@ public abstract class StorageProviderTestsBase
 
         // → Processing: fetch job A, leave it running
         await storage.EnqueueAsync(MakeJob());
+        await Task.Delay(1);
         await storage.FetchNextAsync(["default"]); // leave as Processing
 
         // → Succeeded: fetch job B, acknowledge it
+        await Task.Delay(1);
         await storage.EnqueueAsync(MakeJob());
         var toSucceed = (await storage.FetchNextAsync(["default"]))!;
         await storage.AcknowledgeAsync(toSucceed.Id);
@@ -288,6 +294,7 @@ public abstract class StorageProviderTestsBase
         for (var i = 0; i < 5; i++)
         {
             await storage.EnqueueAsync(MakeJob());
+            await Task.Delay(1);
         }
 
         var page = await storage.GetJobsAsync(new JobFilter(), page: 1, pageSize: 3);
@@ -318,7 +325,9 @@ public abstract class StorageProviderTestsBase
     {
         var storage = await CreateStorageAsync();
         await storage.EnqueueAsync(MakeJob(queue: "alpha"));
+        await Task.Delay(1);
         await storage.EnqueueAsync(MakeJob(queue: "alpha"));
+        await Task.Delay(1);
         await storage.EnqueueAsync(MakeJob(queue: "beta"));
 
         var page = await storage.GetJobsAsync(
@@ -372,9 +381,12 @@ public abstract class StorageProviderTestsBase
     {
         var storage = await CreateStorageAsync();
         await storage.EnqueueAsync(MakeJob(queue: "alpha"));
+        await Task.Delay(1);
         await storage.EnqueueAsync(MakeJob(queue: "alpha"));
+        await Task.Delay(1);
         await storage.EnqueueAsync(MakeJob(queue: "beta"));
         // Claim one from alpha → Processing
+        await Task.Delay(1);
         await storage.FetchNextAsync(["alpha"]);
 
         var metrics = await storage.GetQueueMetricsAsync();
@@ -592,10 +604,12 @@ public abstract class StorageProviderTestsBase
         // Create and fetch parent job
         var parent = MakeJob();
         await storage.EnqueueAsync(parent);
+        await Task.Delay(1);
         var parentFetched = (await storage.FetchNextAsync(["default"]))!;
 
         // Create child awaiting parent continuation
         var child = MakeJob(status: JobStatus.AwaitingContinuation, parentJobId: parentFetched.Id);
+        await Task.Delay(1);
         await storage.EnqueueAsync(child);
 
         // Commit parent as succeeded
@@ -893,5 +907,72 @@ public abstract class StorageProviderTestsBase
             r.WasRejected.Should().BeTrue();
             r.JobId.Should().Be(seed.Id);
         });
+    }
+
+    // ── Concurrency tests (race condition fixes) ────────────────────────────────
+
+    [Fact]
+    public async Task EnqueueAsync_concurrent_same_idempotencyKey_creates_only_one_job()
+    {
+        var storage = await CreateStorageAsync();
+        var key = "concurrent-race-test";
+
+        // Act — fire multiple concurrent enqueues with the same idempotency key
+        const int concurrency = 10;
+        var tasks = Enumerable.Range(0, concurrency).Select(_ =>
+        {
+            var job = MakeJob(idempotencyKey: key);
+            return storage.EnqueueAsync(job, DuplicatePolicy.AllowAfterFailed);
+        });
+
+        var results = await Task.WhenAll(tasks);
+
+        // Assert — all should return the same JobId
+        results.Select(r => r.JobId).Distinct().Should().HaveCount(1,
+            "all concurrent enqueues with the same idempotency key should return the same JobId");
+
+        // Assert — the winner job can be fetched and is consistent
+        var winningJobId = results[0].JobId;
+        var winningJob = await storage.GetJobByIdAsync(winningJobId);
+        winningJob.Should().NotBeNull();
+        winningJob!.IdempotencyKey.Should().Be(key);
+
+        // All results should be non-rejected (first one creates, others see existing)
+        results.Should().AllSatisfy(r =>
+        {
+            r.WasRejected.Should().BeFalse();
+            r.JobId.Should().Be(results[0].JobId);
+        });
+    }
+
+    [Fact]
+    public async Task EnqueueAsync_concurrent_same_idempotencyKey_all_see_processing_status()
+    {
+        var storage = await CreateStorageAsync();
+        var key = "concurrent-processing-test";
+
+        // Act — fire multiple concurrent enqueues with the same idempotency key
+        const int concurrency = 5;
+        var tasks = Enumerable.Range(0, concurrency).Select(_ =>
+        {
+            var job = MakeJob(idempotencyKey: key);
+            return storage.EnqueueAsync(job, DuplicatePolicy.RejectIfFailed);
+        });
+
+        var results = await Task.WhenAll(tasks);
+
+        // Assert — all should return the same JobId
+        var winnerJobId = results[0].JobId;
+        results.Should().AllSatisfy(r =>
+        {
+            r.JobId.Should().Be(winnerJobId);
+            r.WasRejected.Should().BeFalse();
+        });
+
+        // Verify only one job exists
+        var job = await storage.GetJobByIdAsync(winnerJobId);
+        job.Should().NotBeNull();
+        job!.IdempotencyKey.Should().Be(key);
+        job.Status.Should().Be(JobStatus.Enqueued);
     }
 }
