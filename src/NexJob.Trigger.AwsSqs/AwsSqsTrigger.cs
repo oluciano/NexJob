@@ -11,13 +11,6 @@ namespace NexJob.Trigger.AwsSqs;
 /// AWS SQS trigger for NexJob. Receives messages from an SQS queue and automatically
 /// enqueues them as NexJob jobs.
 /// </summary>
-/// <remarks>
-/// ARCHITECTURAL NOTE:
-/// This trigger uses IStorageProvider directly because IScheduler is generic
-/// and requires the job type at compile time. Broker triggers receive the type
-/// as a runtime string — a non-generic IScheduler.EnqueueAsync(JobRecord) overload
-/// is needed to solve this cleanly. Tracked for v2.2.
-/// </remarks>
 internal sealed class AwsSqsTrigger : IHostedService
 {
     private readonly AwsSqsTriggerOptions _options;
