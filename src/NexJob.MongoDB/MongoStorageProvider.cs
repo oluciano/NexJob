@@ -27,7 +27,15 @@ public sealed class MongoStorageProvider : IStorageProvider
             t == typeof(JobDocument) || t == typeof(RecurringJobDocument));
 
         // Store DateTimeOffset as a UTC DateTime tick pair to preserve offset
-        BsonSerializer.TryRegisterSerializer(new DateTimeOffsetSerializer(BsonType.String));
+        // TryRegisterSerializer may fail if already registered; swallow the exception gracefully
+        try
+        {
+            BsonSerializer.TryRegisterSerializer(new DateTimeOffsetSerializer(BsonType.String));
+        }
+        catch (BsonSerializationException)
+        {
+            // Already registered, likely by another provider or test setup
+        }
     }
 
     /// <summary>
