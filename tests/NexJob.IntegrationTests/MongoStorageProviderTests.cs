@@ -24,8 +24,8 @@ public sealed class MongoStorageProviderTests : StorageProviderTestsBase, IClass
     {
         var client = new MongoClient(_fixture.Container.GetConnectionString());
 
-        // Use unique database per test for complete isolation
-        var dbName = $"nexjob_{Guid.NewGuid():N}";
+        // Create a unique database for each test — ensures complete isolation like PostgreSQL tests
+        var dbName = $"nexjob_test_{Guid.NewGuid():N}";
         var database = client.GetDatabase(dbName);
 
         return Task.FromResult<IStorageProvider>(new MongoStorageProvider(database));

@@ -59,57 +59,49 @@ public sealed class MongoStorageProvider : IStorageProvider
     {
         if (job.IdempotencyKey is not null)
         {
-            // Check if a job with this idempotency key already exists
-            var existing = await _jobs.Find(Builders<JobDocument>.Filter.Eq(d => d.IdempotencyKey, job.IdempotencyKey))
+            var existing = await _jobs
+                .Find(Builders<JobDocument>.Filter.Eq(d => d.IdempotencyKey, job.IdempotencyKey))
                 .Sort(Builders<JobDocument>.Sort.Ascending(d => d.CreatedAt))
                 .Limit(1)
                 .FirstOrDefaultAsync(cancellationToken).ConfigureAwait(false);
 
             if (existing is not null)
             {
-                var existingId = existing.Id;
-                var existingStatus = existing.Status;
+                if (IsActiveState(existing.Status))
+                    return new EnqueueResult(existing.Id, WasRejected: false);
 
-                if (IsActiveState(existingStatus))
-                {
-                    return new EnqueueResult(existingId, WasRejected: false);
-                }
-
-                var reject = existingStatus == JobStatus.Failed
+                var reject = existing.Status == JobStatus.Failed
                     ? duplicatePolicy is DuplicatePolicy.RejectIfFailed or DuplicatePolicy.RejectAlways
                     : duplicatePolicy == DuplicatePolicy.RejectAlways;
 
                 if (reject)
-                {
-                    return new EnqueueResult(existingId, WasRejected: true);
-                }
+                    return new EnqueueResult(existing.Id, WasRejected: true);
             }
         }
 
         try
         {
-            await _jobs.InsertOneAsync(JobDocument.FromRecord(job), cancellationToken: cancellationToken).ConfigureAwait(false);
+            await _jobs.InsertOneAsync(
+                JobDocument.FromRecord(job),
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+
             return new EnqueueResult(job.Id, WasRejected: false);
         }
-        catch (MongoWriteException ex) when (ex.WriteError.Category == ServerErrorCategory.DuplicateKey && job.IdempotencyKey is not null)
+        catch (MongoWriteException ex) when (ex.WriteError.Category == ServerErrorCategory.DuplicateKey)
         {
-            // Race condition: two processes passed the Find check simultaneously.
-            // The unique index blocked the second insert. Fetch the winner.
-            var winner = await _jobs.Find(Builders<JobDocument>.Filter.Eq(d => d.IdempotencyKey, job.IdempotencyKey))
+            // Race condition: unique index blocked concurrent insert with same idempotency key
+            var winner = await _jobs
+                .Find(Builders<JobDocument>.Filter.Eq(d => d.IdempotencyKey, job.IdempotencyKey))
                 .Sort(Builders<JobDocument>.Sort.Ascending(d => d.CreatedAt))
                 .Limit(1)
                 .FirstOrDefaultAsync(cancellationToken).ConfigureAwait(false);
 
             if (winner is not null)
             {
-                var winnerStatus = winner.Status;
-
-                if (IsActiveState(winnerStatus))
-                {
+                if (IsActiveState(winner.Status))
                     return new EnqueueResult(winner.Id, WasRejected: false);
-                }
 
-                var reject = winnerStatus == JobStatus.Failed
+                var reject = winner.Status == JobStatus.Failed
                     ? duplicatePolicy is DuplicatePolicy.RejectIfFailed or DuplicatePolicy.RejectAlways
                     : duplicatePolicy == DuplicatePolicy.RejectAlways;
 
@@ -821,8 +813,11 @@ public sealed class MongoStorageProvider : IStorageProvider
         }
         catch (MongoCommandException ex) when (string.Equals(ex.CodeName, "IndexOptionsConflict", StringComparison.Ordinal))
         {
-            // Index already exists with different options (old version without Unique).
-            // Silently continue — application-level DuplicateKey handler will work either way.
+            // Existing deployment: drop old non-unique index and recreate with Unique = true
+            _jobs.Indexes.DropOne("idempotency_key");
+            _jobs.Indexes.CreateOne(new CreateIndexModel<JobDocument>(
+                Builders<JobDocument>.IndexKeys.Ascending(d => d.IdempotencyKey),
+                new CreateIndexOptions { Name = "idempotency_key", Sparse = true, Unique = true }));
         }
 
         // Index for orphan detection
