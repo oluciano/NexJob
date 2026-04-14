@@ -28,8 +28,8 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 - Redis `EnqueueAsync` idempotency check is now atomic via Lua script — prevents duplicate jobs under concurrent load
-- MongoDB `EnqueueAsync` uses a partial unique index (`partialFilterExpression`) to enforce idempotency key uniqueness without affecting jobs without keys
-- MongoDB `EnqueueAsync` catch block now correctly guards against `DuplicateKey` errors on jobs without idempotency keys
+- MongoDB `EnqueueAsync` uses a partial unique index (`partialFilterExpression`) to enforce idempotency key uniqueness while allowing multiple jobs without keys (null keys)
+- MongoDB `EnqueueAsync` catch block now correctly guards against `DuplicateKey` errors on jobs with idempotency keys during race conditions
 - AWS SQS trigger `ServiceCollectionExtensions` uses `TryAddTransient` to respect user-registered `ISqsClient` implementations
 
 ### Performance
