@@ -152,13 +152,14 @@ public sealed class DashboardMiddleware
     {
         var recurringStorage = context.RequestServices.GetRequiredService<IRecurringStorage>();
         var dashboardStorage = context.RequestServices.GetRequiredService<IDashboardStorage>();
+        var controlService = context.RequestServices.GetRequiredService<IJobControlService>();
 
         if (subPath.StartsWith("jobs/", StringComparison.Ordinal) && subPath.Contains("/runnow", StringComparison.Ordinal))
         {
             var idStr = subPath.Split('/')[1];
             if (Guid.TryParse(idStr, out var guid))
             {
-                await dashboardStorage.RequeueJobAsync(new JobId(guid), context.RequestAborted).ConfigureAwait(false);
+                await controlService.RequeueJobAsync(new JobId(guid), context.RequestAborted).ConfigureAwait(false);
                 LocalRedirect(context, $"{_pathPrefix}/jobs/{guid}");
                 return true;
             }
@@ -169,7 +170,7 @@ public sealed class DashboardMiddleware
             var idStr = subPath.Split('/')[1];
             if (Guid.TryParse(idStr, out var guid))
             {
-                await dashboardStorage.RequeueJobAsync(new JobId(guid), context.RequestAborted).ConfigureAwait(false);
+                await controlService.RequeueJobAsync(new JobId(guid), context.RequestAborted).ConfigureAwait(false);
                 LocalRedirect(context, $"{_pathPrefix}/failed");
                 return true;
             }
@@ -180,7 +181,7 @@ public sealed class DashboardMiddleware
             var idStr = subPath.Split('/')[1];
             if (Guid.TryParse(idStr, out var guid))
             {
-                await dashboardStorage.DeleteJobAsync(new JobId(guid), context.RequestAborted).ConfigureAwait(false);
+                await controlService.DeleteJobAsync(new JobId(guid), context.RequestAborted).ConfigureAwait(false);
                 LocalRedirect(context, $"{_pathPrefix}/failed");
                 return true;
             }
@@ -364,11 +365,11 @@ public sealed class DashboardMiddleware
                 var jobId = new JobId(guid);
                 if (string.Equals(action, "requeue", StringComparison.Ordinal))
                 {
-                    await dashboardStorage.RequeueJobAsync(jobId, context.RequestAborted).ConfigureAwait(false);
+                    await controlService.RequeueJobAsync(jobId, context.RequestAborted).ConfigureAwait(false);
                 }
                 else if (string.Equals(action, "delete", StringComparison.Ordinal))
                 {
-                    await dashboardStorage.DeleteJobAsync(jobId, context.RequestAborted).ConfigureAwait(false);
+                    await controlService.DeleteJobAsync(jobId, context.RequestAborted).ConfigureAwait(false);
                 }
             }
 
@@ -445,9 +446,7 @@ public sealed class DashboardMiddleware
         if (subPath.StartsWith("queues/", StringComparison.Ordinal) && subPath.EndsWith("/pause", StringComparison.Ordinal))
         {
             var queueName = Uri.UnescapeDataString(subPath.Split('/')[1]);
-            var rt = await runtimeStore.GetAsync(context.RequestAborted).ConfigureAwait(false);
-            rt.PausedQueues.Add(queueName);
-            await runtimeStore.SaveAsync(rt, context.RequestAborted).ConfigureAwait(false);
+            await controlService.PauseQueueAsync(queueName, context.RequestAborted).ConfigureAwait(false);
             LocalRedirect(context, $"{_pathPrefix}/settings");
             return true;
         }
@@ -455,9 +454,7 @@ public sealed class DashboardMiddleware
         if (subPath.StartsWith("queues/", StringComparison.Ordinal) && subPath.EndsWith("/resume", StringComparison.Ordinal))
         {
             var queueName = Uri.UnescapeDataString(subPath.Split('/')[1]);
-            var rt = await runtimeStore.GetAsync(context.RequestAborted).ConfigureAwait(false);
-            rt.PausedQueues.Remove(queueName);
-            await runtimeStore.SaveAsync(rt, context.RequestAborted).ConfigureAwait(false);
+            await controlService.ResumeQueueAsync(queueName, context.RequestAborted).ConfigureAwait(false);
             LocalRedirect(context, $"{_pathPrefix}/settings");
             return true;
         }
