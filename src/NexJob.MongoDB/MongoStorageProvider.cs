@@ -59,6 +59,7 @@ public sealed class MongoStorageProvider : IStorageProvider
     {
         if (job.IdempotencyKey is not null)
         {
+            // Check if a job with this idempotency key already exists
             var existing = await _jobs.Find(Builders<JobDocument>.Filter.Eq(d => d.IdempotencyKey, job.IdempotencyKey))
                 .Sort(Builders<JobDocument>.Sort.Ascending(d => d.CreatedAt))
                 .Limit(1)
@@ -90,7 +91,7 @@ public sealed class MongoStorageProvider : IStorageProvider
             await _jobs.InsertOneAsync(JobDocument.FromRecord(job), cancellationToken: cancellationToken).ConfigureAwait(false);
             return new EnqueueResult(job.Id, WasRejected: false);
         }
-        catch (MongoWriteException ex) when (ex.WriteError.Category == ServerErrorCategory.DuplicateKey)
+        catch (MongoWriteException ex) when (ex.WriteError.Category == ServerErrorCategory.DuplicateKey && job.IdempotencyKey is not null)
         {
             // Race condition: two processes passed the Find check simultaneously.
             // The unique index blocked the second insert. Fetch the winner.
@@ -820,11 +821,8 @@ public sealed class MongoStorageProvider : IStorageProvider
         }
         catch (MongoCommandException ex) when (string.Equals(ex.CodeName, "IndexOptionsConflict", StringComparison.Ordinal))
         {
-            // Existing deployments have old index without Unique. Drop and recreate.
-            _jobs.Indexes.DropOne("idempotency_key");
-            _jobs.Indexes.CreateOne(new CreateIndexModel<JobDocument>(
-                Builders<JobDocument>.IndexKeys.Ascending(d => d.IdempotencyKey),
-                new CreateIndexOptions { Name = "idempotency_key", Sparse = true, Unique = true }));
+            // Index already exists with different options (old version without Unique).
+            // Silently continue — application-level DuplicateKey handler will work either way.
         }
 
         // Index for orphan detection

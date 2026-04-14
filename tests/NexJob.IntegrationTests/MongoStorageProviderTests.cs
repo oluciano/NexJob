@@ -18,19 +18,16 @@ public sealed class MongoStorageProviderTests : StorageProviderTestsBase, IClass
     public MongoStorageProviderTests(MongoFixture fixture)
     {
         _fixture = fixture;
-
-        var client = new MongoClient(_fixture.Container.GetConnectionString());
-
-        client.DropDatabase("nexjob_test");
-
-        var database = client.GetDatabase("nexjob_test");
-        _ = new NexJob.MongoDB.MongoStorageProvider(database);
     }
 
     protected override Task<IStorageProvider> CreateStorageAsync()
     {
         var client = new MongoClient(_fixture.Container.GetConnectionString());
-        var database = client.GetDatabase("nexjob_test");
+
+        // Use unique database per test for complete isolation
+        var dbName = $"nexjob_{Guid.NewGuid():N}";
+        var database = client.GetDatabase(dbName);
+
         return Task.FromResult<IStorageProvider>(new MongoStorageProvider(database));
     }
 }
