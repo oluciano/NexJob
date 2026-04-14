@@ -1,3 +1,4 @@
+using MongoDB.Bson;
 using MongoDB.Driver;
 using NexJob.MongoDB;
 using NexJob.Storage;
@@ -18,19 +19,36 @@ public sealed class MongoStorageProviderTests : StorageProviderTestsBase, IClass
     public MongoStorageProviderTests(MongoFixture fixture)
     {
         _fixture = fixture;
-
-        var client = new MongoClient(_fixture.Container.GetConnectionString());
-
-        client.DropDatabase("nexjob_test");
-
-        var database = client.GetDatabase("nexjob_test");
-        _ = new NexJob.MongoDB.MongoStorageProvider(database);
     }
 
-    protected override Task<IStorageProvider> CreateStorageAsync()
+    protected override async Task<IStorageProvider> CreateStorageAsync()
     {
         var client = new MongoClient(_fixture.Container.GetConnectionString());
-        var database = client.GetDatabase("nexjob_test");
-        return Task.FromResult<IStorageProvider>(new MongoStorageProvider(database));
+
+        // Create a unique database for each test — ensures complete isolation like PostgreSQL tests
+        var dbName = $"nexjob_test_{Guid.NewGuid():N}";
+        var database = client.GetDatabase(dbName);
+
+        var provider = new MongoStorageProvider(database);
+
+        // Wait until the idempotency index is confirmed present
+        // Necessary in CI environments where index propagation is slower
+        var collection = database.GetCollection<BsonDocument>("nexjob_jobs");
+        var deadline = DateTime.UtcNow.AddSeconds(5);
+        while (DateTime.UtcNow < deadline)
+        {
+            using (var indexCursor = await collection.Indexes.ListAsync())
+            {
+                var indexList = await indexCursor.ToListAsync();
+                if (indexList.FindIndex(i => i["name"] == "idempotency_key") >= 0)
+                {
+                    break;
+                }
+            }
+
+            await Task.Delay(25);
+        }
+
+        return provider;
     }
 }
