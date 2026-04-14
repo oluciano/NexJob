@@ -1,3 +1,4 @@
+using MongoDB.Bson;
 using MongoDB.Driver;
 using NexJob.MongoDB;
 using NexJob.Storage;
@@ -30,9 +31,23 @@ public sealed class MongoStorageProviderTests : StorageProviderTestsBase, IClass
 
         var provider = new MongoStorageProvider(database);
 
-        // Brief delay to ensure indexes are fully propagated before concurrent tests
-        // With 45 parallel test databases, the MongoDB container experiences index creation contention
-        await Task.Delay(50);
+        // Wait until the idempotency index is confirmed present
+        // Necessary in CI environments where index propagation is slower
+        var collection = database.GetCollection<BsonDocument>("nexjob_jobs");
+        var deadline = DateTime.UtcNow.AddSeconds(5);
+        while (DateTime.UtcNow < deadline)
+        {
+            using (var indexCursor = await collection.Indexes.ListAsync())
+            {
+                var indexList = await indexCursor.ToListAsync();
+                if (indexList.FindIndex(i => i["name"] == "idempotency_key") >= 0)
+                {
+                    break;
+                }
+            }
+
+            await Task.Delay(25);
+        }
 
         return provider;
     }

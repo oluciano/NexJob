@@ -70,14 +70,18 @@ public sealed class MongoStorageProvider : IStorageProvider
             if (existing is not null)
             {
                 if (IsActiveState(existing.Status))
+                {
                     return new EnqueueResult(existing.Id, WasRejected: false);
+                }
 
                 var reject = existing.Status == JobStatus.Failed
                     ? duplicatePolicy is DuplicatePolicy.RejectIfFailed or DuplicatePolicy.RejectAlways
                     : duplicatePolicy == DuplicatePolicy.RejectAlways;
 
                 if (reject)
+                {
                     return new EnqueueResult(existing.Id, WasRejected: true);
+                }
             }
         }
 
@@ -103,7 +107,9 @@ public sealed class MongoStorageProvider : IStorageProvider
             if (winner is not null)
             {
                 if (IsActiveState(winner.Status))
+                {
                     return new EnqueueResult(winner.Id, WasRejected: false);
+                }
 
                 var reject = winner.Status == JobStatus.Failed
                     ? duplicatePolicy is DuplicatePolicy.RejectIfFailed or DuplicatePolicy.RejectAlways
