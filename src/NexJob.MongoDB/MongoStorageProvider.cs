@@ -87,7 +87,9 @@ public sealed class MongoStorageProvider : IStorageProvider
 
             return new EnqueueResult(job.Id, WasRejected: false);
         }
-        catch (MongoWriteException ex) when (ex.WriteError.Category == ServerErrorCategory.DuplicateKey)
+        catch (MongoWriteException ex) when (
+            ex.WriteError.Category == ServerErrorCategory.DuplicateKey
+            && job.IdempotencyKey is not null)
         {
             // Race condition: unique index blocked concurrent insert with same idempotency key
             var winner = await _jobs
