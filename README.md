@@ -151,7 +151,7 @@ One line. No configuration required.
 
 ## Documentation
 
-Complete documentation is in the [wiki](docs/wiki/). Key pages:
+Complete documentation is in the [wiki](docs/wiki/Home.md). Key pages:
 
 - **[Mental Model](docs/wiki/00-Mental-Model.md)** — how NexJob works, read this first
 - **[Getting Started](docs/wiki/01-Getting-Started.md)** — run your first job in 2 minutes
