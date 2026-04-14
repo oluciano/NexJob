@@ -35,6 +35,7 @@ public abstract class StorageProviderTestsBase
     {
         var storage = await CreateStorageAsync();
         await storage.EnqueueAsync(MakeJob(queue: "high"));
+        await Task.Delay(1);
         await storage.EnqueueAsync(MakeJob(queue: "low"));
 
         var fetched = await storage.FetchNextAsync(["low"]);
@@ -71,7 +72,9 @@ public abstract class StorageProviderTestsBase
     {
         var storage = await CreateStorageAsync();
         await storage.EnqueueAsync(MakeJob(priority: JobPriority.Low));
+        await Task.Delay(1); // ensure distinct CreatedAt for tiebreaker
         await storage.EnqueueAsync(MakeJob(priority: JobPriority.Critical));
+        await Task.Delay(1);
         await storage.EnqueueAsync(MakeJob(priority: JobPriority.Normal));
 
         var first = await storage.FetchNextAsync(["default"]);
@@ -240,6 +243,7 @@ public abstract class StorageProviderTestsBase
     {
         var storage = await CreateStorageAsync();
         await storage.EnqueueAsync(MakeJob());
+        await Task.Delay(1);
         await storage.EnqueueAsync(MakeJob());
 
         var metrics = await storage.GetMetricsAsync();
@@ -254,9 +258,11 @@ public abstract class StorageProviderTestsBase
 
         // → Processing: fetch job A, leave it running
         await storage.EnqueueAsync(MakeJob());
+        await Task.Delay(1);
         await storage.FetchNextAsync(["default"]); // leave as Processing
 
         // → Succeeded: fetch job B, acknowledge it
+        await Task.Delay(1);
         await storage.EnqueueAsync(MakeJob());
         var toSucceed = (await storage.FetchNextAsync(["default"]))!;
         await storage.AcknowledgeAsync(toSucceed.Id);
@@ -288,6 +294,7 @@ public abstract class StorageProviderTestsBase
         for (var i = 0; i < 5; i++)
         {
             await storage.EnqueueAsync(MakeJob());
+            await Task.Delay(1);
         }
 
         var page = await storage.GetJobsAsync(new JobFilter(), page: 1, pageSize: 3);
@@ -318,7 +325,9 @@ public abstract class StorageProviderTestsBase
     {
         var storage = await CreateStorageAsync();
         await storage.EnqueueAsync(MakeJob(queue: "alpha"));
+        await Task.Delay(1);
         await storage.EnqueueAsync(MakeJob(queue: "alpha"));
+        await Task.Delay(1);
         await storage.EnqueueAsync(MakeJob(queue: "beta"));
 
         var page = await storage.GetJobsAsync(
@@ -372,9 +381,12 @@ public abstract class StorageProviderTestsBase
     {
         var storage = await CreateStorageAsync();
         await storage.EnqueueAsync(MakeJob(queue: "alpha"));
+        await Task.Delay(1);
         await storage.EnqueueAsync(MakeJob(queue: "alpha"));
+        await Task.Delay(1);
         await storage.EnqueueAsync(MakeJob(queue: "beta"));
         // Claim one from alpha → Processing
+        await Task.Delay(1);
         await storage.FetchNextAsync(["alpha"]);
 
         var metrics = await storage.GetQueueMetricsAsync();
@@ -592,10 +604,12 @@ public abstract class StorageProviderTestsBase
         // Create and fetch parent job
         var parent = MakeJob();
         await storage.EnqueueAsync(parent);
+        await Task.Delay(1);
         var parentFetched = (await storage.FetchNextAsync(["default"]))!;
 
         // Create child awaiting parent continuation
         var child = MakeJob(status: JobStatus.AwaitingContinuation, parentJobId: parentFetched.Id);
+        await Task.Delay(1);
         await storage.EnqueueAsync(child);
 
         // Commit parent as succeeded

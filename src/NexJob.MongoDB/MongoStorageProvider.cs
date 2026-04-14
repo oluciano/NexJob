@@ -801,24 +801,10 @@ public sealed class MongoStorageProvider : IStorageProvider
                 .Ascending(d => d.CreatedAt),
             new CreateIndexOptions { Name = "queue_status_priority_created" }));
 
-        // Sparse + Unique index for idempotency: enforces uniqueness only for non-null keys
-        // Sparse = true → documents without IdempotencyKey are not indexed (multiple jobs without key allowed)
-        // Unique = true → documents WITH IdempotencyKey must have unique values
-        // Race condition: second concurrent insert throws DuplicateKey, caught and handled gracefully
-        try
-        {
-            _jobs.Indexes.CreateOne(new CreateIndexModel<JobDocument>(
-                Builders<JobDocument>.IndexKeys.Ascending(d => d.IdempotencyKey),
-                new CreateIndexOptions { Name = "idempotency_key", Sparse = true, Unique = true }));
-        }
-        catch (MongoCommandException ex) when (string.Equals(ex.CodeName, "IndexOptionsConflict", StringComparison.Ordinal))
-        {
-            // Existing deployment: drop old non-unique index and recreate with Unique = true
-            _jobs.Indexes.DropOne("idempotency_key");
-            _jobs.Indexes.CreateOne(new CreateIndexModel<JobDocument>(
-                Builders<JobDocument>.IndexKeys.Ascending(d => d.IdempotencyKey),
-                new CreateIndexOptions { Name = "idempotency_key", Sparse = true, Unique = true }));
-        }
+        // Sparse index for idempotency: allows fast querying for idempotency deduplication
+        _jobs.Indexes.CreateOne(new CreateIndexModel<JobDocument>(
+            Builders<JobDocument>.IndexKeys.Ascending(d => d.IdempotencyKey),
+            new CreateIndexOptions { Name = "idempotency_key", Sparse = true }));
 
         // Index for orphan detection
         _jobs.Indexes.CreateOne(new CreateIndexModel<JobDocument>(
