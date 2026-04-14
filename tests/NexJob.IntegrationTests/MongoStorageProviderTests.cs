@@ -20,7 +20,7 @@ public sealed class MongoStorageProviderTests : StorageProviderTestsBase, IClass
         _fixture = fixture;
     }
 
-    protected override Task<IStorageProvider> CreateStorageAsync()
+    protected override async Task<IStorageProvider> CreateStorageAsync()
     {
         var client = new MongoClient(_fixture.Container.GetConnectionString());
 
@@ -28,6 +28,12 @@ public sealed class MongoStorageProviderTests : StorageProviderTestsBase, IClass
         var dbName = $"nexjob_test_{Guid.NewGuid():N}";
         var database = client.GetDatabase(dbName);
 
-        return Task.FromResult<IStorageProvider>(new MongoStorageProvider(database));
+        var provider = new MongoStorageProvider(database);
+
+        // Brief delay to ensure indexes are fully propagated before concurrent tests
+        // With 45 parallel test databases, the MongoDB container experiences index creation contention
+        await Task.Delay(50);
+
+        return provider;
     }
 }

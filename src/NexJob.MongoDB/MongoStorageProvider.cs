@@ -14,6 +14,7 @@ namespace NexJob.MongoDB;
 /// </summary>
 public sealed class MongoStorageProvider : IStorageProvider
 {
+    private readonly IMongoDatabase _database;
     private readonly IMongoCollection<JobDocument> _jobs;
     private readonly IMongoCollection<RecurringJobDocument> _recurringJobs;
     private readonly IMongoCollection<BsonDocument> _recurringLocks;
@@ -44,6 +45,7 @@ public sealed class MongoStorageProvider : IStorageProvider
     /// </summary>
     public MongoStorageProvider(IMongoDatabase database)
     {
+        _database = database;
         _jobs = database.GetCollection<JobDocument>("nexjob_jobs");
         _recurringJobs = database.GetCollection<RecurringJobDocument>("nexjob_recurring_jobs");
         _recurringLocks = database.GetCollection<BsonDocument>("nexjob_recurring_locks");
@@ -804,9 +806,59 @@ public sealed class MongoStorageProvider : IStorageProvider
             new CreateIndexOptions { Name = "queue_status_priority_created" }));
 
         // Sparse index for idempotency: allows fast querying for idempotency deduplication
-        _jobs.Indexes.CreateOne(new CreateIndexModel<JobDocument>(
-            Builders<JobDocument>.IndexKeys.Ascending(d => d.IdempotencyKey),
-            new CreateIndexOptions { Name = "idempotency_key", Sparse = true }));
+        // Create a partial unique index that only applies to non-null idempotency keys,
+        // allowing multiple jobs without idempotency keys while preventing duplicates for those with keys.
+        try
+        {
+            var createIndexCommand = new BsonDocument
+            {
+                { "createIndexes", "nexjob_jobs" },
+                {
+                    "indexes", new BsonArray
+                    {
+                        new BsonDocument
+                        {
+                            { "key", new BsonDocument { { "IdempotencyKey", 1 }, } },
+                            { "name", "idempotency_key" },
+                            { "unique", true },
+                            {
+                                "partialFilterExpression",
+                                new BsonDocument { { "IdempotencyKey", new BsonDocument { { "$type", "string" }, } }, }
+                            },
+                        },
+                    }
+                },
+            };
+
+            _database.RunCommand<BsonDocument>(createIndexCommand);
+        }
+        catch (MongoCommandException ex) when (string.Equals(ex.CodeName, "IndexOptionsConflict", StringComparison.Ordinal))
+        {
+            // Index exists with different options; drop and recreate
+            _jobs.Indexes.DropOne("idempotency_key");
+
+            var createIndexCommand = new BsonDocument
+            {
+                { "createIndexes", "nexjob_jobs" },
+                {
+                    "indexes", new BsonArray
+                    {
+                        new BsonDocument
+                        {
+                            { "key", new BsonDocument { { "IdempotencyKey", 1 }, } },
+                            { "name", "idempotency_key" },
+                            { "unique", true },
+                            {
+                                "partialFilterExpression",
+                                new BsonDocument { { "IdempotencyKey", new BsonDocument { { "$type", "string" }, } }, }
+                            },
+                        },
+                    }
+                },
+            };
+
+            _database.RunCommand<BsonDocument>(createIndexCommand);
+        }
 
         // Index for orphan detection
         _jobs.Indexes.CreateOne(new CreateIndexModel<JobDocument>(
