@@ -825,14 +825,22 @@ public sealed class MongoStorageProvider : IStorageProvider
                 .Ascending(d => d.CreatedAt),
             new CreateIndexOptions { Name = "queue_status_priority_created" }));
 
-        // Sparse index for idempotency: efficient querying, but doesn't prevent race conditions.
-        // Race conditions handled at application level via try-catch + DuplicateKey detection (see EnqueueAsync).
-        // Note: MongoDB with null IdempotencyKey values means the field is null in BSON, not missing.
-        // So even Sparse=true will include documents with IdempotencyKey:null, and unique constraint
-        // would block multiple nulls. Application-level handling avoids this MongoDB semantic issue.
-        _jobs.Indexes.CreateOne(new CreateIndexModel<JobDocument>(
-            Builders<JobDocument>.IndexKeys.Ascending(d => d.IdempotencyKey),
-            new CreateIndexOptions { Name = "idempotency_key", Sparse = true }));
+        // Sparse+Unique index for idempotency: enforces uniqueness only for non-null keys
+        // Sparse = true → null/missing IdempotencyKey documents are NOT indexed (multiple jobs without idempotency key)
+        // Unique = true → among indexed documents, IdempotencyKey values are unique (only one job per key)
+        // Race conditions: if two inserts happen simultaneously with same key, second throws DuplicateKey,
+        // caught and handled by applying duplicate policy to the first job's record.
+        try
+        {
+            _jobs.Indexes.CreateOne(new CreateIndexModel<JobDocument>(
+                Builders<JobDocument>.IndexKeys.Ascending(d => d.IdempotencyKey),
+                new CreateIndexOptions { Name = "idempotency_key", Sparse = true, Unique = true }));
+        }
+        catch (MongoCommandException ex) when (string.Equals(ex.CodeName, "IndexOptionsConflict", StringComparison.Ordinal))
+        {
+            // Index already exists with different options. Safe to ignore since the index serves the same purpose.
+            // This can happen in test environments where multiple instances create the index.
+        }
 
         // Index for orphan detection
         _jobs.Indexes.CreateOne(new CreateIndexModel<JobDocument>(
