@@ -54,4 +54,16 @@ public static class NexJobRedisExtensions
 
         return services;
     }
+
+    /// <summary>
+    /// Enables global throttle enforcement via Redis across all worker nodes.
+    /// Without this, [ThrottleAttribute] limits are per-process only.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <returns>The original <paramref name="services"/> for chaining.</returns>
+    public static IServiceCollection AddNexJobDistributedThrottle(this IServiceCollection services)
+    {
+        services.AddSingleton<IDistributedThrottleStore, RedisDistributedThrottleStore>();
+        return services;
+    }
 }
