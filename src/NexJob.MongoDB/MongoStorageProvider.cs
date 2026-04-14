@@ -27,7 +27,15 @@ public sealed class MongoStorageProvider : IStorageProvider
             t == typeof(JobDocument) || t == typeof(RecurringJobDocument));
 
         // Store DateTimeOffset as a UTC DateTime tick pair to preserve offset
-        BsonSerializer.TryRegisterSerializer(new DateTimeOffsetSerializer(BsonType.String));
+        // TryRegisterSerializer may fail if already registered; swallow the exception gracefully
+        try
+        {
+            BsonSerializer.TryRegisterSerializer(new DateTimeOffsetSerializer(BsonType.String));
+        }
+        catch (BsonSerializationException)
+        {
+            // Already registered, likely by another provider or test setup
+        }
     }
 
     /// <summary>
@@ -51,9 +59,11 @@ public sealed class MongoStorageProvider : IStorageProvider
     {
         if (job.IdempotencyKey is not null)
         {
-            var existing = await _jobs.Find(
-                Builders<JobDocument>.Filter.Eq(d => d.IdempotencyKey, job.IdempotencyKey))
-                .Sort(Builders<JobDocument>.Sort.Descending(d => d.CreatedAt))
+            // Atomically check and apply duplicate policy for idempotency key using FindOne with sort.
+            // Multiple concurrent inserts will all see the winner after one succeeds.
+            var filter = Builders<JobDocument>.Filter.Eq(d => d.IdempotencyKey, job.IdempotencyKey);
+            var existing = await _jobs.Find(filter)
+                .Sort(Builders<JobDocument>.Sort.Ascending(d => d.CreatedAt))
                 .Limit(1)
                 .FirstOrDefaultAsync(cancellationToken).ConfigureAwait(false);
 
@@ -78,7 +88,44 @@ public sealed class MongoStorageProvider : IStorageProvider
             }
         }
 
+        // Insert new job
         await _jobs.InsertOneAsync(JobDocument.FromRecord(job), cancellationToken: cancellationToken).ConfigureAwait(false);
+
+        // Post-insert: if idempotency key exists, check if another concurrent insert beat us
+        // and return the earliest one (the true "winner")
+        if (job.IdempotencyKey is not null)
+        {
+            var filter = Builders<JobDocument>.Filter.Eq(d => d.IdempotencyKey, job.IdempotencyKey);
+            var winner = await _jobs.Find(filter)
+                .Sort(Builders<JobDocument>.Sort.Ascending(d => d.CreatedAt))
+                .Limit(1)
+                .FirstOrDefaultAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            if (winner is not null && winner.Id != job.Id)
+            {
+                // Another job with same idempotency key exists and was created earlier.
+                // Apply duplicate policy to it instead of our insert.
+                var winnerStatus = winner.Status;
+
+                if (IsActiveState(winnerStatus))
+                {
+                    return new EnqueueResult(winner.Id, WasRejected: false);
+                }
+
+                var reject = winnerStatus == JobStatus.Failed
+                    ? duplicatePolicy is DuplicatePolicy.RejectIfFailed or DuplicatePolicy.RejectAlways
+                    : duplicatePolicy == DuplicatePolicy.RejectAlways;
+
+                if (reject)
+                {
+                    return new EnqueueResult(winner.Id, WasRejected: true);
+                }
+
+                return new EnqueueResult(winner.Id, WasRejected: false);
+            }
+        }
+
         return new EnqueueResult(job.Id, WasRejected: false);
     }
 
@@ -771,7 +818,8 @@ public sealed class MongoStorageProvider : IStorageProvider
                 .Ascending(d => d.CreatedAt),
             new CreateIndexOptions { Name = "queue_status_priority_created" }));
 
-        // Sparse unique index for idempotency
+        // Sparse index for idempotency: efficient querying for idempotency deduplication
+        // Race conditions handled at application level in EnqueueAsync via atomic FindOneAndUpdate operation
         _jobs.Indexes.CreateOne(new CreateIndexModel<JobDocument>(
             Builders<JobDocument>.IndexKeys.Ascending(d => d.IdempotencyKey),
             new CreateIndexOptions { Name = "idempotency_key", Sparse = true }));

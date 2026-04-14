@@ -125,6 +125,13 @@ internal static class SchemaSql
         );
         """;
 
+    /// <summary>V8: Add unique index for idempotency_key to prevent concurrent duplicates.</summary>
+    internal const string V8AddIdempotencyKeyIndex =
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_nexjob_jobs_idempotency_key ON nexjob_jobs (idempotency_key)
+            WHERE idempotency_key IS NOT NULL;
+        """;
+
     /// <summary>Full initial schema — kept for backward compatibility. Prefer the versioned consts.</summary>
     internal const string CreateTables = V1CreateTables;
 }
