@@ -17,7 +17,7 @@ public sealed class SchemaMigratorTests
     [Fact]
     public void Postgres_GetPending_AllApplied_ReturnsEmpty()
     {
-        var applied = new HashSet<int> { 1, 2, 3, 4, 5, 6, 7 };
+        var applied = new HashSet<int> { 1, 2, 3, 4, 5, 6, 7, 8 };
 
         var pending = NexJob.Postgres.SchemaMigrator
             .GetPendingMigrations(NexJob.Postgres.SchemaMigrator.AllMigrations, applied);
@@ -45,21 +45,21 @@ public sealed class SchemaMigratorTests
             .GetPendingMigrations(NexJob.Postgres.SchemaMigrator.AllMigrations, applied)
             .ToList();
 
-        pending.Should().HaveCount(5);
-        pending.Select(m => m.Version).Should().Equal(3, 4, 5, 6, 7);
+        pending.Should().HaveCount(6);
+        pending.Select(m => m.Version).Should().Equal(3, 4, 5, 6, 7, 8);
     }
 
     [Fact]
     public void Postgres_GetPending_OutOfOrderApplied_ReturnsCorrect()
     {
-        // Versions 1 and 3 applied; 2, 4, 5, 6, 7 missing
+        // Versions 1 and 3 applied; 2, 4, 5, 6, 7, 8 missing
         var applied = new HashSet<int> { 1, 3 };
 
         var pending = NexJob.Postgres.SchemaMigrator
             .GetPendingMigrations(NexJob.Postgres.SchemaMigrator.AllMigrations, applied)
             .ToList();
 
-        pending.Select(m => m.Version).Should().Equal(2, 4, 5, 6, 7);
+        pending.Select(m => m.Version).Should().Equal(2, 4, 5, 6, 7, 8);
     }
 
     [Fact]
@@ -83,7 +83,7 @@ public sealed class SchemaMigratorTests
     [Fact]
     public void SqlServer_GetPending_AllApplied_ReturnsEmpty()
     {
-        var applied = new HashSet<int> { 1, 2, 3, 4, 5, 6, 7 };
+        var applied = new HashSet<int> { 1, 2, 3, 4, 5, 6, 7, 8 };
 
         var pending = NexJob.SqlServer.SchemaMigrator
             .GetPendingMigrations(NexJob.SqlServer.SchemaMigrator.AllMigrations, applied);
@@ -111,8 +111,8 @@ public sealed class SchemaMigratorTests
             .GetPendingMigrations(NexJob.SqlServer.SchemaMigrator.AllMigrations, applied)
             .ToList();
 
-        pending.Should().HaveCount(5);
-        pending.Select(m => m.Version).Should().Equal(3, 4, 5, 6, 7);
+        pending.Should().HaveCount(6);
+        pending.Select(m => m.Version).Should().Equal(3, 4, 5, 6, 7, 8);
     }
 
     [Fact]
@@ -124,7 +124,7 @@ public sealed class SchemaMigratorTests
             .GetPendingMigrations(NexJob.SqlServer.SchemaMigrator.AllMigrations, applied)
             .ToList();
 
-        pending.Select(m => m.Version).Should().Equal(2, 4, 5, 6, 7);
+        pending.Select(m => m.Version).Should().Equal(2, 4, 5, 6, 7, 8);
     }
 
     [Fact]
