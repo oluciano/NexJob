@@ -42,6 +42,10 @@ jobs:
           dotnet build --no-restore --configuration Release
       - name: Pack
         run: |
+          mkdir -p ./nupkg
+          rm -f ./nupkg/*.nupkg
+          
+          # Core and Storages
           dotnet pack src/NexJob/NexJob.csproj --no-build --configuration Release --output ./nupkg
           dotnet pack src/NexJob.Postgres/NexJob.Postgres.csproj --no-build --configuration Release --output ./nupkg
           dotnet pack src/NexJob.MongoDB/NexJob.MongoDB.csproj --no-build --configuration Release --output ./nupkg
@@ -49,6 +53,18 @@ jobs:
           dotnet pack src/NexJob.Dashboard.Standalone/NexJob.Dashboard.Standalone.csproj --no-build --configuration Release --output ./nupkg
           dotnet pack src/NexJob.SqlServer/NexJob.SqlServer.csproj --no-build --configuration Release --output ./nupkg
           dotnet pack src/NexJob.Redis/NexJob.Redis.csproj --no-build --configuration Release --output ./nupkg
+          
+          # Observability
+          dotnet pack src/NexJob.OpenTelemetry/NexJob.OpenTelemetry.csproj --no-build --configuration Release --output ./nupkg
+          
+          # Triggers
+          dotnet pack src/NexJob.Trigger.AwsSqs/NexJob.Trigger.AwsSqs.csproj --no-build --configuration Release --output ./nupkg
+          dotnet pack src/NexJob.Trigger.AzureServiceBus/NexJob.Trigger.AzureServiceBus.csproj --no-build --configuration Release --output ./nupkg
+          dotnet pack src/NexJob.Trigger.Kafka/NexJob.Trigger.Kafka.csproj --no-build --configuration Release --output ./nupkg
+          dotnet pack src/NexJob.Trigger.RabbitMQ/NexJob.Trigger.RabbitMQ.csproj --no-build --configuration Release --output ./nupkg
+          dotnet pack src/NexJob.Trigger.GooglePubSub/NexJob.Trigger.GooglePubSub.csproj --no-build --configuration Release --output ./nupkg
+          
+          # Templates
           dotnet pack templates/NexJob.Templates.csproj --configuration Release --output ./nupkg
       - name: Push to NuGet.org
         env:
