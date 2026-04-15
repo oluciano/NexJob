@@ -1,7 +1,7 @@
+using System.Reflection;
 using System.Text.Json;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using NexJob.Storage;
@@ -12,26 +12,22 @@ namespace NexJob.Internal.Tests;
 public sealed class JobExecutorTests
 {
     private readonly Mock<IJobStorage> _storage = new();
-    private readonly Mock<IServiceScopeFactory> _scopeFactory = new();
-    private readonly Mock<IServiceScope> _scope = new();
-    private readonly Mock<IServiceProvider> _serviceProvider = new();
-    private readonly Mock<IJobContextAccessor> _contextAccessor = new();
-    private readonly Mock<IMigrationPipeline> _migrationPipeline = new();
+    private readonly Mock<IJobInvokerFactory> _invokerFactory = new();
+    private readonly TestServiceScopeFactory _scopeFactory = new();
     private readonly ThrottleRegistry _throttleRegistry = new();
     private readonly NexJobOptions _options = new();
     private readonly JobExecutor _sut;
 
     public JobExecutorTests()
     {
-        _scopeFactory.Setup(x => x.CreateScope()).Returns(_scope.Object);
-        _scope.Setup(x => x.ServiceProvider).Returns(_serviceProvider.Object);
-
-        _serviceProvider.Setup(x => x.GetService(typeof(IJobContextAccessor))).Returns(_contextAccessor.Object);
-        _serviceProvider.Setup(x => x.GetService(typeof(IMigrationPipeline))).Returns(_migrationPipeline.Object);
+        _invokerFactory
+            .Setup(x => x.PrepareAsync(It.IsAny<JobRecord>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((JobRecord job, CancellationToken _) => MakeContext(job));
 
         _sut = new JobExecutor(
             _storage.Object,
-            _scopeFactory.Object,
+            _invokerFactory.Object,
+            _scopeFactory,
             _throttleRegistry,
             _options,
             Enumerable.Empty<IJobExecutionFilter>(),
@@ -43,10 +39,6 @@ public sealed class JobExecutorTests
     {
         // Arrange
         var job = MakeJob<TestJob, TestInput>(new TestInput("test"));
-        var jobInstance = new TestJob();
-        _serviceProvider.Setup(x => x.GetService(typeof(TestJob))).Returns(jobInstance);
-        _migrationPipeline.Setup(x => x.Migrate(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<Type>()))
-            .Returns(job.InputJson);
 
         // Act
         await _sut.ExecuteJobAsync(job);
@@ -64,10 +56,6 @@ public sealed class JobExecutorTests
         // Arrange
         var job = MakeJob<FailingJob, TestInput>(new TestInput("test"), maxAttempts: 3);
         job.Attempts = 1;
-        var jobInstance = new FailingJob();
-        _serviceProvider.Setup(x => x.GetService(typeof(FailingJob))).Returns(jobInstance);
-        _migrationPipeline.Setup(x => x.Migrate(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<Type>()))
-            .Returns(job.InputJson);
 
         // Act
         await _sut.ExecuteJobAsync(job);
@@ -85,10 +73,6 @@ public sealed class JobExecutorTests
         // Arrange
         var job = MakeJob<FailingJob, TestInput>(new TestInput("test"), maxAttempts: 1);
         job.Attempts = 1;
-        var jobInstance = new FailingJob();
-        _serviceProvider.Setup(x => x.GetService(typeof(FailingJob))).Returns(jobInstance);
-        _migrationPipeline.Setup(x => x.Migrate(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<Type>()))
-            .Returns(job.InputJson);
 
         // Act
         await _sut.ExecuteJobAsync(job);
@@ -111,7 +95,7 @@ public sealed class JobExecutorTests
 
         // Assert
         _storage.Verify(x => x.SetExpiredAsync(job.Id, It.IsAny<CancellationToken>()), Times.Once);
-        _serviceProvider.Verify(x => x.GetService(typeof(TestJob)), Times.Never);
+        _invokerFactory.Verify(x => x.PrepareAsync(It.IsAny<JobRecord>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -120,12 +104,8 @@ public sealed class JobExecutorTests
         // Arrange
         var job = MakeJob<FailingJob, TestInput>(new TestInput("test"), maxAttempts: 1);
         job.Attempts = 1;
-        var jobInstance = new FailingJob();
         var handler = new Mock<IDeadLetterHandler<FailingJob>>();
-        _serviceProvider.Setup(x => x.GetService(typeof(FailingJob))).Returns(jobInstance);
-        _serviceProvider.Setup(x => x.GetService(typeof(IDeadLetterHandler<FailingJob>))).Returns(handler.Object);
-        _migrationPipeline.Setup(x => x.Migrate(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<Type>()))
-            .Returns(job.InputJson);
+        _scopeFactory.SetService<IDeadLetterHandler<FailingJob>>(handler.Object);
 
         // Act
         await _sut.ExecuteJobAsync(job);
@@ -140,14 +120,10 @@ public sealed class JobExecutorTests
         // Arrange
         var job = MakeJob<FailingJob, TestInput>(new TestInput("test"), maxAttempts: 1);
         job.Attempts = 1;
-        var jobInstance = new FailingJob();
         var handler = new Mock<IDeadLetterHandler<FailingJob>>();
         handler.Setup(x => x.HandleAsync(It.IsAny<JobRecord>(), It.IsAny<Exception>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new Exception("handler failure"));
-        _serviceProvider.Setup(x => x.GetService(typeof(FailingJob))).Returns(jobInstance);
-        _serviceProvider.Setup(x => x.GetService(typeof(IDeadLetterHandler<FailingJob>))).Returns(handler.Object);
-        _migrationPipeline.Setup(x => x.Migrate(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<Type>()))
-            .Returns(job.InputJson);
+        _scopeFactory.SetService<IDeadLetterHandler<FailingJob>>(handler.Object);
 
         // Act
         Func<Task> act = () => _sut.ExecuteJobAsync(job);
@@ -161,18 +137,14 @@ public sealed class JobExecutorTests
     {
         // Arrange
         var job = MakeJob<TestJob, TestInput>(new TestInput("test"));
-        var jobInstance = new TestJob();
         var filter = new Mock<IJobExecutionFilter>();
         filter.Setup(x => x.OnExecutingAsync(It.IsAny<JobExecutingContext>(), It.IsAny<JobExecutionDelegate>(), It.IsAny<CancellationToken>()))
             .Returns<JobExecutingContext, JobExecutionDelegate, CancellationToken>((ctx, next, cancellationToken) => next(cancellationToken));
 
-        _serviceProvider.Setup(x => x.GetService(typeof(TestJob))).Returns(jobInstance);
-        _migrationPipeline.Setup(x => x.Migrate(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<Type>()))
-            .Returns(job.InputJson);
-
         var sutWithFilters = new JobExecutor(
             _storage.Object,
-            _scopeFactory.Object,
+            _invokerFactory.Object,
+            _scopeFactory,
             _throttleRegistry,
             _options,
             new[] { filter.Object },
@@ -191,18 +163,14 @@ public sealed class JobExecutorTests
         // Arrange
         var job = MakeJob<TestJob, TestInput>(new TestInput("test"), maxAttempts: 1);
         job.Attempts = 1;
-        var jobInstance = new TestJob();
         var filter = new Mock<IJobExecutionFilter>();
         filter.Setup(x => x.OnExecutingAsync(It.IsAny<JobExecutingContext>(), It.IsAny<JobExecutionDelegate>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new Exception("filter failure"));
 
-        _serviceProvider.Setup(x => x.GetService(typeof(TestJob))).Returns(jobInstance);
-        _migrationPipeline.Setup(x => x.Migrate(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<Type>()))
-            .Returns(job.InputJson);
-
         var sutWithFilters = new JobExecutor(
             _storage.Object,
-            _scopeFactory.Object,
+            _invokerFactory.Object,
+            _scopeFactory,
             _throttleRegistry,
             _options,
             new[] { filter.Object },
@@ -216,6 +184,82 @@ public sealed class JobExecutorTests
             job.Id,
             It.Is<JobExecutionResult>(r => !r.Succeeded),
             It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task ExecuteJobAsync_InvokerFactoryThrows_CommitsFailure()
+    {
+        // Arrange
+        var job = MakeJob<TestJob, TestInput>(new TestInput("test"), maxAttempts: 1);
+        job.Attempts = 1;
+        _invokerFactory
+            .Setup(x => x.PrepareAsync(job, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("factory failure"));
+
+        // Act
+        await _sut.ExecuteJobAsync(job);
+
+        // Assert
+        _storage.Verify(x => x.CommitJobResultAsync(
+            job.Id,
+            It.Is<JobExecutionResult>(r => !r.Succeeded),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task ExecuteJobAsync_InvokerFactory_CalledWithCorrectJob()
+    {
+        // Arrange
+        var job = MakeJob<TestJob, TestInput>(new TestInput("test"));
+
+        // Act
+        await _sut.ExecuteJobAsync(job);
+
+        // Assert
+        _invokerFactory.Verify(x => x.PrepareAsync(job, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    private static JobInvocationContext MakeContext(JobRecord job)
+    {
+        var jobType = JobTypeResolver.ResolveJobType(job.JobType)
+                      ?? throw new InvalidOperationException($"Cannot load job type: {job.JobType}");
+        var inputType = JobTypeResolver.ResolveInputType(job.InputType)
+                       ?? throw new InvalidOperationException($"Cannot load input type: {job.InputType}");
+        var input = JsonSerializer.Deserialize(job.InputJson, inputType)
+                    ?? throw new InvalidOperationException($"Deserialized null input for job {job.Id}.");
+        var jobInstance = Activator.CreateInstance(jobType)
+                          ?? throw new InvalidOperationException($"Cannot create job type: {job.JobType}");
+        var method = GetExecuteMethod(jobType, inputType);
+        var throttleAttrs = jobType.GetCustomAttributes<ThrottleAttribute>(inherit: true);
+
+        return new JobInvocationContext(
+            new TestServiceScope(new TestServiceProvider()),
+            jobInstance,
+            input,
+            (instance, value, cancellationToken) => Invoke(method, inputType, instance, value, cancellationToken),
+            throttleAttrs);
+    }
+
+    private static Task Invoke(MethodInfo method, Type inputType, object instance, object input, CancellationToken cancellationToken)
+    {
+        if (inputType == typeof(NoInput))
+        {
+            return (Task)method.Invoke(instance, new object[] { cancellationToken })!;
+        }
+
+        return (Task)method.Invoke(instance, new object[] { input, cancellationToken })!;
+    }
+
+    private static MethodInfo GetExecuteMethod(Type jobType, Type inputType)
+    {
+        if (inputType == typeof(NoInput))
+        {
+            return jobType.GetMethod(nameof(IJob.ExecuteAsync), new[] { typeof(CancellationToken) })
+                   ?? throw new InvalidOperationException($"Cannot find ExecuteAsync method on {jobType.Name}");
+        }
+
+        return jobType.GetMethod(nameof(IJob<object>.ExecuteAsync), new[] { inputType, typeof(CancellationToken) })
+               ?? throw new InvalidOperationException($"Cannot find ExecuteAsync method on {jobType.Name}");
     }
 
     private static JobRecord MakeJob<TJob, TInput>(TInput input, int maxAttempts = 5, DateTimeOffset? expiresAt = null)
@@ -238,6 +282,7 @@ public sealed class JobExecutorTests
     public sealed class TestInput
     {
         public string Value { get; }
+
         public TestInput(string value) => Value = value;
     }
 
@@ -249,5 +294,45 @@ public sealed class JobExecutorTests
     public sealed class FailingJob : IJob<TestInput>
     {
         public Task ExecuteAsync(TestInput input, CancellationToken cancellationToken) => throw new Exception("job failed");
+    }
+
+    private sealed class TestServiceScopeFactory : IServiceScopeFactory
+    {
+        private readonly TestServiceProvider _serviceProvider = new();
+
+        public void SetService<TService>(TService service)
+            where TService : class
+        {
+            _serviceProvider.Set(typeof(TService), service);
+        }
+
+        public IServiceScope CreateScope() => new TestServiceScope(_serviceProvider);
+    }
+
+    private sealed class TestServiceScope : IServiceScope
+    {
+        public TestServiceScope(IServiceProvider serviceProvider) => ServiceProvider = serviceProvider;
+
+        public IServiceProvider ServiceProvider { get; }
+
+        public void Dispose()
+        {
+        }
+    }
+
+    private sealed class TestServiceProvider : IServiceProvider
+    {
+        private readonly Dictionary<Type, object> _services = new();
+
+        public object? GetService(Type serviceType)
+        {
+            _services.TryGetValue(serviceType, out var service);
+            return service;
+        }
+
+        public void Set(Type serviceType, object service)
+        {
+            _services[serviceType] = service;
+        }
     }
 }
