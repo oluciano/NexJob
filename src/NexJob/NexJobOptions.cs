@@ -31,6 +31,15 @@ public sealed class NexJobOptions
     public int MaxAttempts { get; set; } = 10;
 
     /// <summary>
+    /// TTL for distributed throttle slots in Redis.
+    /// Serves as a dead-man switch: if a worker crashes without releasing a slot,
+    /// the slot expires automatically after this duration.
+    /// Must be greater than the longest expected job execution time.
+    /// Defaults to 1 hour.
+    /// </summary>
+    public TimeSpan DistributedThrottleTtl { get; set; } = TimeSpan.FromHours(1);
+
+    /// <summary>
     /// How often the dispatcher polls storage for new jobs when none are immediately available.
     /// Defaults to <c>15 seconds</c>.
     /// </summary>

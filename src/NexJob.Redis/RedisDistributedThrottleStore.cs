@@ -33,14 +33,17 @@ internal sealed class RedisDistributedThrottleStore : IDistributedThrottleStore
     ");
 
     private readonly IDatabase _db;
+    private readonly int _ttlSeconds;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="RedisDistributedThrottleStore"/> class.
     /// </summary>
     /// <param name="db">The redis database.</param>
-    public RedisDistributedThrottleStore(IDatabase db)
+    /// <param name="options">The NexJob options.</param>
+    public RedisDistributedThrottleStore(IDatabase db, NexJobOptions options)
     {
         _db = db;
+        _ttlSeconds = (int)options.DistributedThrottleTtl.TotalSeconds;
     }
 
     /// <inheritdoc/>
@@ -51,7 +54,7 @@ internal sealed class RedisDistributedThrottleStore : IDistributedThrottleStore
         var result = await _db.ScriptEvaluateAsync(
             AcquireScript.ExecutableScript,
             [(RedisKey)key],
-            [(RedisValue)maxConcurrent.ToString(CultureInfo.InvariantCulture), (RedisValue)"3600"]).ConfigureAwait(false);
+            [(RedisValue)maxConcurrent.ToString(CultureInfo.InvariantCulture), (RedisValue)_ttlSeconds.ToString(CultureInfo.InvariantCulture)]).ConfigureAwait(false);
 
         return (int)result == 1;
     }

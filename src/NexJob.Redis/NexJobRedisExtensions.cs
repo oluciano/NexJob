@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using NexJob.Configuration;
 using NexJob.Storage;
 using StackExchange.Redis;
@@ -21,13 +22,15 @@ public static class NexJobRedisExtensions
         string connectionString)
     {
         var mux = ConnectionMultiplexer.Connect(connectionString);
-        services.AddSingleton(_ => new RedisStorageProvider(mux.GetDatabase()));
+        var db = mux.GetDatabase();
+        services.TryAddSingleton(db);
+        services.AddSingleton(_ => new RedisStorageProvider(db));
         services.AddSingleton<IStorageProvider>(sp => sp.GetRequiredService<RedisStorageProvider>());
         services.AddSingleton<IJobStorage>(sp => sp.GetRequiredService<RedisStorageProvider>());
         services.AddSingleton<IRecurringStorage>(sp => sp.GetRequiredService<RedisStorageProvider>());
         services.AddSingleton<IDashboardStorage>(sp => sp.GetRequiredService<RedisStorageProvider>());
 
-        services.AddSingleton<IRuntimeSettingsStore>(_ => new RedisRuntimeSettingsStore(mux.GetDatabase()));
+        services.AddSingleton<IRuntimeSettingsStore>(_ => new RedisRuntimeSettingsStore(db));
 
         return services;
     }
@@ -43,14 +46,16 @@ public static class NexJobRedisExtensions
         this IServiceCollection services,
         IConnectionMultiplexer multiplexer)
     {
-        services.AddSingleton(_ => new RedisStorageProvider(multiplexer.GetDatabase()));
+        var db = multiplexer.GetDatabase();
+        services.TryAddSingleton(db);
+        services.AddSingleton(_ => new RedisStorageProvider(db));
         services.AddSingleton<IStorageProvider>(sp => sp.GetRequiredService<RedisStorageProvider>());
         services.AddSingleton<IJobStorage>(sp => sp.GetRequiredService<RedisStorageProvider>());
         services.AddSingleton<IRecurringStorage>(sp => sp.GetRequiredService<RedisStorageProvider>());
         services.AddSingleton<IDashboardStorage>(sp => sp.GetRequiredService<RedisStorageProvider>());
 
         services.AddSingleton<IRuntimeSettingsStore>(
-            _ => new RedisRuntimeSettingsStore(multiplexer.GetDatabase()));
+            _ => new RedisRuntimeSettingsStore(db));
 
         return services;
     }
