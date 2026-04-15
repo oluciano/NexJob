@@ -21,19 +21,20 @@ public static class NexJobServiceCollectionExtensions
     /// <param name="configure">
     /// Optional delegate to customise <see cref="NexJobOptions"/>. When omitted, defaults are used.
     /// </param>
-    /// <returns>The original <paramref name="services"/> for chaining.</returns>
+    /// <returns>A <see cref="NexJobBuilder"/> for further configuration.</returns>
     /// <remarks>
     /// By default the in-memory storage provider is registered. To use a persistent provider,
     /// register your own <see cref="IStorageProvider"/> implementation <em>before</em> calling
     /// this method — <c>TryAdd</c> semantics ensure it will not be overwritten.
     /// </remarks>
-    public static IServiceCollection AddNexJob(
+    public static NexJobBuilder AddNexJob(
         this IServiceCollection services,
         Action<NexJobOptions>? configure = null)
     {
         var options = new NexJobOptions();
         configure?.Invoke(options);
-        return RegisterCore(services, options);
+        RegisterCore(services, options);
+        return new NexJobBuilder(services);
     }
 
     /// <summary>
@@ -42,13 +43,14 @@ public static class NexJobServiceCollectionExtensions
     /// </summary>
     /// <param name="services">The service collection to configure.</param>
     /// <param name="configuration">The application configuration root.</param>
-    /// <returns>The original <paramref name="services"/> for chaining.</returns>
-    public static IServiceCollection AddNexJob(
+    /// <returns>A <see cref="NexJobBuilder"/> for further configuration.</returns>
+    public static NexJobBuilder AddNexJob(
         this IServiceCollection services,
         IConfiguration configuration)
     {
         var options = BuildFromConfiguration(configuration);
-        return RegisterCore(services, options);
+        RegisterCore(services, options);
+        return new NexJobBuilder(services);
     }
 
     /// <summary>
@@ -58,15 +60,16 @@ public static class NexJobServiceCollectionExtensions
     /// <param name="services">The service collection to configure.</param>
     /// <param name="configuration">The application configuration root.</param>
     /// <param name="configure">Delegate that can override values after appsettings are applied.</param>
-    /// <returns>The original <paramref name="services"/> for chaining.</returns>
-    public static IServiceCollection AddNexJob(
+    /// <returns>A <see cref="NexJobBuilder"/> for further configuration.</returns>
+    public static NexJobBuilder AddNexJob(
         this IServiceCollection services,
         IConfiguration configuration,
         Action<NexJobOptions> configure)
     {
         var options = BuildFromConfiguration(configuration);
         configure(options);
-        return RegisterCore(services, options);
+        RegisterCore(services, options);
+        return new NexJobBuilder(services);
     }
 
     /// <summary>
@@ -106,6 +109,20 @@ public static class NexJobServiceCollectionExtensions
     }
 
     /// <summary>
+    /// Registers jobs from <paramref name="assembly"/> using the <see cref="NexJobBuilder"/>.
+    /// </summary>
+    /// <param name="builder">The builder.</param>
+    /// <param name="assembly">The assembly.</param>
+    /// <returns>The builder instance.</returns>
+    public static NexJobBuilder AddNexJobJobs(
+        this NexJobBuilder builder,
+        Assembly assembly)
+    {
+        builder.Services.AddNexJobJobs(assembly);
+        return builder;
+    }
+
+    /// <summary>
     /// Registers an <see cref="IJobMigration{TOld,TNew}"/> implementation and its
     /// associated <see cref="NexJob.Internal.MigrationDescriptor"/> so that
     /// <see cref="NexJob.Internal.MigrationPipeline"/> can automatically upgrade
@@ -142,7 +159,7 @@ public static class NexJobServiceCollectionExtensions
         return options;
     }
 
-    private static IServiceCollection RegisterCore(IServiceCollection services, NexJobOptions options)
+    private static void RegisterCore(IServiceCollection services, NexJobOptions options)
     {
         services.AddSingleton(options);
         services.TryAddSingleton<InMemoryStorageProvider>();
@@ -179,8 +196,6 @@ public static class NexJobServiceCollectionExtensions
             ?? throw new InvalidOperationException(
                 "IJobContext is only available during job execution. " +
                 "Do not resolve it outside of an IJob<TInput>.ExecuteAsync call."));
-
-        return services;
     }
 
     private static NexJobJobRegistry GetOrCreateRegistry(IServiceCollection services)

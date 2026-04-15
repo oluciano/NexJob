@@ -15,6 +15,7 @@ namespace NexJob.Postgres;
 public sealed class PostgresStorageProvider : IStorageProvider
 {
     private readonly string _connectionString;
+    private readonly NpgsqlDataSource? _dataSource;
 
     /// <summary>
     /// Initialises the provider and applies all pending schema migrations.
@@ -30,6 +31,19 @@ public sealed class PostgresStorageProvider : IStorageProvider
 #pragma warning disable RS0030
         new SchemaMigrator().MigrateAsync(connectionString).GetAwaiter().GetResult();
 #pragma warning restore RS0030
+    }
+
+    /// <summary>
+    /// Initialises the provider with an existing <see cref="NpgsqlDataSource"/>.
+    /// Migrations are NOT applied when using this constructor (typically used for read replicas).
+    /// </summary>
+    /// <param name="dataSource">The data source.</param>
+    /// <param name="options">The nex job options.</param>
+    public PostgresStorageProvider(NpgsqlDataSource dataSource, NexJobOptions options)
+    {
+        _dataSource = dataSource;
+        _connectionString = dataSource.ConnectionString;
+        Dapper.DefaultTypeMap.MatchNamesWithUnderscores = true;
     }
 
     // ── EnqueueAsync ──────────────────────────────────────────────────────────
@@ -971,6 +985,7 @@ public sealed class PostgresStorageProvider : IStorageProvider
     private static bool IsActiveState(JobStatus status) =>
         status is JobStatus.Enqueued or JobStatus.Processing or JobStatus.Scheduled or JobStatus.AwaitingContinuation;
 
-    private NpgsqlConnection Open() => new(_connectionString);
+    private NpgsqlConnection Open() => _dataSource?.CreateConnection() ?? new NpgsqlConnection(_connectionString);
 }
 #pragma warning restore MA0004
+

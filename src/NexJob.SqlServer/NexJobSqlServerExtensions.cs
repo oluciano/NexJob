@@ -1,3 +1,4 @@
+using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
 using NexJob.Configuration;
 using NexJob.Storage;
@@ -27,5 +28,27 @@ public static class NexJobSqlServerExtensions
 
         services.AddSingleton<IRuntimeSettingsStore>(_ => new SqlServerRuntimeSettingsStore(connectionString));
         return services;
+    }
+
+    /// <summary>
+    /// Configures a separate SQL Server connection for dashboard read queries.
+    /// </summary>
+    /// <param name="builder">The NexJob builder.</param>
+    /// <param name="readReplicaConnectionString">
+    /// Connection string pointing to the read replica.
+    /// </param>
+    /// <returns>The builder instance.</returns>
+    public static NexJobBuilder UseDashboardReadReplica(
+        this NexJobBuilder builder,
+        string readReplicaConnectionString)
+    {
+        builder.Services.AddSingleton<IDashboardStorage>(sp =>
+        {
+            var options = sp.GetRequiredService<NexJobOptions>();
+            var conn = new SqlConnection(readReplicaConnectionString);
+            return new SqlServerStorageProvider(conn, options);
+        });
+
+        return builder;
     }
 }
