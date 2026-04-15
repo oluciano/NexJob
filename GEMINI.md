@@ -19,61 +19,86 @@ Before executing any task, read:
 
 NexJob is a production-oriented background job processing library for .NET 8.
 MIT licensed. Alternative to Hangfire — storage-pluggable, trigger-ready, OTel-native.
-Current published version: **v1.0.0**. Active development: **v2.0.0**.
+Current published version: **v2.0.0**. Active development: **v3.0.0** (branch: `v3_implementation`).
 
 ---
 
-## What Is v2
+## What Is v3
 
-v2 adds external triggers to NexJob — broker messages that fire NexJob jobs.
+v3 is an internal architecture refactor focused on testability and SOLID compliance.
+No new public features — all changes are internal.
 
-Trigger packages: `NexJob.Trigger.AzureServiceBus`, `NexJob.Trigger.AwsSqs`, `NexJob.Trigger.RabbitMQ`, `NexJob.Trigger.Kafka`, `NexJob.Trigger.GooglePubSub`.
-
-Each is an **external package** that depends on NexJob.Core. They never modify core.
-
-The trigger flow:
-```
-[Broker message] → [Trigger package] → JobRecordFactory.Build() → IScheduler.EnqueueAsync() → JobWakeUpChannel.Signal() (internal)
-```
+Key changes shipped in v3:
+- `IStorageProvider` split into `IJobStorage`, `IRecurringStorage`, `IDashboardStorage`
+- `JobExecutor` extracted from `JobDispatcherService`
+- `IJobInvokerFactory` — encapsulates type resolution, migration, scope creation
+- `IJobRetryPolicy` — encapsulates retry delay calculation
+- `IDeadLetterDispatcher` — encapsulates dead-letter handler resolution and invocation
+- `IJobControlService` — programmatic requeue/delete/pause outside dashboard
+- `UseDashboardReadReplica()` — opt-in read replica for PostgreSQL and SQL Server
+- `UseDistributedThrottle()` — opt-in global Redis throttle enforcement
+- `NexJobBuilder` — fluent builder returned by `AddNexJob()`
 
 ---
 
-## Implemented (v1.0.0 + v2 in progress)
+## Implemented (v3.0.0)
 
-- `IJob` / `IJob<T>`, wake-up channel, deadline, retry, throttle, recurring jobs
-- Dashboard, OpenTelemetry, health checks
-- 5 storage providers: InMemory, PostgreSQL, SQL Server, Redis, MongoDB
-- `DuplicatePolicy`, `CommitJobResultAsync`, `IJobExecutionFilter`, job retention
-- `JobRecordFactory` — internal factory for building `JobRecord` (PR #91)
-- `IScheduler.EnqueueAsync(JobRecord, ...)` — non-generic overload (PR #94)
+**Core execution:**
+- `IJob` / `IJob<T>`, wake-up channel, deadline enforcement, retry, throttle, recurring jobs
+- `JobDispatcherService` — polling loop + worker slots (~180 lines)
+- `JobExecutor` — single job execution pipeline (~260 lines)
+- `IJobInvokerFactory` / `DefaultJobInvokerFactory` — type resolution + scope creation
+- `IJobRetryPolicy` / `DefaultJobRetryPolicy` — retry delay calculation
+- `IDeadLetterDispatcher` / `DefaultDeadLetterDispatcher` — handler invocation
+- `IJobExecutionFilter` — middleware pipeline for cross-cutting concerns
+- `IJobControlService` — programmatic job and queue control
+
+**Storage (segregated interfaces):**
+- `IJobStorage` — hot-path execution contract
+- `IRecurringStorage` — recurring job scheduling contract
+- `IDashboardStorage` — read-heavy dashboard queries
+- `IStorageProvider` — composed interface (IJobStorage + IRecurringStorage + IDashboardStorage)
+- 5 providers: InMemory, PostgreSQL, SQL Server, Redis, MongoDB
+- `UseDashboardReadReplica()` — opt-in read replica (PostgreSQL, SQL Server)
+
+**Triggers (v2, stable):**
 - `NexJob.Trigger.AzureServiceBus` ✅
 - `NexJob.Trigger.AwsSqs` ✅
+- `NexJob.Trigger.RabbitMQ` ✅
+- `NexJob.Trigger.Kafka` ✅
+- `NexJob.Trigger.GooglePubSub` ✅
+- `NexJob.OpenTelemetry` ✅
+
+**Dashboard:**
+- `NexJob.Dashboard` — embedded ASP.NET Core middleware
+- `NexJob.Dashboard.Standalone` — embedded HTTP server for Worker Services
+- `IDashboardAuthorizationHandler` — pluggable auth
 
 ---
 
-## Your Lane in v2
+## Your Lane in v3
 
 ### ✅ You own — Implementation
-- `NexJob.Trigger.GooglePubSub` — full implementation (see broker notes in `skills/nexjob-trigger.md`)
-- `NexJob.OpenTelemetry` package — `AddNexJobInstrumentation()` opt-in extension
-- Tests for packages you implement — unit tests with mocks following `MockScheduler` pattern
 - Backend tasks explicitly assigned by the architect
+- Trigger package maintenance and bugfixes
+- Documentation — wiki, migration guides, README files
+- Dashboard UI updates
+- Wiki updates
+- Well-scoped refactors with explicit acceptance criteria
 
-### ✅ You own — Docs & Dashboard
-- `README.md` for each trigger package
-- Usage examples for each trigger
-- Dashboard UI updates for v2 (trigger source display, OTel metrics panel)
-- Wiki updates — trigger section, OTel section, v2 migration guide
-- Getting started guide updates
+### ✅ You own — Review
+- PR review on all branches before merge (via ai_review.yml)
+- Code quality feedback — StyleCop, naming, test coverage gaps
 
 ### ❌ You do not own
-- Any file inside `src/NexJob` (core) — Claude Code territory only
-- `IStorageProvider`, `JobRecord`, `IScheduler`, `DefaultScheduler`, `JobWakeUpChannel` — never touch
-- RabbitMQ and Kafka triggers — Qwen owns these (higher broker complexity)
+- `src/NexJob/Internal/` — Codex and bruxo territory for complex refactors
+- `IJobStorage`, `IRecurringStorage`, `IDashboardStorage` — never touch interfaces
+- `JobRecord`, `IScheduler`, `JobWakeUpChannel` — never touch
+- RabbitMQ and Kafka trigger internals — high broker complexity (bruxo territory)
 - Any atomic storage operation
 - Public contract changes — always escalate to architect
 
-**If something requires touching core, stop and escalate.**
+**If something requires touching core execution pipeline → STOP and escalate.**
 
 ---
 
@@ -177,6 +202,16 @@ gh pr create \
 - Report exactly what was changed and why
 - If the build fails, report the exact error before attempting a fix
 
-## Engineering Rules
+## Squad Structure
 
-See `CONTRIBUTING.md`
+```
+Claude.ai          → architect — thinks, validates, generates prompts
+Bruxo (Claude Code) → senior executor — critical features, multi-file, architectural risk
+Codex              → senior executor — refactoring, testability, well-specified features
+Gemini (you)       → senior executor — triggers, docs, wiki, PR review, scoped backend tasks
+```
+
+Tasks are routed by architectural risk:
+- High risk / multi-file / invariant-adjacent → bruxo or Codex
+- Scoped / documented / low-risk → Gemini
+- Always: architect approves before execution

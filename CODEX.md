@@ -70,22 +70,38 @@ IStorageProvider  → IJobStorage + IRecurringStorage + IDashboardStorage (compo
 ```
 
 ### Internal execution pipeline
+
 ```
-JobDispatcherService  → polling loop + worker slots (~180 lines, thin orchestrator)
-JobExecutor           → single job execution pipeline (397 lines — target for refactor)
-  PrepareInvocationAsync      → type resolution + payload migration + scope creation
+JobDispatcherService       → polling loop + worker slots (~180 lines, thin orchestrator)
+JobExecutor                → single job execution pipeline (~260 lines, clean orchestrator)
+  _invokerFactory.PrepareAsync()     → IJobInvokerFactory — type resolution + scope
   ExecuteWithThrottlingAndFiltersAsync → throttle + filter pipeline
-  HandleFailureAsync          → retry calculation + telemetry
-  InvokeDeadLetterHandlerAsync → reflection-based handler invocation
+  HandleFailureAsync                 → telemetry + delegates to IJobRetryPolicy
+  _deadLetterDispatcher.DispatchAsync() → IDeadLetterDispatcher — handler invocation
+
+IJobInvokerFactory / DefaultJobInvokerFactory
+  → type resolution, payload migration, DI scope creation, compiled invoker cache
+
+IJobRetryPolicy / DefaultJobRetryPolicy
+  → retry delay calculation (RetryAttribute vs NexJobOptions.RetryDelayFactory)
+  → pure function: ComputeRetryAt(job, exception) → DateTimeOffset?
+
+IDeadLetterDispatcher / DefaultDeadLetterDispatcher
+  → resolves IDeadLetterHandler<TJob> from DI scope
+  → invokes handler, swallows exceptions (invariant: never crash dispatcher)
+
 JobFilterPipeline     → builds IJobExecutionFilter chain (clean, do not touch)
-ThrottleRegistry      → SemaphoreSlim per resource + optional distributed store
+ThrottleRegistry      → SemaphoreSlim per resource + optional IDistributedThrottleStore
 ```
 
 ### Key internal types
+
 ```
 JobInvocationContext  → sealed record: scope, jobInstance, input, invoker, throttleAttrs
-JobTypeResolver       → static class: ResolveJobType, ResolveInputType (no interface — target)
-JobFilterPipeline     → static class: Build() — clean, no changes needed
+                        owned by IJobInvokerFactory — caller must dispose
+JobTypeResolver       → static class: ResolveJobType, ResolveInputType
+                        used by DefaultJobInvokerFactory and DefaultDeadLetterDispatcher
+JobFilterPipeline     → static class: Build() — clean, do not touch
 ```
 
 ### DI registration pattern (all 4 interfaces per provider)
@@ -106,13 +122,26 @@ services.TryAddSingleton<IDashboardStorage>(sp => sp.GetRequiredService<Postgres
 - Reliability tests: distributed scenarios across all 4 real providers
 - `InternalsVisibleTo("NexJob.Tests")` is set — you can test internal classes directly
 - Target: surgical mocks — test one behavior, mock only its direct dependencies
+- Target: JobExecutorTests has exactly 4 mocks: IJobStorage, IJobInvokerFactory,
+  IJobRetryPolicy, IDeadLetterDispatcher — this is the baseline, do not regress
 - Avoid: 5+ mocks in a single test constructor — sign of missing interface extraction
 
-### Current mock pattern (Moq — existing)
+### Current mock pattern (Moq — established baseline)
+
 ```csharp
+// JobExecutorTests baseline — 4 mocks:
 private readonly Mock<IJobStorage> _storage = new();
-_storage.Setup(x => x.FetchNextAsync(...)).ReturnsAsync(job);
-_storage.Verify(x => x.CommitJobResultAsync(...), Times.Once);
+private readonly Mock<IJobInvokerFactory> _invokerFactory = new();
+private readonly Mock<IJobRetryPolicy> _retryPolicy = new();
+private readonly Mock<IDeadLetterDispatcher> _deadLetterDispatcher = new();
+
+// Default happy-path setup:
+_invokerFactory
+    .Setup(x => x.PrepareAsync(It.IsAny<JobRecord>(), It.IsAny<CancellationToken>()))
+    .ReturnsAsync((JobRecord job, CancellationToken _) => MakeContext(job));
+_retryPolicy
+    .Setup(x => x.ComputeRetryAt(It.IsAny<JobRecord>(), It.IsAny<Exception>()))
+    .Returns(DateTimeOffset.UtcNow.AddMinutes(1));
 ```
 
 ---
