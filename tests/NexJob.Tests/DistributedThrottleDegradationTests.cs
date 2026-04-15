@@ -12,14 +12,10 @@ namespace NexJob.Tests;
 public sealed class DistributedThrottleDegradationTests
 {
     /// <summary>
-    /// Known failure: ThrottleRegistry does not catch exceptions from IDistributedThrottleStore.
-    /// When the distributed store throws, the exception propagates instead of degrading to local throttle.
-    /// Fix required in src/NexJob/Internal/ThrottleRegistry.cs — TryAcquireAsync and TryAcquireWithWaitAsync
-    /// must wrap distributed store calls in try-catch and fall back to local SemaphoreSlim on failure.
-    /// Tracked as architectural gap — fix owned by bruxo or Codex.
+    /// Verifies that if the distributed store throws an exception, the system
+    /// degrades to the local throttle instead of propagating the error.
     /// </summary>
     [Fact]
-    [Trait("Category", "KnownFailure")]
     public async Task WhenDistributedStoreFails_ThrottleRegistry_FallsBackToLocal()
     {
         // Setup: create a ThrottleRegistry with a IDistributedThrottleStore mock
@@ -31,24 +27,22 @@ public sealed class DistributedThrottleDegradationTests
         var registry = new ThrottleRegistry(store.Object);
 
         // Act: call TryAcquireWithWaitAsync
-        var act = () => registry.TryAcquireWithWaitAsync("res", 1, TimeSpan.FromMilliseconds(100), CancellationToken.None);
+        // Even if distributed throws, it should proceed to local semaphore.
+        // With maxConcurrent=1, the first call should succeed locally.
+        var result = await registry.TryAcquireWithWaitAsync("res", 1, TimeSpan.FromMilliseconds(100), CancellationToken.None);
 
-        // Assert: does NOT throw — returns false (local slot not acquired because
-        //         distributed threw, defensive release path runs)
-        // This verifies the catch path in ThrottleRegistry doesn't propagate
-        var result = await act.Should().NotThrowAsync();
-        result.Subject.Should().BeFalse();
+        // Assert: does NOT throw — returns true because it acquired the local slot
+        result.Should().BeTrue("should have acquired local slot even if distributed store failed");
+
+        // Cleanup
+        await registry.ReleaseAsync("res", CancellationToken.None);
     }
 
     /// <summary>
-    /// Known failure: ThrottleRegistry does not catch exceptions from IDistributedThrottleStore.
-    /// When the distributed store throws, the exception propagates instead of degrading to local throttle.
-    /// Fix required in src/NexJob/Internal/ThrottleRegistry.cs — TryAcquireAsync and TryAcquireWithWaitAsync
-    /// must wrap distributed store calls in try-catch and fall back to local SemaphoreSlim on failure.
-    /// Tracked as architectural gap — fix owned by bruxo or Codex.
+    /// Verifies that even when the distributed store is down, the local semaphore
+    /// still enforces the concurrency limits.
     /// </summary>
     [Fact]
-    [Trait("Category", "KnownFailure")]
     public async Task WhenDistributedStoreUnavailable_LocalThrottleStillEnforcesLimit()
     {
         // Setup: ThrottleRegistry with failing distributed store

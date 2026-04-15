@@ -1,4 +1,6 @@
 using System.Collections.Concurrent;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace NexJob.Internal;
 
@@ -11,14 +13,19 @@ internal sealed class ThrottleRegistry
 {
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _semaphores = new(StringComparer.Ordinal);
     private readonly IDistributedThrottleStore? _distributedStore;
+    private readonly ILogger _logger;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ThrottleRegistry"/> class.
     /// </summary>
     /// <param name="distributedStore">The optional distributed throttle store.</param>
-    public ThrottleRegistry(IDistributedThrottleStore? distributedStore = null)
+    /// <param name="logger">The optional logger.</param>
+    public ThrottleRegistry(
+        IDistributedThrottleStore? distributedStore = null,
+        ILogger<ThrottleRegistry>? logger = null)
     {
         _distributedStore = distributedStore;
+        _logger = (ILogger?)logger ?? NullLogger.Instance;
     }
 
     /// <summary>
@@ -32,12 +39,22 @@ internal sealed class ThrottleRegistry
     /// <returns>A task.</returns>
     public async Task<bool> TryAcquireAsync(string resource, int maxConcurrent, CancellationToken ct)
     {
+        bool distributedAcquired = false;
         if (_distributedStore is not null)
         {
-            var acquiredDistributed = await _distributedStore.TryAcquireAsync(resource, maxConcurrent, ct).ConfigureAwait(false);
-            if (!acquiredDistributed)
+            try
             {
-                return false;
+                var acquiredDistributed = await _distributedStore.TryAcquireAsync(resource, maxConcurrent, ct).ConfigureAwait(false);
+                if (!acquiredDistributed)
+                {
+                    return false;
+                }
+
+                distributedAcquired = true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Distributed throttle store failed for resource {Resource}. Degrading to local throttle.", resource);
             }
         }
 
@@ -50,9 +67,9 @@ internal sealed class ThrottleRegistry
         }
         catch (OperationCanceledException)
         {
-            if (_distributedStore is not null)
+            if (distributedAcquired)
             {
-                await _distributedStore.ReleaseAsync(resource, CancellationToken.None).ConfigureAwait(false);
+                await SafeReleaseDistributedAsync(resource).ConfigureAwait(false);
             }
 
             throw;
@@ -60,9 +77,9 @@ internal sealed class ThrottleRegistry
 
         if (!acquiredLocal)
         {
-            if (_distributedStore is not null)
+            if (distributedAcquired)
             {
-                await _distributedStore.ReleaseAsync(resource, ct).ConfigureAwait(false);
+                await SafeReleaseDistributedAsync(resource).ConfigureAwait(false);
             }
 
             return false;
@@ -85,15 +102,25 @@ internal sealed class ThrottleRegistry
         TimeSpan localWaitTimeout,
         CancellationToken ct)
     {
+        bool distributedAcquired = false;
         if (_distributedStore is not null)
         {
-            // Distributed: tenta Redis primeiro (sem wait), depois local com timeout.
-            var acquiredDistributed = await _distributedStore
-                .TryAcquireAsync(resource, maxConcurrent, ct)
-                .ConfigureAwait(false);
-            if (!acquiredDistributed)
+            try
             {
-                return false;
+                // Distributed: tenta Redis primeiro (sem wait), depois local com timeout.
+                var acquiredDistributed = await _distributedStore
+                    .TryAcquireAsync(resource, maxConcurrent, ct)
+                    .ConfigureAwait(false);
+                if (!acquiredDistributed)
+                {
+                    return false;
+                }
+
+                distributedAcquired = true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Distributed throttle store failed for resource {Resource}. Degrading to local throttle.", resource);
             }
         }
 
@@ -107,9 +134,9 @@ internal sealed class ThrottleRegistry
         }
         catch (OperationCanceledException)
         {
-            if (_distributedStore is not null)
+            if (distributedAcquired)
             {
-                await _distributedStore.ReleaseAsync(resource, CancellationToken.None).ConfigureAwait(false);
+                await SafeReleaseDistributedAsync(resource).ConfigureAwait(false);
             }
 
             throw;
@@ -117,9 +144,9 @@ internal sealed class ThrottleRegistry
 
         if (!acquiredLocal)
         {
-            if (_distributedStore is not null)
+            if (distributedAcquired)
             {
-                await _distributedStore.ReleaseAsync(resource, CancellationToken.None).ConfigureAwait(false);
+                await SafeReleaseDistributedAsync(resource).ConfigureAwait(false);
             }
 
             return false;
@@ -143,7 +170,24 @@ internal sealed class ThrottleRegistry
 
         if (_distributedStore is not null)
         {
+            await SafeReleaseDistributedAsync(resource, ct).ConfigureAwait(false);
+        }
+    }
+
+    private async Task SafeReleaseDistributedAsync(string resource, CancellationToken ct = default)
+    {
+        if (_distributedStore is null)
+        {
+            return;
+        }
+
+        try
+        {
             await _distributedStore.ReleaseAsync(resource, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to release distributed throttle for resource {Resource}.", resource);
         }
     }
 }
