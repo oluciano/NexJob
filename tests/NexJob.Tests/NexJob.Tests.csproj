@@ -17,6 +17,7 @@
     <PackageReference Include="Moq" Version="4.20.72" />
     <PackageReference Include="StackExchange.Redis" Version="2.12.14" />
     <ProjectReference Include="..\..\src\NexJob\NexJob.csproj" />
+    <ProjectReference Include="..\..\src\NexJob.Dashboard.Standalone\NexJob.Dashboard.Standalone.csproj" />
     <ProjectReference Include="..\..\src\NexJob.Postgres\NexJob.Postgres.csproj" />
     <ProjectReference Include="..\..\src\NexJob.SqlServer\NexJob.SqlServer.csproj" />
     <PackageReference Include="FluentAssertions" Version="6.12.1" />

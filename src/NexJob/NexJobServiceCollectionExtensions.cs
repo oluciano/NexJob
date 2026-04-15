@@ -162,6 +162,7 @@ public static class NexJobServiceCollectionExtensions
     private static void RegisterCore(IServiceCollection services, NexJobOptions options)
     {
         services.AddSingleton(options);
+        services.AddMemoryCache();
         services.TryAddSingleton<InMemoryStorageProvider>();
         services.TryAddSingleton<IStorageProvider>(sp => sp.GetRequiredService<InMemoryStorageProvider>());
         services.TryAddSingleton<IJobStorage>(sp => sp.GetRequiredService<InMemoryStorageProvider>());

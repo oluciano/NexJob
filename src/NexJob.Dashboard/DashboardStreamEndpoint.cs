@@ -25,14 +25,13 @@ internal static class DashboardStreamEndpoint
     /// Each event carries a compact JSON object with counters, hourly throughput,
     /// and active job progress updates for live progress bars on the job detail page.
     /// </summary>
-    internal static async Task HandleAsync(HttpContext context, IDashboardStorage storage)
+    internal static async Task HandleAsync(HttpContext context, IDashboardStorage storage, DashboardOptions options)
     {
         context.Response.ContentType = "text/event-stream";
         context.Response.Headers["Cache-Control"] = "no-cache";
         context.Response.Headers["X-Accel-Buffering"] = "no"; // disable nginx proxy buffering
 
         var cache = context.RequestServices.GetRequiredService<IMemoryCache>();
-        var dashboardOptions = context.RequestServices.GetRequiredService<DashboardOptions>();
 
         var ct = context.RequestAborted;
 
@@ -40,7 +39,7 @@ internal static class DashboardStreamEndpoint
         {
             while (!ct.IsCancellationRequested)
             {
-                var metrics = await GetCachedMetricsAsync(cache, storage, dashboardOptions, ct).ConfigureAwait(false);
+                var metrics = await GetCachedMetricsAsync(cache, storage, options, ct).ConfigureAwait(false);
 
                 var activeResult = await storage.GetJobsAsync(
                     new JobFilter { Status = JobStatus.Processing }, 1, 20, ct).ConfigureAwait(false);

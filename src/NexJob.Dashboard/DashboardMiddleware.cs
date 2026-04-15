@@ -55,7 +55,7 @@ public sealed class DashboardMiddleware
         if (string.Equals(subPath, "stream", StringComparison.Ordinal) && string.Equals(context.Request.Method, HttpMethods.Get, StringComparison.Ordinal))
         {
             var storage = context.RequestServices.GetRequiredService<IDashboardStorage>();
-            await DashboardStreamEndpoint.HandleAsync(context, storage).ConfigureAwait(false);
+            await DashboardStreamEndpoint.HandleAsync(context, storage, _options).ConfigureAwait(false);
             return;
         }
 
