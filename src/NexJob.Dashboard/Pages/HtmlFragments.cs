@@ -395,23 +395,23 @@ internal static class HtmlFragments
         if (job.DeletedByUser)
         {
             actionsHtml =
-                $"<form method=\"post\" action=\"{pathPrefix}/recurring/{encodedIdUrl}/restore\" style=\"display:inline\">" +
+                $"<form method=\"post\" action=\"{pathPrefix}/recurring/{encodedIdUrl}/restore\" style=\"display:inline\" onclick=\"event.stopPropagation()\">" +
                 "<button type=\"submit\" class=\"btn btn-secondary\">Restore</button></form>";
         }
         else
         {
             var pauseResume = job.Enabled
-                ? $"<form method=\"post\" action=\"{pathPrefix}/recurring/{encodedIdUrl}/pause\" style=\"display:inline\"><button type=\"submit\" class=\"btn-icon btn-pause\" title=\"Pause\">{pauseIcon}</button></form>"
-                : $"<form method=\"post\" action=\"{pathPrefix}/recurring/{encodedIdUrl}/resume\" style=\"display:inline\"><button type=\"submit\" class=\"btn-icon btn-resume\" title=\"Resume\">{playIcon}</button></form>";
+                ? $"<form method=\"post\" action=\"{pathPrefix}/recurring/{encodedIdUrl}/pause\" style=\"display:inline\" onclick=\"event.stopPropagation()\"><button type=\"submit\" class=\"btn-icon btn-pause\" title=\"Pause\">{pauseIcon}</button></form>"
+                : $"<form method=\"post\" action=\"{pathPrefix}/recurring/{encodedIdUrl}/resume\" style=\"display:inline\" onclick=\"event.stopPropagation()\"><button type=\"submit\" class=\"btn-icon btn-resume\" title=\"Resume\">{playIcon}</button></form>";
 
             actionsHtml =
-                $"<form method=\"post\" action=\"{pathPrefix}/recurring/{encodedIdUrl}/trigger\" style=\"display:inline\">" +
+                $"<form method=\"post\" action=\"{pathPrefix}/recurring/{encodedIdUrl}/trigger\" style=\"display:inline\" onclick=\"event.stopPropagation()\">" +
                 $"<button type=\"submit\" class=\"btn-icon btn-trigger\" title=\"Trigger Now\">{boltIcon}</button></form> " +
                 pauseResume;
         }
 
         return
-            $"<tr class=\"table-recurring\">" +
+            $"<tr class=\"table-recurring\" style=\"cursor:pointer\" onclick=\"window.location.href='{pathPrefix}/recurring/{encodedIdUrl}'\">" +
             $"<td class=\"status-cell\">{statusDot}</td>" +
             $"<td>" +
             $"<div class=\"job-name-cell\">" +
@@ -423,7 +423,7 @@ internal static class HtmlFragments
             $"<td>{HtmlEncode(job.Queue)}</td>" +
             $"<td>{lastRunHtml}</td>" +
             $"<td>{nextHtml}</td>" +
-            $"<td class=\"actions-cell\">{actionsHtml}</td>" +
+            $"<td class=\"actions-cell\"><div style=\"display:flex;gap:4px;justify-content:flex-end\">{actionsHtml}</div></td>" +
             $"</tr>";
     }
 

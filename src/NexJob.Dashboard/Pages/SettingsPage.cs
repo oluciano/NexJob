@@ -83,7 +83,11 @@ internal sealed class SettingsPage : ComponentBase
             "<p class=\"page-subtitle\">Live runtime configuration — changes apply immediately</p>" +
             "</div></div>" +
 
-            // Workers card
+            // 2-column grid: Workers+Polling on left, Retention+Recurring on right
+            "<div style=\"display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start;margin-bottom:16px\">" +
+            "<div>" +
+
+            // Left column: Workers card
             "<div class=\"settings-card\">" +
             "<div class=\"settings-card-header\">Workers</div>" +
             "<div class=\"settings-card-body\">" +
@@ -101,8 +105,8 @@ internal sealed class SettingsPage : ComponentBase
                 : string.Empty) +
             "</div></div>" +
 
-            // Polling card
-            "<div class=\"settings-card\">" +
+            // Left column: Polling card
+            "<div class=\"settings-card\" style=\"margin-top:16px\">" +
             "<div class=\"settings-card-header\">Polling Interval</div>" +
             "<div class=\"settings-card-body\">" +
             "<div class=\"settings-row\">" +
@@ -116,14 +120,10 @@ internal sealed class SettingsPage : ComponentBase
             "</form>" +
             "</div></div></div>" +
 
-            // Queues card
-            "<div class=\"settings-card\">" +
-            "<div class=\"settings-card-header\">Queues</div>" +
-            "<div class=\"settings-card-body\">" +
-            BuildQueueRows() +
-            "</div></div>" +
+            "</div>" +
+            "<div>" +
 
-            // Retention card
+            // Right column: Retention card
             "<div class=\"settings-card\">" +
             "<div class=\"settings-card-header\">Retention Policy</div>" +
             "<div class=\"settings-card-body\">" +
@@ -169,8 +169,8 @@ internal sealed class SettingsPage : ComponentBase
             "<div class=\"settings-row\" style=\"color:var(--text-3);font-size:12px;margin-top:8px\"><p style=\"margin:0\">Set to 0 to disable purging for that status</p></div>" +
             "</div></div>" +
 
-            // Recurring jobs card
-            "<div class=\"settings-card\">" +
+            // Right column: Recurring jobs card
+            "<div class=\"settings-card\" style=\"margin-top:16px\">" +
             "<div class=\"settings-card-header\">Recurring Jobs</div>" +
             "<div class=\"settings-card-body\">" +
             "<div class=\"settings-row\">" +
@@ -181,6 +181,16 @@ internal sealed class SettingsPage : ComponentBase
                 ? $"<span class=\"badge badge-processing\" style=\"margin-right:8px\">Paused</span><form method=\"post\" action=\"{PathPrefix}/recurring/resume-all\" style=\"display:inline\"><button class=\"btn btn-primary btn-sm\" type=\"submit\">Resume All</button></form>"
                 : $"<span class=\"badge badge-succeeded\" style=\"margin-right:8px\">Active</span><form method=\"post\" action=\"{PathPrefix}/recurring/pause-all\" style=\"display:inline\"><button class=\"btn btn-danger btn-sm\" type=\"submit\">Pause All</button></form>") +
             "</div></div></div>" +
+
+            "</div>" +
+            "</div>" +
+
+            // Queues card (full-width)
+            "<div class=\"settings-card\">" +
+            "<div class=\"settings-card-header\">Queues</div>" +
+            "<div class=\"settings-card-body\">" +
+            BuildQueueRows() +
+            "</div></div>" +
 
             // Effective configuration
             "<div class=\"settings-card\">" +

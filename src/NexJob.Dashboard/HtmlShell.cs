@@ -283,11 +283,11 @@ internal static class HtmlShell
         .job-row-dot   { padding-top: 4px; }
         .job-row-main  { min-width: 0; }
         .job-row-title { font-size: 14px; font-weight: 500; color: var(--text-primary); margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .job-row-sub   { font-size: 12px; color: var(--text-secondary); }
+        .job-row-sub   { font-size: 12px; color: var(--text-secondary); display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
         .job-row-meta  { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; font-size: 12px; color: var(--text-secondary); white-space: nowrap; }
         .job-row-tags  { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 4px; }
         .job-name      { font-family: 'Monaco','Menlo','Courier New',monospace; font-size: 12px; color: var(--primary); }
-        .job-type      { font-size: 11px; color: var(--text-tertiary); }
+        .job-type      { font-size: 11px; color: var(--text-tertiary); display: block; }
         .tag-badge {
             display: inline-block; padding: 1px 6px; border-radius: 4px;
             font-size: 11px; background: var(--bg-tertiary); color: var(--text-secondary);
