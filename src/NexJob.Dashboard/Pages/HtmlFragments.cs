@@ -228,8 +228,10 @@ internal static class HtmlFragments
 
     /// <summary>Renders a single key-value pair in a detail grid.</summary>
     internal static string DetailRow(string label, string value) =>
+        $"<div class=\"detail-row\">" +
         $"<div class=\"detail-label\">{HtmlEncode(label)}</div>" +
-        $"<div class=\"detail-value\">{value}</div>";
+        $"<div class=\"detail-value\">{value}</div>" +
+        $"</div>";
 
     /// <summary>Renders a progress bar section with percentage and optional message.</summary>
     internal static string ProgressBar(int? percentage, string? message = null)
