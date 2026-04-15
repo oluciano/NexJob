@@ -324,4 +324,50 @@ public sealed class KafkaTriggerTests
         _consumerMock.Verify(m => m.Commit(It.IsAny<ConsumeResult<string, string>>()), Times.Never);
         _scheduler.EnqueueCalls.Should().BeEmpty();
     }
+
+    /// <summary>
+    /// Verifies that a message without nexjob.job_type header is not enqueued
+    /// and offset is not committed.
+    /// </summary>
+    [Fact]
+    public async Task MissingJobType_NotEnqueuedAndNotCommitted()
+    {
+        // Arrange
+        var message = new Message<string, string>
+        {
+            Key = "test-key",
+            Value = "{\"key\":\"value\"}",
+            Headers = new Headers(), // No nexjob.job_type header
+        };
+
+        var consumeResult = new ConsumeResult<string, string>
+        {
+            Message = message,
+            Topic = "test-topic",
+            Partition = 0,
+            Offset = 1,
+        };
+
+        _consumerMock.SetupSequence(m => m.Consume(It.IsAny<TimeSpan>()))
+            .Returns(consumeResult)
+            .Returns((ConsumeResult<string, string>?)null);
+
+        var handler = new KafkaTriggerHandler(
+            Options.Create(_triggerOptions),
+            _consumerMock.Object,
+            _scheduler,
+            _nexJobOptions,
+            _loggerMock.Object);
+
+        // Act
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await handler.StartAsync(cts.Token);
+        await Task.Delay(300, cts.Token).ContinueWith(_ => { });
+        await handler.StopAsync(CancellationToken.None);
+
+        // Assert
+        _scheduler.EnqueueCalls.Should().BeEmpty("no job_type means no job should be created");
+        _consumerMock.Verify(m => m.Commit(It.IsAny<ConsumeResult<string, string>>()), Times.Never,
+            "offset must not be committed when job_type is missing");
+    }
 }
