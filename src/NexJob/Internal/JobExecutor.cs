@@ -229,9 +229,14 @@ internal sealed class JobExecutor
             _logger.LogDebug("Job waiting for throttle slot on resource '{Resource}' (max={Max})",
                 attr.Resource, attr.MaxConcurrent);
 
-            while (!await _throttleRegistry.TryAcquireAsync(attr.Resource, attr.MaxConcurrent, cancellationToken).ConfigureAwait(false))
+            while (!await _throttleRegistry.TryAcquireWithWaitAsync(
+                attr.Resource,
+                attr.MaxConcurrent,
+                TimeSpan.FromMilliseconds(500),
+                cancellationToken).ConfigureAwait(false))
             {
-                await Task.Delay(50, cancellationToken).ConfigureAwait(false);
+                // Slot ainda ocupado — yield para não monopolizar o worker
+                await Task.Yield();
             }
 
             acquired.Add(attr);

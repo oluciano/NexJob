@@ -72,6 +72,55 @@ internal sealed class ThrottleRegistry
     }
 
     /// <summary>
+    /// Attempts to acquire a throttle slot for the given resource, waiting up to the specified timeout locally.
+    /// </summary>
+    /// <param name="resource">The resource.</param>
+    /// <param name="maxConcurrent">The maximum concurrent.</param>
+    /// <param name="localWaitTimeout">The local wait timeout.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>True if acquired.</returns>
+    public async Task<bool> TryAcquireWithWaitAsync(
+        string resource,
+        int maxConcurrent,
+        TimeSpan localWaitTimeout,
+        CancellationToken ct)
+    {
+        if (_distributedStore is not null)
+        {
+            // Distributed: tenta Redis primeiro (sem wait), depois local com timeout.
+            var acquiredDistributed = await _distributedStore
+                .TryAcquireAsync(resource, maxConcurrent, ct)
+                .ConfigureAwait(false);
+            if (!acquiredDistributed)
+                return false;
+        }
+
+        var sem = _semaphores.GetOrAdd(resource, _ => new SemaphoreSlim(maxConcurrent, maxConcurrent));
+
+        bool acquiredLocal;
+        try
+        {
+            // DIFERENÇA: WaitAsync com timeout real em vez de WaitAsync(0)
+            acquiredLocal = await sem.WaitAsync(localWaitTimeout, ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            if (_distributedStore is not null)
+                await _distributedStore.ReleaseAsync(resource, CancellationToken.None).ConfigureAwait(false);
+            throw;
+        }
+
+        if (!acquiredLocal)
+        {
+            if (_distributedStore is not null)
+                await _distributedStore.ReleaseAsync(resource, CancellationToken.None).ConfigureAwait(false);
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
     /// Releases a previously acquired throttle slot.
     /// </summary>
     /// <param name="resource">The resource.</param>
