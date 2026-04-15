@@ -12,7 +12,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
-## [3.0.0] - 2026-04-14
+## [3.0.0] - 2026-04-15
 
 ### Breaking Changes
 
@@ -41,6 +41,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `UseDistributedThrottle()` — opt-in extension to enable Redis-backed throttling
 - `NexJobOptions.DistributedThrottleTtl` — configurable slot TTL for distributed throttle (default: 1h)
 - `JobExecutor` — extracted execution pipeline from `JobDispatcherService`
+- `NexJob.Dashboard` — redesigned visual layer with adaptive light/dark design system and enhanced accessibility.
 
 ### Fixed
 
@@ -48,13 +49,21 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `ThrottleRegistry` now wraps `IDistributedThrottleStore` calls in try-catch. When the distributed store throws, the registry degrades gracefully to local `SemaphoreSlim` throttling instead of propagating the exception.
 - Throttle wait replaced busy-loop (`Task.Delay(50)`) with `SemaphoreSlim.WaitAsync`
 - Redis throttle TTL now reads from `NexJobOptions.DistributedThrottleTtl` (was hardcoded to 3600s)
+- `NexJob.Dashboard` — wired dashboard services for samples to ensure correct UI rendering.
 
-### Documentation
+### Infrastructure
+
+- `ci: publish` — updated workflow to include v2 triggers and OpenTelemetry packages in the release pipeline.
+
+### Testing
 
 - Contract test `CommitJobResultAsync_Failure_NoRetry_SetsFailed` now asserts `RetryAt == null` on dead-letter transition across all providers.
 - Added `MissingJobType` negative test scenario to RabbitMQ, SQS, Kafka, and AzureServiceBus trigger unit test suites.
 - Added `JobControlServiceIntegrationTests` — verifies Pause/Resume/Requeue/Delete against real dispatcher and InMemory storage.
 - Added `DistributedThrottleDegradationTests` — verifies graceful fallback to local throttle when distributed store is unavailable.
+
+### Documentation
+
 - wiki/07-Throttling: added distributed throttle section, removed outdated Redis semaphore example
 - wiki/09-Storage-Providers: added interface segregation, read replica, and IJobControlService sections
 - wiki/11-Configuration-Reference: added DistributedThrottleTtl option
