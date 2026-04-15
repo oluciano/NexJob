@@ -29,14 +29,8 @@ internal sealed class ServersPage : IComponent
         if (servers.Count == 0)
         {
             var emptyBody =
-                "<div class=\"page-header\"><div>" +
-                "<h1 class=\"page-title\">Servers</h1>" +
-                "<p class=\"page-subtitle\">Active worker nodes across the cluster</p>" +
-                "</div></div>" +
-                "<div class=\"empty-state\">" +
-                "<svg width=\"40\" height=\"40\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1\"><rect x=\"2\" y=\"2\" width=\"20\" height=\"8\" rx=\"2\" ry=\"2\"/><rect x=\"2\" y=\"14\" width=\"20\" height=\"8\" rx=\"2\" ry=\"2\"/><line x1=\"6\" y1=\"6\" x2=\"6.01\" y2=\"6\"/><line x1=\"6\" y1=\"18\" x2=\"6.01\" y2=\"18\"/></svg>" +
-                "<p>No active servers running.</p>" +
-                "</div>";
+                HtmlFragments.PageHeader("Servers", "Active worker nodes across the cluster") +
+                HtmlFragments.EmptyState("2 2 20 8 2 2 2 14 20 8 2 2 6 6 6.01 6 6 18 6.01 18", "No active servers running.");
             return HtmlShell.Wrap(Title, PathPrefix, "servers", emptyBody, Counters);
         }
 
@@ -46,9 +40,8 @@ internal sealed class ServersPage : IComponent
             var heartbeatAge = DateTimeOffset.UtcNow - s.HeartbeatAt;
             var isStale = heartbeatAge.TotalSeconds > 20;
 
-            var badge = isStale
-                ? "<span class=\"badge badge-warning\"><span class=\"dot dot-warning\"></span>stale</span>"
-                : "<span class=\"badge badge-processing\"><span class=\"dot dot-processing\"></span>active</span>";
+            var badgeClass = isStale ? "badge-warning" : "badge-success";
+            var badge = $"<span class=\"badge {badgeClass}\">{(isStale ? "stale" : "active")}</span>";
 
             string uptimeStr;
             if (uptime.TotalDays >= 1)
@@ -76,10 +69,10 @@ internal sealed class ServersPage : IComponent
 
             return
                 $"<tr>" +
-                $"<td class=\"id-cell\" style=\"font-family:monospace;font-size:12px\" title=\"{HttpUtility.HtmlEncode(s.Id)}\">{HttpUtility.HtmlEncode(s.Id)}</td>" +
+                $"<td style=\"font-family:monospace;font-size:12px\" title=\"{HttpUtility.HtmlEncode(s.Id)}\">{HttpUtility.HtmlEncode(s.Id)}</td>" +
                 $"<td>{badge}</td>" +
-                $"<td><div title=\"Workers / Threads\">{s.WorkerCount}</div></td>" +
-                $"<td class=\"truncate-cell\" title=\"{queuesStr}\">{queuesStr}</td>" +
+                $"<td>{s.WorkerCount}</td>" +
+                $"<td>{queuesStr}</td>" +
                 $"<td>{uptimeStr}</td>" +
                 $"<td>{heartbeatStr}</td>" +
                 $"</tr>";
@@ -89,11 +82,10 @@ internal sealed class ServersPage : IComponent
 
         var body =
             "<div id=\"servers-page-content\" data-refresh=\"true\">" +
-            "<div class=\"page-header\"><div>" +
-            "<h1 class=\"page-title\">Servers</h1>" +
-            $"<p class=\"page-subtitle\">{servers.Count} active node{(servers.Count == 1 ? string.Empty : "s")} processing {totalWorkers} concurrent jobs</p>" +
-            "</div></div>" +
-            "<div class=\"table-container\"><table class=\"data-table\">" +
+            HtmlFragments.PageHeader("Servers", "Active worker nodes across the cluster") +
+            "<div class=\"card\">" +
+            $"<div class=\"card-header\"><h3>{servers.Count} active node{(servers.Count == 1 ? string.Empty : "s")} processing {totalWorkers} concurrent jobs</h3></div>" +
+            "<div class=\"table-container\"><table class=\"table\">" +
             "<thead><tr>" +
             "<th style=\"width:30%\">Server ID</th>" +
             "<th style=\"width:10%\">State</th>" +
@@ -104,6 +96,7 @@ internal sealed class ServersPage : IComponent
             "</tr></thead>" +
             $"<tbody>{tableBody}</tbody>" +
             "</table></div>" +
+            "</div>" +
             "</div>";
 
         return HtmlShell.Wrap(Title, PathPrefix, "servers", body, Counters);

@@ -64,7 +64,7 @@ internal sealed class QueuesPage : IComponent
 
         var body =
             "<div id=\"queues-page-content\" data-refresh=\"true\">" +
-            HtmlFragments.PageHeader("Queues", $"{queues.Count} queue{(queues.Count == 1 ? string.Empty : "s")} active") +
+            HtmlFragments.PageHeader("Queues", "Monitor and manage job processing queues") +
             heatmap +
             $"<div class=\"queue-grid\">{cards}</div>" +
             "</div>";
@@ -77,75 +77,78 @@ internal sealed class QueuesPage : IComponent
         var now = DateTimeOffset.UtcNow;
         var workerCount = Options.Workers;
 
+        var header = processingJobs.Count > 0
+            ? $"<h3>{processingJobs.Count} workers active</h3>"
+            : "<h3>All workers idle</h3>";
+
+        string rows;
         if (processingJobs.Count == 0)
         {
-            var workerRows = string.Join(string.Empty, Enumerable.Range(1, workerCount).Select(i =>
+            rows = string.Join(string.Empty, Enumerable.Range(1, workerCount).Select(i =>
                 $"<div class=\"worker-row idle\">" +
                 $"<span class=\"worker-id\">W{i}</span>" +
                 $"<div class=\"worker-track\"></div>" +
                 $"<span class=\"worker-elapsed\">idle</span>" +
                 $"<span class=\"worker-warn\"></span>" +
                 $"</div>"));
+        }
+        else
+        {
+            // Calculate average elapsed time for slow detection
+            var avgElapsed = processingJobs.Count > 1
+                ? processingJobs.Average(j => (now - j.CreatedAt).TotalSeconds)
+                : 0;
+            var slowThreshold = avgElapsed * 3;
 
-            return
-                $"<div class=\"worker-section\" data-refresh=\"true\">" +
-                $"<div class=\"section-title\">Workers</div>" +
-                $"<div class=\"worker-list\">{workerRows}</div>" +
-                $"</div>";
+            var jobsByIndex = processingJobs.Take(workerCount).ToList();
+
+            rows = string.Join(string.Empty, Enumerable.Range(0, workerCount).Select(i =>
+            {
+                var job = i < jobsByIndex.Count ? jobsByIndex[i] : null;
+
+                if (job is null)
+                {
+                    return
+                        $"<div class=\"worker-row idle\">" +
+                        $"<span class=\"worker-id\">W{i + 1}</span>" +
+                        $"<div class=\"worker-track\"></div>" +
+                        $"<span class=\"worker-elapsed\">idle</span>" +
+                        $"<span class=\"worker-warn\"></span>" +
+                        $"</div>";
+                }
+
+                var elapsed = now - job.CreatedAt;
+                var isSlow = processingJobs.Count > 1 && elapsed.TotalSeconds > slowThreshold;
+                var fillWidth = processingJobs.Count > 0
+                    ? (int)(((elapsed.TotalSeconds / processingJobs.Max(j => (now - j.CreatedAt).TotalSeconds)) * 95) + 5)
+                    : 0;
+                fillWidth = Math.Min(fillWidth, 100);
+
+                var jobName = $"{Helpers.ShortType(job.JobType)} #{job.Id.Value.ToString()[..4]}";
+                var elapsedStr = FormatElapsed(elapsed);
+                var cssClass = isSlow ? "slow" : "busy";
+                var warn = isSlow ? "⚠" : string.Empty;
+
+                return
+                    $"<div class=\"worker-row\">" +
+                    $"<span class=\"worker-id\">W{i + 1}</span>" +
+                    $"<div class=\"worker-track\">" +
+                    $"<div class=\"worker-fill {cssClass}\" style=\"width:{fillWidth}%\">" +
+                    $"<span class=\"worker-job-name\">{System.Web.HttpUtility.HtmlEncode(jobName)}</span>" +
+                    $"</div>" +
+                    $"</div>" +
+                    $"<span class=\"worker-elapsed{(isSlow ? " slow" : string.Empty)}\">{elapsedStr}</span>" +
+                    $"<span class=\"worker-warn\">{warn}</span>" +
+                    $"</div>";
+            }));
         }
 
-        // Calculate average elapsed time for slow detection
-        var avgElapsed = processingJobs.Count > 1
-            ? processingJobs.Average(j => (now - j.CreatedAt).TotalSeconds)
-            : 0;
-        var slowThreshold = avgElapsed * 3;
-
-        var jobsByIndex = processingJobs.Take(workerCount).ToList();
-
-        var rows = string.Join(string.Empty, Enumerable.Range(0, workerCount).Select(i =>
-        {
-            var job = i < jobsByIndex.Count ? jobsByIndex[i] : null;
-
-            if (job is null)
-            {
-                return
-                    $"<div class=\"worker-row idle\">" +
-                    $"<span class=\"worker-id\">W{i + 1}</span>" +
-                    $"<div class=\"worker-track\"></div>" +
-                    $"<span class=\"worker-elapsed\">idle</span>" +
-                    $"<span class=\"worker-warn\"></span>" +
-                    $"</div>";
-            }
-
-            var elapsed = now - job.CreatedAt;
-            var isSlow = processingJobs.Count > 1 && elapsed.TotalSeconds > slowThreshold;
-            var fillWidth = processingJobs.Count > 0
-                ? (int)(((elapsed.TotalSeconds / processingJobs.Max(j => (now - j.CreatedAt).TotalSeconds)) * 95) + 5)
-                : 0;
-            fillWidth = Math.Min(fillWidth, 100);
-
-            var jobName = $"{Helpers.ShortType(job.JobType)} #{job.Id.Value.ToString()[..4]}";
-            var elapsedStr = FormatElapsed(elapsed);
-            var cssClass = isSlow ? "slow" : "busy";
-            var warn = isSlow ? "⚠" : string.Empty;
-
-            return
-                $"<div class=\"worker-row\">" +
-                $"<span class=\"worker-id\">W{i + 1}</span>" +
-                $"<div class=\"worker-track\">" +
-                $"<div class=\"worker-fill {cssClass}\" style=\"width:{fillWidth}%\">" +
-                $"<span class=\"worker-job-name\">{System.Web.HttpUtility.HtmlEncode(jobName)}</span>" +
-                $"</div>" +
-                $"</div>" +
-                $"<span class=\"worker-elapsed{(isSlow ? " slow" : string.Empty)}\">{elapsedStr}</span>" +
-                $"<span class=\"worker-warn\">{warn}</span>" +
-                $"</div>";
-        }));
-
         return
-            $"<div class=\"worker-section\" data-refresh=\"true\">" +
-            $"<div class=\"section-title\">Workers</div>" +
+            $"<div class=\"card\" style=\"margin-bottom:24px\" data-refresh=\"true\">" +
+            $"<div class=\"card-header\">{header}</div>" +
+            $"<div style=\"padding:24px\">" +
             $"<div class=\"worker-list\">{rows}</div>" +
+            $"</div>" +
             $"</div>";
     }
 }

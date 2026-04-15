@@ -71,11 +71,14 @@ internal sealed class JobsPage : IComponent
 
         var body =
             $"<div id=\"jobs-page-content\" data-refresh=\"true\">" +
-            HtmlFragments.PageHeader("Jobs", $"{result.TotalCount} job{(result.TotalCount == 1 ? string.Empty : "s")} total") +
+            HtmlFragments.PageHeader("Jobs", "Browse and search all background jobs") +
             HtmlFragments.FilterBar(PathPrefix, currentStatus, Search, TagFilter, QueueFilter) +
-            $"<div class=\"section\">" +
+            $"<div class=\"card\">" +
+            $"<div class=\"card-header\"><h3>{result.TotalCount} job{(result.TotalCount == 1 ? string.Empty : "s")} found</h3></div>" +
+            $"<div style=\"padding:24px\">" +
             list +
             pagination +
+            $"</div>" +
             $"</div>" +
             $"</div>";
 

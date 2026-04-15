@@ -55,72 +55,39 @@ internal sealed class FailedPage : IComponent
                 JobStatus.Expired => "All jobs completed before their deadline.",
                 _ => "No matching jobs.",
             };
-            var emptyState =
-                $"<div class=\"inbox-zero\">" +
-                $"<div class=\"inbox-zero-icon\">✓</div>" +
-                $"<div class=\"inbox-zero-title\">{emptyMsg}</div>" +
-                $"<div class=\"inbox-zero-sub\">{emptySub}</div>" +
-                $"</div>";
+
             var emptyBody =
                 "<div id=\"failed-page-content\" data-refresh=\"true\">" +
                 HtmlFragments.PageHeader("Failed Jobs", subtitle) +
                 HtmlFragments.FilterBar(PathPrefix, currentStatus, Search, null) +
-                emptyState +
+                HtmlFragments.EmptyState("12 22s10-9 10-9-9-9-9 9 10 9z", emptyMsg + " — " + emptySub) +
                 "</div>";
             return HtmlShell.Wrap(Title, PathPrefix, "failed", emptyBody, Counters);
         }
 
-        var jobPlural = result.TotalCount == 1 ? string.Empty : "s";
-        var countBadge = $"<span class=\"inbox-count\">{result.TotalCount} need attention</span>";
-
-        var banner = result.TotalCount > 25
-            ? $"<div class=\"alert alert-danger\">⚠ {result.TotalCount} {currentStatus.ToLower()} job{jobPlural} — review and requeue or delete</div>"
-            : string.Empty;
-
         var headerActions =
             $"<form method=\"post\" action=\"{PathPrefix}/jobs/bulk\" style=\"display:inline\">" +
-            "<button type=\"submit\" name=\"bulkAction\" value=\"requeue\" class=\"btn btn-primary btn-sm\">↺ Requeue All</button></form> " +
+            $"<input type=\"hidden\" name=\"status\" value=\"{currentStatus}\" />" +
+            "<button type=\"submit\" name=\"bulkAction\" value=\"requeue\" class=\"btn btn-primary\">↺ Requeue All</button></form> " +
             $"<form method=\"post\" action=\"{PathPrefix}/jobs/bulk\" style=\"display:inline\">" +
-            "<button type=\"submit\" name=\"bulkAction\" value=\"delete\" class=\"btn btn-danger btn-sm\" onclick=\"return confirm('Delete all {0} jobs?')\">✕ Delete All</button></form>";
+            $"<input type=\"hidden\" name=\"status\" value=\"{currentStatus}\" />" +
+            $"<button type=\"submit\" name=\"bulkAction\" value=\"delete\" class=\"btn btn-danger\" onclick=\"return confirm('Delete all {currentStatus.ToLower()} jobs?')\">✕ Delete All</button></form>";
 
         var rows = string.Join(string.Empty, result.Items.Select(j => HtmlFragments.JobRowFailed(j, PathPrefix, now)));
         var baseUrl = $"{PathPrefix}/failed?search={Uri.EscapeDataString(Search ?? string.Empty)}";
         var pagination = HtmlFragments.Pagination(result, baseUrl);
 
-        // Build filter section with status pills and search
-        var searchVal = System.Web.HttpUtility.HtmlAttributeEncode(Search ?? string.Empty);
-        var clearLink = searchVal.Length > 0
-            ? $"<a href=\"{PathPrefix}/failed?status={Uri.EscapeDataString(currentStatus)}\" class=\"btn btn-ghost btn-sm\">Clear</a>"
-            : string.Empty;
-        var filterSection =
-            $"<div class=\"filters\">" +
-            $"<form method=\"get\" action=\"{PathPrefix}/failed\" style=\"display:contents\">" +
-            $"<input type=\"text\" name=\"search\" placeholder=\"Search type or ID…\" value=\"{searchVal}\" />" +
-            $"<input type=\"hidden\" name=\"status\" value=\"{System.Web.HttpUtility.HtmlAttributeEncode(currentStatus)}\" />" +
-            $"<button type=\"submit\" class=\"btn btn-ghost btn-sm\">Search</button>" +
-            clearLink +
-            $"</form>" +
-            HtmlFragments.FailedStatusPills(currentStatus, PathPrefix + "/failed") +
-            $"</div>";
-
-        var headerWithBadge =
-            $"<div class=\"inbox-header\">" +
-            $"<div><h1 class=\"page-title\">Failed Jobs</h1><p class=\"page-subtitle\">{System.Web.HttpUtility.HtmlEncode(subtitle)}</p></div>" +
-            $"<div style=\"display:flex;gap:8px;align-items:center\">" +
-            countBadge +
-            $"<div style=\"display:flex;gap:6px\">{string.Format(headerActions, currentStatus.ToLower())}</div>" +
-            $"</div>" +
-            $"</div>";
-
         var body =
             "<div id=\"failed-page-content\" data-refresh=\"true\">" +
-            headerWithBadge +
-            banner +
-            filterSection +
-            "<div class=\"section\">" +
+            HtmlFragments.PageHeader("Failed Jobs", subtitle, headerActions) +
+            $"<div class=\"card\">" +
+            $"<div class=\"card-header\"><h3>{result.TotalCount} jobs need attention</h3></div>" +
+            $"<div style=\"padding:24px\">" +
+            HtmlFragments.FailedStatusPills(currentStatus, PathPrefix + "/failed") +
             $"<div class=\"job-list\" style=\"display:flex;flex-direction:column;gap:8px\">{rows}</div>" +
             pagination +
-            "</div>" +
+            $"</div>" +
+            $"</div>" +
             "</div>";
 
         return HtmlShell.Wrap(Title, PathPrefix, "failed", body, Counters);
