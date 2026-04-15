@@ -21,7 +21,7 @@ public sealed class RedisDistributedThrottleIntegrationTests
         // Arrange
         var connection = await ConnectionMultiplexer.ConnectAsync(_fixture.Container.GetConnectionString());
         var db = connection.GetDatabase();
-        var sut = new RedisDistributedThrottleStore(db);
+        var sut = new RedisDistributedThrottleStore(db, new NexJobOptions());
         var resource = $"res_{Guid.NewGuid():N}";
 
         // Act & Assert
@@ -39,7 +39,7 @@ public sealed class RedisDistributedThrottleIntegrationTests
         // Arrange
         var connection = await ConnectionMultiplexer.ConnectAsync(_fixture.Container.GetConnectionString());
         var db = connection.GetDatabase();
-        var sut = new RedisDistributedThrottleStore(db);
+        var sut = new RedisDistributedThrottleStore(db, new NexJobOptions());
         var resource = $"res_{Guid.NewGuid():N}";
 
         // Act

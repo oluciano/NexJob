@@ -13,7 +13,33 @@ public sealed class DistributedThrottleTests
 
     public DistributedThrottleTests()
     {
-        _sut = new RedisDistributedThrottleStore(_redis.Object);
+        _sut = new RedisDistributedThrottleStore(_redis.Object, new NexJobOptions());
+    }
+
+    [Fact]
+    public async Task RedisDistributedThrottleStore_UsesTtlFromOptions()
+    {
+        // Arrange
+        var options = new NexJobOptions { DistributedThrottleTtl = TimeSpan.FromMinutes(30) };
+        var sut = new RedisDistributedThrottleStore(_redis.Object, options);
+        var expectedTtl = "1800"; // 30 minutes in seconds
+
+        _redis.Setup(x => x.ScriptEvaluateAsync(
+                It.IsAny<string>(),
+                It.IsAny<RedisKey[]>(),
+                It.Is<RedisValue[]>(v => v.Contains(expectedTtl)),
+                It.IsAny<CommandFlags>()))
+            .ReturnsAsync(RedisResult.Create(1));
+
+        // Act
+        await sut.TryAcquireAsync("res", 5);
+
+        // Assert
+        _redis.Verify(x => x.ScriptEvaluateAsync(
+            It.IsAny<string>(),
+            It.IsAny<RedisKey[]>(),
+            It.Is<RedisValue[]>(v => v.Contains(expectedTtl)),
+            It.IsAny<CommandFlags>()), Times.Once);
     }
 
     [Fact]

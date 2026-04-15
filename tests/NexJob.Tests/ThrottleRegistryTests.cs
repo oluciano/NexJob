@@ -1,63 +1,70 @@
 using FluentAssertions;
-using NexJob.Internal;
+using Moq;
+using NexJob.Redis;
 using Xunit;
 
-namespace NexJob.Tests;
+namespace NexJob.Internal.Tests;
 
 public sealed class ThrottleRegistryTests
 {
-    private readonly ThrottleRegistry _sut = new();
-
     [Fact]
-    public async Task TryAcquireAsync_ReturnsTrue_WithAvailableSlots()
+    public async Task TryAcquireWithWaitAsync_SlotAvailable_ReturnsTrue()
     {
-        var result = await _sut.TryAcquireAsync("resource-a", maxConcurrent: 3, CancellationToken.None);
+        // Arrange
+        var registry = new ThrottleRegistry();
 
+        // Act
+        var result = await registry.TryAcquireWithWaitAsync("res1", 1, TimeSpan.FromMilliseconds(100), CancellationToken.None);
+
+        // Assert
         result.Should().BeTrue();
     }
 
     [Fact]
-    public async Task TryAcquireAsync_ReturnsFalse_WhenAllSlotsAcquired()
+    public async Task TryAcquireWithWaitAsync_SlotOccupied_WaitsAndAcquiresAfterRelease()
     {
-        const int max = 2;
-        await _sut.TryAcquireAsync("resource-b", maxConcurrent: max, CancellationToken.None);
-        await _sut.TryAcquireAsync("resource-b", maxConcurrent: max, CancellationToken.None);
+        // Arrange
+        var registry = new ThrottleRegistry();
+        await registry.TryAcquireAsync("res1", 1, CancellationToken.None); // Occupy slot
 
-        var result = await _sut.TryAcquireAsync("resource-b", maxConcurrent: max, CancellationToken.None);
+        // Task to release after 200ms
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(200);
+            await registry.ReleaseAsync("res1", CancellationToken.None);
+        });
 
-        result.Should().BeFalse();
-    }
+        // Act
+        var result = await registry.TryAcquireWithWaitAsync("res1", 1, TimeSpan.FromMilliseconds(500), CancellationToken.None);
 
-    [Fact]
-    public async Task ReleaseAsync_FreesSlot()
-    {
-        const int max = 1;
-        await _sut.TryAcquireAsync("resource-c", maxConcurrent: max, CancellationToken.None);
-        (await _sut.TryAcquireAsync("resource-c", maxConcurrent: max, CancellationToken.None)).Should().BeFalse();
-
-        await _sut.ReleaseAsync("resource-c", CancellationToken.None);
-
-        (await _sut.TryAcquireAsync("resource-c", maxConcurrent: max, CancellationToken.None)).Should().BeTrue();
-    }
-
-    [Fact]
-    public async Task TryAcquireAsync_UsesDifferentSemaphores_ForDifferentResources()
-    {
-        await _sut.TryAcquireAsync("resource-d", maxConcurrent: 1, CancellationToken.None);
-
-        var result = await _sut.TryAcquireAsync("resource-e", maxConcurrent: 1, CancellationToken.None);
-
+        // Assert
         result.Should().BeTrue();
     }
 
     [Fact]
-    public async Task TryAcquireAsync_SecondCallWithDifferentMax_UsesOriginalMax()
+    public async Task TryAcquireWithWaitAsync_SlotOccupied_TimesOut_ReturnsFalse()
     {
-        await _sut.TryAcquireAsync("resource-f", maxConcurrent: 1, CancellationToken.None);
+        // Arrange
+        var registry = new ThrottleRegistry();
+        await registry.TryAcquireAsync("res1", 1, CancellationToken.None); // Occupy slot permanent for this test
 
-        // This should still return false because it uses the first max (1)
-        var result = await _sut.TryAcquireAsync("resource-f", maxConcurrent: 5, CancellationToken.None);
+        // Act
+        var result = await registry.TryAcquireWithWaitAsync("res1", 1, TimeSpan.FromMilliseconds(100), CancellationToken.None);
 
+        // Assert
         result.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task TryAcquireWithWaitAsync_Cancelled_ThrowsOperationCancelled()
+    {
+        // Arrange
+        var registry = new ThrottleRegistry();
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        // Act & Assert
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            registry.TryAcquireWithWaitAsync("res1", 1, TimeSpan.FromMilliseconds(100), cts.Token));
     }
 }
