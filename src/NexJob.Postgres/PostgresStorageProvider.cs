@@ -43,7 +43,6 @@ public sealed class PostgresStorageProvider : IStorageProvider
     {
         _dataSource = dataSource;
         _connectionString = dataSource.ConnectionString;
-        Dapper.DefaultTypeMap.MatchNamesWithUnderscores = true;
     }
 
     // ── EnqueueAsync ──────────────────────────────────────────────────────────

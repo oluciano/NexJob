@@ -40,7 +40,6 @@ public sealed class SqlServerStorageProvider : IStorageProvider
     {
         _connection = connection;
         _connectionString = connection.ConnectionString;
-        Dapper.DefaultTypeMap.MatchNamesWithUnderscores = true;
     }
 
     // ── EnqueueAsync ──────────────────────────────────────────────────────────
