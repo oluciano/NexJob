@@ -724,6 +724,7 @@ public abstract class StorageProviderTestsBase
         result!.Status.Should().Be(JobStatus.Failed);
         result.CompletedAt.Should().NotBeNull();
         result.LastErrorMessage.Should().Contain("permanent failure");
+        result!.RetryAt.Should().BeNull("dead-letter jobs must not be scheduled for retry");
     }
 
     [Fact]
