@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Reflection;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using NexJob.Storage;
@@ -15,6 +14,7 @@ internal sealed class JobExecutor
 {
     private readonly IJobStorage _storage;
     private readonly IJobInvokerFactory _invokerFactory;
+    private readonly IJobRetryPolicy _retryPolicy;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ThrottleRegistry _throttleRegistry;
     private readonly NexJobOptions _options;
@@ -26,6 +26,7 @@ internal sealed class JobExecutor
     /// </summary>
     /// <param name="storage">The job storage.</param>
     /// <param name="invokerFactory">The job invoker factory.</param>
+    /// <param name="retryPolicy">The job retry policy.</param>
     /// <param name="scopeFactory">The scope factory.</param>
     /// <param name="throttleRegistry">The throttle registry.</param>
     /// <param name="options">The nex job options.</param>
@@ -34,6 +35,7 @@ internal sealed class JobExecutor
     public JobExecutor(
         IJobStorage storage,
         IJobInvokerFactory invokerFactory,
+        IJobRetryPolicy retryPolicy,
         IServiceScopeFactory scopeFactory,
         ThrottleRegistry throttleRegistry,
         NexJobOptions options,
@@ -42,6 +44,7 @@ internal sealed class JobExecutor
     {
         _storage = storage;
         _invokerFactory = invokerFactory;
+        _retryPolicy = retryPolicy;
         _scopeFactory = scopeFactory;
         _throttleRegistry = throttleRegistry;
         _options = options;
@@ -220,30 +223,19 @@ internal sealed class JobExecutor
             { "exception.stacktrace", ex.StackTrace },
         }));
 
-        var retryAttr = job.JobType is not null
-            ? Type.GetType(job.JobType)?.GetCustomAttribute<RetryAttribute>(inherit: true)
-            : null;
-        var effectiveMaxAttempts = retryAttr?.Attempts ?? job.MaxAttempts;
+        var retryAt = _retryPolicy.ComputeRetryAt(job, ex);
 
-        DateTimeOffset? retryAt = null;
-
-        if (job.Attempts < effectiveMaxAttempts)
+        if (retryAt is not null)
         {
-            var retryDelay = retryAttr?.InitialDelay is not null
-                ? retryAttr.ComputeDelay(job.Attempts)
-                : _options.RetryDelayFactory(job.Attempts);
-
-            retryAt = DateTimeOffset.UtcNow + retryDelay;
-
             _logger.LogInformation(
-                "Job {JobId} scheduled for retry {Attempt}/{Max} at {RetryAt} (delay: {Delay}s)",
-                job.Id, job.Attempts + 1, effectiveMaxAttempts, retryAt.Value, retryDelay.TotalSeconds);
+                "Job {JobId} scheduled for retry at {RetryAt}",
+                job.Id, retryAt.Value);
         }
         else
         {
             _logger.LogError(ex,
-                "Job {JobId} exhausted all {Max} attempts — moving to dead-letter",
-                job.Id, effectiveMaxAttempts);
+                "Job {JobId} exhausted all attempts - moving to dead-letter",
+                job.Id);
         }
 
         return await Task.FromResult(retryAt).ConfigureAwait(false);

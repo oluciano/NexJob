@@ -174,6 +174,7 @@ public static class NexJobServiceCollectionExtensions
         services.AddSingleton<IScheduler, DefaultScheduler>();
         services.AddSingleton(sp => new ThrottleRegistry(sp.GetService<IDistributedThrottleStore>()));
         services.AddSingleton<IJobInvokerFactory, DefaultJobInvokerFactory>();
+        services.AddSingleton<IJobRetryPolicy, DefaultJobRetryPolicy>();
         services.AddSingleton<JobExecutor>();
         services.AddSingleton<JobCaptureLoggerProvider>();
         services.AddSingleton<ILoggerProvider>(sp => sp.GetRequiredService<JobCaptureLoggerProvider>());

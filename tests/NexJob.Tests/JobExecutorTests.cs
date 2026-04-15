@@ -13,6 +13,7 @@ public sealed class JobExecutorTests
 {
     private readonly Mock<IJobStorage> _storage = new();
     private readonly Mock<IJobInvokerFactory> _invokerFactory = new();
+    private readonly Mock<IJobRetryPolicy> _retryPolicy = new();
     private readonly TestServiceScopeFactory _scopeFactory = new();
     private readonly ThrottleRegistry _throttleRegistry = new();
     private readonly NexJobOptions _options = new();
@@ -23,10 +24,14 @@ public sealed class JobExecutorTests
         _invokerFactory
             .Setup(x => x.PrepareAsync(It.IsAny<JobRecord>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((JobRecord job, CancellationToken _) => MakeContext(job));
+        _retryPolicy
+            .Setup(x => x.ComputeRetryAt(It.IsAny<JobRecord>(), It.IsAny<Exception>()))
+            .Returns(DateTimeOffset.UtcNow.AddMinutes(1));
 
         _sut = new JobExecutor(
             _storage.Object,
             _invokerFactory.Object,
+            _retryPolicy.Object,
             _scopeFactory,
             _throttleRegistry,
             _options,
@@ -56,6 +61,9 @@ public sealed class JobExecutorTests
         // Arrange
         var job = MakeJob<FailingJob, TestInput>(new TestInput("test"), maxAttempts: 3);
         job.Attempts = 1;
+        _retryPolicy
+            .Setup(x => x.ComputeRetryAt(It.IsAny<JobRecord>(), It.IsAny<Exception>()))
+            .Returns(DateTimeOffset.UtcNow.AddMinutes(5));
 
         // Act
         await _sut.ExecuteJobAsync(job);
@@ -73,6 +81,9 @@ public sealed class JobExecutorTests
         // Arrange
         var job = MakeJob<FailingJob, TestInput>(new TestInput("test"), maxAttempts: 1);
         job.Attempts = 1;
+        _retryPolicy
+            .Setup(x => x.ComputeRetryAt(It.IsAny<JobRecord>(), It.IsAny<Exception>()))
+            .Returns((DateTimeOffset?)null);
 
         // Act
         await _sut.ExecuteJobAsync(job);
@@ -104,6 +115,9 @@ public sealed class JobExecutorTests
         // Arrange
         var job = MakeJob<FailingJob, TestInput>(new TestInput("test"), maxAttempts: 1);
         job.Attempts = 1;
+        _retryPolicy
+            .Setup(x => x.ComputeRetryAt(It.IsAny<JobRecord>(), It.IsAny<Exception>()))
+            .Returns((DateTimeOffset?)null);
         var handler = new Mock<IDeadLetterHandler<FailingJob>>();
         _scopeFactory.SetService<IDeadLetterHandler<FailingJob>>(handler.Object);
 
@@ -120,6 +134,9 @@ public sealed class JobExecutorTests
         // Arrange
         var job = MakeJob<FailingJob, TestInput>(new TestInput("test"), maxAttempts: 1);
         job.Attempts = 1;
+        _retryPolicy
+            .Setup(x => x.ComputeRetryAt(It.IsAny<JobRecord>(), It.IsAny<Exception>()))
+            .Returns((DateTimeOffset?)null);
         var handler = new Mock<IDeadLetterHandler<FailingJob>>();
         handler.Setup(x => x.HandleAsync(It.IsAny<JobRecord>(), It.IsAny<Exception>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new Exception("handler failure"));
@@ -144,6 +161,7 @@ public sealed class JobExecutorTests
         var sutWithFilters = new JobExecutor(
             _storage.Object,
             _invokerFactory.Object,
+            _retryPolicy.Object,
             _scopeFactory,
             _throttleRegistry,
             _options,
@@ -170,6 +188,7 @@ public sealed class JobExecutorTests
         var sutWithFilters = new JobExecutor(
             _storage.Object,
             _invokerFactory.Object,
+            _retryPolicy.Object,
             _scopeFactory,
             _throttleRegistry,
             _options,
