@@ -849,7 +849,7 @@ public sealed class PostgresStorageProvider : IStorageProvider
                 await conn.ExecuteAsync(
                     """
                     UPDATE nexjob_jobs
-                    SET status = 'Failed', completed_at = NOW(),
+                    SET status = 'Failed', completed_at = NOW(), retry_at = NULL,
                         exception_message = @msg, exception_stack_trace = @stack,
                         heartbeat_at = NULL, execution_logs = @Logs::jsonb
                     WHERE id = @id

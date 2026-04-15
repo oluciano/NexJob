@@ -625,6 +625,7 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
                 {
                     job.Status = JobStatus.Failed;
                     job.CompletedAt = DateTimeOffset.UtcNow;
+                    job.RetryAt = null;
 
                     if (result.RecurringJobId is not null && _recurringJobs.TryGetValue(result.RecurringJobId, out var rj))
                     {

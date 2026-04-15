@@ -849,7 +849,7 @@ public sealed class SqlServerStorageProvider : IStorageProvider
                 await conn.ExecuteAsync(
                     """
                     UPDATE nexjob_jobs
-                    SET status = 'Failed', completed_at = SYSUTCDATETIME(),
+                    SET status = 'Failed', completed_at = SYSUTCDATETIME(), retry_at = NULL,
                         exception_message = @msg, exception_stack_trace = @stack,
                         heartbeat_at = NULL, execution_logs = @Logs
                     WHERE id = @id
