@@ -92,7 +92,9 @@ internal sealed class ThrottleRegistry
                 .TryAcquireAsync(resource, maxConcurrent, ct)
                 .ConfigureAwait(false);
             if (!acquiredDistributed)
+            {
                 return false;
+            }
         }
 
         var sem = _semaphores.GetOrAdd(resource, _ => new SemaphoreSlim(maxConcurrent, maxConcurrent));
@@ -106,14 +108,20 @@ internal sealed class ThrottleRegistry
         catch (OperationCanceledException)
         {
             if (_distributedStore is not null)
+            {
                 await _distributedStore.ReleaseAsync(resource, CancellationToken.None).ConfigureAwait(false);
+            }
+
             throw;
         }
 
         if (!acquiredLocal)
         {
             if (_distributedStore is not null)
+            {
                 await _distributedStore.ReleaseAsync(resource, CancellationToken.None).ConfigureAwait(false);
+            }
+
             return false;
         }
 
