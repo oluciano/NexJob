@@ -29,6 +29,9 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `IJobInvokerFactory` / `DefaultJobInvokerFactory` — encapsulates type resolution, payload migration, DI scope creation, and compiled invoker cache. Extracted from `JobExecutor` for testability.
+- `IJobRetryPolicy` / `DefaultJobRetryPolicy` — encapsulates retry delay calculation. Extracted from `JobExecutor.HandleFailureAsync`. Pure function: testable in isolation.
+- `IDeadLetterDispatcher` / `DefaultDeadLetterDispatcher` — encapsulates dead-letter handler resolution and invocation. Extracted from `JobExecutor`. Removes reflection from the hot path.
 - `IJobStorage` — hot-path storage contract for execution and worker coordination
 - `IRecurringStorage` — recurring job scheduling contract
 - `IDashboardStorage` — read-heavy dashboard query contract (safe for read replicas)
@@ -43,11 +46,17 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- `CommitJobResultAsync` dead-letter path now explicitly clears `RetryAt` across all 5 storage providers (InMemory, PostgreSQL, SQL Server, Redis, MongoDB). Previously, jobs transitioned to `Failed` but retained the last `RetryAt` value.
+- `ThrottleRegistry` now wraps `IDistributedThrottleStore` calls in try-catch. When the distributed store throws, the registry degrades gracefully to local `SemaphoreSlim` throttling instead of propagating the exception.
 - Throttle wait replaced busy-loop (`Task.Delay(50)`) with `SemaphoreSlim.WaitAsync`
 - Redis throttle TTL now reads from `NexJobOptions.DistributedThrottleTtl` (was hardcoded to 3600s)
 
 ### Documentation
 
+- Contract test `CommitJobResultAsync_Failure_NoRetry_SetsFailed` now asserts `RetryAt == null` on dead-letter transition across all providers.
+- Added `MissingJobType` negative test scenario to RabbitMQ, SQS, Kafka, and AzureServiceBus trigger unit test suites.
+- Added `JobControlServiceIntegrationTests` — verifies Pause/Resume/Requeue/Delete against real dispatcher and InMemory storage.
+- Added `DistributedThrottleDegradationTests` — verifies graceful fallback to local throttle when distributed store is unavailable.
 - wiki/07-Throttling: added distributed throttle section, removed outdated Redis semaphore example
 - wiki/09-Storage-Providers: added interface segregation, read replica, and IJobControlService sections
 - wiki/11-Configuration-Reference: added DistributedThrottleTtl option
