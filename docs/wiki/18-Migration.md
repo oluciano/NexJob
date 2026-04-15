@@ -4,6 +4,56 @@ Breaking changes, API updates, and schema migration between NexJob versions.
 
 ---
 
+## v2.x → v3.0
+
+### Breaking changes
+
+#### 1. `AddNexJob` returns `NexJobBuilder`
+
+```csharp
+// Before (v2):
+services.AddNexJob(opt => { ... })
+        .AddSingleton<MyService>();
+
+// After (v3):
+services.AddNexJob(opt => { ... })
+        .Services                        // access IServiceCollection
+        .AddSingleton<MyService>();
+
+// NexJob-specific extensions chain directly:
+services.AddNexJob(opt => { ... })
+        .AddNexJobJobs(typeof(Program).Assembly)
+        .UseDashboardReadReplica("replica-conn");
+```
+
+#### 2. Custom storage providers must implement 3 interfaces
+
+If you implemented a custom `IStorageProvider`, split it into
+`IJobStorage`, `IRecurringStorage`, and `IDashboardStorage`.
+`IStorageProvider` is now `IJobStorage + IRecurringStorage + IDashboardStorage`.
+
+Register all 4 in DI:
+```csharp
+services.TryAddSingleton<MyProvider>();
+services.TryAddSingleton<IStorageProvider>(sp => sp.GetRequiredService<MyProvider>());
+services.TryAddSingleton<IJobStorage>(sp => sp.GetRequiredService<MyProvider>());
+services.TryAddSingleton<IRecurringStorage>(sp => sp.GetRequiredService<MyProvider>());
+services.TryAddSingleton<IDashboardStorage>(sp => sp.GetRequiredService<MyProvider>());
+```
+
+**Standard users (built-in providers): no action required.**
+
+### New features in v3
+
+- `UseDashboardReadReplica()` — route dashboard queries to a read replica
+- `IJobControlService` — programmatic requeue/delete/pause from application code
+- `UseDistributedThrottle()` — global Redis-backed throttle enforcement
+- `NexJobOptions.DistributedThrottleTtl` — configurable slot TTL
+
+See the [full migration guide](migration-v2-to-v3.md) for details.
+
+---
+
 ## Schema Migration (Job Payloads)
 
 When your job input type changes, existing jobs in storage may have incompatible payloads. NexJob handles this with automatic schema migration.

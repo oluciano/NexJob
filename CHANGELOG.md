@@ -12,6 +12,47 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+## [3.0.0] - 2026-04-14
+
+### Breaking Changes
+
+- `AddNexJob` now returns `NexJobBuilder` instead of `IServiceCollection`.
+  Use `.Services` to chain non-NexJob extensions.
+  See docs/wiki/migration-v2-to-v3.md.
+
+- `IStorageProvider` split into `IJobStorage`, `IRecurringStorage`, and
+  `IDashboardStorage`. `IStorageProvider` is the composed interface.
+  No change required for standard (built-in provider) usage.
+  Custom storage provider implementors must register all 4 DI types.
+
+### Added
+
+- `IJobStorage` — hot-path storage contract for execution and worker coordination
+- `IRecurringStorage` — recurring job scheduling contract
+- `IDashboardStorage` — read-heavy dashboard query contract (safe for read replicas)
+- `NexJobBuilder` — fluent builder returned by `AddNexJob`
+- `IJobControlService` — programmatic requeue, delete, and pause from application code
+- `UseDashboardReadReplica(connectionString)` — read replica routing for PostgreSQL and SQL Server
+- `IDistributedThrottleStore` — opt-in interface for global throttle enforcement
+- `RedisDistributedThrottleStore` — Redis-backed global `[ThrottleAttribute]` limits
+- `UseDistributedThrottle()` — opt-in extension to enable Redis-backed throttling
+- `NexJobOptions.DistributedThrottleTtl` — configurable slot TTL for distributed throttle (default: 1h)
+- `JobExecutor` — extracted execution pipeline from `JobDispatcherService`
+
+### Fixed
+
+- Throttle wait replaced busy-loop (`Task.Delay(50)`) with `SemaphoreSlim.WaitAsync`
+- Redis throttle TTL now reads from `NexJobOptions.DistributedThrottleTtl` (was hardcoded to 3600s)
+
+### Documentation
+
+- wiki/07-Throttling: added distributed throttle section, removed outdated Redis semaphore example
+- wiki/09-Storage-Providers: added interface segregation, read replica, and IJobControlService sections
+- wiki/11-Configuration-Reference: added DistributedThrottleTtl option
+- wiki/18-Migration: added v2→v3 section
+- wiki/19-Triggers: added producer examples for all 5 brokers and error handling section
+- wiki/migration-v2-to-v3.md: new full migration guide
+
 ## [2.0.0] - 2026-04-14
 
 ### Added

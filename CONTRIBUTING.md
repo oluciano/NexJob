@@ -223,6 +223,30 @@ test: add tests
 
 ---
 
+---
+
+## SQL storage provider conventions
+
+### Read replica support
+
+SQL providers support read replica via a constructor overload that skips migrations:
+
+```csharp
+// Primary — runs migrations
+public MyProvider(string connectionString, NexJobOptions options) { ... }
+
+// Read replica — skips migrations, declared with explicit remarks
+/// <remarks>Migrations are NOT applied. Intended for read replica use only.</remarks>
+public MyProvider(DbConnection connection, NexJobOptions options) { ... }
+```
+
+`UseDashboardReadReplica` registers this overload as `IDashboardStorage` only.
+
+### Dapper configuration
+
+Set `Dapper.DefaultTypeMap.MatchNamesWithUnderscores = true` in the **primary
+constructor only**. This is a process-wide static — one call is sufficient.
+
 ## License
 
 MIT License applies to all contributions

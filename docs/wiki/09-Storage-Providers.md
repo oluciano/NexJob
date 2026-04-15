@@ -1,6 +1,23 @@
 # Storage Providers
 
-NexJob supports 5 storage backends. All implement the same `IStorageProvider` interface.
+NexJob supports 5 storage backends. Each implements `IStorageProvider` —
+a composed interface of `IJobStorage`, `IRecurringStorage`, and `IDashboardStorage`.
+
+---
+
+## Storage interfaces (v3)
+
+`IStorageProvider` is composed of three focused interfaces:
+
+| Interface | Responsibility | Inject when you need |
+|---|---|---|
+| `IJobStorage` | Execution, worker coordination | Custom job execution logic |
+| `IRecurringStorage` | Recurring job scheduling | Custom recurring logic |
+| `IDashboardStorage` | Dashboard queries and control | Custom reporting or admin |
+
+For most applications, inject `IStorageProvider` or use `IJobControlService`
+(see [IJobControlService](#ijobcontrolservice) below).
+Built-in providers implement all three — no registration changes needed.
 
 ---
 
@@ -133,6 +150,26 @@ All persistent providers implement `IRuntimeSettingsStore`. This stores dashboar
 
 **Development:** InMemory
 **Production:** PostgreSQL or SQL Server for ACID, Redis for lowest latency, MongoDB if already in stack
+
+---
+
+## Next Steps
+
+- [Dashboard](10-Dashboard.md) — Monitor jobs in storage
+- [Configuration Reference](11-Configuration-Reference.md) — Provider-specific options
+- [Migration](18-Migration.md) — Switch between providers
+ // Delete a job
+    await control.DeleteJobAsync(jobId);
+
+    // Pause a queue
+    await control.PauseQueueAsync("reports");
+
+    // Resume a queue
+    await control.ResumeQueueAsync("reports");
+}
+```
+
+Registered automatically by `AddNexJob`. No additional setup needed.
 
 ---
 

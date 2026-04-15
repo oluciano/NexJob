@@ -29,7 +29,8 @@ using NexJob;
 var builder = WebApplication.CreateBuilder(args);
 
 // Register NexJob with InMemory storage (default)
-builder.Services.AddNexJob();
+builder.Services.AddNexJob()
+               .AddNexJobJobs(typeof(Program).Assembly);
 
 // Or with a specific storage provider
 builder.Services.AddNexJob(options =>
@@ -37,10 +38,8 @@ builder.Services.AddNexJob(options =>
     options.UsePostgres("Host=localhost;Database=nexjob;Username=postgres;Password=secret");
     options.Workers = 20;
     options.MaxAttempts = 5;
-});
-
-// Register all jobs from your assembly
-builder.Services.AddNexJobJobs(typeof(Program).Assembly);
+})
+.AddNexJobJobs(typeof(Program).Assembly);
 
 var app = builder.Build();
 app.Run();
