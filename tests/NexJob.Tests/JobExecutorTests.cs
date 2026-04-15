@@ -14,7 +14,7 @@ public sealed class JobExecutorTests
     private readonly Mock<IJobStorage> _storage = new();
     private readonly Mock<IJobInvokerFactory> _invokerFactory = new();
     private readonly Mock<IJobRetryPolicy> _retryPolicy = new();
-    private readonly TestServiceScopeFactory _scopeFactory = new();
+    private readonly Mock<IDeadLetterDispatcher> _deadLetterDispatcher = new();
     private readonly ThrottleRegistry _throttleRegistry = new();
     private readonly NexJobOptions _options = new();
     private readonly JobExecutor _sut;
@@ -32,7 +32,7 @@ public sealed class JobExecutorTests
             _storage.Object,
             _invokerFactory.Object,
             _retryPolicy.Object,
-            _scopeFactory,
+            _deadLetterDispatcher.Object,
             _throttleRegistry,
             _options,
             Enumerable.Empty<IJobExecutionFilter>(),
@@ -118,14 +118,14 @@ public sealed class JobExecutorTests
         _retryPolicy
             .Setup(x => x.ComputeRetryAt(It.IsAny<JobRecord>(), It.IsAny<Exception>()))
             .Returns((DateTimeOffset?)null);
-        var handler = new Mock<IDeadLetterHandler<FailingJob>>();
-        _scopeFactory.SetService<IDeadLetterHandler<FailingJob>>(handler.Object);
-
         // Act
         await _sut.ExecuteJobAsync(job);
 
         // Assert
-        handler.Verify(x => x.HandleAsync(job, It.IsAny<Exception>(), It.IsAny<CancellationToken>()), Times.Once);
+        _deadLetterDispatcher.Verify(x => x.DispatchAsync(
+            job,
+            It.IsAny<Exception>(),
+            It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -137,16 +137,15 @@ public sealed class JobExecutorTests
         _retryPolicy
             .Setup(x => x.ComputeRetryAt(It.IsAny<JobRecord>(), It.IsAny<Exception>()))
             .Returns((DateTimeOffset?)null);
-        var handler = new Mock<IDeadLetterHandler<FailingJob>>();
-        handler.Setup(x => x.HandleAsync(It.IsAny<JobRecord>(), It.IsAny<Exception>(), It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new Exception("handler failure"));
-        _scopeFactory.SetService<IDeadLetterHandler<FailingJob>>(handler.Object);
-
         // Act
         Func<Task> act = () => _sut.ExecuteJobAsync(job);
 
         // Assert
         await act.Should().NotThrowAsync();
+        _deadLetterDispatcher.Verify(x => x.DispatchAsync(
+            job,
+            It.IsAny<Exception>(),
+            It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -162,7 +161,7 @@ public sealed class JobExecutorTests
             _storage.Object,
             _invokerFactory.Object,
             _retryPolicy.Object,
-            _scopeFactory,
+            _deadLetterDispatcher.Object,
             _throttleRegistry,
             _options,
             new[] { filter.Object },
@@ -189,7 +188,7 @@ public sealed class JobExecutorTests
             _storage.Object,
             _invokerFactory.Object,
             _retryPolicy.Object,
-            _scopeFactory,
+            _deadLetterDispatcher.Object,
             _throttleRegistry,
             _options,
             new[] { filter.Object },
@@ -315,19 +314,6 @@ public sealed class JobExecutorTests
         public Task ExecuteAsync(TestInput input, CancellationToken cancellationToken) => throw new Exception("job failed");
     }
 
-    private sealed class TestServiceScopeFactory : IServiceScopeFactory
-    {
-        private readonly TestServiceProvider _serviceProvider = new();
-
-        public void SetService<TService>(TService service)
-            where TService : class
-        {
-            _serviceProvider.Set(typeof(TService), service);
-        }
-
-        public IServiceScope CreateScope() => new TestServiceScope(_serviceProvider);
-    }
-
     private sealed class TestServiceScope : IServiceScope
     {
         public TestServiceScope(IServiceProvider serviceProvider) => ServiceProvider = serviceProvider;
@@ -341,17 +327,6 @@ public sealed class JobExecutorTests
 
     private sealed class TestServiceProvider : IServiceProvider
     {
-        private readonly Dictionary<Type, object> _services = new();
-
-        public object? GetService(Type serviceType)
-        {
-            _services.TryGetValue(serviceType, out var service);
-            return service;
-        }
-
-        public void Set(Type serviceType, object service)
-        {
-            _services[serviceType] = service;
-        }
+        public object? GetService(Type serviceType) => null;
     }
 }

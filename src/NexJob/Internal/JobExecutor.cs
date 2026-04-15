@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using NexJob.Storage;
 using NexJob.Telemetry;
@@ -15,7 +14,7 @@ internal sealed class JobExecutor
     private readonly IJobStorage _storage;
     private readonly IJobInvokerFactory _invokerFactory;
     private readonly IJobRetryPolicy _retryPolicy;
-    private readonly IServiceScopeFactory _scopeFactory;
+    private readonly IDeadLetterDispatcher _deadLetterDispatcher;
     private readonly ThrottleRegistry _throttleRegistry;
     private readonly NexJobOptions _options;
     private readonly ILogger<JobExecutor> _logger;
@@ -27,7 +26,7 @@ internal sealed class JobExecutor
     /// <param name="storage">The job storage.</param>
     /// <param name="invokerFactory">The job invoker factory.</param>
     /// <param name="retryPolicy">The job retry policy.</param>
-    /// <param name="scopeFactory">The scope factory.</param>
+    /// <param name="deadLetterDispatcher">The dead-letter dispatcher.</param>
     /// <param name="throttleRegistry">The throttle registry.</param>
     /// <param name="options">The nex job options.</param>
     /// <param name="filters">The filters.</param>
@@ -36,7 +35,7 @@ internal sealed class JobExecutor
         IJobStorage storage,
         IJobInvokerFactory invokerFactory,
         IJobRetryPolicy retryPolicy,
-        IServiceScopeFactory scopeFactory,
+        IDeadLetterDispatcher deadLetterDispatcher,
         ThrottleRegistry throttleRegistry,
         NexJobOptions options,
         IEnumerable<IJobExecutionFilter> filters,
@@ -45,7 +44,7 @@ internal sealed class JobExecutor
         _storage = storage;
         _invokerFactory = invokerFactory;
         _retryPolicy = retryPolicy;
-        _scopeFactory = scopeFactory;
+        _deadLetterDispatcher = deadLetterDispatcher;
         _throttleRegistry = throttleRegistry;
         _options = options;
         _logger = logger;
@@ -110,7 +109,7 @@ internal sealed class JobExecutor
 
             if (retryAt is null)
             {
-                await InvokeDeadLetterHandlerAsync(job, ex, CancellationToken.None).ConfigureAwait(false);
+                await _deadLetterDispatcher.DispatchAsync(job, ex, CancellationToken.None).ConfigureAwait(false);
             }
         }
         finally
@@ -239,50 +238,6 @@ internal sealed class JobExecutor
         }
 
         return await Task.FromResult(retryAt).ConfigureAwait(false);
-    }
-
-    private async Task InvokeDeadLetterHandlerAsync(
-        JobRecord job,
-        Exception lastException,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            var jobType = JobTypeResolver.ResolveJobType(job.JobType);
-            if (jobType is null)
-            {
-                _logger.LogDebug(
-                    "Cannot resolve job type {JobType} for dead-letter handler — handler skipped",
-                    job.JobType);
-                return;
-            }
-
-            using var scope = _scopeFactory.CreateScope();
-
-            var handlerType = typeof(IDeadLetterHandler<>).MakeGenericType(jobType);
-            var handler = scope.ServiceProvider.GetService(handlerType);
-            if (handler is null)
-            {
-                return;
-            }
-
-            var method = handlerType.GetMethod(nameof(IDeadLetterHandler<object>.HandleAsync))
-                        ?? throw new InvalidOperationException($"Cannot find HandleAsync method on {handlerType.Name}");
-
-            var task = (Task)method.Invoke(handler, new object[] { job, lastException, cancellationToken })!;
-            await task.ConfigureAwait(false);
-
-            _logger.LogDebug(
-                "Dead-letter handler {Handler} invoked for job {JobId}",
-                handlerType.Name, job.Id);
-        }
-        catch (Exception handlerEx)
-        {
-            _logger.LogError(
-                handlerEx,
-                "Dead-letter handler threw for job {JobId} — handler errors are swallowed",
-                job.Id);
-        }
     }
 
     private async Task RunHeartbeatAsync(JobId jobId, CancellationToken cancellationToken)
