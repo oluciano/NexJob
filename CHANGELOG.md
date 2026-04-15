@@ -12,8 +12,6 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
-- Clear `RetryAt` field in all storage providers when a job transitions to `JobStatus.Failed` (dead-letter).
-
 ## [3.0.0] - 2026-04-14
 
 ### Breaking Changes
