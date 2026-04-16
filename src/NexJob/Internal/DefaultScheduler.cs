@@ -49,7 +49,7 @@ internal sealed class DefaultScheduler : IScheduler
     {
         using var activity = NexJobActivitySource.StartEnqueue(job.JobType, job.Queue);
 
-        var result = await _storage.EnqueueAsync(job, duplicatePolicy, cancellationToken).ConfigureAwait(false);
+        var result = await _jobStorage.EnqueueAsync(job, duplicatePolicy, cancellationToken).ConfigureAwait(false);
 
         if (result.WasRejected && job.IdempotencyKey is not null)
         {
