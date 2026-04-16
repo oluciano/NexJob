@@ -24,19 +24,21 @@ jobs:
       - name: Build
         run: dotnet build --no-restore --configuration Release
 
-      - name: Test with coverage
+      - name: Test Core
         run: |
-          # Usando o coletor XPlat para evitar erros de instrumentação Cecil
-          dotnet test NexJob.sln \
-            --no-build \
-            --configuration Release \
-            --verbosity normal \
-            --filter "Category!=Integration&Category!=Reliability&FullyQualifiedName!~Reliability&FullyQualifiedName!~Integration" \
-            --logger "trx;LogFileName=unit-tests.trx" \
+          dotnet test tests/NexJob.Tests/NexJob.Tests.csproj \
+            --no-build --configuration Release \
             --collect:"XPlat Code Coverage" \
+            --results-directory ./coverage/core/ \
             -- \
-            DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Include="[NexJob*]*" \
-            DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Exclude="[*Tests*]*,[*Sample*]*,[NexJob.Dashboard*]*"
+            DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Include="[NexJob]*"
+
+      - name: Test Triggers
+        run: |
+          dotnet test tests/NexJob.Trigger.AwsSqs.Tests/NexJob.Trigger.AwsSqs.Tests.csproj --no-build --configuration Release --collect:"XPlat Code Coverage" --results-directory ./coverage/awssqs/
+          dotnet test tests/NexJob.Trigger.RabbitMQ.Tests/NexJob.Trigger.RabbitMQ.Tests.csproj --no-build --configuration Release --collect:"XPlat Code Coverage" --results-directory ./coverage/rabbitmq/
+          dotnet test tests/NexJob.Trigger.Kafka.Tests/NexJob.Trigger.Kafka.Tests.csproj --no-build --configuration Release --collect:"XPlat Code Coverage" --results-directory ./coverage/kafka/
+          dotnet test tests/NexJob.Trigger.GooglePubSub.Tests/NexJob.Trigger.GooglePubSub.Tests.csproj --no-build --configuration Release --collect:"XPlat Code Coverage" --results-directory ./coverage/pubsub/
 
       - name: Install ReportGenerator
         run: dotnet tool install --global dotnet-reportgenerator-globaltool
@@ -44,14 +46,13 @@ jobs:
       - name: Generate Coverage Report
         run: |
           reportgenerator \
-            -reports:"**/coverage.cobertura.xml" \
+            -reports:"./coverage/**/coverage.cobertura.xml" \
             -targetdir:"./coverage-report" \
             -reporttypes:TextSummary \
             -title:NexJob-Coverage
 
       - name: Check Coverage Threshold
         run: |
-          # Extrai a cobertura de linha do sumário do ReportGenerator
           COVERAGE=$(grep "Line coverage" ./coverage-report/Summary.txt | awk '{print $3}' | sed 's/%//')
           echo "Current Line Coverage: $COVERAGE%"
           if (( $(echo "$COVERAGE < 80.0" | bc -l) )); then
