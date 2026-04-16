@@ -26,21 +26,38 @@ jobs:
 
       - name: Test with coverage
         run: |
-          # Rodar todos os testes unitários (excluindo explicitamente Reliability e Integration)
+          # Usando o coletor XPlat para evitar erros de instrumentação Cecil
           dotnet test NexJob.sln \
             --no-build \
             --configuration Release \
             --verbosity normal \
             --filter "Category!=Integration&Category!=Reliability&FullyQualifiedName!~Reliability&FullyQualifiedName!~Integration" \
             --logger "trx;LogFileName=unit-tests.trx" \
-            "/p:CollectCoverage=true" \
-            "/p:CoverletOutputFormat=cobertura" \
-            "/p:CoverletOutput=./coverage/" \
-            "/p:Include=[NexJob*]*" \
-            "/p:Exclude=[*Tests*]*%2c[*Sample*]*%2c[NexJob.Dashboard*]*" \
-            "/p:Threshold=80" \
-            "/p:ThresholdType=line" \
-            "/p:ThresholdStat=total"
+            --collect:"XPlat Code Coverage" \
+            -- \
+            DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Include="[NexJob*]*" \
+            DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Exclude="[*Tests*]*,[*Sample*]*,[NexJob.Dashboard*]*"
+
+      - name: Install ReportGenerator
+        run: dotnet tool install --global dotnet-reportgenerator-globaltool
+
+      - name: Generate Coverage Report
+        run: |
+          reportgenerator \
+            -reports:"**/coverage.cobertura.xml" \
+            -targetdir:"./coverage-report" \
+            -reporttypes:TextSummary \
+            -title:NexJob-Coverage
+
+      - name: Check Coverage Threshold
+        run: |
+          # Extrai a cobertura de linha do sumário do ReportGenerator
+          COVERAGE=$(grep "Line coverage" ./coverage-report/Summary.txt | awk '{print $3}' | sed 's/%//')
+          echo "Current Line Coverage: $COVERAGE%"
+          if (( $(echo "$COVERAGE < 80.0" | bc -l) )); then
+            echo "Error: Line coverage ($COVERAGE%) is below 80%"
+            exit 1
+          fi
 
       - name: Upload unit test artifacts
         uses: actions/upload-artifact@v4
@@ -49,7 +66,7 @@ jobs:
           name: unit-test-artifacts
           path: |
             **/TestResults/**/*.trx
-            **/coverage/**
+            ./coverage-report/**
 
   integration-tests:
     name: Integration Tests - ${{ matrix.name }}
