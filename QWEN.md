@@ -139,6 +139,7 @@ Every trigger must satisfy all 5 guarantees — read `skills/nexjob-trigger.md`:
 - Respect StyleCop rules (SA1202, SA1204, SA1413, SA1508)
 - Always run `dotnet format` before committing
 - **Testing Standard (Must-Have):** 80% unit test coverage is mandatory for Core, Providers, and Triggers.\n  - Integration and Reliability tests are excluded from the coverage metric and must stay out of the `ci.yml`.\n  - Every method or feature MUST have a Testing Matrix (Positive/Negative/Inputs).
+- **Testing Standard (Must-Have):** 80% unit test coverage is mandatory for Core, Providers, and Triggers.\n  - Integration and Reliability tests are excluded from the coverage metric and must stay out of the `ci.yml`.\n  - Every method or feature MUST have a Testing Matrix (Positive/Negative/Inputs).
 
 ---
 
