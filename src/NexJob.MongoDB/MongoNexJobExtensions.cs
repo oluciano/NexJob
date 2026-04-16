@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.DependencyInjection;
 using MongoDB.Bson.Serialization;
 using MongoDB.Driver;
@@ -9,6 +10,7 @@ namespace NexJob.MongoDB;
 /// <summary>
 /// Extension methods for registering the MongoDB storage provider with NexJob.
 /// </summary>
+[ExcludeFromCodeCoverage]
 public static class MongoNexJobExtensions
 {
     private static bool _serializersRegistered;

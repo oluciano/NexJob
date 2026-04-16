@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.DependencyInjection;
 using NexJob.Configuration;
 using NexJob.Storage;
@@ -8,6 +9,7 @@ namespace NexJob.Postgres;
 /// <summary>
 /// Extension methods for registering the PostgreSQL storage provider with NexJob.
 /// </summary>
+[ExcludeFromCodeCoverage]
 public static class NexJobPostgresExtensions
 {
     /// <summary>

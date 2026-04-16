@@ -29,6 +29,14 @@ public sealed class JobInternalUtilsHardeningTests
         result.Should().BeNull();
     }
 
+    /// <summary>Tests that an unknown assembly-qualified name returns null.</summary>
+    [Fact]
+    public void Resolve_UnknownTypeName_ReturnsNull()
+    {
+        var result = JobTypeResolver.ResolveJobType("NonExistent.Type.That.DoesNotExist, SomeAssembly");
+        result.Should().BeNull();
+    }
+
     // ─── MigrationPipeline ───────────────────────────────────────────────────
 
     /// <summary>Tests that migration pipeline handles cases with no migrations registered.</summary>

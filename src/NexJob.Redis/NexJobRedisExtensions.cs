@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using NexJob.Configuration;
@@ -9,6 +10,7 @@ namespace NexJob.Redis;
 /// <summary>
 /// Extension methods for registering the Redis storage provider with NexJob.
 /// </summary>
+[ExcludeFromCodeCoverage]
 public static class NexJobRedisExtensions
 {
     /// <summary>

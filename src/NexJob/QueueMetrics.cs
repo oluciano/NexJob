@@ -1,6 +1,9 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace NexJob;
 
 /// <summary>Real-time metrics for a single queue.</summary>
+[ExcludeFromCodeCoverage]
 public sealed class QueueMetrics
 {
     /// <summary>Queue name.</summary>

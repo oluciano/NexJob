@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
 using NexJob.Configuration;
@@ -8,6 +9,7 @@ namespace NexJob.SqlServer;
 /// <summary>
 /// Extension methods for registering the SQL Server storage provider with NexJob.
 /// </summary>
+[ExcludeFromCodeCoverage]
 public static class NexJobSqlServerExtensions
 {
     /// <summary>
