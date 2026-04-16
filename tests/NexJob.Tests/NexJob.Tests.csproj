@@ -37,6 +37,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\NexJob.Redis\NexJob.Redis.csproj" />
+    <ProjectReference Include="..\..\src\NexJob.MongoDB\NexJob.MongoDB.csproj" />
   </ItemGroup>
 
 </Project>
