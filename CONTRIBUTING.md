@@ -152,12 +152,44 @@ git push -u origin feat/my-feature
 gh pr create
 ```
 
-## Branch Protection
+## Branch Protection & Release Workflow
 
 - `main` — protected. PR required. CI must pass. No direct pushes.
 - `develop` — protected. PR required. CI must pass. No direct pushes.
 - All work starts from `develop`. Features branch off `develop`.
 - `main` only receives merges from `develop` at release time.
+
+### Release Process (Avoiding commit divergence)
+
+⚠️ **Critical**: `main` must NEVER have commits that `develop` doesn't have. This prevents permanent desynchronization.
+
+**After release in `develop` (when tag is created):**
+
+```bash
+# 1. Create a clean release branch (no merge commit)
+git checkout -b release/vX.Y.Z-to-main develop
+
+# 2. Push the branch
+git push -u origin release/vX.Y.Z-to-main
+
+# 3. Create PR from release/vX.Y.Z-to-main → main
+gh pr create --title "release: merge vX.Y.Z to main" \
+  --base main \
+  --body "Release vX.Y.Z from develop to main (fast-forward)"
+
+# 4. Merge the PR via GitHub UI (will be fast-forward since branch tracks develop)
+
+# 5. After PR is merged, cleanup
+git checkout develop
+git branch -d release/vX.Y.Z-to-main
+```
+
+**Why this works:**
+- Release branch is created FROM develop (same commits)
+- PR from release branch → main is always fast-forward
+- No extra merge commit is created in main
+- main stays synchronized with develop
+- Both branches point to the same release tags
 
 ---
 
