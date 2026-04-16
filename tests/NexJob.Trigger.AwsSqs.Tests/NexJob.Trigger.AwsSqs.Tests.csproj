@@ -13,6 +13,7 @@
     </PackageReference>
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="8.0.1" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.3" />
+    <PackageReference Include="Moq" Version="4.20.72" />
     <ProjectReference Include="..\..\src\NexJob.Trigger.AwsSqs\NexJob.Trigger.AwsSqs.csproj" />
     <ProjectReference Include="..\..\src\NexJob\NexJob.csproj" />
     <PackageReference Include="FluentAssertions" Version="6.12.1" />
