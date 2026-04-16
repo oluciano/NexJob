@@ -26,17 +26,12 @@ jobs:
 
       - name: Test with coverage
         run: |
-          dotnet test NexJob.sln \
-            --no-build \
-            --configuration Release \
-            --filter "Category!=Integration&Category!=Reliability" \
-            --logger "trx;LogFileName=unit-tests.trx" \
-            "/p:CollectCoverage=true" \
-            "/p:CoverletOutputFormat=cobertura" \
-            "/p:Include=[NexJob*]*" \
-            "/p:Exclude=[*Tests*]*%2c[*Sample*]*%2c[NexJob.Dashboard*]*" \
-            "/p:Threshold=1" \
-            "/p:ThresholdType=line"
+          # Rodar apenas projetos unitários puros
+          dotnet test tests/NexJob.Tests/NexJob.Tests.csproj --no-build --configuration Release --logger "trx;LogFileName=core-tests.trx" "/p:CollectCoverage=true" "/p:CoverletOutputFormat=cobertura" "/p:CoverletOutput=./coverage/core/" "/p:Include=[NexJob]*" "/p:Threshold=80"
+          dotnet test tests/NexJob.Trigger.AwsSqs.Tests/NexJob.Trigger.AwsSqs.Tests.csproj --no-build --configuration Release --logger "trx;LogFileName=awssqs-tests.trx" "/p:CollectCoverage=true" "/p:CoverletOutputFormat=cobertura" "/p:CoverletOutput=./coverage/awssqs/" "/p:Include=[NexJob.Trigger.AwsSqs]*" "/p:Threshold=80"
+          dotnet test tests/NexJob.Trigger.RabbitMQ.Tests/NexJob.Trigger.RabbitMQ.Tests.csproj --no-build --configuration Release --logger "trx;LogFileName=rabbitmq-tests.trx" "/p:CollectCoverage=true" "/p:CoverletOutputFormat=cobertura" "/p:CoverletOutput=./coverage/rabbitmq/" "/p:Include=[NexJob.Trigger.RabbitMQ]*" "/p:Threshold=80"
+          dotnet test tests/NexJob.Trigger.Kafka.Tests/NexJob.Trigger.Kafka.Tests.csproj --no-build --configuration Release --logger "trx;LogFileName=kafka-tests.trx" "/p:CollectCoverage=true" "/p:CoverletOutputFormat=cobertura" "/p:CoverletOutput=./coverage/kafka/" "/p:Include=[NexJob.Trigger.Kafka]*" "/p:Threshold=80"
+          dotnet test tests/NexJob.Trigger.GooglePubSub.Tests/NexJob.Trigger.GooglePubSub.Tests.csproj --no-build --configuration Release --logger "trx;LogFileName=pubsub-tests.trx" "/p:CollectCoverage=true" "/p:CoverletOutputFormat=cobertura" "/p:CoverletOutput=./coverage/pubsub/" "/p:Include=[NexJob.Trigger.GooglePubSub]*" "/p:Threshold=80"
 
       - name: Upload unit test artifacts
         uses: actions/upload-artifact@v4
