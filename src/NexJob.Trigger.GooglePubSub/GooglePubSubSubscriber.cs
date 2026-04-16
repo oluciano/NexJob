@@ -1,4 +1,3 @@
-using System.Diagnostics.CodeAnalysis;
 using Google.Cloud.PubSub.V1;
 
 namespace NexJob.Trigger.GooglePubSub;
@@ -6,7 +5,6 @@ namespace NexJob.Trigger.GooglePubSub;
 /// <summary>
 /// Wrapper for Google Cloud Pub/Sub SubscriberClient implementing <see cref="IPubSubSubscriber"/>.
 /// </summary>
-[ExcludeFromCodeCoverage]
 internal sealed class GooglePubSubSubscriber : IPubSubSubscriber
 {
     private readonly SubscriberClient _client;

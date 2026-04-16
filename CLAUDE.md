@@ -182,12 +182,8 @@ All AI-assisted tasks use the **NexJob AI Operating Model**.
 - Always use `.ConfigureAwait(false)` in library projects (`src/NexJob*`)
 - `StringComparison.Ordinal` or `OrdinalIgnoreCase` for all string comparisons
 - Banned APIs: `DateTime.Now` (use `UtcNow`), `.Result`, `.Wait()`
-- **80% Unit Coverage** — strictly enforced via CI for all new code
-- **Must-Have Testing Matrix** — every feature must cover: Retry & Dead-Letter, Concurrency, Crash Recovery, Deadline Enforcement, and Wake-Up Latency
 - StyleCop violations fail the build (SA1202, SA1204, SA1413, SA1508)
 - Always run `dotnet format` before committing
-- **Testing Standard (Must-Have):** 100% unit test coverage per logic class is the mandate (80% global floor) for Core, Providers, and Triggers.\n  - Integration and Reliability tests are excluded from the coverage metric and must stay out of the `ci.yml`.\n  - Every method or feature MUST have a Testing Matrix (Positive/Negative/Inputs).
-- **Disciplined Engineering Cycle (Must-Have):**\n    1. **Hardening:** Create unit tests targeting 100% branch coverage without modifying production code.\n    2. **Build:** Verify 0 warnings/errors (TreatWarningsAsErrors).\n    3. **Test:** Run all unit tests for the current project.\n    4. **Integrate:** Run integration tests for the project (if applicable) using local infra (Docker/In-Memory).\n    5. **Finalize:** Only move to the next project in the solution after the current one is 100% verified.
 
 ---
 

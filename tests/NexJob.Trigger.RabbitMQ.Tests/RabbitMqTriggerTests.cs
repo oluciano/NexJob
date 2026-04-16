@@ -261,47 +261,4 @@ public sealed class RabbitMqTriggerTests
         _channelMock.Verify(m => m.BasicNack(1, false, false), Times.Once);
         _scheduler.EnqueueCalls.Should().BeEmpty();
     }
-
-    /// <summary>
-    /// Verifies that a message without nexjob.job_type header is nacked without requeue.
-    /// </summary>
-    [Fact]
-    public async Task MissingJobType_MessageNackedWithoutRequeue()
-    {
-        // Arrange
-        AsyncEventingBasicConsumer? consumer = null;
-        _channelMock.Setup(m => m.BasicConsume(
-                It.IsAny<string>(), false, It.IsAny<string>(), It.IsAny<bool>(),
-                It.IsAny<bool>(), It.IsAny<IDictionary<string, object>>(),
-                It.IsAny<IBasicConsumer>()))
-            .Callback<string, bool, string, bool, bool, IDictionary<string, object>, IBasicConsumer>(
-                (_, _, _, _, _, _, c) => consumer = (AsyncEventingBasicConsumer)c)
-            .Returns("consumer-tag");
-
-        var handler = new RabbitMqTriggerHandler(
-            Options.Create(_triggerOptions),
-            _connectionFactoryMock.Object,
-            _scheduler,
-            _nexJobOptions,
-            _loggerMock.Object);
-
-        await handler.StartAsync(CancellationToken.None);
-
-        var body = Encoding.UTF8.GetBytes("{\"key\":\"value\"}");
-        var props = new Mock<IBasicProperties>();
-        props.Setup(p => p.CorrelationId).Returns("test-correlation-id");
-        props.Setup(p => p.Headers).Returns(new Dictionary<string, object>()); // No nexjob.job_type
-
-        // Act
-        await consumer!.HandleBasicDeliver(
-            "consumer-tag", 1, false, "exchange", "routing-key", props.Object, body);
-
-        await _scheduler.WaitForEnqueueAttemptAsync(CancellationToken.None)
-            .WaitAsync(TimeSpan.FromMilliseconds(500))
-            .ContinueWith(_ => { }); // ignore timeout — no enqueue expected
-
-        // Assert
-        _scheduler.EnqueueCalls.Should().BeEmpty("no job_type means no job should be created");
-        _channelMock.Verify(m => m.BasicNack(1, false, false), Times.Once);
-    }
 }

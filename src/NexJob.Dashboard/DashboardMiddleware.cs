@@ -127,7 +127,7 @@ public sealed class DashboardMiddleware
 #pragma warning restore SCS0027
 
     private static async Task<JobMetrics> GetCachedMetricsAsync(
-        IMemoryCache cache, IDashboardStorage storage, DashboardOptions options, CancellationToken ct)
+        IMemoryCache cache, IStorageProvider storage, DashboardOptions options, CancellationToken ct)
     {
         const string CacheKey = "nexjob:dashboard:metrics";
 
@@ -509,18 +509,16 @@ public sealed class DashboardMiddleware
     private async Task<string> RenderPageAsync(HttpContext context, string subPath)
     {
 #pragma warning disable MA0004
-        var jobStorage = context.RequestServices.GetRequiredService<IJobStorage>();
-        var recurringStorage = context.RequestServices.GetRequiredService<IRecurringStorage>();
-        var dashboardStorage = context.RequestServices.GetRequiredService<IDashboardStorage>();
+        var storage = context.RequestServices.GetRequiredService<IStorageProvider>();
         var cache = context.RequestServices.GetRequiredService<IMemoryCache>();
         await using var renderer = new HtmlRenderer(context.RequestServices,
             context.RequestServices.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>());
 #pragma warning restore MA0004
 
         // Compute shared counters once for all pages
-        var metrics = await GetCachedMetricsAsync(cache, dashboardStorage, _options, context.RequestAborted).ConfigureAwait(false);
-        var servers = await jobStorage.GetActiveServersAsync(TimeSpan.FromMinutes(1), context.RequestAborted).ConfigureAwait(false);
-        var queues = await dashboardStorage.GetQueueMetricsAsync(context.RequestAborted).ConfigureAwait(false);
+        var metrics = await GetCachedMetricsAsync(cache, storage, _options, context.RequestAborted).ConfigureAwait(false);
+        var servers = await storage.GetActiveServersAsync(TimeSpan.FromMinutes(1), context.RequestAborted).ConfigureAwait(false);
+        var queues = await storage.GetQueueMetricsAsync(context.RequestAborted).ConfigureAwait(false);
         var nexJobOptions = context.RequestServices.GetRequiredService<NexJobOptions>();
 
         var activeQueues = queues.Count(q => q.Processing > 0);

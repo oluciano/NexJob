@@ -142,23 +142,6 @@ builder.Services.AddNexJobGooglePubSubTrigger(options =>
 
 ---
 
-## Error handling
-
-**Malformed message (missing `nexjob.job_type`):**
-The trigger logs a warning and acknowledges (or nacks, depending on broker)
-the message. No job is created. The message will not be redelivered.
-
-**Job type not found in DI:**
-The trigger enqueues the job record. The dispatcher will fail the job on
-execution with a clear error. Retries apply normally.
-
-**Enqueue fails (storage unavailable):**
-The message is NOT acknowledged. It will be redelivered by the broker
-when the trigger recovers. Combined with idempotency keys, this prevents
-duplicate jobs even under partial failures.
-
----
-
 ## Next Steps
 
 - [Idempotency](17-Idempotency.md) — Learn about `DuplicatePolicy`

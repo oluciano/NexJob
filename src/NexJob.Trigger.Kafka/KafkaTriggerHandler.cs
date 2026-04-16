@@ -114,25 +114,24 @@ internal sealed class KafkaTriggerHandler : BackgroundService
     {
         var messageId = result.Message.Key ?? result.TopicPartitionOffset.ToString();
         var traceparent = ExtractTraceparent(result.Message.Headers);
+        var jobType = ExtractJobType(result.Message.Headers);
+
+        var job = JobRecordFactory.Build(
+            jobType: jobType,
+            inputType: typeof(string).AssemblyQualifiedName!,
+            inputJson: result.Message.Value ?? string.Empty,
+            options: _nexJobOptions,
+            queue: _options.TargetQueue,
+            priority: _options.JobPriority,
+            idempotencyKey: messageId,
+            status: JobStatus.Enqueued,
+            scheduledAt: null,
+            tags: new[] { "trigger:kafka" },
+            expiresAt: null,
+            traceParent: traceparent);
 
         try
         {
-            var jobType = ExtractJobType(result.Message.Headers);
-
-            var job = JobRecordFactory.Build(
-                jobType: jobType,
-                inputType: typeof(string).AssemblyQualifiedName!,
-                inputJson: result.Message.Value ?? string.Empty,
-                options: _nexJobOptions,
-                queue: _options.TargetQueue,
-                priority: _options.JobPriority,
-                idempotencyKey: messageId,
-                status: JobStatus.Enqueued,
-                scheduledAt: null,
-                tags: new[] { "trigger:kafka" },
-                expiresAt: null,
-                traceParent: traceparent);
-
             // Enqueue — wake-up signal is handled internally by IScheduler
             await _scheduler.EnqueueAsync(job, DuplicatePolicy.AllowAfterFailed, ct)
                 .ConfigureAwait(false);

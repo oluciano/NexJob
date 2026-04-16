@@ -1,9 +1,5 @@
 # NexJob v3 — Architectural Backlog
 
-> [!IMPORTANT]
-> **PROJECT STATUS: RELIABILITY LOCK**
-> The project is officially locked for new features. Development is focused exclusively on achieving 100% unit test coverage (line/branch) for all core components. No release (v3.0.0) will be issued until total reliability is verified and non-illusory.
-
 Items deferred from v2.0 — prioritized for v3 development.
 
 ## P1 — IStorageProvider Interface Segregation

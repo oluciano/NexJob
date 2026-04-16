@@ -1,4 +1,3 @@
-using System.Diagnostics.CodeAnalysis;
 using System.Text;
 using Confluent.Kafka;
 
@@ -7,7 +6,6 @@ namespace NexJob.Trigger.Kafka;
 /// <summary>
 /// Wrapper for Confluent.Kafka consumer implementing <see cref="IKafkaConsumer"/>.
 /// </summary>
-[ExcludeFromCodeCoverage]
 internal sealed class ConfluentKafkaConsumer : IKafkaConsumer
 {
     private readonly IConsumer<string, string> _consumer;

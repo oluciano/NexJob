@@ -812,7 +812,7 @@ public abstract class StorageProviderTestsBase
         return name.Contains("Redis") || name.Contains("SqlServer");
     }
 
-    private static bool IsAtomicDedupNotSupported(IJobStorage storage)
+    private static bool IsAtomicDedupNotSupported(IStorageProvider storage)
     {
         var name = storage.GetType().Name;
         return name.Contains("Redis") || name.Contains("Mongo");
@@ -883,7 +883,7 @@ public abstract class StorageProviderTestsBase
     [Fact]
     public async Task EnqueueAsync_ConcurrentWithSameIdempotencyKey_OnlyOneJobCreated()
     {
-        var (storage, _, dashboard, _) = await CreateStorageAsync();
+        var storage = await CreateStorageAsync();
         if (IsAtomicDedupNotSupported(storage))
         {
             return;
@@ -895,8 +895,8 @@ public abstract class StorageProviderTestsBase
         // Act — enqueue the same key from multiple concurrent tasks
         var tasks = Enumerable.Range(0, concurrency).Select(_ =>
         {
-            var record = MakeJob(idempotencyKey: key);
-            return storage.EnqueueAsync(record, DuplicatePolicy.AllowAfterFailed);
+            var job = MakeJob(idempotencyKey: key);
+            return storage.EnqueueAsync(job, DuplicatePolicy.AllowAfterFailed);
         });
 
         var results = await Task.WhenAll(tasks);
@@ -907,14 +907,14 @@ public abstract class StorageProviderTestsBase
 
         // Only one job should exist in storage
         var filter = new JobFilter();
-        var jobs = await dashboard.GetJobsAsync(filter, 1, 100);
+        var jobs = await storage.GetJobsAsync(filter, 1, 100);
         jobs.Items.Count(j => j.IdempotencyKey == key).Should().Be(1);
     }
 
     [Fact]
     public async Task EnqueueAsync_ConcurrentWithRejectAlways_AllRejectedAfterFirst()
     {
-        var (storage, _, _, _) = await CreateStorageAsync();
+        var storage = await CreateStorageAsync();
         if (IsAtomicDedupNotSupported(storage))
         {
             return;
@@ -936,8 +936,8 @@ public abstract class StorageProviderTestsBase
         const int concurrency = 5;
         var tasks = Enumerable.Range(0, concurrency).Select(_ =>
         {
-            var record = MakeJob(idempotencyKey: key);
-            return storage.EnqueueAsync(record, DuplicatePolicy.RejectAlways);
+            var job = MakeJob(idempotencyKey: key);
+            return storage.EnqueueAsync(job, DuplicatePolicy.RejectAlways);
         });
 
         var results = await Task.WhenAll(tasks);
@@ -955,15 +955,15 @@ public abstract class StorageProviderTestsBase
     [Fact]
     public async Task EnqueueAsync_concurrent_same_idempotencyKey_creates_only_one_job()
     {
-        var (storage, _, dashboard, _) = await CreateStorageAsync();
+        var storage = await CreateStorageAsync();
         var key = "concurrent-race-test";
 
         // Act — fire multiple concurrent enqueues with the same idempotency key
         const int concurrency = 10;
         var tasks = Enumerable.Range(0, concurrency).Select(_ =>
         {
-            var record = MakeJob(idempotencyKey: key);
-            return storage.EnqueueAsync(record, DuplicatePolicy.AllowAfterFailed);
+            var job = MakeJob(idempotencyKey: key);
+            return storage.EnqueueAsync(job, DuplicatePolicy.AllowAfterFailed);
         });
 
         var results = await Task.WhenAll(tasks);
@@ -974,7 +974,7 @@ public abstract class StorageProviderTestsBase
 
         // Assert — the winner job can be fetched and is consistent
         var winningJobId = results[0].JobId;
-        var winningJob = await dashboard.GetJobByIdAsync(winningJobId);
+        var winningJob = await storage.GetJobByIdAsync(winningJobId);
         winningJob.Should().NotBeNull();
         winningJob!.IdempotencyKey.Should().Be(key);
 
@@ -989,15 +989,15 @@ public abstract class StorageProviderTestsBase
     [Fact]
     public async Task EnqueueAsync_concurrent_same_idempotencyKey_all_see_processing_status()
     {
-        var (storage, _, dashboard, _) = await CreateStorageAsync();
+        var storage = await CreateStorageAsync();
         var key = "concurrent-processing-test";
 
         // Act — fire multiple concurrent enqueues with the same idempotency key
         const int concurrency = 5;
         var tasks = Enumerable.Range(0, concurrency).Select(_ =>
         {
-            var record = MakeJob(idempotencyKey: key);
-            return storage.EnqueueAsync(record, DuplicatePolicy.RejectIfFailed);
+            var job = MakeJob(idempotencyKey: key);
+            return storage.EnqueueAsync(job, DuplicatePolicy.RejectIfFailed);
         });
 
         var results = await Task.WhenAll(tasks);
@@ -1011,9 +1011,9 @@ public abstract class StorageProviderTestsBase
         });
 
         // Verify only one job exists
-        var result = await dashboard.GetJobByIdAsync(winnerJobId);
-        result.Should().NotBeNull();
-        result!.IdempotencyKey.Should().Be(key);
-        result.Status.Should().Be(JobStatus.Enqueued);
+        var job = await storage.GetJobByIdAsync(winnerJobId);
+        job.Should().NotBeNull();
+        job!.IdempotencyKey.Should().Be(key);
+        job.Status.Should().Be(JobStatus.Enqueued);
     }
 }

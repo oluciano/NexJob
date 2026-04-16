@@ -32,6 +32,7 @@ internal static class DashboardStreamEndpoint
         context.Response.Headers["X-Accel-Buffering"] = "no"; // disable nginx proxy buffering
 
         var cache = context.RequestServices.GetRequiredService<IMemoryCache>();
+        var dashboardOptions = context.RequestServices.GetRequiredService<DashboardOptions>();
 
         var ct = context.RequestAborted;
 
@@ -39,7 +40,7 @@ internal static class DashboardStreamEndpoint
         {
             while (!ct.IsCancellationRequested)
             {
-                var metrics = await GetCachedMetricsAsync(cache, storage, options, ct).ConfigureAwait(false);
+                var metrics = await GetCachedMetricsAsync(cache, storage, dashboardOptions, ct).ConfigureAwait(false);
 
                 var activeResult = await storage.GetJobsAsync(
                     new JobFilter { Status = JobStatus.Processing }, 1, 20, ct).ConfigureAwait(false);
@@ -74,7 +75,7 @@ internal static class DashboardStreamEndpoint
     }
 
     private static async Task<JobMetrics> GetCachedMetricsAsync(
-        IMemoryCache cache, IDashboardStorage storage, DashboardOptions options, CancellationToken ct)
+        IMemoryCache cache, IStorageProvider storage, DashboardOptions options, CancellationToken ct)
     {
         const string CacheKey = "nexjob:dashboard:metrics";
 

@@ -999,6 +999,6 @@ public sealed class SqlServerStorageProvider : IStorageProvider
         return ex.Number is 2627 or 2601;
     }
 
-    private SqlConnection Open() => _connection is not null ? new SqlConnection(_connection.ConnectionString) : new SqlConnection(_connectionString);
+    private SqlConnection Open() => new(_connectionString);
 }
 #pragma warning restore MA0004

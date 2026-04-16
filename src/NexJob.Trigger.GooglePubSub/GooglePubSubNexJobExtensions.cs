@@ -1,4 +1,3 @@
-using System.Diagnostics.CodeAnalysis;
 using Google.Cloud.PubSub.V1;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -8,7 +7,6 @@ namespace NexJob.Trigger.GooglePubSub;
 /// <summary>
 /// Extension methods for registering NexJob Google Pub/Sub trigger.
 /// </summary>
-[ExcludeFromCodeCoverage]
 public static class GooglePubSubNexJobExtensions
 {
     /// <summary>

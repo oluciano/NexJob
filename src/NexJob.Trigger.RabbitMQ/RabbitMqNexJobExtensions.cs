@@ -1,4 +1,3 @@
-using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using RabbitMQ.Client;
@@ -8,7 +7,6 @@ namespace NexJob.Trigger.RabbitMQ;
 /// <summary>
 /// Extension methods for registering NexJob RabbitMQ trigger.
 /// </summary>
-[ExcludeFromCodeCoverage]
 public static class RabbitMqNexJobExtensions
 {
     /// <summary>

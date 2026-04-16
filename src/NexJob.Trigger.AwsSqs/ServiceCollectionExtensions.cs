@@ -1,4 +1,3 @@
-using System.Diagnostics.CodeAnalysis;
 using Amazon.SQS;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -9,7 +8,6 @@ namespace NexJob.Trigger.AwsSqs;
 /// <summary>
 /// Extension methods for registering AWS SQS trigger with NexJob.
 /// </summary>
-[ExcludeFromCodeCoverage]
 public static class ServiceCollectionExtensions
 {
     /// <summary>
