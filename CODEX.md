@@ -54,6 +54,8 @@ GitHub: https://github.com/oluciano/NexJob
 - `internal sealed` by default for internal classes
 - `async/await` only — never `.Result` or `.Wait()`
 - Propagate `CancellationToken` in all async calls
+- **80% Unit Coverage** — strictly enforced via CI for all new code
+- **Must-Have Testing Matrix** — every feature must cover: Retry & Dead-Letter, Concurrency, Crash Recovery, Deadline Enforcement, and Wake-Up Latency
 - Respect existing StyleCop rules
 - `InternalsVisibleTo` for test visibility — never make internal classes public just for tests
 

@@ -182,6 +182,8 @@ All AI-assisted tasks use the **NexJob AI Operating Model**.
 - Always use `.ConfigureAwait(false)` in library projects (`src/NexJob*`)
 - `StringComparison.Ordinal` or `OrdinalIgnoreCase` for all string comparisons
 - Banned APIs: `DateTime.Now` (use `UtcNow`), `.Result`, `.Wait()`
+- **80% Unit Coverage** — strictly enforced via CI for all new code
+- **Must-Have Testing Matrix** — every feature must cover: Retry & Dead-Letter, Concurrency, Crash Recovery, Deadline Enforcement, and Wake-Up Latency
 - StyleCop violations fail the build (SA1202, SA1204, SA1413, SA1508)
 - Always run `dotnet format` before committing
 
