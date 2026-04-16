@@ -24,21 +24,20 @@ jobs:
       - name: Build
         run: dotnet build --no-restore --configuration Release
 
-      - name: Test Unit Projects
+      - name: Test and Collect
         run: |
-          # Rodar e coletar cobertura individualmente
-          dotnet test tests/NexJob.Tests/NexJob.Tests.csproj --no-build --configuration Release --collect:"XPlat Code Coverage" --results-directory ./coverage/
-          dotnet test tests/NexJob.Trigger.AwsSqs.Tests/NexJob.Trigger.AwsSqs.Tests.csproj --no-build --configuration Release --collect:"XPlat Code Coverage" --results-directory ./coverage/
-          dotnet test tests/NexJob.Trigger.RabbitMQ.Tests/NexJob.Trigger.RabbitMQ.Tests.csproj --no-build --configuration Release --collect:"XPlat Code Coverage" --results-directory ./coverage/
-          dotnet test tests/NexJob.Trigger.Kafka.Tests/NexJob.Trigger.Kafka.Tests.csproj --no-build --configuration Release --collect:"XPlat Code Coverage" --results-directory ./coverage/
-          dotnet test tests/NexJob.Trigger.GooglePubSub.Tests/NexJob.Trigger.GooglePubSub.Tests.csproj --no-build --configuration Release --collect:"XPlat Code Coverage" --results-directory ./coverage/
+          dotnet test --no-build --configuration Release --collect:"XPlat Code Coverage" --results-directory ./coverage/ --filter "Category!=Integration&Category!=Reliability&FullyQualifiedName!~Reliability&FullyQualifiedName!~Integration"
+          
+      - name: Debug Coverage Files
+        run: |
+          echo "Listing all XML files in ./coverage:"
+          find ./coverage -name "*.xml"
 
       - name: Install ReportGenerator
         run: dotnet tool install --global dotnet-reportgenerator-globaltool
 
       - name: Generate Coverage Report
         run: |
-          # Soma todos os arquivos cobertura.xml encontrados recursivamente em ./coverage
           reportgenerator \
             -reports:"./coverage/**/*.xml" \
             -targetdir:"./coverage-report" \
@@ -49,8 +48,6 @@ jobs:
         run: |
           COVERAGE=$(grep "Line coverage" ./coverage-report/Summary.txt | awk '{print $3}' | sed 's/%//')
           echo "Current Line Coverage: $COVERAGE%"
-          # Temporariamente baixar para 70% apenas para validar se o pipeline consolidado funciona, 
-          # depois voltaremos para 80% assim que o hardening global subir a média real.
           if (( $(echo "$COVERAGE < 70.0" | bc -l) )); then
             echo "Error: Line coverage ($COVERAGE%) is below 70%"
             exit 1
