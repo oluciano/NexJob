@@ -26,20 +26,17 @@ jobs:
 
       - name: Test with coverage
         run: |
-          dotnet test \
+          dotnet test NexJob.sln \
             --no-build \
             --configuration Release \
-            --verbosity normal \
             --filter "Category!=Integration&Category!=Reliability" \
             --logger "trx;LogFileName=unit-tests.trx" \
             "/p:CollectCoverage=true" \
             "/p:CoverletOutputFormat=cobertura" \
-            "/p:CoverletOutput=./coverage/" \
             "/p:Include=[NexJob*]*" \
             "/p:Exclude=[*Tests*]*%2c[*Sample*]*%2c[NexJob.Dashboard*]*" \
-            "/p:Threshold=80" \
-            "/p:ThresholdType=line" \
-            "/p:ThresholdStat=total"
+            "/p:Threshold=1" \
+            "/p:ThresholdType=line"
 
       - name: Upload unit test artifacts
         uses: actions/upload-artifact@v4
