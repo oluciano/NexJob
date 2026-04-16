@@ -41,7 +41,13 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `UseDistributedThrottle()` — opt-in extension to enable Redis-backed throttling
 - `NexJobOptions.DistributedThrottleTtl` — configurable slot TTL for distributed throttle (default: 1h)
 - `JobExecutor` — extracted execution pipeline from `JobDispatcherService`
-- `NexJob.Dashboard` — redesigned visual layer with adaptive light/dark design system and enhanced accessibility.
+- `NexJob.Dashboard` — massive UI/UX refactor featuring:
+    - **Premium Ki-ADMIN Aesthetic**: High-fidelity charcoal navy theme with glowing status indicators and emerald teal accents. Adaptive Light mode with off-white backgrounds to reduce eye strain.
+    - **Command Center (NOC) Overview**: Completely remodeled dashboard landing page with real-time throughput charts, recent job activity across all statuses, server fleet health, and queue distribution visualizations.
+    - **High-Density Data Views**: Optimized Jobs and Recurring pages with single-line horizontal layouts, allowing monitoring of large job volumes without excessive scrolling.
+    - **Bulk Operations**: Support for multi-job selection with Requeue and Delete actions via a new floating bulk toolbar and JSON API.
+    - **Enhanced Discovery**: Integrated Breadcrumbs for navigation context and optimized native storage filters for Queue and Status, significantly improving performance on large datasets.
+    - **Zero-Dependency Engineering**: All visual enhancements implemented using pure C#, modern CSS, and lightweight JS (SSE/Polling), maintaining a minimal footprint.
 
 ### Fixed
 
