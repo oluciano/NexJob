@@ -19,7 +19,7 @@ public sealed class KafkaFutureHardeningTests
     /// TD002: Kafka message without job_type header should be moved to DLT.
     /// Expected: Loop doesn't crash, message is moved to DLT topic.
     /// </summary>
-    [Fact(Skip = "TD002: Kafka Missing Header Contract Breach. Requires moving header extraction inside try/catch.")]
+    [Fact]
     public async Task Kafka_MessageWithoutJobType_ShouldBeMovedToDeadLetter()
     {
         // Arrange
@@ -54,5 +54,45 @@ public sealed class KafkaFutureHardeningTests
         // Assert
         consumerMock.Verify(x => x.ProduceToDeadLetterAsync("test-dlt", result, It.Is<Exception>(e => e is InvalidOperationException), It.IsAny<CancellationToken>()), Times.Once);
         consumerMock.Verify(x => x.Commit(result), Times.Once);
+    }
+
+    /// <summary>
+    /// TD002 (no-DLT path): message without job_type header, no DLT configured.
+    /// Expected: Commit never called, ProduceToDeadLetterAsync never called, no exception propagated.
+    /// </summary>
+    [Fact]
+    public async Task Kafka_MessageWithoutJobType_NoDlt_DoesNotCommit_DoesNotThrow()
+    {
+        // Arrange — no DeadLetterTopic configured
+        var consumerMock = new Mock<IKafkaConsumer>();
+        var schedulerMock = new Mock<IScheduler>();
+        var options = new KafkaTriggerOptions
+        {
+            Topic = "test",
+            ConsumeTimeout = TimeSpan.FromMilliseconds(10),
+        };
+
+        var result = new ConsumeResult<string, string>
+        {
+            Message = new Message<string, string> { Key = "k2", Value = "{}", Headers = new Headers() },
+            Topic = "test",
+            Partition = 0,
+            Offset = 2,
+        };
+
+        var sut = new KafkaTriggerHandler(
+            Options.Create(options),
+            consumerMock.Object,
+            schedulerMock.Object,
+            new NexJobOptions(),
+            NullLogger<KafkaTriggerHandler>.Instance);
+
+        // Act — must not throw
+        var method = typeof(KafkaTriggerHandler).GetMethod("ProcessMessageAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        await (Task)method!.Invoke(sut, new object[] { result, CancellationToken.None })!;
+
+        // Assert — no commit, no DLT production
+        consumerMock.Verify(x => x.Commit(It.IsAny<ConsumeResult<string, string>>()), Times.Never);
+        consumerMock.Verify(x => x.ProduceToDeadLetterAsync(It.IsAny<string>(), It.IsAny<ConsumeResult<string, string>>(), It.IsAny<Exception>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 }

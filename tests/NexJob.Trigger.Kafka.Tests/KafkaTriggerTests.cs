@@ -280,7 +280,8 @@ public sealed class KafkaTriggerTests
     }
 
     /// <summary>
-    /// Verifies that if the job type header is missing, an InvalidOperationException is thrown and the offset is NOT committed.
+    /// Verifies that if the job type header is missing, the message is NOT committed and the loop recovers.
+    /// With TD002 fix, the exception is caught inside ProcessMessageAsync rather than propagating to the outer loop.
     /// </summary>
     [Fact]
     public async Task MissingJobType_ThrowsInvalidOperationExceptionAndNotCommitted()
@@ -301,9 +302,12 @@ public sealed class KafkaTriggerTests
             Offset = 6,
         };
 
+        // Third call throws OperationCanceledException to exit the loop cleanly
+        // (avoids tight-spin thread starvation when mock sequence is exhausted)
         _consumerMock.SetupSequence(m => m.Consume(It.IsAny<TimeSpan>()))
             .Returns(consumeResult)
-            .Returns((ConsumeResult<string, string>?)null);
+            .Returns((ConsumeResult<string, string>?)null)
+            .Throws<OperationCanceledException>();
 
         var handler = new KafkaTriggerHandler(
             Options.Create(_triggerOptions),
@@ -316,9 +320,9 @@ public sealed class KafkaTriggerTests
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         await handler.StartAsync(cts.Token);
 
-        // Since it throws, we wait a bit then stop
+        // Handler exits naturally when Consume throws OperationCanceledException on the third poll
         await Task.Delay(500, cts.Token);
-        await handler.StopAsync(cts.Token);
+        await handler.StopAsync(CancellationToken.None);
 
         // Assert
         _consumerMock.Verify(m => m.Commit(It.IsAny<ConsumeResult<string, string>>()), Times.Never);

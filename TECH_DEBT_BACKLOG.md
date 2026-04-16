@@ -11,12 +11,10 @@ This backlog records findings during the **Reliability Hardening Phase**. These 
 - **Impact:** Messages might take too long to be retried or get lost in specific failure modes.
 - **Action:** Review `ExtendVisibilityAsync` and visibility timeout logic in `AwsSqsTrigger.cs`.
 
-### TD002: Kafka Missing Header Error Handling (Contract Breach)
+### ~~TD002: Kafka Missing Header Error Handling~~ ✅ RESOLVED
 - **Component:** `NexJob.Trigger.Kafka`
-- **Issue:** `ExtractJobType` throws an exception *before* the `try/catch` block that handles DLT production.
-- **Finding:** Messages missing the `nexjob.job_type` header will crash the processing iteration but will **not** be moved to the Dead Letter Topic. Since they aren't committed, they will be retried indefinitely by the polling loop.
-- **Impact:** "Poison messages" without headers can stall a Kafka partition.
-- **Action:** Move header extraction inside the main `try/catch` block and ensure DLT production handles "Unknown Type" cases.
+- **Fixed in:** `KafkaTriggerHandler.ProcessMessageAsync` — `ExtractJobType` and `JobRecordFactory.Build` moved inside the try/catch block.
+- **Tests:** `KafkaFutureHardeningTests.Kafka_MessageWithoutJobType_ShouldBeMovedToDeadLetter` (DLT path) and `Kafka_MessageWithoutJobType_NoDlt_DoesNotCommit_DoesNotThrow` (no-DLT path).
 
 ### TD003: Broker Trigger Input Type Generalization
 - **Component:** All Trigger Packages
