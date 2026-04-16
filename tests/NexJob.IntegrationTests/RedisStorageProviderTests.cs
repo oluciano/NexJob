@@ -22,10 +22,13 @@ public sealed class RedisStorageProviderTests : StorageProviderTestsBase, IClass
         connection.GetDatabase().Execute("FLUSHDB");
     }
 
-    protected override Task<IStorageProvider> CreateStorageAsync() =>
-        Task.FromResult<IStorageProvider>(
-            new RedisStorageProvider(
-                StackExchange.Redis.ConnectionMultiplexer
-                    .Connect(_fixture.Container.GetConnectionString())
-                    .GetDatabase()));
+    protected override Task<(IJobStorage Job, IRecurringStorage Recurring, IDashboardStorage Dashboard, IStorageProvider Full)> CreateStorageAsync()
+    {
+        var provider = new RedisStorageProvider(
+            StackExchange.Redis.ConnectionMultiplexer
+                .Connect(_fixture.Container.GetConnectionString())
+                .GetDatabase());
+
+        return Task.FromResult<(IJobStorage, IRecurringStorage, IDashboardStorage, IStorageProvider)>((provider, provider, provider, provider));
+    }
 }

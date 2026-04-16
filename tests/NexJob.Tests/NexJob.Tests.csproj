@@ -4,17 +4,26 @@
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <PreserveCompilationContext>true</PreserveCompilationContext>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="coverlet.msbuild" Version="6.0.2">
+    <PackageReference Include="coverlet.collector" Version="8.0.1">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="coverlet.msbuild" Version="8.0.1">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <PackageReference Include="Microsoft.AspNetCore.Http" Version="2.2.2" />
+    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks.Abstractions" Version="10.0.6" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="8.0.1" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.3" />
+    <PackageReference Include="Moq" Version="4.20.72" />
+    <PackageReference Include="StackExchange.Redis" Version="2.12.14" />
     <ProjectReference Include="..\..\src\NexJob\NexJob.csproj" />
+    <ProjectReference Include="..\..\src\NexJob.Dashboard.Standalone\NexJob.Dashboard.Standalone.csproj" />
     <ProjectReference Include="..\..\src\NexJob.Postgres\NexJob.Postgres.csproj" />
     <ProjectReference Include="..\..\src\NexJob.SqlServer\NexJob.SqlServer.csproj" />
     <PackageReference Include="FluentAssertions" Version="6.12.1" />
@@ -28,6 +37,11 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\NexJob.Redis\NexJob.Redis.csproj" />
+    <ProjectReference Include="..\..\src\NexJob.MongoDB\NexJob.MongoDB.csproj" />
   </ItemGroup>
 
 </Project>

@@ -12,6 +12,77 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+## [3.0.0] - 2026-04-15
+
+### ⚠️ Reliability Hardening Phase (In Progress)
+The project has entered an official **Reliability Lock**. Development is focused exclusively on achieving 100% unit test coverage (line/branch) for all core components.
+- **Project Status:** Locked for new features.
+- **Guarantee:** No v3.0.0 final release until every core component is verified with an exhaustive Testing Matrix.
+- **Verification:** Mandatory 80% coverage floor enforced via CI, targeting 100% for critical paths.
+
+### Breaking Changes
+
+- `AddNexJob` now returns `NexJobBuilder` instead of `IServiceCollection`.
+  Use `.Services` to chain non-NexJob extensions.
+  See docs/wiki/migration-v2-to-v3.md.
+
+- `IStorageProvider` split into `IJobStorage`, `IRecurringStorage`, and
+  `IDashboardStorage`. `IStorageProvider` is the composed interface.
+  No change required for standard (built-in provider) usage.
+  Custom storage provider implementors must register all 4 DI types.
+
+### Added
+
+- `IJobInvokerFactory` / `DefaultJobInvokerFactory` — encapsulates type resolution, payload migration, DI scope creation, and compiled invoker cache. Extracted from `JobExecutor` for testability.
+- `IJobRetryPolicy` / `DefaultJobRetryPolicy` — encapsulates retry delay calculation. Extracted from `JobExecutor.HandleFailureAsync`. Pure function: testable in isolation.
+- `IDeadLetterDispatcher` / `DefaultDeadLetterDispatcher` — encapsulates dead-letter handler resolution and invocation. Extracted from `JobExecutor`. Removes reflection from the hot path.
+- `IJobStorage` — hot-path storage contract for execution and worker coordination
+- `IRecurringStorage` — recurring job scheduling contract
+- `IDashboardStorage` — read-heavy dashboard query contract (safe for read replicas)
+- `NexJobBuilder` — fluent builder returned by `AddNexJob`
+- `IJobControlService` — programmatic requeue, delete, and pause from application code
+- `UseDashboardReadReplica(connectionString)` — read replica routing for PostgreSQL and SQL Server
+- `IDistributedThrottleStore` — opt-in interface for global throttle enforcement
+- `RedisDistributedThrottleStore` — Redis-backed global `[ThrottleAttribute]` limits
+- `UseDistributedThrottle()` — opt-in extension to enable Redis-backed throttling
+- `NexJobOptions.DistributedThrottleTtl` — configurable slot TTL for distributed throttle (default: 1h)
+- `JobExecutor` — extracted execution pipeline from `JobDispatcherService`
+- `NexJob.Dashboard` — massive UI/UX refactor featuring:
+    - **Premium Ki-ADMIN Aesthetic**: High-fidelity charcoal navy theme with glowing status indicators and emerald teal accents. Adaptive Light mode with off-white backgrounds to reduce eye strain.
+    - **Command Center (NOC) Overview**: Completely remodeled dashboard landing page with real-time throughput charts, recent job activity across all statuses, server fleet health, and queue distribution visualizations.
+    - **High-Density Data Views**: Optimized Jobs and Recurring pages with single-line horizontal layouts, allowing monitoring of large job volumes without excessive scrolling.
+    - **Bulk Operations**: Support for multi-job selection with Requeue and Delete actions via a new floating bulk toolbar and JSON API.
+    - **Enhanced Discovery**: Integrated Breadcrumbs for navigation context and optimized native storage filters for Queue and Status, significantly improving performance on large datasets.
+    - **Zero-Dependency Engineering**: All visual enhancements implemented using pure C#, modern CSS, and lightweight JS (SSE/Polling), maintaining a minimal footprint.
+
+### Fixed
+
+- `CommitJobResultAsync` dead-letter path now explicitly clears `RetryAt` across all 5 storage providers (InMemory, PostgreSQL, SQL Server, Redis, MongoDB). Previously, jobs transitioned to `Failed` but retained the last `RetryAt` value.
+- `ThrottleRegistry` now wraps `IDistributedThrottleStore` calls in try-catch. When the distributed store throws, the registry degrades gracefully to local `SemaphoreSlim` throttling instead of propagating the exception.
+- Throttle wait replaced busy-loop (`Task.Delay(50)`) with `SemaphoreSlim.WaitAsync`
+- Redis throttle TTL now reads from `NexJobOptions.DistributedThrottleTtl` (was hardcoded to 3600s)
+- `NexJob.Dashboard` — wired dashboard services for samples to ensure correct UI rendering.
+
+### Infrastructure
+
+- `ci: publish` — updated workflow to include v2 triggers and OpenTelemetry packages in the release pipeline.
+
+### Testing
+
+- Contract test `CommitJobResultAsync_Failure_NoRetry_SetsFailed` now asserts `RetryAt == null` on dead-letter transition across all providers.
+- Added `MissingJobType` negative test scenario to RabbitMQ, SQS, Kafka, and AzureServiceBus trigger unit test suites.
+- Added `JobControlServiceIntegrationTests` — verifies Pause/Resume/Requeue/Delete against real dispatcher and InMemory storage.
+- Added `DistributedThrottleDegradationTests` — verifies graceful fallback to local throttle when distributed store is unavailable.
+
+### Documentation
+
+- wiki/07-Throttling: added distributed throttle section, removed outdated Redis semaphore example
+- wiki/09-Storage-Providers: added interface segregation, read replica, and IJobControlService sections
+- wiki/11-Configuration-Reference: added DistributedThrottleTtl option
+- wiki/18-Migration: added v2→v3 section
+- wiki/19-Triggers: added producer examples for all 5 brokers and error handling section
+- wiki/migration-v2-to-v3.md: new full migration guide
+
 ## [2.0.0] - 2026-04-14
 
 ### Added

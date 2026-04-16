@@ -20,7 +20,7 @@ public sealed class SqlServerStorageProviderTests : StorageProviderTestsBase, IC
     }
 
     // SOBRESCREVA o método que cria o storage para usar um BANCO ÚNICO por teste
-    protected override async Task<IStorageProvider> CreateStorageAsync()
+    protected override async Task<(IJobStorage Job, IRecurringStorage Recurring, IDashboardStorage Dashboard, IStorageProvider Full)> CreateStorageAsync()
     {
         var baseConn = _fixture.Container.GetConnectionString();
         // Criamos um nome de banco totalmente aleatório para CADA método de teste [Fact]
@@ -39,6 +39,6 @@ public sealed class SqlServerStorageProviderTests : StorageProviderTestsBase, IC
 
         var provider = new SqlServerStorageProvider(builder.ConnectionString);
         // O próprio provider deve criar as tabelas no banco novo
-        return provider;
+        return (provider, provider, provider, provider);
     }
 }

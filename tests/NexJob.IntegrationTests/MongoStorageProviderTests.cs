@@ -21,7 +21,7 @@ public sealed class MongoStorageProviderTests : StorageProviderTestsBase, IClass
         _fixture = fixture;
     }
 
-    protected override async Task<IStorageProvider> CreateStorageAsync()
+    protected override async Task<(IJobStorage Job, IRecurringStorage Recurring, IDashboardStorage Dashboard, IStorageProvider Full)> CreateStorageAsync()
     {
         var client = new MongoClient(_fixture.Container.GetConnectionString());
 
@@ -49,6 +49,6 @@ public sealed class MongoStorageProviderTests : StorageProviderTestsBase, IClass
             await Task.Delay(25);
         }
 
-        return provider;
+        return (provider, provider, provider, provider);
     }
 }

@@ -54,8 +54,8 @@ public sealed class DashboardMiddleware
         // SSE metrics stream
         if (string.Equals(subPath, "stream", StringComparison.Ordinal) && string.Equals(context.Request.Method, HttpMethods.Get, StringComparison.Ordinal))
         {
-            var storage = context.RequestServices.GetRequiredService<IStorageProvider>();
-            await DashboardStreamEndpoint.HandleAsync(context, storage).ConfigureAwait(false);
+            var storage = context.RequestServices.GetRequiredService<IDashboardStorage>();
+            await DashboardStreamEndpoint.HandleAsync(context, storage, _options).ConfigureAwait(false);
             return;
         }
 
@@ -66,7 +66,7 @@ public sealed class DashboardMiddleware
             string.Equals(logsSegments[0], "jobs", StringComparison.Ordinal) &&
             string.Equals(logsSegments[2], "logs", StringComparison.Ordinal))
         {
-            var logsStorage = context.RequestServices.GetRequiredService<IStorageProvider>();
+            var logsStorage = context.RequestServices.GetRequiredService<IDashboardStorage>();
             if (!Guid.TryParse(logsSegments[1], out var logsGuid))
             {
                 context.Response.StatusCode = 400;
@@ -127,7 +127,7 @@ public sealed class DashboardMiddleware
 #pragma warning restore SCS0027
 
     private static async Task<JobMetrics> GetCachedMetricsAsync(
-        IMemoryCache cache, IStorageProvider storage, DashboardOptions options, CancellationToken ct)
+        IMemoryCache cache, IDashboardStorage storage, DashboardOptions options, CancellationToken ct)
     {
         const string CacheKey = "nexjob:dashboard:metrics";
 
@@ -150,14 +150,16 @@ public sealed class DashboardMiddleware
 
     private async Task<bool> HandleActionsAsync(HttpContext context, string subPath)
     {
-        var storage = context.RequestServices.GetRequiredService<IStorageProvider>();
+        var recurringStorage = context.RequestServices.GetRequiredService<IRecurringStorage>();
+        var dashboardStorage = context.RequestServices.GetRequiredService<IDashboardStorage>();
+        var controlService = context.RequestServices.GetRequiredService<IJobControlService>();
 
         if (subPath.StartsWith("jobs/", StringComparison.Ordinal) && subPath.Contains("/runnow", StringComparison.Ordinal))
         {
             var idStr = subPath.Split('/')[1];
             if (Guid.TryParse(idStr, out var guid))
             {
-                await storage.RequeueJobAsync(new JobId(guid), context.RequestAborted).ConfigureAwait(false);
+                await controlService.RequeueJobAsync(new JobId(guid), context.RequestAborted).ConfigureAwait(false);
                 LocalRedirect(context, $"{_pathPrefix}/jobs/{guid}");
                 return true;
             }
@@ -168,7 +170,7 @@ public sealed class DashboardMiddleware
             var idStr = subPath.Split('/')[1];
             if (Guid.TryParse(idStr, out var guid))
             {
-                await storage.RequeueJobAsync(new JobId(guid), context.RequestAborted).ConfigureAwait(false);
+                await controlService.RequeueJobAsync(new JobId(guid), context.RequestAborted).ConfigureAwait(false);
                 LocalRedirect(context, $"{_pathPrefix}/failed");
                 return true;
             }
@@ -179,7 +181,7 @@ public sealed class DashboardMiddleware
             var idStr = subPath.Split('/')[1];
             if (Guid.TryParse(idStr, out var guid))
             {
-                await storage.DeleteJobAsync(new JobId(guid), context.RequestAborted).ConfigureAwait(false);
+                await controlService.DeleteJobAsync(new JobId(guid), context.RequestAborted).ConfigureAwait(false);
                 LocalRedirect(context, $"{_pathPrefix}/failed");
                 return true;
             }
@@ -188,7 +190,7 @@ public sealed class DashboardMiddleware
         if (subPath.StartsWith("recurring/", StringComparison.Ordinal) && subPath.Contains("/delete", StringComparison.Ordinal))
         {
             var recurringId = Uri.UnescapeDataString(subPath.Split('/')[1]);
-            await storage.DeleteRecurringJobAsync(recurringId, context.RequestAborted).ConfigureAwait(false);
+            await recurringStorage.DeleteRecurringJobAsync(recurringId, context.RequestAborted).ConfigureAwait(false);
             LocalRedirect(context, $"{_pathPrefix}/recurring");
             return true;
         }
@@ -196,7 +198,7 @@ public sealed class DashboardMiddleware
         if (subPath.StartsWith("recurring/", StringComparison.Ordinal) && subPath.Contains("/trigger", StringComparison.Ordinal))
         {
             var recurringId = Uri.UnescapeDataString(subPath.Split('/')[1]);
-            await storage.SetRecurringJobNextExecutionAsync(
+            await recurringStorage.SetRecurringJobNextExecutionAsync(
                 recurringId, DateTimeOffset.UtcNow.AddSeconds(-1), context.RequestAborted).ConfigureAwait(false);
             LocalRedirect(context, $"{_pathPrefix}/recurring/{Uri.UnescapeDataString(recurringId)}");
             return true;
@@ -205,11 +207,11 @@ public sealed class DashboardMiddleware
         if (subPath.StartsWith("recurring/", StringComparison.Ordinal) && subPath.Contains("/pause", StringComparison.Ordinal))
         {
             var recurringId = Uri.UnescapeDataString(subPath.Split('/')[1]);
-            var allJobs = await storage.GetRecurringJobsAsync(context.RequestAborted).ConfigureAwait(false);
+            var allJobs = await recurringStorage.GetRecurringJobsAsync(context.RequestAborted).ConfigureAwait(false);
             var existing = allJobs.FirstOrDefault(r => string.Equals(r.RecurringJobId, recurringId, StringComparison.Ordinal));
             if (existing is not null)
             {
-                await storage.UpdateRecurringJobConfigAsync(recurringId, existing.CronOverride, enabled: false, context.RequestAborted).ConfigureAwait(false);
+                await recurringStorage.UpdateRecurringJobConfigAsync(recurringId, existing.CronOverride, enabled: false, context.RequestAborted).ConfigureAwait(false);
             }
 
             LocalRedirect(context, $"{_pathPrefix}/recurring/{Uri.UnescapeDataString(recurringId)}");
@@ -219,11 +221,11 @@ public sealed class DashboardMiddleware
         if (subPath.StartsWith("recurring/", StringComparison.Ordinal) && subPath.Contains("/resume", StringComparison.Ordinal))
         {
             var recurringId = Uri.UnescapeDataString(subPath.Split('/')[1]);
-            var allJobs = await storage.GetRecurringJobsAsync(context.RequestAborted).ConfigureAwait(false);
+            var allJobs = await recurringStorage.GetRecurringJobsAsync(context.RequestAborted).ConfigureAwait(false);
             var existing = allJobs.FirstOrDefault(r => string.Equals(r.RecurringJobId, recurringId, StringComparison.Ordinal));
             if (existing is not null)
             {
-                await storage.UpdateRecurringJobConfigAsync(recurringId, existing.CronOverride, enabled: true, context.RequestAborted).ConfigureAwait(false);
+                await recurringStorage.UpdateRecurringJobConfigAsync(recurringId, existing.CronOverride, enabled: true, context.RequestAborted).ConfigureAwait(false);
             }
 
             LocalRedirect(context, $"{_pathPrefix}/recurring/{Uri.UnescapeDataString(recurringId)}");
@@ -255,11 +257,11 @@ public sealed class DashboardMiddleware
                 }
             }
 
-            var allJobs = await storage.GetRecurringJobsAsync(context.RequestAborted).ConfigureAwait(false);
+            var allJobs = await recurringStorage.GetRecurringJobsAsync(context.RequestAborted).ConfigureAwait(false);
             var existing = allJobs.FirstOrDefault(r => string.Equals(r.RecurringJobId, recurringId, StringComparison.Ordinal));
             if (existing is not null)
             {
-                await storage.UpdateRecurringJobConfigAsync(recurringId, cronOverride, existing.Enabled, context.RequestAborted).ConfigureAwait(false);
+                await recurringStorage.UpdateRecurringJobConfigAsync(recurringId, cronOverride, existing.Enabled, context.RequestAborted).ConfigureAwait(false);
 
                 // Recalculate next execution immediately so changes take effect
                 var effectiveCron = cronOverride ?? existing.Cron;
@@ -276,7 +278,7 @@ public sealed class DashboardMiddleware
                     var next = expression.GetNextOccurrence(DateTimeOffset.UtcNow, timeZone);
                     if (next.HasValue)
                     {
-                        await storage.SetRecurringJobNextExecutionAsync(recurringId, next.Value, context.RequestAborted).ConfigureAwait(false);
+                        await recurringStorage.SetRecurringJobNextExecutionAsync(recurringId, next.Value, context.RequestAborted).ConfigureAwait(false);
                     }
                 }
             }
@@ -288,7 +290,7 @@ public sealed class DashboardMiddleware
         if (subPath.StartsWith("recurring/", StringComparison.Ordinal) && subPath.Contains("/force-delete", StringComparison.Ordinal))
         {
             var recurringId = Uri.UnescapeDataString(subPath.Split('/')[1]);
-            await storage.ForceDeleteRecurringJobAsync(recurringId, context.RequestAborted).ConfigureAwait(false);
+            await recurringStorage.ForceDeleteRecurringJobAsync(recurringId, context.RequestAborted).ConfigureAwait(false);
             LocalRedirect(context, $"{_pathPrefix}/recurring");
             return true;
         }
@@ -296,7 +298,7 @@ public sealed class DashboardMiddleware
         if (subPath.StartsWith("recurring/", StringComparison.Ordinal) && subPath.Contains("/restore", StringComparison.Ordinal))
         {
             var recurringId = Uri.UnescapeDataString(subPath.Split('/')[1]);
-            await storage.RestoreRecurringJobAsync(recurringId, context.RequestAborted).ConfigureAwait(false);
+            await recurringStorage.RestoreRecurringJobAsync(recurringId, context.RequestAborted).ConfigureAwait(false);
             LocalRedirect(context, $"{_pathPrefix}/recurring/{Uri.EscapeDataString(recurringId)}");
             return true;
         }
@@ -326,12 +328,12 @@ public sealed class DashboardMiddleware
                 var decoded = Uri.UnescapeDataString(id);
                 if (string.Equals(action, "trigger", StringComparison.Ordinal))
                 {
-                    await storage.SetRecurringJobNextExecutionAsync(
+                    await recurringStorage.SetRecurringJobNextExecutionAsync(
                         decoded, DateTimeOffset.UtcNow.AddSeconds(-1), context.RequestAborted).ConfigureAwait(false);
                 }
                 else if (string.Equals(action, "delete", StringComparison.Ordinal))
                 {
-                    await storage.DeleteRecurringJobAsync(decoded, context.RequestAborted).ConfigureAwait(false);
+                    await recurringStorage.DeleteRecurringJobAsync(decoded, context.RequestAborted).ConfigureAwait(false);
                 }
             }
 
@@ -339,16 +341,36 @@ public sealed class DashboardMiddleware
             return true;
         }
 
-        if (string.Equals(subPath, "jobs/bulk", StringComparison.Ordinal))
+        if (string.Equals(subPath, "jobs/bulk", StringComparison.Ordinal) ||
+            string.Equals(subPath, "jobs/bulk-requeue", StringComparison.Ordinal) ||
+            string.Equals(subPath, "jobs/bulk-delete", StringComparison.Ordinal))
         {
-            var form = await context.Request.ReadFormAsync(context.RequestAborted).ConfigureAwait(false);
-            var action = form["bulkAction"].ToString();
-            var ids = form["ids"].ToArray();
+            string action;
+            string[] ids;
 
-            // if nothing selected, act on all failed jobs
-            if (ids.Length == 0)
+            if (context.Request.ContentType?.StartsWith("application/json", StringComparison.OrdinalIgnoreCase) == true)
             {
-                var all = await storage.GetJobsAsync(
+                var payload = await context.Request.ReadFromJsonAsync<BulkActionRequest>(context.RequestAborted).ConfigureAwait(false);
+                if (payload is null)
+                {
+                    return false;
+                }
+
+                action = subPath.EndsWith("-requeue", StringComparison.Ordinal) ? "requeue" : "delete";
+                ids = payload.Ids;
+            }
+            else
+            {
+                var form = await context.Request.ReadFormAsync(context.RequestAborted).ConfigureAwait(false);
+                action = form["bulkAction"].ToString();
+                var rawIds = form["ids"].ToArray();
+                ids = rawIds.Where(i => i is not null).Select(i => i!).ToArray();
+            }
+
+            // if nothing selected (and from form), act on all failed jobs
+            if (ids.Length == 0 && string.Equals(action, "requeue", StringComparison.Ordinal))
+            {
+                var all = await dashboardStorage.GetJobsAsync(
                     new JobFilter { Status = JobStatus.Failed }, 1, int.MaxValue, context.RequestAborted).ConfigureAwait(false);
                 ids = all.Items.Select(j => j.Id.Value.ToString()).ToArray();
             }
@@ -363,12 +385,18 @@ public sealed class DashboardMiddleware
                 var jobId = new JobId(guid);
                 if (string.Equals(action, "requeue", StringComparison.Ordinal))
                 {
-                    await storage.RequeueJobAsync(jobId, context.RequestAborted).ConfigureAwait(false);
+                    await controlService.RequeueJobAsync(jobId, context.RequestAborted).ConfigureAwait(false);
                 }
                 else if (string.Equals(action, "delete", StringComparison.Ordinal))
                 {
-                    await storage.DeleteJobAsync(jobId, context.RequestAborted).ConfigureAwait(false);
+                    await controlService.DeleteJobAsync(jobId, context.RequestAborted).ConfigureAwait(false);
                 }
+            }
+
+            if (context.Request.Headers.ContainsKey("X-Requested-With"))
+            {
+                context.Response.StatusCode = 200;
+                return true;
             }
 
             LocalRedirect(context, $"{_pathPrefix}/failed");
@@ -444,9 +472,7 @@ public sealed class DashboardMiddleware
         if (subPath.StartsWith("queues/", StringComparison.Ordinal) && subPath.EndsWith("/pause", StringComparison.Ordinal))
         {
             var queueName = Uri.UnescapeDataString(subPath.Split('/')[1]);
-            var rt = await runtimeStore.GetAsync(context.RequestAborted).ConfigureAwait(false);
-            rt.PausedQueues.Add(queueName);
-            await runtimeStore.SaveAsync(rt, context.RequestAborted).ConfigureAwait(false);
+            await controlService.PauseQueueAsync(queueName, context.RequestAborted).ConfigureAwait(false);
             LocalRedirect(context, $"{_pathPrefix}/settings");
             return true;
         }
@@ -454,9 +480,7 @@ public sealed class DashboardMiddleware
         if (subPath.StartsWith("queues/", StringComparison.Ordinal) && subPath.EndsWith("/resume", StringComparison.Ordinal))
         {
             var queueName = Uri.UnescapeDataString(subPath.Split('/')[1]);
-            var rt = await runtimeStore.GetAsync(context.RequestAborted).ConfigureAwait(false);
-            rt.PausedQueues.Remove(queueName);
-            await runtimeStore.SaveAsync(rt, context.RequestAborted).ConfigureAwait(false);
+            await controlService.ResumeQueueAsync(queueName, context.RequestAborted).ConfigureAwait(false);
             LocalRedirect(context, $"{_pathPrefix}/settings");
             return true;
         }
@@ -485,16 +509,18 @@ public sealed class DashboardMiddleware
     private async Task<string> RenderPageAsync(HttpContext context, string subPath)
     {
 #pragma warning disable MA0004
-        var storage = context.RequestServices.GetRequiredService<IStorageProvider>();
+        var jobStorage = context.RequestServices.GetRequiredService<IJobStorage>();
+        var recurringStorage = context.RequestServices.GetRequiredService<IRecurringStorage>();
+        var dashboardStorage = context.RequestServices.GetRequiredService<IDashboardStorage>();
         var cache = context.RequestServices.GetRequiredService<IMemoryCache>();
         await using var renderer = new HtmlRenderer(context.RequestServices,
             context.RequestServices.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>());
 #pragma warning restore MA0004
 
         // Compute shared counters once for all pages
-        var metrics = await GetCachedMetricsAsync(cache, storage, _options, context.RequestAborted).ConfigureAwait(false);
-        var servers = await storage.GetActiveServersAsync(TimeSpan.FromMinutes(1), context.RequestAborted).ConfigureAwait(false);
-        var queues = await storage.GetQueueMetricsAsync(context.RequestAborted).ConfigureAwait(false);
+        var metrics = await GetCachedMetricsAsync(cache, dashboardStorage, _options, context.RequestAborted).ConfigureAwait(false);
+        var servers = await jobStorage.GetActiveServersAsync(TimeSpan.FromMinutes(1), context.RequestAborted).ConfigureAwait(false);
+        var queues = await dashboardStorage.GetQueueMetricsAsync(context.RequestAborted).ConfigureAwait(false);
         var nexJobOptions = context.RequestServices.GetRequiredService<NexJobOptions>();
 
         var activeQueues = queues.Count(q => q.Processing > 0);
@@ -515,7 +541,9 @@ public sealed class DashboardMiddleware
         {
             parameters = ParameterView.FromDictionary(new Dictionary<string, object?>(StringComparer.Ordinal)
             {
-                ["Storage"] = storage,
+                ["Storage"] = dashboardStorage,
+                ["JobStorage"] = jobStorage,
+                ["RecurringStorage"] = recurringStorage,
                 ["PathPrefix"] = _pathPrefix,
                 ["Title"] = _options.Title,
                 ["Counters"] = counters,
@@ -528,7 +556,7 @@ public sealed class DashboardMiddleware
         {
             parameters = ParameterView.FromDictionary(new Dictionary<string, object?>(StringComparer.Ordinal)
             {
-                ["Storage"] = storage,
+                ["Storage"] = dashboardStorage,
                 ["PathPrefix"] = _pathPrefix,
                 ["Title"] = _options.Title,
                 ["Counters"] = counters,
@@ -541,7 +569,7 @@ public sealed class DashboardMiddleware
         {
             parameters = ParameterView.FromDictionary(new Dictionary<string, object?>(StringComparer.Ordinal)
             {
-                ["Storage"] = storage,
+                ["Storage"] = jobStorage,
                 ["PathPrefix"] = _pathPrefix,
                 ["Title"] = _options.Title,
                 ["Counters"] = counters,
@@ -559,7 +587,7 @@ public sealed class DashboardMiddleware
 
             parameters = ParameterView.FromDictionary(new Dictionary<string, object?>(StringComparer.Ordinal)
             {
-                ["Storage"] = storage,
+                ["Storage"] = dashboardStorage,
                 ["PathPrefix"] = _pathPrefix,
                 ["Title"] = _options.Title,
                 ["StatusFilter"] = status,
@@ -578,7 +606,7 @@ public sealed class DashboardMiddleware
             {
                 parameters = ParameterView.FromDictionary(new Dictionary<string, object?>(StringComparer.Ordinal)
                 {
-                    ["Storage"] = storage,
+                    ["Storage"] = dashboardStorage,
                     ["PathPrefix"] = _pathPrefix,
                     ["Title"] = _options.Title,
                     ["JobId"] = new JobId(guid),
@@ -593,7 +621,7 @@ public sealed class DashboardMiddleware
             !string.Equals(subPath.Split('/')[1], string.Empty, StringComparison.Ordinal))
         {
             var recurringId = Uri.UnescapeDataString(subPath.Split('/')[1]);
-            var recurringJob = await storage.GetRecurringJobByIdAsync(recurringId, context.RequestAborted).ConfigureAwait(false);
+            var recurringJob = await recurringStorage.GetRecurringJobByIdAsync(recurringId, context.RequestAborted).ConfigureAwait(false);
             if (recurringJob is null)
             {
                 return HtmlShell.NotFound(_options.Title, _pathPrefix);
@@ -602,7 +630,7 @@ public sealed class DashboardMiddleware
             var pageNum = context.Request.Query.TryGetValue("page", out var pg) && int.TryParse(pg, NumberStyles.Integer, CultureInfo.InvariantCulture, out var pn) ? pn : 1;
             var pageSize = int.TryParse(context.Request.Query["pageSize"], NumberStyles.Integer, CultureInfo.InvariantCulture, out var ps) && (ps == 10 || ps == 20 || ps == 50) ? ps : 20;
             var jobFilter = new JobFilter { RecurringJobId = recurringId };
-            var executions = await storage.GetJobsAsync(jobFilter, pageNum, pageSize, context.RequestAborted).ConfigureAwait(false);
+            var executions = await dashboardStorage.GetJobsAsync(jobFilter, pageNum, pageSize, context.RequestAborted).ConfigureAwait(false);
 
             parameters = ParameterView.FromDictionary(new Dictionary<string, object?>(StringComparer.Ordinal)
             {
@@ -620,7 +648,7 @@ public sealed class DashboardMiddleware
         {
             parameters = ParameterView.FromDictionary(new Dictionary<string, object?>(StringComparer.Ordinal)
             {
-                ["Storage"] = storage,
+                ["Storage"] = recurringStorage,
                 ["PathPrefix"] = _pathPrefix,
                 ["Title"] = _options.Title,
                 ["Counters"] = counters,
@@ -632,7 +660,7 @@ public sealed class DashboardMiddleware
         {
             parameters = ParameterView.FromDictionary(new Dictionary<string, object?>(StringComparer.Ordinal)
             {
-                ["Storage"] = storage,
+                ["Storage"] = dashboardStorage,
                 ["PathPrefix"] = _pathPrefix,
                 ["Title"] = _options.Title,
                 ["Counters"] = counters,
@@ -659,4 +687,8 @@ public sealed class DashboardMiddleware
 
         return HtmlShell.NotFound(_options.Title, _pathPrefix);
     }
+
+    /// <summary>Request payload for bulk job actions.</summary>
+    /// <param name="Ids">The job IDs to process.</param>
+    private sealed record BulkActionRequest(string[] Ids);
 }

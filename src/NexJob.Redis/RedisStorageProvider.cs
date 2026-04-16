@@ -82,7 +82,8 @@ public sealed class RedisStorageProvider : IStorageProvider
           else
             -- No retry — dead letter
             redis.call('HSET', jobKey, 'status', 'Failed', 'completedAt', ARGV[3],
-                       'exceptionMessage', ARGV[6], 'exceptionStackTrace', ARGV[7], 'heartbeatAt', '')
+                       'exceptionMessage', ARGV[6], 'exceptionStackTrace', ARGV[7],
+                       'heartbeatAt', '', 'retryAt', '')
             redis.call('HDEL', 'nexjob:processing', ARGV[1])
 
             -- Update recurring job if applicable and no retry

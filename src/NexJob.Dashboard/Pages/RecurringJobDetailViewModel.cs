@@ -1,8 +1,10 @@
+using System.Diagnostics.CodeAnalysis;
 using NexJob.Storage;
 
 namespace NexJob.Dashboard.Pages;
 
 /// <summary>View model for the Recurring Job Detail page.</summary>
+[ExcludeFromCodeCoverage]
 internal sealed class RecurringJobDetailViewModel
 {
     /// <summary>The recurring job record being displayed.</summary>

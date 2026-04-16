@@ -14,6 +14,7 @@ namespace NexJob.SqlServer;
 public sealed class SqlServerStorageProvider : IStorageProvider
 {
     private readonly string _connectionString;
+    private readonly SqlConnection? _connection;
 
     /// <summary>
     /// Initialises the provider and applies all pending schema migrations.
@@ -27,6 +28,18 @@ public sealed class SqlServerStorageProvider : IStorageProvider
         // Sync-over-async is acceptable here: runs once at startup, before any requests are served.
         new SchemaMigrator().MigrateAsync(_connectionString).GetAwaiter().GetResult();
 #pragma warning restore RS0030
+    }
+
+    /// <summary>
+    /// Initialises the provider with an existing <see cref="SqlConnection"/>.
+    /// Migrations are NOT applied when using this constructor.
+    /// </summary>
+    /// <param name="connection">The connection.</param>
+    /// <param name="options">The nex job options.</param>
+    public SqlServerStorageProvider(SqlConnection connection, NexJobOptions options)
+    {
+        _connection = connection;
+        _connectionString = connection.ConnectionString;
     }
 
     // ── EnqueueAsync ──────────────────────────────────────────────────────────
@@ -836,7 +849,7 @@ public sealed class SqlServerStorageProvider : IStorageProvider
                 await conn.ExecuteAsync(
                     """
                     UPDATE nexjob_jobs
-                    SET status = 'Failed', completed_at = SYSUTCDATETIME(),
+                    SET status = 'Failed', completed_at = SYSUTCDATETIME(), retry_at = NULL,
                         exception_message = @msg, exception_stack_trace = @stack,
                         heartbeat_at = NULL, execution_logs = @Logs
                     WHERE id = @id
@@ -986,6 +999,6 @@ public sealed class SqlServerStorageProvider : IStorageProvider
         return ex.Number is 2627 or 2601;
     }
 
-    private SqlConnection Open() => new(_connectionString);
+    private SqlConnection Open() => _connection is not null ? new SqlConnection(_connection.ConnectionString) : new SqlConnection(_connectionString);
 }
 #pragma warning restore MA0004

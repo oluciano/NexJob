@@ -1,0 +1,20 @@
+Summary
+  Generated on: 16/04/2026 - 07:00:59
+  Coverage date: 16/04/2026 - 07:00:59
+  Parser: Cobertura
+  Assemblies: 0
+  Classes: 0
+  Files: 0
+  Line coverage: 
+  Covered lines: 0
+  Uncovered lines: 0
+  Coverable lines: 0
+  Total lines: 0
+  Covered branches: 0
+  Total branches: 0
+  Method coverage: 
+  Full method coverage: 
+  Covered methods: 0
+  Fully covered methods: 0
+  Total methods: 0
+No assemblies have been covered.

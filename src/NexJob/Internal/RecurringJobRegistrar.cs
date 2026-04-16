@@ -15,7 +15,7 @@ internal sealed class RecurringJobRegistrar
         PropertyNameCaseInsensitive = true,
     };
 
-    private readonly IStorageProvider _storage;
+    private readonly IRecurringStorage _storage;
     private readonly NexJobJobRegistry _jobRegistry;
     private readonly ILogger<RecurringJobRegistrar> _logger;
     private readonly List<string> _registeredJobIds = [];
@@ -27,7 +27,7 @@ internal sealed class RecurringJobRegistrar
     /// <param name="jobRegistry">The job registry.</param>
     /// <param name="logger">The logger.</param>
     public RecurringJobRegistrar(
-        IStorageProvider storage,
+        IRecurringStorage storage,
         NexJobJobRegistry jobRegistry,
         ILogger<RecurringJobRegistrar> logger)
     {

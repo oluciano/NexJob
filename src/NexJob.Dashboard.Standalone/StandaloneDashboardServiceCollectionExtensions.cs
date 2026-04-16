@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -8,6 +9,7 @@ namespace NexJob.Dashboard.Standalone;
 /// Extension methods for registering the NexJob standalone dashboard
 /// with the dependency injection container.
 /// </summary>
+[ExcludeFromCodeCoverage]
 public static class StandaloneDashboardServiceCollectionExtensions
 {
     /// <summary>

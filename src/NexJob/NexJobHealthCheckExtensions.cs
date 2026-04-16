@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 
@@ -6,6 +7,7 @@ namespace NexJob;
 /// <summary>
 /// Extension methods for registering the NexJob health check.
 /// </summary>
+[ExcludeFromCodeCoverage]
 public static class NexJobHealthCheckExtensions
 {
     /// <summary>

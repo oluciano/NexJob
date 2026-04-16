@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Amazon.SQS;
 using Amazon.SQS.Model;
 
@@ -6,6 +7,7 @@ namespace NexJob.Trigger.AwsSqs;
 /// <summary>
 /// Default implementation of <see cref="ISqsClient"/> backed by <see cref="IAmazonSQS"/>.
 /// </summary>
+[ExcludeFromCodeCoverage]
 internal sealed class SqsClient : ISqsClient
 {
     private readonly IAmazonSQS _client;

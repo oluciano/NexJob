@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Rendering;
 using NexJob.Configuration;
@@ -5,11 +6,12 @@ using NexJob.Storage;
 
 namespace NexJob.Dashboard.Pages;
 
+[ExcludeFromCodeCoverage]
 internal sealed class QueuesPage : IComponent
 {
     private RenderHandle _handle;
 
-    [Parameter] public IStorageProvider Storage { get; set; } = default!;
+    [Parameter] public IDashboardStorage Storage { get; set; } = default!;
     [Parameter] public string PathPrefix { get; set; } = "/dashboard";
     [Parameter] public string Title { get; set; } = "NexJob";
     [Parameter] public NavCounters? Counters { get; set; }
@@ -53,48 +55,35 @@ internal sealed class QueuesPage : IComponent
         if (queues.Count == 0)
         {
             var emptyBody =
-                "<div class=\"page-header\"><div><h1 class=\"page-title\">Queues</h1><p class=\"page-subtitle\">Active processing queues</p></div></div>" +
-                "<div class=\"empty-state\"><svg width=\"40\" height=\"40\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1\"><rect x=\"1\" y=\"10\" width=\"22\" height=\"4\" rx=\"1\"/><rect x=\"1\" y=\"6\" width=\"22\" height=\"3\" rx=\"1\" opacity=\".5\"/><rect x=\"1\" y=\"2\" width=\"22\" height=\"3\" rx=\"1\" opacity=\".25\"/></svg><p>No active queues.</p></div>";
+                HtmlFragments.Breadcrumbs(PathPrefix, ("Queues", null)) +
+                HtmlFragments.PageHeader("Queues", "Active processing queues") +
+                HtmlFragments.EmptyState("0 0 24 24", "No active queues.");
             return HtmlShell.Wrap(Title, PathPrefix, "queues", emptyBody, Counters);
         }
 
-        var cards = string.Join(string.Empty, queues.Select(q =>
-        {
-            var total = q.Enqueued + q.Processing;
-            var utilPct = total > 0 ? (int)(q.Processing * 100.0 / total) : 0;
+        // Sort queues by activity (Processing > Enqueued > Name)
+        var sortedQueues = queues
+            .OrderByDescending(q => q.Processing)
+            .ThenByDescending(q => q.Enqueued)
+            .ThenBy(q => q.Queue, StringComparer.Ordinal)
+            .ToList();
 
-            return
-                $"<div class=\"queue-card\">" +
-                $"<div class=\"queue-card-header\">" +
-                $"<div class=\"queue-name\">{System.Web.HttpUtility.HtmlEncode(q.Queue)}</div>" +
-                $"<span class=\"badge {(q.Processing > 0 ? "badge-processing" : "badge-succeeded")}\">" +
-                $"<span class=\"dot {(q.Processing > 0 ? "dot-processing" : "dot-succeeded")}\"></span>" +
-                $"{(q.Processing > 0 ? "active" : "idle")}</span>" +
-                $"</div>" +
-                $"<div class=\"queue-metrics\">" +
-                $"<div><div class=\"queue-metric-label\">Enqueued</div>" +
-                $"<div class=\"queue-metric-val\" style=\"color:var(--info)\">{q.Enqueued}</div></div>" +
-                $"<div><div class=\"queue-metric-label\">Processing</div>" +
-                $"<div class=\"queue-metric-val\" style=\"color:var(--warning)\">{q.Processing}</div></div>" +
-                $"<div><div class=\"queue-metric-label\">Total</div>" +
-                $"<div class=\"queue-metric-val\">{total}</div></div>" +
-                $"</div>" +
-                $"<div class=\"queue-util-bar\"><div class=\"queue-util-fill\" style=\"width:{utilPct}%\"></div></div>" +
-                $"<div class=\"queue-util-label\">{utilPct}% in-flight · " +
-                $"<a href=\"{PathPrefix}/jobs?queue={Uri.EscapeDataString(q.Queue)}\" style=\"font-size:11px\">View jobs →</a></div>" +
-                $"</div>";
-        }));
+        var cards = string.Join(string.Empty, sortedQueues.Select(q => HtmlFragments.QueueCard(q, PathPrefix)));
 
         var heatmap = BuildWorkerHeatmap(processingJobs);
 
         var body =
             "<div id=\"queues-page-content\" data-refresh=\"true\">" +
-            "<div class=\"page-header\"><div>" +
-            "<h1 class=\"page-title\">Queues</h1>" +
-            $"<p class=\"page-subtitle\">{queues.Count} queue{(queues.Count == 1 ? string.Empty : "s")} active</p>" +
-            "</div></div>" +
+            HtmlFragments.Breadcrumbs(PathPrefix, ("Queues", null)) +
+            HtmlFragments.PageHeader("Queues", "Monitor and manage job processing queues") +
+            $"<div class=\"card\">" +
+            $"<div class=\"card-header\"><h3>ACTIVE QUEUES ({queues.Count})</h3></div>" +
+            $"<div style=\"padding:20px\">" +
+            $"<div class=\"queue-list-vertical\">{cards}</div>" +
+            $"</div>" +
+            $"</div>" +
+            "<div style=\"margin-top:48px\"></div>" +
             heatmap +
-            $"<div class=\"queue-grid\">{cards}</div>" +
             "</div>";
 
         return HtmlShell.Wrap(Title, PathPrefix, "queues", body, Counters);
@@ -105,75 +94,78 @@ internal sealed class QueuesPage : IComponent
         var now = DateTimeOffset.UtcNow;
         var workerCount = Options.Workers;
 
+        var header = processingJobs.Count > 0
+            ? $"<h3>{processingJobs.Count} workers active</h3>"
+            : "<h3>All workers idle</h3>";
+
+        string rows;
         if (processingJobs.Count == 0)
         {
-            var workerRows = string.Join(string.Empty, Enumerable.Range(1, workerCount).Select(i =>
+            rows = string.Join(string.Empty, Enumerable.Range(1, workerCount).Select(i =>
                 $"<div class=\"worker-row idle\">" +
                 $"<span class=\"worker-id\">W{i}</span>" +
                 $"<div class=\"worker-track\"></div>" +
                 $"<span class=\"worker-elapsed\">idle</span>" +
                 $"<span class=\"worker-warn\"></span>" +
                 $"</div>"));
+        }
+        else
+        {
+            // Calculate average elapsed time for slow detection
+            var avgElapsed = processingJobs.Count > 1
+                ? processingJobs.Average(j => (now - j.CreatedAt).TotalSeconds)
+                : 0;
+            var slowThreshold = avgElapsed * 3;
 
-            return
-                $"<div class=\"worker-section\" data-refresh=\"true\">" +
-                $"<div class=\"section-title\">Workers</div>" +
-                $"<div class=\"worker-list\">{workerRows}</div>" +
-                $"</div>";
+            var jobsByIndex = processingJobs.Take(workerCount).ToList();
+
+            rows = string.Join(string.Empty, Enumerable.Range(0, workerCount).Select(i =>
+            {
+                var job = i < jobsByIndex.Count ? jobsByIndex[i] : null;
+
+                if (job is null)
+                {
+                    return
+                        $"<div class=\"worker-row idle\">" +
+                        $"<span class=\"worker-id\">W{i + 1}</span>" +
+                        $"<div class=\"worker-track\"></div>" +
+                        $"<span class=\"worker-elapsed\">idle</span>" +
+                        $"<span class=\"worker-warn\"></span>" +
+                        $"</div>";
+                }
+
+                var elapsed = now - job.CreatedAt;
+                var isSlow = processingJobs.Count > 1 && elapsed.TotalSeconds > slowThreshold;
+                var fillWidth = processingJobs.Count > 0
+                    ? (int)(((elapsed.TotalSeconds / processingJobs.Max(j => (now - j.CreatedAt).TotalSeconds)) * 95) + 5)
+                    : 0;
+                fillWidth = Math.Min(fillWidth, 100);
+
+                var jobName = $"{Helpers.ShortType(job.JobType)} #{job.Id.Value.ToString()[..4]}";
+                var elapsedStr = FormatElapsed(elapsed);
+                var cssClass = isSlow ? "slow" : "busy";
+                var warn = isSlow ? "⚠" : string.Empty;
+
+                return
+                    $"<div class=\"worker-row\">" +
+                    $"<span class=\"worker-id\">W{i + 1}</span>" +
+                    $"<div class=\"worker-track\">" +
+                    $"<div class=\"worker-fill {cssClass}\" style=\"width:{fillWidth}%\">" +
+                    $"<span class=\"worker-job-name\">{System.Web.HttpUtility.HtmlEncode(jobName)}</span>" +
+                    $"</div>" +
+                    $"</div>" +
+                    $"<span class=\"worker-elapsed{(isSlow ? " slow" : string.Empty)}\">{elapsedStr}</span>" +
+                    $"<span class=\"worker-warn\">{warn}</span>" +
+                    $"</div>";
+            }));
         }
 
-        // Calculate average elapsed time for slow detection
-        var avgElapsed = processingJobs.Count > 1
-            ? processingJobs.Average(j => (now - j.CreatedAt).TotalSeconds)
-            : 0;
-        var slowThreshold = avgElapsed * 3;
-
-        var jobsByIndex = processingJobs.Take(workerCount).ToList();
-
-        var rows = string.Join(string.Empty, Enumerable.Range(0, workerCount).Select(i =>
-        {
-            var job = i < jobsByIndex.Count ? jobsByIndex[i] : null;
-
-            if (job is null)
-            {
-                return
-                    $"<div class=\"worker-row idle\">" +
-                    $"<span class=\"worker-id\">W{i + 1}</span>" +
-                    $"<div class=\"worker-track\"></div>" +
-                    $"<span class=\"worker-elapsed\">idle</span>" +
-                    $"<span class=\"worker-warn\"></span>" +
-                    $"</div>";
-            }
-
-            var elapsed = now - job.CreatedAt;
-            var isSlow = processingJobs.Count > 1 && elapsed.TotalSeconds > slowThreshold;
-            var fillWidth = processingJobs.Count > 0
-                ? (int)(((elapsed.TotalSeconds / processingJobs.Max(j => (now - j.CreatedAt).TotalSeconds)) * 95) + 5)
-                : 0;
-            fillWidth = Math.Min(fillWidth, 100);
-
-            var jobName = $"{Helpers.ShortType(job.JobType)} #{job.Id.Value.ToString()[..4]}";
-            var elapsedStr = FormatElapsed(elapsed);
-            var cssClass = isSlow ? "slow" : "busy";
-            var warn = isSlow ? "⚠" : string.Empty;
-
-            return
-                $"<div class=\"worker-row\">" +
-                $"<span class=\"worker-id\">W{i + 1}</span>" +
-                $"<div class=\"worker-track\">" +
-                $"<div class=\"worker-fill {cssClass}\" style=\"width:{fillWidth}%\">" +
-                $"<span class=\"worker-job-name\">{System.Web.HttpUtility.HtmlEncode(jobName)}</span>" +
-                $"</div>" +
-                $"</div>" +
-                $"<span class=\"worker-elapsed{(isSlow ? " slow" : string.Empty)}\">{elapsedStr}</span>" +
-                $"<span class=\"worker-warn\">{warn}</span>" +
-                $"</div>";
-        }));
-
         return
-            $"<div class=\"worker-section\" data-refresh=\"true\">" +
-            $"<div class=\"section-title\">Workers</div>" +
+            $"<div class=\"card\" style=\"margin-bottom:24px\" data-refresh=\"true\">" +
+            $"<div class=\"card-header\">{header}</div>" +
+            $"<div style=\"padding:24px\">" +
             $"<div class=\"worker-list\">{rows}</div>" +
+            $"</div>" +
             $"</div>";
     }
 }

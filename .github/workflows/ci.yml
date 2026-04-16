@@ -24,9 +24,35 @@ jobs:
       - name: Build
         run: dotnet build --no-restore --configuration Release
 
-      - name: Test with coverage
+      - name: Test and Collect
         run: |
-          dotnet test tests/NexJob.Tests             --no-build             --configuration Release             --verbosity normal             --logger "trx;LogFileName=unit-tests.trx"             "/p:CollectCoverage=true"             "/p:CoverletOutputFormat=cobertura"             "/p:CoverletOutput=./coverage/"             "/p:Include=[NexJob]*"             "/p:Exclude=[NexJob.Tests]*%2c[*.Tests]*"             "/p:Threshold=80"             "/p:ThresholdType=line"             "/p:ThresholdStat=total"
+          dotnet test --no-build --configuration Release --collect:"XPlat Code Coverage" --results-directory ./coverage/ --filter "Category!=Integration&Category!=Reliability&FullyQualifiedName!~Reliability&FullyQualifiedName!~Integration"
+          
+      - name: Debug Coverage Files
+        run: |
+          echo "Listing all XML files in ./coverage:"
+          find ./coverage -name "*.xml"
+
+      - name: Install ReportGenerator
+        run: dotnet tool install --global dotnet-reportgenerator-globaltool
+
+      - name: Generate Coverage Report
+        run: |
+          reportgenerator \
+            -reports:"./coverage/**/*.xml" \
+            -targetdir:"./coverage-report" \
+            -reporttypes:TextSummary \
+            -title:NexJob-Coverage \
+            -assemblyfilters:"+NexJob;+NexJob.Dashboard;+NexJob.Dashboard.Standalone;+NexJob.Trigger.*"
+
+      - name: Check Coverage Threshold
+        run: |
+          COVERAGE=$(grep "Line coverage" ./coverage-report/Summary.txt | awk '{print $3}' | sed 's/%//')
+          echo "Current Line Coverage: $COVERAGE%"
+          if (( $(echo "$COVERAGE < 80.0" | bc -l) )); then
+            echo "Error: Line coverage ($COVERAGE%) is below 80%"
+            exit 1
+          fi
 
       - name: Upload unit test artifacts
         uses: actions/upload-artifact@v4
@@ -34,8 +60,8 @@ jobs:
         with:
           name: unit-test-artifacts
           path: |
-            tests/NexJob.Tests/TestResults/**/*.trx
-            tests/NexJob.Tests/coverage/**
+            **/TestResults/**/*.trx
+            ./coverage-report/**
 
   integration-tests:
     name: Integration Tests - ${{ matrix.name }}
@@ -73,7 +99,14 @@ jobs:
 
       - name: Run integration tests
         run: |
-          dotnet test tests/NexJob.IntegrationTests             --no-build             --configuration Release             --verbosity normal             --filter "${{ matrix.filter }}"             --logger "trx;LogFileName=${{ matrix.name }}.trx"             --blame-hang             --blame-hang-timeout 5m
+          dotnet test tests/NexJob.IntegrationTests \
+            --no-build \
+            --configuration Release \
+            --verbosity normal \
+            --filter "${{ matrix.filter }}" \
+            --logger "trx;LogFileName=${{ matrix.name }}.trx" \
+            --blame-hang \
+            --blame-hang-timeout 5m
 
       - name: Upload integration test artifacts
         uses: actions/upload-artifact@v4
