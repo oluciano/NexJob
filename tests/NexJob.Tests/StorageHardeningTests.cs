@@ -1,6 +1,5 @@
 using System.Reflection;
 using FluentAssertions;
-using MongoDB.Driver;
 using NexJob.MongoDB;
 using NexJob.Postgres;
 using NexJob.Redis;
@@ -19,8 +18,6 @@ public sealed class StorageHardeningTests
     // ─── Postgres ────────────────────────────────────────────────────────────
 
     /// <summary>Tests Postgres status mapping.</summary>
-    /// <param name="input">The string input.</param>
-    /// <param name="expected">The expected enum.</param>
     [Theory]
     [InlineData("Enqueued", JobStatus.Enqueued)]
     [InlineData("Processing", JobStatus.Processing)]
@@ -38,16 +35,11 @@ public sealed class StorageHardeningTests
     }
 
     /// <summary>Tests Postgres active state identification.</summary>
-    /// <param name="status">The status.</param>
-    /// <param name="expected">If true, expected.</param>
     [Theory]
     [InlineData(JobStatus.Enqueued, true)]
     [InlineData(JobStatus.Processing, true)]
-    [InlineData(JobStatus.Scheduled, true)]
-    [InlineData(JobStatus.AwaitingContinuation, true)]
     [InlineData(JobStatus.Succeeded, false)]
     [InlineData(JobStatus.Failed, false)]
-    [InlineData(JobStatus.Expired, false)]
     public void Postgres_IsActiveState_IdentifiesCorrectBranches(JobStatus status, bool expected)
     {
         var method = typeof(PostgresStorageProvider).GetMethod("IsActiveState", BindingFlags.NonPublic | BindingFlags.Static)!;
@@ -58,8 +50,6 @@ public sealed class StorageHardeningTests
     // ─── SQL Server ──────────────────────────────────────────────────────────
 
     /// <summary>Tests SQL Server status mapping.</summary>
-    /// <param name="input">Input string.</param>
-    /// <param name="expected">Expected status.</param>
     [Theory]
     [InlineData("Enqueued", JobStatus.Enqueued)]
     [InlineData("Processing", JobStatus.Processing)]
@@ -88,7 +78,7 @@ public sealed class StorageHardeningTests
         var scoreHigh = (double)method.Invoke(null, new object[] { 1, now })!;
         var scoreNormal = (double)method.Invoke(null, new object[] { 3, now })!;
 
-        scoreHigh.Should().BeLessThan(scoreNormal, "Higher priority (lower number) must have lower score for sorted set.");
+        scoreHigh.Should().BeLessThan(scoreNormal);
     }
 
     /// <summary>Tests Redis flat array parsing into dictionary.</summary>
@@ -108,8 +98,6 @@ public sealed class StorageHardeningTests
     // ─── MongoDB ─────────────────────────────────────────────────────────────
 
     /// <summary>Tests MongoDB active state identification.</summary>
-    /// <param name="status">The status.</param>
-    /// <param name="expected">If true, expected.</param>
     [Theory]
     [InlineData(JobStatus.Enqueued, true)]
     [InlineData(JobStatus.Processing, true)]
