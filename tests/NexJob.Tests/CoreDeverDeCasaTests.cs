@@ -71,8 +71,8 @@ public sealed class CoreDeverDeCasaTests
         var job = new JobRecord
         {
             Id = JobId.New(),
-            JobType = typeof(TestJob).AssemblyQualifiedName!,
-            InputType = typeof(NoInput).AssemblyQualifiedName!,
+            JobType = typeof(TestJob).AssemblyQualifiedName ?? string.Empty,
+            InputType = typeof(NoInput).AssemblyQualifiedName ?? string.Empty,
             InputJson = "{}",
         };
 
