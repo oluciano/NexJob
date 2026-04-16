@@ -36,7 +36,7 @@ public sealed class AwsSqsTriggerHardeningTests
 
     // ─── Polling Loop Branches ─────────────────────────────────────────────
 
-    /// <summary>Tests that loop continues upon AWS client failure.</summary>
+    /// <summary>Tests that loop continues upon client failure.</summary>
     /// <returns>A task.</returns>
     [Fact]
     public async Task PollLoopAsync_WhenClientThrows_SurvivesAndContinues()
@@ -46,7 +46,6 @@ public sealed class AwsSqsTriggerHardeningTests
             .ThrowsAsync(new OperationCanceledException());
 
         var sut = CreateSut();
-
         await sut.StartAsync(CancellationToken.None);
         await Task.Delay(50);
         await sut.StopAsync(CancellationToken.None);
@@ -56,7 +55,7 @@ public sealed class AwsSqsTriggerHardeningTests
 
     // ─── Metadata Extraction Branches ──────────────────────────────────────
 
-    /// <summary>Tests traceparent extraction logic.</summary>
+    /// <summary>Tests traceparent extraction.</summary>
     [Fact]
     public void ExtractTraceparent_HandlesAllBranches()
     {
@@ -73,18 +72,17 @@ public sealed class AwsSqsTriggerHardeningTests
 
     // ─── Visibility Extension Branches ─────────────────────────────────────
 
-    /// <summary>Tests that visibility extension survives errors.</summary>
+    /// <summary>Tests that extension survives handle expiration.</summary>
     /// <returns>A task.</returns>
     [Fact]
     public async Task ExtendVisibilityAsync_WhenClientThrows_SurvivesAndExits()
     {
         var sut = CreateSut();
         _sqsMock.Setup(x => x.ChangeMessageVisibilityAsync(It.IsAny<ChangeMessageVisibilityRequest>(), It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new Exception("Handle expired"));
+            .ThrowsAsync(new Exception("Expired"));
 
         using var cts = new CancellationTokenSource();
         var method = typeof(AwsSqsTrigger).GetMethod("ExtendVisibilityAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-
         await (Task)method!.Invoke(sut, new object[] { "rh123", cts.Token })!;
 
         _sqsMock.Verify(x => x.ChangeMessageVisibilityAsync(It.IsAny<ChangeMessageVisibilityRequest>(), It.IsAny<CancellationToken>()), Times.Once);

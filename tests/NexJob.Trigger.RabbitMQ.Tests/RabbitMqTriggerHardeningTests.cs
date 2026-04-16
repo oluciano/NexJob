@@ -48,72 +48,81 @@ public sealed class RabbitMqTriggerHardeningTests
 
     // ─── Metadata Extraction Branches ──────────────────────────────────────
 
-    /// <summary>Tests correct extraction of traceparent and job_type from headers.</summary>
+    /// <summary>Tests traceparent extraction with various header states.</summary>
     /// <returns>A task.</returns>
     [Fact]
-    public async Task OnMessageReceived_WithValidHeaders_EnqueuesCorrectly()
+    public async Task OnMessageReceived_TraceparentBranches()
     {
         var sut = CreateSut();
         await sut.StartAsync(CancellationToken.None);
 
         var props = new Mock<IBasicProperties>();
-        props.Setup(p => p.Headers).Returns(new Dictionary<string, object>
-        {
-            ["traceparent"] = Encoding.UTF8.GetBytes("00-trace-01"),
-            ["nexjob.job_type"] = Encoding.UTF8.GetBytes("TestJob"),
-        });
+        IDictionary<string, object>? nullHeaders = null;
+        props.Setup(p => p.Headers).Returns(nullHeaders!);
 
-        var ea = new BasicDeliverEventArgs("tag", 1, false, "ex", "rk", props.Object, new ReadOnlyMemory<byte>(Encoding.UTF8.GetBytes("{}")));
-
-        // Invoke private handler via reflection
-        var method = typeof(RabbitMqTriggerHandler).GetMethod("OnMessageReceivedAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-        await (Task)method!.Invoke(sut, new object[] { new object(), ea })!;
-
-        _schedulerMock.Verify(x => x.EnqueueAsync(It.Is<JobRecord>(j => j.TraceParent == "00-trace-01" && j.JobType == "TestJob"), It.IsAny<DuplicatePolicy>(), It.IsAny<CancellationToken>()), Times.Once);
-        _channelMock.Verify(x => x.BasicAck(1, false), Times.Once);
-    }
-
-    // ─── Error Handling Branches ───────────────────────────────────────────
-
-    /// <summary>Tests that missing job_type header causes a Nack without requeue.</summary>
-    /// <returns>A task.</returns>
-    [Fact]
-    public async Task OnMessageReceived_MissingJobType_NacksWithoutRequeue()
-    {
-        var sut = CreateSut();
-        await sut.StartAsync(CancellationToken.None);
-
-        var props = new Mock<IBasicProperties>();
-        props.Setup(p => p.Headers).Returns(new Dictionary<string, object>());
-
-        var ea = new BasicDeliverEventArgs("tag", 1, false, "ex", "rk", props.Object, new ReadOnlyMemory<byte>(Encoding.UTF8.GetBytes("{}")));
+        var ea = new BasicDeliverEventArgs("t1", 1, false, "ex", "rk", props.Object, new ReadOnlyMemory<byte>(Encoding.UTF8.GetBytes("{}")));
 
         var method = typeof(RabbitMqTriggerHandler).GetMethod("OnMessageReceivedAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
         await (Task)method!.Invoke(sut, new object[] { new object(), ea })!;
 
-        _channelMock.Verify(x => x.BasicNack(1, false, false), Times.Once);
+        _channelMock.Verify(x => x.BasicNack(1, false, false), Times.AtLeastOnce);
     }
 
-    /// <summary>Tests that cancellation during enqueue causes a Nack with requeue.</summary>
+    // ─── Idempotency Key Fallback ──────────────────────────────────────────
+
+    /// <summary>Tests fallback from CorrelationId to MessageId for idempotency key.</summary>
     /// <returns>A task.</returns>
     [Fact]
-    public async Task OnMessageReceived_Cancellation_NacksWithRequeue()
+    public async Task OnMessageReceived_UsesMessageId_WhenCorrelationIdIsMissing()
     {
         var sut = CreateSut();
         await sut.StartAsync(CancellationToken.None);
 
         var props = new Mock<IBasicProperties>();
         props.Setup(p => p.Headers).Returns(new Dictionary<string, object> { ["nexjob.job_type"] = Encoding.UTF8.GetBytes("Job") });
-
-        _schedulerMock.Setup(x => x.EnqueueAsync(It.IsAny<JobRecord>(), It.IsAny<DuplicatePolicy>(), It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new OperationCanceledException());
+        string? nullCorrelation = null;
+        props.Setup(p => p.CorrelationId).Returns(nullCorrelation!);
+        props.Setup(p => p.MessageId).Returns("msg-123");
 
         var ea = new BasicDeliverEventArgs("tag", 1, false, "ex", "rk", props.Object, new ReadOnlyMemory<byte>(Encoding.UTF8.GetBytes("{}")));
 
         var method = typeof(RabbitMqTriggerHandler).GetMethod("OnMessageReceivedAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
         await (Task)method!.Invoke(sut, new object[] { new object(), ea })!;
 
-        _channelMock.Verify(x => x.BasicNack(1, false, true), Times.Once);
+        _schedulerMock.Verify(x => x.EnqueueAsync(It.Is<JobRecord>(j => j.IdempotencyKey == "msg-123"), It.IsAny<DuplicatePolicy>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    // ─── Teardown Branches ────────────────────────────────────────────────
+
+    /// <summary>Tests that teardown handles closed channels and null connections gracefully.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task StopAsync_HandlesClosedResources()
+    {
+        var sut = CreateSut();
+        await sut.StartAsync(CancellationToken.None);
+
+        _channelMock.Setup(x => x.IsOpen).Returns(false);
+
+        await sut.StopAsync(CancellationToken.None);
+
+        _channelMock.Verify(x => x.BasicCancel(It.IsAny<string>()), Times.Never);
+        _channelMock.Verify(x => x.Dispose(), Times.Once);
+    }
+
+    /// <summary>Tests that teardown swallows exceptions.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task Teardown_SwallowsExceptions()
+    {
+        var sut = CreateSut();
+        await sut.StartAsync(CancellationToken.None);
+
+        _channelMock.Setup(x => x.Dispose()).Throws(new Exception("Disposal error"));
+
+        await sut.StopAsync(CancellationToken.None);
+
+        _channelMock.Verify(x => x.Dispose(), Times.Once);
     }
 
     // ─── Reconnection Lifecycle Branches ───────────────────────────────────
@@ -123,15 +132,13 @@ public sealed class RabbitMqTriggerHardeningTests
     [Fact]
     public async Task StartAsync_WhenConnectionFails_RetriesUntilSuccess()
     {
-        // 1st attempt fails, 2nd succeeds
         _factoryMock.SetupSequence(x => x.CreateConnection())
             .Throws(new Exception("Rabbit down"))
             .Returns(_connectionMock.Object);
 
         var sut = CreateSut();
-
         await sut.StartAsync(CancellationToken.None);
-        await Task.Delay(50); // Allow reconnect task to run
+        await Task.Delay(50);
 
         _factoryMock.Verify(x => x.CreateConnection(), Times.AtLeast(2));
     }

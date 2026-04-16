@@ -53,7 +53,7 @@ public sealed class GooglePubSubTriggerHardeningTests
 
     // ─── Message Handling Branches ─────────────────────────────────────────
 
-    /// <summary>Tests that successful enqueue returns Ack.</summary>
+    /// <summary>Tests success path with traceparent.</summary>
     /// <returns>A task.</returns>
     [Fact]
     public async Task HandleMessageAsync_Success_ReturnsAck()
@@ -69,7 +69,7 @@ public sealed class GooglePubSubTriggerHardeningTests
         _schedulerMock.Verify(x => x.EnqueueAsync(It.Is<JobRecord>(j => j.TraceParent == "00-trace"), It.IsAny<DuplicatePolicy>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
-    /// <summary>Tests that missing job_type attribute causes Nack.</summary>
+    /// <summary>Tests missing job_type path.</summary>
     /// <returns>A task.</returns>
     [Fact]
     public async Task HandleMessageAsync_MissingJobType_ReturnsNack()
@@ -83,7 +83,7 @@ public sealed class GooglePubSubTriggerHardeningTests
         reply.Should().Be(SubscriberClient.Reply.Nack);
     }
 
-    /// <summary>Tests that scheduler failure causes Nack.</summary>
+    /// <summary>Tests scheduler failure path.</summary>
     /// <returns>A task.</returns>
     [Fact]
     public async Task HandleMessageAsync_SchedulerThrows_ReturnsNack()
@@ -91,7 +91,7 @@ public sealed class GooglePubSubTriggerHardeningTests
         var sut = CreateSut();
         var msg = CreateMessage();
         _schedulerMock.Setup(x => x.EnqueueAsync(It.IsAny<JobRecord>(), It.IsAny<DuplicatePolicy>(), It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new System.Exception("DB Down"));
+            .ThrowsAsync(new System.Exception("Fail"));
 
         var method = typeof(GooglePubSubTriggerHandler).GetMethod("HandleMessageAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
         var reply = await (Task<SubscriberClient.Reply>)method!.Invoke(sut, new object[] { msg, CancellationToken.None })!;

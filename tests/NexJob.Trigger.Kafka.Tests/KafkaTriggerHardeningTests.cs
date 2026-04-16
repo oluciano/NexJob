@@ -11,7 +11,7 @@ namespace NexJob.Trigger.Kafka.Tests;
 
 /// <summary>
 /// Hardening unit tests for <see cref="KafkaTriggerHandler"/>.
-/// Targets 100% branch coverage for Kafka topic polling and message processing.
+/// Targets 100% branch coverage for Kafka message polling and processing.
 /// </summary>
 public sealed class KafkaTriggerHardeningTests
 {
@@ -78,7 +78,7 @@ public sealed class KafkaTriggerHardeningTests
 
     // ─── Message Processing Branches ───────────────────────────────────────
 
-    /// <summary>Tests that successful processing enqueues the job and commits the offset.</summary>
+    /// <summary>Tests success path.</summary>
     /// <returns>A task.</returns>
     [Fact]
     public async Task ProcessMessageAsync_Success_EnqueuesAndCommits()
@@ -93,7 +93,26 @@ public sealed class KafkaTriggerHardeningTests
         _consumerMock.Verify(x => x.Commit(result), Times.Once);
     }
 
-    /// <summary>Tests that enqueue failure without DLT does not commit the offset.</summary>
+    /// <summary>Tests that enqueue failure with DLT configured moves to DLT.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task ProcessMessageAsync_EnqueueFails_WithDLT_MovesToDLT()
+    {
+        _options.DeadLetterTopic = "test-dlt";
+        var sut = CreateSut();
+        var result = CreateResult("k1");
+
+        _schedulerMock.Setup(x => x.EnqueueAsync(It.IsAny<JobRecord>(), It.IsAny<DuplicatePolicy>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new Exception("Fail"));
+
+        var method = typeof(KafkaTriggerHandler).GetMethod("ProcessMessageAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        await (Task)method!.Invoke(sut, new object[] { result, CancellationToken.None })!;
+
+        _consumerMock.Verify(x => x.ProduceToDeadLetterAsync("test-dlt", result, It.IsAny<Exception>(), It.IsAny<CancellationToken>()), Times.Once);
+        _consumerMock.Verify(x => x.Commit(result), Times.Once);
+    }
+
+    /// <summary>Tests that enqueue failure without DLT does not commit.</summary>
     /// <returns>A task.</returns>
     [Fact]
     public async Task ProcessMessageAsync_EnqueueFails_NoDLT_DoesNotCommit()
@@ -103,7 +122,7 @@ public sealed class KafkaTriggerHardeningTests
         var result = CreateResult("k1");
 
         _schedulerMock.Setup(x => x.EnqueueAsync(It.IsAny<JobRecord>(), It.IsAny<DuplicatePolicy>(), It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new Exception("DB Down"));
+            .ThrowsAsync(new Exception("Fail"));
 
         var method = typeof(KafkaTriggerHandler).GetMethod("ProcessMessageAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
         await (Task)method!.Invoke(sut, new object[] { result, CancellationToken.None })!;
