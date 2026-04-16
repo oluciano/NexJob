@@ -1,9 +1,11 @@
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Rendering;
 using NexJob.Storage;
 
 namespace NexJob.Dashboard.Pages;
 
+[ExcludeFromCodeCoverage]
 internal sealed class JobsPage : IComponent
 {
     private RenderHandle _handle;

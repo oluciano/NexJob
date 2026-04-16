@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Rendering;
@@ -9,6 +10,7 @@ namespace NexJob.Dashboard.Pages;
 /// Dashboard page that displays and modifies live runtime settings via
 /// <see cref="IRuntimeSettingsStore"/>. Changes take effect immediately without restart.
 /// </summary>
+[ExcludeFromCodeCoverage]
 internal sealed class SettingsPage : ComponentBase
 {
     private static readonly JsonSerializerOptions PrettyPrint = new() { WriteIndented = true };

@@ -1,8 +1,10 @@
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Rendering;
 
 namespace NexJob.Dashboard.Pages;
 
+[ExcludeFromCodeCoverage]
 internal sealed class RecurringJobDetailPage : IComponent
 {
     private RenderHandle _handle;

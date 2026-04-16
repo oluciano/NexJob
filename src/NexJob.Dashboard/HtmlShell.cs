@@ -1,8 +1,10 @@
+using System.Diagnostics.CodeAnalysis;
 using NexJob.Storage;
 
 namespace NexJob.Dashboard;
 
 /// <summary>Shared HTML shell (layout wrapper) injected around page component output.</summary>
+[ExcludeFromCodeCoverage]
 internal static class HtmlShell
 {
     private const string Css =

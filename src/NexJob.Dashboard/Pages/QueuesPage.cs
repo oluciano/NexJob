@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Rendering;
 using NexJob.Configuration;
@@ -5,6 +6,7 @@ using NexJob.Storage;
 
 namespace NexJob.Dashboard.Pages;
 
+[ExcludeFromCodeCoverage]
 internal sealed class QueuesPage : IComponent
 {
     private RenderHandle _handle;

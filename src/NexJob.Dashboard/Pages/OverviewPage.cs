@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Text;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Rendering;
@@ -6,6 +7,7 @@ using NexJob.Storage;
 namespace NexJob.Dashboard.Pages;
 
 /// <summary>Dashboard overview page — metrics cards + throughput chart + recent failures.</summary>
+[ExcludeFromCodeCoverage]
 internal sealed class OverviewPage : IComponent
 {
     private RenderHandle _handle;

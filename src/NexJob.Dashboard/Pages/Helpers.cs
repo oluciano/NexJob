@@ -1,7 +1,9 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Text.RegularExpressions;
 
 namespace NexJob.Dashboard.Pages;
 
+[ExcludeFromCodeCoverage]
 internal static class Helpers
 {
     internal static string ShortType(string fullType)

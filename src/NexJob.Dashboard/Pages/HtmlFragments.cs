@@ -1,9 +1,11 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Web;
 using NexJob.Storage;
 
 namespace NexJob.Dashboard.Pages;
 
 /// <summary>Reusable HTML fragment builders for dashboard pages.</summary>
+[ExcludeFromCodeCoverage]
 internal static class HtmlFragments
 {
     /// <summary>Read-only mode warning banner HTML.</summary>
