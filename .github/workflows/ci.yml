@@ -42,7 +42,8 @@ jobs:
             -reports:"./coverage/**/*.xml" \
             -targetdir:"./coverage-report" \
             -reporttypes:TextSummary \
-            -title:NexJob-Coverage
+            -title:NexJob-Coverage \
+            -assemblyfilters:"+NexJob;+NexJob.Dashboard;+NexJob.Dashboard.Standalone;+NexJob.Trigger.*"
 
       - name: Check Coverage Threshold
         run: |
