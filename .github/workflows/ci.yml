@@ -26,12 +26,21 @@ jobs:
 
       - name: Test with coverage
         run: |
-          # Rodar apenas projetos unitários puros
-          dotnet test tests/NexJob.Tests/NexJob.Tests.csproj --no-build --configuration Release --logger "trx;LogFileName=core-tests.trx" "/p:CollectCoverage=true" "/p:CoverletOutputFormat=cobertura" "/p:CoverletOutput=./coverage/core/" "/p:Include=[NexJob]*" "/p:Threshold=80"
-          dotnet test tests/NexJob.Trigger.AwsSqs.Tests/NexJob.Trigger.AwsSqs.Tests.csproj --no-build --configuration Release --logger "trx;LogFileName=awssqs-tests.trx" "/p:CollectCoverage=true" "/p:CoverletOutputFormat=cobertura" "/p:CoverletOutput=./coverage/awssqs/" "/p:Include=[NexJob.Trigger.AwsSqs]*" "/p:Threshold=80"
-          dotnet test tests/NexJob.Trigger.RabbitMQ.Tests/NexJob.Trigger.RabbitMQ.Tests.csproj --no-build --configuration Release --logger "trx;LogFileName=rabbitmq-tests.trx" "/p:CollectCoverage=true" "/p:CoverletOutputFormat=cobertura" "/p:CoverletOutput=./coverage/rabbitmq/" "/p:Include=[NexJob.Trigger.RabbitMQ]*" "/p:Threshold=80"
-          dotnet test tests/NexJob.Trigger.Kafka.Tests/NexJob.Trigger.Kafka.Tests.csproj --no-build --configuration Release --logger "trx;LogFileName=kafka-tests.trx" "/p:CollectCoverage=true" "/p:CoverletOutputFormat=cobertura" "/p:CoverletOutput=./coverage/kafka/" "/p:Include=[NexJob.Trigger.Kafka]*" "/p:Threshold=80"
-          dotnet test tests/NexJob.Trigger.GooglePubSub.Tests/NexJob.Trigger.GooglePubSub.Tests.csproj --no-build --configuration Release --logger "trx;LogFileName=pubsub-tests.trx" "/p:CollectCoverage=true" "/p:CoverletOutputFormat=cobertura" "/p:CoverletOutput=./coverage/pubsub/" "/p:Include=[NexJob.Trigger.GooglePubSub]*" "/p:Threshold=80"
+          # Rodar todos os testes unitários (excluindo explicitamente Reliability e Integration)
+          dotnet test NexJob.sln \
+            --no-build \
+            --configuration Release \
+            --verbosity normal \
+            --filter "Category!=Integration&Category!=Reliability&FullyQualifiedName!~Reliability&FullyQualifiedName!~Integration" \
+            --logger "trx;LogFileName=unit-tests.trx" \
+            "/p:CollectCoverage=true" \
+            "/p:CoverletOutputFormat=cobertura" \
+            "/p:CoverletOutput=./coverage/" \
+            "/p:Include=[NexJob*]*" \
+            "/p:Exclude=[*Tests*]*%2c[*Sample*]*%2c[NexJob.Dashboard*]*" \
+            "/p:Threshold=80" \
+            "/p:ThresholdType=line" \
+            "/p:ThresholdStat=total"
 
       - name: Upload unit test artifacts
         uses: actions/upload-artifact@v4
@@ -41,6 +50,60 @@ jobs:
           path: |
             **/TestResults/**/*.trx
             **/coverage/**
+
+  integration-tests:
+    name: Integration Tests - ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: InMemory-EndToEnd
+            filter: '(FullyQualifiedName~InMemoryStorageProviderTests)|(FullyQualifiedName~JobExecutionEndToEndTests)'
+          - name: Redis
+            filter: 'FullyQualifiedName~RedisStorageProviderTests'
+          - name: Postgres
+            filter: 'FullyQualifiedName~PostgresStorageProviderTests'
+          - name: Mongo
+            filter: 'FullyQualifiedName~MongoStorageProviderTests'
+          - name: SqlServer
+            filter: 'FullyQualifiedName~SqlServerStorageProviderTests'
+
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5.2.0
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --no-restore --configuration Release
+
+      - name: Run integration tests
+        run: |
+          dotnet test tests/NexJob.IntegrationTests \
+            --no-build \
+            --configuration Release \
+            --verbosity normal \
+            --filter "${{ matrix.filter }}" \
+            --logger "trx;LogFileName=${{ matrix.name }}.trx" \
+            --blame-hang \
+            --blame-hang-timeout 5m
+
+      - name: Upload integration test artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: integration-${{ matrix.name }}-artifacts
+          path: |
+            tests/NexJob.IntegrationTests/TestResults/**/*.trx
+            tests/NexJob.IntegrationTests/TestResults/**/*
 
   format-check:
     name: Format Check
