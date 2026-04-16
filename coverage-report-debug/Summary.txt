@@ -1,0 +1,67 @@
+Summary
+  Generated on: 16/04/2026 - 06:55:49
+  Coverage date: 16/04/2026 - 06:55:42
+  Parser: Cobertura
+  Assemblies: 6
+  Classes: 35
+  Files: 35
+  Line coverage: 7.3%
+  Covered lines: 274
+  Uncovered lines: 3450
+  Coverable lines: 3724
+  Total lines: 6564
+  Branch coverage: 5% (48 of 956)
+  Covered branches: 48
+  Total branches: 956
+  Method coverage: 12.7% (51 of 401)
+  Full method coverage: 10.7% (43 of 401)
+  Covered methods: 51
+  Fully covered methods: 43
+  Total methods: 401
+
+NexJob.Dashboard                                                               26.2%
+  NexJob.Dashboard.DashboardApplicationBuilderExtensions                        100%
+  NexJob.Dashboard.DashboardMiddleware                                           18%
+  NexJob.Dashboard.DashboardOptions                                             100%
+  NexJob.Dashboard.DashboardStreamEndpoint                                     71.7%
+  NexJob.Dashboard.NavCounters                                                  100%
+
+NexJob.Dashboard.Standalone                                                    86.3%
+  NexJob.Dashboard.Standalone.StandaloneDashboardHostedService                  100%
+  NexJob.Dashboard.Standalone.StandaloneDashboardOptions                        100%
+  NexJob.Dashboard.Standalone.StandaloneDashboardServiceCollectionExtensions     40%
+
+NexJob.MongoDB                                                                    1%
+  NexJob.MongoDB.ExecutionLogEntry                                                0%
+  NexJob.MongoDB.JobDocument                                                      0%
+  NexJob.MongoDB.JobIdSerializer                                                  0%
+  NexJob.MongoDB.MongoNexJobExtensions                                            0%
+  NexJob.MongoDB.MongoRuntimeSettingsStore                                        0%
+  NexJob.MongoDB.MongoStorageProvider                                           1.6%
+  NexJob.MongoDB.NullableJobIdSerializer                                          0%
+  NexJob.MongoDB.RecurringJobDocument                                             0%
+  NexJob.MongoDB.ServerDocument                                                   0%
+
+NexJob.Postgres                                                                 3.3%
+  NexJob.Postgres.JobRow                                                          0%
+  NexJob.Postgres.NexJobPostgresExtensions                                     78.5%
+  NexJob.Postgres.PostgresRuntimeSettingsStore                                    0%
+  NexJob.Postgres.PostgresStorageProvider                                       0.3%
+  NexJob.Postgres.RecurringJobRow                                                 0%
+  NexJob.Postgres.SchemaMigration                                               100%
+  NexJob.Postgres.SchemaMigrator                                               29.5%
+
+NexJob.Redis                                                                    4.4%
+  NexJob.Redis.NexJobRedisExtensions                                              0%
+  NexJob.Redis.RedisDistributedThrottleStore                                   84.2%
+  NexJob.Redis.RedisRuntimeSettingsStore                                          0%
+  NexJob.Redis.RedisStorageProvider                                             0.6%
+
+NexJob.SqlServer                                                                3.1%
+  NexJob.SqlServer.JobRow                                                         0%
+  NexJob.SqlServer.NexJobSqlServerExtensions                                   78.5%
+  NexJob.SqlServer.RecurringJobRow                                                0%
+  NexJob.SqlServer.SchemaMigration                                              100%
+  NexJob.SqlServer.SchemaMigrator                                              25.4%
+  NexJob.SqlServer.SqlServerRuntimeSettingsStore                                  0%
+  NexJob.SqlServer.SqlServerStorageProvider                                     0.1%

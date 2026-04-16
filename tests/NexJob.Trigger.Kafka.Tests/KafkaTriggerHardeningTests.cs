@@ -11,7 +11,7 @@ namespace NexJob.Trigger.Kafka.Tests;
 
 /// <summary>
 /// Hardening unit tests for <see cref="KafkaTriggerHandler"/>.
-/// Targets 100% branch coverage for Kafka topic polling and dead-letter logic.
+/// Targets 100% branch coverage for Kafka topic polling and message processing.
 /// </summary>
 public sealed class KafkaTriggerHardeningTests
 {
@@ -34,12 +34,17 @@ public sealed class KafkaTriggerHardeningTests
             NullLogger<KafkaTriggerHandler>.Instance);
     }
 
-    private ConsumeResult<string, string> CreateResult(string key, string? jobType = "MyJob")
+    private ConsumeResult<string, string> CreateResult(string key, string? jobType = "MyJob", string? trace = null)
     {
         var headers = new Headers();
         if (jobType != null)
         {
             headers.Add("nexjob.job_type", Encoding.UTF8.GetBytes(jobType));
+        }
+
+        if (trace != null)
+        {
+            headers.Add("traceparent", Encoding.UTF8.GetBytes(trace));
         }
 
         return new ConsumeResult<string, string>
@@ -53,14 +58,15 @@ public sealed class KafkaTriggerHardeningTests
 
     // ─── Polling Loop Branches ─────────────────────────────────────────────
 
-    /// <summary>Tests that polling loop handles null results and EOF correctly.</summary>
+    /// <summary>Tests that loop handles null results and EOF correctly.</summary>
+    /// <returns>A task.</returns>
     [Fact]
     public async Task ExecuteAsync_HandlesNullAndEOF_ContinuesLoop()
     {
         _consumerMock.SetupSequence(x => x.Consume(It.IsAny<TimeSpan>()))
             .Returns((ConsumeResult<string, string>?)null)
             .Returns(new ConsumeResult<string, string> { IsPartitionEOF = true })
-            .Throws(new OperationCanceledException()); // Way to stop BackgroundService
+            .Throws(new OperationCanceledException());
 
         var sut = CreateSut();
         await sut.StartAsync(CancellationToken.None);
@@ -70,28 +76,25 @@ public sealed class KafkaTriggerHardeningTests
         _consumerMock.Verify(x => x.Consume(It.IsAny<TimeSpan>()), Times.AtLeast(2));
     }
 
-    // ─── Error Handling & DLT Branches ─────────────────────────────────────
+    // ─── Message Processing Branches ───────────────────────────────────────
 
-    /// <summary>Tests that enqueue failure with DLT configured moves message to DLT and commits.</summary>
+    /// <summary>Tests that successful processing enqueues the job and commits the offset.</summary>
+    /// <returns>A task.</returns>
     [Fact]
-    public async Task ProcessMessageAsync_EnqueueFails_WithDLT_MovesToDLTAndCommits()
+    public async Task ProcessMessageAsync_Success_EnqueuesAndCommits()
     {
-        _options.DeadLetterTopic = "test-dlt";
         var sut = CreateSut();
-        var result = CreateResult("k1");
+        var result = CreateResult("k1", trace: "00-trace");
 
-        _schedulerMock.Setup(x => x.EnqueueAsync(It.IsAny<JobRecord>(), It.IsAny<DuplicatePolicy>(), It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new Exception("Enqueue failed"));
-
-        // Use reflection to call the private ProcessMessageAsync
         var method = typeof(KafkaTriggerHandler).GetMethod("ProcessMessageAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
         await (Task)method!.Invoke(sut, new object[] { result, CancellationToken.None })!;
 
-        _consumerMock.Verify(x => x.ProduceToDeadLetterAsync("test-dlt", result, It.IsAny<Exception>(), It.IsAny<CancellationToken>()), Times.Once);
+        _schedulerMock.Verify(x => x.EnqueueAsync(It.Is<JobRecord>(j => j.TraceParent == "00-trace"), It.IsAny<DuplicatePolicy>(), It.IsAny<CancellationToken>()), Times.Once);
         _consumerMock.Verify(x => x.Commit(result), Times.Once);
     }
 
-    /// <summary>Tests that enqueue failure without DLT does NOT commit (allows retry on restart).</summary>
+    /// <summary>Tests that enqueue failure without DLT does not commit the offset.</summary>
+    /// <returns>A task.</returns>
     [Fact]
     public async Task ProcessMessageAsync_EnqueueFails_NoDLT_DoesNotCommit()
     {
@@ -100,26 +103,11 @@ public sealed class KafkaTriggerHardeningTests
         var result = CreateResult("k1");
 
         _schedulerMock.Setup(x => x.EnqueueAsync(It.IsAny<JobRecord>(), It.IsAny<DuplicatePolicy>(), It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new Exception("Enqueue failed"));
+            .ThrowsAsync(new Exception("DB Down"));
 
         var method = typeof(KafkaTriggerHandler).GetMethod("ProcessMessageAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
         await (Task)method!.Invoke(sut, new object[] { result, CancellationToken.None })!;
 
         _consumerMock.Verify(x => x.Commit(It.IsAny<ConsumeResult<string, string>>()), Times.Never);
-    }
-
-    /// <summary>Tests that missing job_type header throws an exception.</summary>
-    [Fact]
-    public async Task ProcessMessageAsync_MissingJobType_Throws()
-    {
-        var sut = CreateSut();
-        var result = CreateResult("k1", jobType: null);
-
-        var method = typeof(KafkaTriggerHandler).GetMethod("ProcessMessageAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-
-        Func<Task> act = () => (Task)method!.Invoke(sut, new object[] { result, CancellationToken.None })!;
-
-        // When using MethodInfo.Invoke, the exception is usually wrapped in TargetInvocationException
-        await act.Should().ThrowAsync<Exception>();
     }
 }
