@@ -30,6 +30,7 @@ internal sealed class JobDetailPage : IComponent
         if (job is null)
         {
             var notFoundHtml =
+                HtmlFragments.Breadcrumbs(PathPrefix, ("Jobs", $"{PathPrefix}/jobs"), ("Not Found", null)) +
                 HtmlFragments.EmptyState("0 0 24 24", "Job not found") +
                 $"<div style=\"text-align:center;margin-top:12px\"><a href=\"{PathPrefix}/jobs\" class=\"btn btn-ghost btn-sm\">← Back to Jobs</a></div>";
             return HtmlShell.Wrap(Title, PathPrefix, "jobs", notFoundHtml, Counters);
@@ -65,21 +66,22 @@ internal sealed class JobDetailPage : IComponent
                 $"<span class=\"tag-badge\">{HttpUtility.HtmlEncode(t)}</span>"))
             : "—";
 
-        // Header
+        // Header with Breadcrumbs
         var header =
-            $"<div style=\"display:flex;align-items:flex-start;justify-content:space-between;gap:20px;margin-bottom:20px;flex-wrap:wrap\">" +
+            HtmlFragments.Breadcrumbs(PathPrefix, ("Jobs", $"{PathPrefix}/jobs"), (vm.ShortType, null)) +
+            $"<div style=\"display:flex;align-items:flex-start;justify-content:space-between;gap:20px;margin-bottom:32px;flex-wrap:wrap\">" +
             $"<div style=\"flex:1\">" +
-            $"<a href=\"{PathPrefix}/jobs\" style=\"font-size:12px;color:var(--text-3);display:inline-block;margin-bottom:8px\">← Back</a>" +
-            $"<h1 class=\"page-title\" style=\"margin-bottom:4px\">{HttpUtility.HtmlEncode(vm.ShortType)}</h1>" +
-            $"<div style=\"font-family:monospace;font-size:12px;color:var(--text-3);margin-bottom:12px;letter-spacing:0.02em\">{job.Id.Value}</div>" +
-            $"<div style=\"display:flex;align-items:center;gap:12px;flex-wrap:wrap\">{Helpers.BadgeHtml(job.Status)}" +
-            $"<span style=\"font-size:12px;color:var(--text-3);border-left:1px solid var(--border);padding-left:12px\">attempt {job.Attempts}/{job.MaxAttempts}</span></div>" +
+            $"<h1 class=\"page-title\" style=\"margin-bottom:8px;font-size:32px\">{HttpUtility.HtmlEncode(vm.ShortType)}</h1>" +
+            $"<div style=\"display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px\">" +
+            $"{Helpers.BadgeHtml(job.Status)}" +
+            $"<span style=\"font-family:monospace;font-size:13px;color:var(--text-secondary);background:var(--bg-tertiary);padding:2px 8px;border-radius:4px\">{job.Id.Value}</span>" +
+            $"<span style=\"font-size:12px;color:var(--text-tertiary);border-left:1px solid var(--border);padding-left:12px\">attempt {job.Attempts}/{job.MaxAttempts}</span>" +
+            $"</div>" +
             $"</div>" +
             (actions.Length > 0
-                ? $"<div style=\"display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap;flex-shrink:0\">{actions}</div>"
+                ? $"<div style=\"display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap;flex-shrink:0;padding-top:8px\">{actions}</div>"
                 : string.Empty) +
-            $"</div>" +
-            $"<div style=\"border-bottom:1px solid var(--border);margin-bottom:28px\"></div>";
+            $"</div>";
 
         // Progress bar
         var progressSection = HtmlFragments.ProgressBar(job.ProgressPercent, job.ProgressMessage);

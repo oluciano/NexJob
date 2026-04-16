@@ -29,6 +29,7 @@ internal sealed class RecurringPage : IComponent
         if (jobs.Count == 0)
         {
             var emptyBody =
+                HtmlFragments.Breadcrumbs(PathPrefix, ("Recurring", null)) +
                 HtmlFragments.PageHeader("Recurring Jobs", "Scheduled cron jobs") +
                 HtmlFragments.EmptyState("0 0 24 24", "No recurring jobs registered.");
             return HtmlShell.Wrap(Title, PathPrefix, "recurring", emptyBody, Counters);
@@ -38,6 +39,7 @@ internal sealed class RecurringPage : IComponent
 
         var body =
             "<div id=\"recurring-page-content\" data-refresh=\"true\">" +
+            HtmlFragments.Breadcrumbs(PathPrefix, ("Recurring", null)) +
             HtmlFragments.PageHeader("Recurring Jobs", "Automated background job schedules") +
             "<div class=\"card\">" +
             $"<div class=\"card-header\"><h3>{jobs.Count} job{(jobs.Count == 1 ? string.Empty : "s")} registered</h3></div>" +
@@ -45,13 +47,15 @@ internal sealed class RecurringPage : IComponent
             "<table class=\"table\">" +
             "<thead><tr>" +
             "<th style=\"width:32px\"></th>" +
-            "<th>ID / Name</th>" +
+            "<th>ID</th>" +
+            "<th>Job Type</th>" +
             "<th>Cron</th>" +
             "<th>Queue</th>" +
             "<th>Last Run</th>" +
             "<th>Next Run</th>" +
             "<th style=\"text-align:right\">Actions</th>" +
-            "</tr></thead>" +
+            "</tr></thead>"
+ +
             $"<tbody>{rows}</tbody>" +
             "</table>" +
             "</div>" +

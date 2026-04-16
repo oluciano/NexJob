@@ -341,14 +341,34 @@ public sealed class DashboardMiddleware
             return true;
         }
 
-        if (string.Equals(subPath, "jobs/bulk", StringComparison.Ordinal))
+        if (string.Equals(subPath, "jobs/bulk", StringComparison.Ordinal) ||
+            string.Equals(subPath, "jobs/bulk-requeue", StringComparison.Ordinal) ||
+            string.Equals(subPath, "jobs/bulk-delete", StringComparison.Ordinal))
         {
-            var form = await context.Request.ReadFormAsync(context.RequestAborted).ConfigureAwait(false);
-            var action = form["bulkAction"].ToString();
-            var ids = form["ids"].ToArray();
+            string action;
+            string[] ids;
 
-            // if nothing selected, act on all failed jobs
-            if (ids.Length == 0)
+            if (context.Request.ContentType?.StartsWith("application/json", StringComparison.OrdinalIgnoreCase) == true)
+            {
+                var payload = await context.Request.ReadFromJsonAsync<BulkActionRequest>(context.RequestAborted).ConfigureAwait(false);
+                if (payload is null)
+                {
+                    return false;
+                }
+
+                action = subPath.EndsWith("-requeue", StringComparison.Ordinal) ? "requeue" : "delete";
+                ids = payload.Ids;
+            }
+            else
+            {
+                var form = await context.Request.ReadFormAsync(context.RequestAborted).ConfigureAwait(false);
+                action = form["bulkAction"].ToString();
+                var rawIds = form["ids"].ToArray();
+                ids = rawIds.Where(i => i is not null).Select(i => i!).ToArray();
+            }
+
+            // if nothing selected (and from form), act on all failed jobs
+            if (ids.Length == 0 && string.Equals(action, "requeue", StringComparison.Ordinal))
             {
                 var all = await dashboardStorage.GetJobsAsync(
                     new JobFilter { Status = JobStatus.Failed }, 1, int.MaxValue, context.RequestAborted).ConfigureAwait(false);
@@ -371,6 +391,12 @@ public sealed class DashboardMiddleware
                 {
                     await controlService.DeleteJobAsync(jobId, context.RequestAborted).ConfigureAwait(false);
                 }
+            }
+
+            if (context.Request.Headers.ContainsKey("X-Requested-With"))
+            {
+                context.Response.StatusCode = 200;
+                return true;
             }
 
             LocalRedirect(context, $"{_pathPrefix}/failed");
@@ -516,6 +542,8 @@ public sealed class DashboardMiddleware
             parameters = ParameterView.FromDictionary(new Dictionary<string, object?>(StringComparer.Ordinal)
             {
                 ["Storage"] = dashboardStorage,
+                ["JobStorage"] = jobStorage,
+                ["RecurringStorage"] = recurringStorage,
                 ["PathPrefix"] = _pathPrefix,
                 ["Title"] = _options.Title,
                 ["Counters"] = counters,
@@ -659,4 +687,8 @@ public sealed class DashboardMiddleware
 
         return HtmlShell.NotFound(_options.Title, _pathPrefix);
     }
+
+    /// <summary>Request payload for bulk job actions.</summary>
+    /// <param name="Ids">The job IDs to process.</param>
+    private sealed record BulkActionRequest(string[] Ids);
 }

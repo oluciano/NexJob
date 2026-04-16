@@ -1,3 +1,4 @@
+using System.Text;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Rendering;
 using NexJob.Storage;
@@ -8,8 +9,15 @@ namespace NexJob.Dashboard.Pages;
 internal sealed class OverviewPage : IComponent
 {
     private RenderHandle _handle;
+    private JobMetrics? _fetchedMetrics;
+    private PagedResult<JobRecord>? _recentJobs;
+    private IReadOnlyList<QueueMetrics>? _queueMetrics;
+    private IReadOnlyList<ServerRecord>? _activeServers;
+    private IReadOnlyList<RecurringJobRecord>? _recurringJobsSummary;
 
     [Parameter] public IDashboardStorage Storage { get; set; } = default!;
+    [Parameter] public IJobStorage JobStorage { get; set; } = default!;
+    [Parameter] public IRecurringStorage RecurringStorage { get; set; } = default!;
     [Parameter] public string PathPrefix { get; set; } = "/dashboard";
     [Parameter] public string Title { get; set; } = "NexJob";
     [Parameter] public NavCounters? Counters { get; set; }
@@ -17,11 +25,24 @@ internal sealed class OverviewPage : IComponent
 
     void IComponent.Attach(RenderHandle renderHandle) => _handle = renderHandle;
 
-    Task IComponent.SetParametersAsync(ParameterView parameters)
+    async Task IComponent.SetParametersAsync(ParameterView parameters)
     {
         parameters.SetParameterProperties(this);
+
+        var ct = CancellationToken.None;
+        _fetchedMetrics = await Storage.GetMetricsAsync(ct).ConfigureAwait(false);
+        _recentJobs = await Storage.GetJobsAsync(new JobFilter(), 1, 5, ct).ConfigureAwait(false);
+        _queueMetrics = await Storage.GetQueueMetricsAsync(ct).ConfigureAwait(false);
+        _activeServers = await JobStorage.GetActiveServersAsync(TimeSpan.FromMinutes(5), ct).ConfigureAwait(false);
+
+        var allRecurring = await RecurringStorage.GetRecurringJobsAsync(ct).ConfigureAwait(false);
+        _recurringJobsSummary = allRecurring
+            .Where(r => r.Enabled && !r.DeletedByUser && r.NextExecution.HasValue)
+            .OrderBy(r => r.NextExecution)
+            .Take(3)
+            .ToList();
+
         _handle.Render(b => b.AddMarkupContent(0, BuildHtml()));
-        return Task.CompletedTask;
     }
 
     private static (int Avg, HashSet<int> Anomalies) DetectAnomalies(
@@ -55,15 +76,26 @@ internal sealed class OverviewPage : IComponent
 
     private string BuildHtml()
     {
-        var m = Metrics ?? new JobMetrics();
+        var m = _fetchedMetrics ?? Metrics ?? new JobMetrics();
         var now = DateTimeOffset.UtcNow;
-        var max = m.HourlyThroughput.Count > 0 ? m.HourlyThroughput.Max(h => h.Count) : 1;
 
-        var (avg, anomalyIndexes) = DetectAnomalies(m.HourlyThroughput);
+        // Ensure we always have 24 hours for the chart (Requirement 2 & 3)
+        var throughput = m.HourlyThroughput.ToList();
+        if (throughput.Count == 0)
+        {
+            for (var i = 0; i < 24; i++)
+            {
+                throughput.Add(new HourlyThroughput { Hour = now.AddHours(-23 + i), Count = 0 });
+            }
+        }
+
+        var max = throughput.Count > 0 ? throughput.Max(h => h.Count) : 1;
+
+        var (avg, anomalyIndexes) = DetectAnomalies(throughput);
         var avgPct = max > 0 ? (int)(avg * 140.0 / max) : 0;
 
         // Only label every 4th bar to avoid clutter
-        var bars = string.Join(string.Empty, m.HourlyThroughput.Select((h, i) =>
+        var bars = string.Join(string.Empty, throughput.Select((h, i) =>
         {
             var pct = max > 0 ? (int)(h.Count * 140.0 / max) : 2;
             var isAnomaly = anomalyIndexes.Contains(i);
@@ -77,54 +109,148 @@ internal sealed class OverviewPage : IComponent
 
         var anomalyHours = anomalyIndexes
             .OrderBy(i => i)
-            .Select(i => m.HourlyThroughput[i].Hour.ToString("HH") + "h")
+            .Select(i => throughput[i].Hour.ToString("HH") + "h")
             .ToList();
         var anomalyNote = anomalyHours.Count > 0
             ? $"<div class=\"anomaly-note\">⚠ Drop at {string.Join(", ", anomalyHours)} — below 40% of average</div>"
             : string.Empty;
 
-        var failCards = m.RecentFailures.Count == 0
-            ? "<div class=\"empty-state\" style=\"padding:32px 0\"><p>No failures recently — things look good.</p></div>"
-            : string.Join(string.Empty, m.RecentFailures.Take(5).Select(j =>
-                $"<a href=\"{PathPrefix}/jobs/{j.Id.Value}\" style=\"text-decoration:none\">" +
-                $"<div class=\"job-row\" style=\"margin-bottom:0\">" +
-                $"<div class=\"job-row-dot\">{Helpers.StatusDot(JobStatus.Failed)}</div>" +
-                $"<div class=\"job-row-main\">" +
-                $"<div class=\"job-row-title\">{System.Web.HttpUtility.HtmlEncode(Helpers.ShortType(j.JobType))}</div>" +
-                $"<div class=\"job-row-sub\">" +
-                $"<span>{System.Web.HttpUtility.HtmlEncode(j.Queue)}</span>" +
-                $"<span style=\"color:var(--danger);font-size:11px\">{System.Web.HttpUtility.HtmlEncode(Helpers.Truncate(j.LastErrorMessage, 80))}</span>" +
-                $"</div></div>" +
-                $"<div class=\"job-row-meta\">{Helpers.RelativeTime(j.CompletedAt, now)}</div>" +
-                $"</div></a>"));
+        // 1. TOP METRICS
+        var topMetricsHtml =
+            "<div class=\"stats-grid\">" +
+            HtmlFragments.MetricCard("metric-succeeded", "Succeeded", m.Succeeded, "stat-icon-success", "<svg width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><polyline points=\"20 6 9 17 4 12\"/></svg>", "Completed today", $"{PathPrefix}/jobs?status=Succeeded") +
+            HtmlFragments.MetricCard("metric-processing", "Processing", m.Processing, "stat-icon-warning", "<svg width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><circle cx=\"12\" cy=\"12\" r=\"10\"/><polyline points=\"12 6 12 12 16 14\"/></svg>", "Currently active", $"{PathPrefix}/jobs?status=Processing") +
+            HtmlFragments.MetricCard("metric-failed", "Failed", m.Failed, "stat-icon-error", "<svg width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><circle cx=\"12\" cy=\"12\" r=\"10\"/><line x1=\"15\" y1=\"9\" x2=\"9\" y2=\"15\"/><line x1=\"9\" y1=\"9\" x2=\"15\" y2=\"15\"/></svg>", "Errors today", $"{PathPrefix}/failed") +
+            HtmlFragments.MetricCard("metric-recurring", "Recurring", m.Recurring, "stat-icon-info", "<svg width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><polyline points=\"23 4 23 10 17 10\"/><polyline points=\"1 20 1 14 7 14\"/><path d=\"M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15\"/></svg>", "Active schedules", $"{PathPrefix}/recurring") +
+            "</div>";
+
+        // 2. RECENT JOBS
+        var recentJobsSb = new StringBuilder();
+        recentJobsSb.Append("<div class=\"card\"><div class=\"card-header\"><h3>Recent Jobs</h3><a href=\"").Append(PathPrefix).Append("/jobs\" class=\"btn btn-secondary btn-sm\">View All</a></div>");
+        if (_recentJobs?.Items.Count > 0)
+        {
+            recentJobsSb.Append("<table class=\"table\"><thead><tr><th>ID</th><th>Type</th><th>Status</th><th>Started</th><th>Duration</th><th style=\"text-align:right\">Action</th></tr></thead><tbody>");
+            foreach (var j in _recentJobs.Items)
+            {
+                var duration = "—";
+                if (j.ProcessingStartedAt.HasValue)
+                {
+                    var end = j.CompletedAt ?? now;
+                    var d = end - j.ProcessingStartedAt.Value;
+                    duration = d.TotalSeconds < 1 ? "< 1s" : $"{(int)d.TotalSeconds}s";
+                }
+
+                recentJobsSb.Append("<tr>")
+                    .Append("<td style=\"font-family:monospace;font-size:12px\">#").Append(j.Id.Value.ToString()[..8]).Append("</td>")
+                    .Append("<td>").Append(System.Web.HttpUtility.HtmlEncode(Helpers.ShortType(j.JobType))).Append("</td>")
+                    .Append("<td>").Append(HtmlFragments.StatusBadge(j.Status.ToString())).Append("</td>")
+                    .Append("<td>").Append(Helpers.RelativeTime(j.ProcessingStartedAt ?? j.CreatedAt, now)).Append("</td>")
+                    .Append("<td>").Append(duration).Append("</td>")
+                    .Append("<td style=\"text-align:right\"><a href=\"").Append(PathPrefix).Append("/jobs/").Append(j.Id.Value).Append("\" class=\"btn btn-secondary btn-sm\">View</a></td>")
+                    .Append("</tr>");
+            }
+
+            recentJobsSb.Append("</tbody></table>");
+        }
+        else
+        {
+            recentJobsSb.Append("<div style=\"padding:32px;text-align:center;color:var(--text-tertiary)\">No jobs found.</div>");
+        }
+
+        recentJobsSb.Append("</div>");
+
+        // 3. ACTIVE SERVERS
+        var serversSb = new StringBuilder();
+        serversSb.Append("<div class=\"card\"><div class=\"card-header\"><h3>Active Servers</h3><a href=\"").Append(PathPrefix).Append("/servers\" class=\"btn btn-secondary btn-sm\">Details</a></div><div style=\"padding:0\">");
+        if (_activeServers?.Count > 0)
+        {
+            foreach (var s in _activeServers)
+            {
+                serversSb.Append("<div style=\"padding:12px 20px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border)\">")
+                    .Append("<div style=\"display:flex;align-items:center;gap:12px\">")
+                    .Append("<span class=\"dot dot-succeeded\"></span>")
+                    .Append("<div><div style=\"font-weight:600\">").Append(System.Web.HttpUtility.HtmlEncode(s.Id)).Append("</div><div style=\"font-size:11px;color:var(--text-tertiary)\">").Append(System.Web.HttpUtility.HtmlEncode(string.Join(", ", s.Queues))).Append("</div></div>")
+                    .Append("</div>")
+                    .Append("<div style=\"display:flex;gap:24px;align-items:center\">")
+                    .Append("<div style=\"text-align:center\"><div style=\"font-size:10px;color:var(--text-tertiary);font-weight:700\">WORKERS</div><div style=\"font-weight:700\">").Append(s.WorkerCount).Append("</div></div>")
+                    .Append("<div style=\"text-align:center\"><div style=\"font-size:10px;color:var(--text-tertiary);font-weight:700\">CPU</div><div style=\"font-weight:700\">—</div></div>")
+                    .Append("</div></div>");
+            }
+        }
+        else
+        {
+            serversSb.Append("<div style=\"padding:32px;text-align:center;color:var(--text-tertiary)\">No active servers.</div>");
+        }
+
+        serversSb.Append("</div></div>");
+
+        // 4. RECURRING JOBS SUMMARY
+        var recurringSummarySb = new StringBuilder();
+        recurringSummarySb.Append("<div class=\"card\"><div class=\"card-header\"><h3>Upcoming Recurring</h3></div><div style=\"padding:0\">");
+        if (_recurringJobsSummary?.Count > 0)
+        {
+            foreach (var r in _recurringJobsSummary)
+            {
+                var next = r.NextExecution.HasValue ? Helpers.CountdownFriendly(r.NextExecution.Value - now) : "—";
+                recurringSummarySb.Append("<div style=\"padding:12px 20px;border-bottom:1px solid var(--border)\">")
+                    .Append("<div style=\"display:flex;justify-content:space-between;align-items:center\">")
+                    .Append("<div style=\"font-weight:600;color:var(--primary)\">").Append(System.Web.HttpUtility.HtmlEncode(r.RecurringJobId)).Append("</div>")
+                    .Append("<div style=\"font-size:12px;color:var(--text-secondary)\">").Append(next).Append("</div>")
+                    .Append("</div>")
+                    .Append("<div style=\"font-size:11px;color:var(--text-tertiary);margin-top:2px\">").Append(System.Web.HttpUtility.HtmlEncode(Helpers.ShortType(r.JobType))).Append("</div>")
+                    .Append("</div>");
+            }
+        }
+        else
+        {
+            recurringSummarySb.Append("<div style=\"padding:32px;text-align:center;color:var(--text-tertiary)\">No recurring jobs scheduled.</div>");
+        }
+
+        recurringSummarySb.Append("</div></div>");
+
+        // 5. QUEUE STATISTICS
+        var queueStatsSb = new StringBuilder();
+        queueStatsSb.Append("<div class=\"card\"><div class=\"card-header\"><h3>Queue Distribution</h3></div><div style=\"padding:20px\">");
+        if (_queueMetrics?.Count > 0)
+        {
+            var totalJobs = _queueMetrics.Sum(q => q.Enqueued + q.Processing);
+            foreach (var q in _queueMetrics.OrderByDescending(q => q.Enqueued + q.Processing))
+            {
+                var count = q.Enqueued + q.Processing;
+                var pct = totalJobs > 0 ? (int)(count * 100.0 / totalJobs) : 0;
+                queueStatsSb.Append("<div style=\"margin-bottom:16px\">")
+                    .Append("<div style=\"display:flex;justify-content:space-between;margin-bottom:4px;font-size:13px\">")
+                    .Append("<span style=\"font-weight:600\">").Append(System.Web.HttpUtility.HtmlEncode(q.Queue)).Append("</span>")
+                    .Append("<span style=\"color:var(--text-secondary)\">").Append(count).Append(" jobs (").Append(pct).Append("%)</span>")
+                    .Append("</div>")
+                    .Append("<div style=\"height:8px;background:var(--bg-tertiary);border-radius:4px;overflow:hidden\">")
+                    .Append("<div style=\"width:").Append(pct).Append("%;height:100%;background:var(--primary)\"></div>")
+                    .Append("</div></div>");
+            }
+        }
+        else
+        {
+            queueStatsSb.Append("<div style=\"text-align:center;color:var(--text-tertiary)\">No active queues.</div>");
+        }
+
+        queueStatsSb.Append("</div></div>");
 
         var body =
-            "<div class=\"page-header\">" +
-            "<div><h2>Overview</h2><p class=\"page-subtitle\">Real-time job processing status</p></div>" +
-            "</div>" +
-
-            "<div class=\"stats-grid\">" +
-            $"<div class=\"stat-card\"><div class=\"stat-icon stat-icon-info\"><svg width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><path d=\"M22 12h-4l-3 9L9 3l-3 9H2\"/></svg></div><div class=\"stat-content\"><div id=\"metric-enqueued\" class=\"stat-value\">{m.Enqueued}</div><div class=\"stat-label\">Enqueued</div><div class=\"stat-sublabel\">Waiting to run</div></div></div>" +
-            $"<div class=\"stat-card\"><div class=\"stat-icon stat-icon-warning\"><svg width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><circle cx=\"12\" cy=\"12\" r=\"10\"/><polyline points=\"12 6 12 12 16 14\"/></svg></div><div class=\"stat-content\"><div id=\"metric-processing\" class=\"stat-value\">{m.Processing}</div><div class=\"stat-label\">Processing</div><div class=\"stat-sublabel\">Currently active</div></div></div>" +
-            $"<div class=\"stat-card\"><div class=\"stat-icon stat-icon-success\"><svg width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><polyline points=\"20 6 9 17 4 12\"/></svg></div><div class=\"stat-content\"><div id=\"metric-succeeded\" class=\"stat-value\">{m.Succeeded}</div><div class=\"stat-label\">Succeeded</div><div class=\"stat-sublabel\">Completed today</div></div></div>" +
-            $"<div class=\"stat-card\"><div class=\"stat-icon stat-icon-error\"><svg width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><circle cx=\"12\" cy=\"12\" r=\"10\"/><line x1=\"15\" y1=\"9\" x2=\"9\" y2=\"15\"/><line x1=\"9\" y1=\"9\" x2=\"15\" y2=\"15\"/></svg></div><div class=\"stat-content\"><div id=\"metric-failed\" class=\"stat-value\">{m.Failed}</div><div class=\"stat-label\">Failed</div><div class=\"stat-sublabel\">Errors today</div></div></div>" +
-            $"<div class=\"stat-card\"><div class=\"stat-icon stat-icon-gray\"><svg width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><rect x=\"3\" y=\"4\" width=\"18\" height=\"18\" rx=\"2\" ry=\"2\"/><line x1=\"16\" y1=\"2\" x2=\"16\" y2=\"6\"/><line x1=\"8\" y1=\"2\" x2=\"8\" y2=\"6\"/><line x1=\"3\" y1=\"10\" x2=\"21\" y2=\"10\"/></svg></div><div class=\"stat-content\"><div id=\"metric-scheduled\" class=\"stat-value\">{m.Scheduled}</div><div class=\"stat-label\">Scheduled</div><div class=\"stat-sublabel\">Future jobs</div></div></div>" +
-            $"<div class=\"stat-card\"><div class=\"stat-icon stat-icon-gray\"><svg width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><polyline points=\"23 4 23 10 17 10\"/><polyline points=\"1 20 1 14 7 14\"/><path d=\"M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15\"/></svg></div><div class=\"stat-content\"><div id=\"metric-recurring\" class=\"stat-value\">{m.Recurring}</div><div class=\"stat-label\">Recurring</div><div class=\"stat-sublabel\">Active schedules</div></div></div>" +
-            "</div>" +
-
-            "<div class=\"chart\">" +
+            HtmlFragments.PageHeader("Overview", "Real-time job processing status") +
+            topMetricsHtml +
+            "<div style=\"display:grid;grid-template-columns: 2fr 1fr; gap:24px\">" +
+            "<div>" +
+            "<div class=\"chart\" style=\"margin-bottom:24px\">" +
             "<div class=\"chart-header\"><span class=\"section-title\">Throughput — last 24h</span></div>" +
-            (bars.Length > 0
-                ? $"<div class=\"bars\" id=\"chart-bars\" data-avg-pct=\"{avgPct}\">{bars}</div><div class=\"chart-tooltip\" id=\"chart-tip\"></div>{anomalyNote}"
-                : "<div class=\"empty-state\" style=\"padding:24px 0\"><p>No completed jobs in the last 24 hours.</p></div>") +
+            $"<div class=\"bars\" id=\"chart-bars\" data-avg-pct=\"{avgPct}\">{bars}</div><div class=\"chart-tooltip\" id=\"chart-tip\"></div>{anomalyNote}" +
             "</div>" +
-
-            "<div class=\"section\" id=\"overview-recent-failures\" data-refresh=\"true\">" +
-            "<div class=\"section-title\">Recent Failures</div>" +
-            "<div class=\"job-list\">" + failCards + "</div>" +
-            (m.RecentFailures.Count > 0
-                ? $"<div style=\"margin-top:10px\"><a href=\"{PathPrefix}/failed\" style=\"font-size:12px;color:var(--text-3)\">View all failed →</a></div>"
-                : string.Empty) +
+            recentJobsSb.ToString() +
+            "</div>" +
+            "<div>" +
+            serversSb.ToString() +
+            recurringSummarySb.ToString() +
+            queueStatsSb.ToString() +
+            "</div>" +
             "</div>" +
 
             // SSE + chart tooltip JS
@@ -132,12 +258,11 @@ internal sealed class OverviewPage : IComponent
             $"var es=new EventSource('{PathPrefix}/stream');" +
             $"es.onmessage=function(e){{" +
             $"var m=JSON.parse(e.data);" +
-            $"document.getElementById('metric-enqueued').textContent=m.enqueued;" +
-            $"document.getElementById('metric-processing').textContent=m.processing;" +
-            $"document.getElementById('metric-succeeded').textContent=m.succeeded;" +
-            $"document.getElementById('metric-failed').textContent=m.failed;" +
-            $"document.getElementById('metric-scheduled').textContent=m.scheduled;" +
-            $"document.getElementById('metric-recurring').textContent=m.recurring;" +
+            $"if(document.getElementById('metric-enqueued'))document.getElementById('metric-enqueued').textContent=m.enqueued;" +
+            $"if(document.getElementById('metric-processing'))document.getElementById('metric-processing').textContent=m.processing;" +
+            $"if(document.getElementById('metric-succeeded'))document.getElementById('metric-succeeded').textContent=m.succeeded;" +
+            $"if(document.getElementById('metric-failed'))document.getElementById('metric-failed').textContent=m.failed;" +
+            $"if(document.getElementById('metric-recurring'))document.getElementById('metric-recurring').textContent=m.recurring;" +
             $"}};" +
             $"es.onerror=function(){{es.close();}};" +
             // chart tooltip

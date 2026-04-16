@@ -29,6 +29,7 @@ internal sealed class ServersPage : IComponent
         if (servers.Count == 0)
         {
             var emptyBody =
+                HtmlFragments.Breadcrumbs(PathPrefix, ("Servers", null)) +
                 HtmlFragments.PageHeader("Servers", "Active worker nodes across the cluster") +
                 HtmlFragments.EmptyState("2 2 20 8 2 2 2 14 20 8 2 2 6 6 6.01 6 6 18 6.01 18", "No active servers running.");
             return HtmlShell.Wrap(Title, PathPrefix, "servers", emptyBody, Counters);
@@ -82,6 +83,7 @@ internal sealed class ServersPage : IComponent
 
         var body =
             "<div id=\"servers-page-content\" data-refresh=\"true\">" +
+            HtmlFragments.Breadcrumbs(PathPrefix, ("Servers", null)) +
             HtmlFragments.PageHeader("Servers", "Active worker nodes across the cluster") +
             "<div class=\"card\">" +
             $"<div class=\"card-header\"><h3>{servers.Count} active node{(servers.Count == 1 ? string.Empty : "s")} processing {totalWorkers} concurrent jobs</h3></div>" +

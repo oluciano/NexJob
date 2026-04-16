@@ -78,130 +78,90 @@ internal sealed class SettingsPage : ComponentBase
             || Runtime.RetentionExpired.HasValue;
 
         var body =
-            "<div class=\"page-header\"><div>" +
-            "<h1 class=\"page-title\">Settings</h1>" +
-            "<p class=\"page-subtitle\">Live runtime configuration — changes apply immediately</p>" +
-            "</div></div>" +
+            HtmlFragments.Breadcrumbs(PathPrefix, ("Settings", null)) +
+            HtmlFragments.PageHeader("Settings", "Live runtime configuration — changes apply immediately") +
 
-            // 2-column grid: Workers+Polling on left, Retention+Recurring on right
-            "<div style=\"display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start;margin-bottom:16px\">" +
-            "<div>" +
+            "<div style=\"display:grid;grid-template-columns:repeat(auto-fit, minmax(400px, 1fr));gap:24px\">" +
 
-            // Left column: Workers card
-            "<div class=\"settings-card\">" +
-            "<div class=\"settings-card-header\">Workers</div>" +
-            "<div class=\"settings-card-body\">" +
-            "<div class=\"settings-row\">" +
-            "<div class=\"settings-row-label\"><div>Active workers</div>" +
-            $"<div class=\"settings-row-sub\">Baseline from config: {Options.Workers}</div></div>" +
+            // Workers card
+            "<div class=\"card\">" +
+            "<div class=\"card-header\"><h3>Workers</h3></div>" +
+            "<div style=\"padding:16px\">" +
+            "<div style=\"display:flex;justify-content:space-between;align-items:center\">" +
+            "<div><div style=\"font-weight:600\">Active workers</div>" +
+            $"<div style=\"font-size:12px;color:var(--text-tertiary)\">Baseline: {Options.Workers}</div></div>" +
             $"<form method=\"post\" action=\"{PathPrefix}/settings/workers\" style=\"display:flex;gap:8px;align-items:center\">" +
             $"<input type=\"number\" name=\"workers\" value=\"{effectiveWorkers}\" min=\"1\" max=\"200\" " +
-            $"style=\"width:80px;padding:5px 8px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px\"/>" +
+            $"style=\"width:80px\"/>" +
             "<button class=\"btn btn-primary btn-sm\" type=\"submit\">Apply</button>" +
             "</form>" +
             "</div>" +
             (Runtime.Workers.HasValue
-                ? "<div class=\"settings-row\"><div class=\"alert alert-warning\" style=\"margin:0;flex:1\">⚠ Runtime override active — differs from appsettings baseline</div></div>"
+                ? "<div style=\"margin-top:12px\"><div class=\"badge badge-warning\" style=\"width:100%;text-align:center\">Runtime override active</div></div>"
                 : string.Empty) +
             "</div></div>" +
 
-            // Left column: Polling card
-            "<div class=\"settings-card\" style=\"margin-top:16px\">" +
-            "<div class=\"settings-card-header\">Polling Interval</div>" +
-            "<div class=\"settings-card-body\">" +
-            "<div class=\"settings-row\">" +
-            "<div class=\"settings-row-label\"><div>Polling interval (seconds)</div>" +
-            $"<div class=\"settings-row-sub\">Baseline from config: {Options.PollingInterval.TotalSeconds}s</div></div>" +
+            // Polling card
+            "<div class=\"card\">" +
+            "<div class=\"card-header\"><h3>Polling Interval</h3></div>" +
+            "<div style=\"padding:16px\">" +
+            "<div style=\"display:flex;justify-content:space-between;align-items:center\">" +
+            "<div><div style=\"font-weight:600\">Polling interval</div>" +
+            $"<div style=\"font-size:12px;color:var(--text-tertiary)\">Baseline: {Options.PollingInterval.TotalSeconds}s</div></div>" +
             $"<form method=\"post\" action=\"{PathPrefix}/settings/polling\" style=\"display:flex;gap:8px;align-items:center\">" +
             $"<input type=\"number\" name=\"seconds\" value=\"{(int)effectivePolling}\" min=\"1\" max=\"300\" " +
-            $"style=\"width:80px;padding:5px 8px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px\"/>" +
-            "<span style=\"font-size:12px;color:var(--text-3)\">s</span>" +
+            $"style=\"width:80px\"/>" +
+            "<span style=\"font-size:12px;color:var(--text-tertiary)\">s</span>" +
             "<button class=\"btn btn-primary btn-sm\" type=\"submit\">Apply</button>" +
             "</form>" +
             "</div></div></div>" +
 
-            "</div>" +
-            "<div>" +
-
-            // Right column: Retention card
-            "<div class=\"settings-card\">" +
-            "<div class=\"settings-card-header\">Retention Policy</div>" +
-            "<div class=\"settings-card-body\">" +
-            "<div class=\"settings-row\">" +
-            "<div class=\"settings-row-label\"><div>Succeeded jobs (days)</div>" +
-            $"<div class=\"settings-row-sub\">Baseline from config: {Options.RetentionSucceeded.TotalDays}d</div></div>" +
-            $"<form method=\"post\" action=\"{PathPrefix}/settings/retention\" style=\"display:flex;gap:8px;align-items:center\">" +
-            $"<input type=\"hidden\" name=\"retentionFailedDays\" value=\"{effectiveRetentionFailed}\" />" +
-            $"<input type=\"hidden\" name=\"retentionExpiredDays\" value=\"{effectiveRetentionExpired}\" />" +
-            $"<input type=\"number\" name=\"retentionSucceededDays\" value=\"{effectiveRetentionSucceeded}\" min=\"0\" max=\"3650\" " +
-            $"style=\"width:80px;padding:5px 8px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px\"/>" +
-            "<span style=\"font-size:12px;color:var(--text-3)\">days</span>" +
-            "<button class=\"btn btn-primary btn-sm\" type=\"submit\">Save</button>" +
-            "</form>" +
-            "</div>" +
-            "<div class=\"settings-row\">" +
-            "<div class=\"settings-row-label\"><div>Failed jobs (days)</div>" +
-            $"<div class=\"settings-row-sub\">Baseline from config: {Options.RetentionFailed.TotalDays}d</div></div>" +
-            $"<form method=\"post\" action=\"{PathPrefix}/settings/retention\" style=\"display:flex;gap:8px;align-items:center\">" +
-            $"<input type=\"hidden\" name=\"retentionSucceededDays\" value=\"{effectiveRetentionSucceeded}\" />" +
-            $"<input type=\"hidden\" name=\"retentionExpiredDays\" value=\"{effectiveRetentionExpired}\" />" +
-            $"<input type=\"number\" name=\"retentionFailedDays\" value=\"{effectiveRetentionFailed}\" min=\"0\" max=\"3650\" " +
-            $"style=\"width:80px;padding:5px 8px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px\"/>" +
-            "<span style=\"font-size:12px;color:var(--text-3)\">days</span>" +
-            "<button class=\"btn btn-primary btn-sm\" type=\"submit\">Save</button>" +
-            "</form>" +
-            "</div>" +
-            "<div class=\"settings-row\">" +
-            "<div class=\"settings-row-label\"><div>Expired jobs (days)</div>" +
-            $"<div class=\"settings-row-sub\">Baseline from config: {Options.RetentionExpired.TotalDays}d</div></div>" +
-            $"<form method=\"post\" action=\"{PathPrefix}/settings/retention\" style=\"display:flex;gap:8px;align-items:center\">" +
-            $"<input type=\"hidden\" name=\"retentionSucceededDays\" value=\"{effectiveRetentionSucceeded}\" />" +
-            $"<input type=\"hidden\" name=\"retentionFailedDays\" value=\"{effectiveRetentionFailed}\" />" +
-            $"<input type=\"number\" name=\"retentionExpiredDays\" value=\"{effectiveRetentionExpired}\" min=\"0\" max=\"3650\" " +
-            $"style=\"width:80px;padding:5px 8px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px\"/>" +
-            "<span style=\"font-size:12px;color:var(--text-3)\">days</span>" +
-            "<button class=\"btn btn-primary btn-sm\" type=\"submit\">Save</button>" +
-            "</form>" +
-            "</div>" +
-            (Runtime.RetentionSucceeded.HasValue || Runtime.RetentionFailed.HasValue || Runtime.RetentionExpired.HasValue
-                ? "<div class=\"settings-row\"><div class=\"alert alert-warning\" style=\"margin:0;flex:1\">⚠ Runtime override active — differs from appsettings baseline</div></div>"
-                : string.Empty) +
-            "<div class=\"settings-row\" style=\"color:var(--text-3);font-size:12px;margin-top:8px\"><p style=\"margin:0\">Set to 0 to disable purging for that status</p></div>" +
-            "</div></div>" +
-
-            // Right column: Recurring jobs card
-            "<div class=\"settings-card\" style=\"margin-top:16px\">" +
-            "<div class=\"settings-card-header\">Recurring Jobs</div>" +
-            "<div class=\"settings-card-body\">" +
-            "<div class=\"settings-row\">" +
-            "<div class=\"settings-row-label\">" +
-            $"<div>Recurring jobs</div><div class=\"settings-row-sub\">{(Runtime.RecurringJobsPaused ? "Currently paused — no new executions will fire" : "All recurring jobs are running normally")}</div>" +
-            "</div>" +
-            (Runtime.RecurringJobsPaused
-                ? $"<span class=\"badge badge-processing\" style=\"margin-right:8px\">Paused</span><form method=\"post\" action=\"{PathPrefix}/recurring/resume-all\" style=\"display:inline\"><button class=\"btn btn-primary btn-sm\" type=\"submit\">Resume All</button></form>"
-                : $"<span class=\"badge badge-succeeded\" style=\"margin-right:8px\">Active</span><form method=\"post\" action=\"{PathPrefix}/recurring/pause-all\" style=\"display:inline\"><button class=\"btn btn-danger btn-sm\" type=\"submit\">Pause All</button></form>") +
-            "</div></div></div>" +
-
-            "</div>" +
-            "</div>" +
-
-            // Queues card (full-width)
-            "<div class=\"settings-card\">" +
-            "<div class=\"settings-card-header\">Queues</div>" +
-            "<div class=\"settings-card-body\">" +
+            // Queues card
+            "<div class=\"card\">" +
+            "<div class=\"card-header\"><h3>Queues</h3></div>" +
+            "<div style=\"padding:16px\">" +
             BuildQueueRows() +
             "</div></div>" +
 
+            // Retention card
+            "<div class=\"card\">" +
+            "<div class=\"card-header\"><h3>Retention Policy</h3></div>" +
+            "<div style=\"padding:16px\">" +
+            "<div style=\"display:flex;flex-direction:column;gap:12px\">" +
+            BuildRetentionRow("Succeeded jobs (days)", "retentionSucceededDays", effectiveRetentionSucceeded, Options.RetentionSucceeded.TotalDays, effectiveRetentionFailed, effectiveRetentionExpired) +
+            BuildRetentionRow("Failed jobs (days)", "retentionFailedDays", effectiveRetentionFailed, Options.RetentionFailed.TotalDays, effectiveRetentionSucceeded, effectiveRetentionExpired) +
+            BuildRetentionRow("Expired jobs (days)", "retentionExpiredDays", effectiveRetentionExpired, Options.RetentionExpired.TotalDays, effectiveRetentionSucceeded, effectiveRetentionFailed) +
+            "</div>" +
+            (Runtime.RetentionSucceeded.HasValue || Runtime.RetentionFailed.HasValue || Runtime.RetentionExpired.HasValue
+                ? "<div style=\"margin-top:12px\"><div class=\"badge badge-warning\" style=\"width:100%;text-align:center\">Runtime override active</div></div>"
+                : string.Empty) +
+            "</div></div>" +
+
+            // Recurring jobs card
+            "<div class=\"card\">" +
+            "<div class=\"card-header\"><h3>Recurring Jobs</h3></div>" +
+            "<div style=\"padding:16px\">" +
+            "<div style=\"display:flex;justify-content:space-between;align-items:center\">" +
+            "<div><div style=\"font-weight:600\">Execution status</div><div style=\"font-size:12px;color:var(--text-tertiary)\">" +
+            $"{(Runtime.RecurringJobsPaused ? "Currently paused" : "Running normally")}</div>" +
+            "</div>" +
+            (Runtime.RecurringJobsPaused
+                ? $"<form method=\"post\" action=\"{PathPrefix}/recurring/resume-all\"><button class=\"btn btn-primary btn-sm\" type=\"submit\">Resume All</button></form>"
+                : $"<form method=\"post\" action=\"{PathPrefix}/recurring/pause-all\"><button class=\"btn btn-danger btn-sm\" type=\"submit\">Pause All</button></form>") +
+            "</div></div></div>" +
+
+            "</div>" + // End grid
+
             // Effective configuration
-            "<div class=\"settings-card\">" +
-            "<div class=\"settings-card-header\">Effective Configuration</div>" +
-            "<div class=\"settings-card-body\" style=\"padding:16px\">" +
-            $"<pre style=\"margin:0\">{System.Web.HttpUtility.HtmlEncode(effectiveJson)}</pre>" +
+            "<div class=\"card\">" +
+            "<div class=\"card-header\"><h3>Effective Configuration</h3></div>" +
+            "<div style=\"padding:16px\">" +
+            $"<pre style=\"margin:0;font-size:12px;background:var(--bg-tertiary);padding:16px;border-radius:8px;overflow:auto;max-height:400px\">{System.Web.HttpUtility.HtmlEncode(effectiveJson)}</pre>" +
             "</div></div>" +
 
             // Reset overrides
             (hasOverrides
-                ? "<div style=\"margin-top:8px\">" +
+                ? "<div style=\"margin-top:8px;text-align:right\">" +
                   $"<form method=\"post\" action=\"{PathPrefix}/settings/reset\">" +
                   "<button class=\"btn btn-danger\" type=\"submit\" onclick=\"return confirm('Reset all runtime overrides to baseline config?')\">" +
                   "Reset All Runtime Overrides</button>" +
@@ -211,11 +171,31 @@ internal sealed class SettingsPage : ComponentBase
         builder.AddMarkupContent(0, HtmlShell.Wrap(Title, PathPrefix, "settings", body, Counters));
     }
 
+    private string BuildRetentionRow(string label, string fieldName, int value, double baseline, int other1, int other2)
+    {
+        var otherFields = fieldName switch
+        {
+            "retentionSucceededDays" => $"<input type=\"hidden\" name=\"retentionFailedDays\" value=\"{other1}\" /><input type=\"hidden\" name=\"retentionExpiredDays\" value=\"{other2}\" />",
+            "retentionFailedDays" => $"<input type=\"hidden\" name=\"retentionSucceededDays\" value=\"{other1}\" /><input type=\"hidden\" name=\"retentionExpiredDays\" value=\"{other2}\" />",
+            _ => $"<input type=\"hidden\" name=\"retentionSucceededDays\" value=\"{other1}\" /><input type=\"hidden\" name=\"retentionFailedDays\" value=\"{other2}\" />",
+        };
+
+        return
+            "<div style=\"display:flex;justify-content:space-between;align-items:center\">" +
+            $"<div><div style=\"font-weight:600\">{label}</div>" +
+            $"<div style=\"font-size:12px;color:var(--text-tertiary)\">Baseline: {baseline}d</div></div>" +
+            $"<form method=\"post\" action=\"{PathPrefix}/settings/retention\" style=\"display:flex;gap:8px;align-items:center\">" +
+            otherFields +
+            $"<input type=\"number\" name=\"{fieldName}\" value=\"{value}\" min=\"0\" max=\"3650\" style=\"width:80px\"/>" +
+            "<button class=\"btn btn-primary btn-sm\" type=\"submit\">Save</button>" +
+            "</form></div>";
+    }
+
     private string BuildQueueRows()
     {
         if (Options.Queues.Count == 0)
         {
-            return "<div class=\"settings-row\"><span style=\"color:var(--text-3);font-size:12px\">No queues configured.</span></div>";
+            return "<div style=\"color:var(--text-tertiary);font-size:12px\">No queues configured.</div>";
         }
 
         var sb = new System.Text.StringBuilder();
@@ -230,34 +210,35 @@ internal sealed class SettingsPage : ComponentBase
             string statusBadge;
             if (isPaused)
             {
-                statusBadge = "<span class=\"badge badge-processing\">Paused</span>";
+                statusBadge = "<span class=\"badge badge-warning\">Paused</span>";
             }
             else if (!inWindow)
             {
-                statusBadge = "<span class=\"badge badge-scheduled\">Outside Window</span>";
+                statusBadge = "<span class=\"badge badge-gray\">Outside Window</span>";
             }
             else
             {
-                statusBadge = "<span class=\"badge badge-succeeded\">Active</span>";
+                statusBadge = "<span class=\"badge badge-success\">Active</span>";
             }
 
             var toggleAction = isPaused
                 ? $"{PathPrefix}/queues/{Uri.EscapeDataString(q)}/resume"
                 : $"{PathPrefix}/queues/{Uri.EscapeDataString(q)}/pause";
-            var toggleChecked = !isPaused ? " checked" : string.Empty;
+
+            var toggleIcon = isPaused
+                ? "<svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><polygon points=\"5 3 19 12 5 21 5 3\"/></svg>"
+                : "<svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><rect x=\"6\" y=\"4\" width=\"4\" height=\"16\"/><rect x=\"14\" y=\"4\" width=\"4\" height=\"16\"/></svg>";
+
+            var colorStyle = isPaused ? "color:var(--success)" : "color:var(--warning)";
 
             sb.Append(
-                $"<div class=\"settings-row\">" +
-                $"<div class=\"settings-row-label\">" +
-                $"<div>{System.Web.HttpUtility.HtmlEncode(q)}</div>" +
-                $"</div>" +
+                $"<div style=\"display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border)\">" +
+                $"<div><div style=\"font-weight:600\">{System.Web.HttpUtility.HtmlEncode(q)}</div></div>" +
+                $"<div style=\"display:flex;align-items:center;gap:12px\">" +
                 $"{statusBadge}" +
-                $"<form method=\"post\" action=\"{toggleAction}\" style=\"display:inline;margin-left:8px\">" +
-                $"<label class=\"toggle\" title=\"{(isPaused ? "Resume" : "Pause")} queue\">" +
-                $"<input type=\"checkbox\"{toggleChecked} onchange=\"this.form.submit()\" />" +
-                $"<span class=\"toggle-thumb\"></span>" +
-                $"</label></form>" +
-                $"</div>");
+                $"<form method=\"post\" action=\"{toggleAction}\">" +
+                $"<button type=\"submit\" class=\"btn-icon-sm\" title=\"{(isPaused ? "Resume" : "Pause")} queue\" style=\"{colorStyle}\">{toggleIcon}</button>" +
+                $"</form></div></div>");
         }
 
         return sb.ToString();

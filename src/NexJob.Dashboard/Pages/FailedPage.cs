@@ -22,14 +22,17 @@ internal sealed class FailedPage : IComponent
     {
         parameters.SetParameterProperties(this);
 
+        // Fetch queues for the filter dropdown
+        var queues = await Storage.GetQueueMetricsAsync(CancellationToken.None).ConfigureAwait(false);
+
         // Default to Failed if no status specified; allow Expired as override
         var status = StatusFilter ?? JobStatus.Failed;
         var filter = new JobFilter { Status = status, Search = Search };
         var result = await Storage.GetJobsAsync(filter, Page, 25).ConfigureAwait(false);
-        _handle.Render(b => b.AddMarkupContent(0, BuildHtml(result, status)));
+        _handle.Render(b => b.AddMarkupContent(0, BuildHtml(result, status, queues)));
     }
 
-    private string BuildHtml(PagedResult<JobRecord> result, JobStatus status)
+    private string BuildHtml(PagedResult<JobRecord> result, JobStatus status, IReadOnlyList<QueueMetrics> queues)
     {
         var now = DateTimeOffset.UtcNow;
         var currentStatus = status.ToString();
@@ -58,8 +61,9 @@ internal sealed class FailedPage : IComponent
 
             var emptyBody =
                 "<div id=\"failed-page-content\" data-refresh=\"true\">" +
+                HtmlFragments.Breadcrumbs(PathPrefix, ("Failed", null)) +
                 HtmlFragments.PageHeader("Failed Jobs", subtitle) +
-                HtmlFragments.FilterBar(PathPrefix, currentStatus, Search, null) +
+                HtmlFragments.FilterBar(PathPrefix, currentStatus, Search, null, null, queues) +
                 HtmlFragments.EmptyState("12 22s10-9 10-9-9-9-9 9 10 9z", emptyMsg + " — " + emptySub) +
                 "</div>";
             return HtmlShell.Wrap(Title, PathPrefix, "failed", emptyBody, Counters);
@@ -79,7 +83,9 @@ internal sealed class FailedPage : IComponent
 
         var body =
             "<div id=\"failed-page-content\" data-refresh=\"true\">" +
+            HtmlFragments.Breadcrumbs(PathPrefix, ("Failed", null)) +
             HtmlFragments.PageHeader("Failed Jobs", subtitle, headerActions) +
+            HtmlFragments.FilterBar(PathPrefix, currentStatus, Search, null, null, queues) +
             $"<div class=\"card\">" +
             $"<div class=\"card-header\"><h3>{result.TotalCount} jobs need attention</h3></div>" +
             $"<div style=\"padding:24px\">" +

@@ -249,7 +249,7 @@ internal sealed class RecurringJobDetailPage : IComponent
         // ── Assemble body ─────────────────────────────────────────────────────
 
         var body =
-            $"<a href=\"{PathPrefix}/recurring\" style=\"color:var(--text-muted);font-size:12px\">← Back to Recurring Jobs</a>" +
+            HtmlFragments.Breadcrumbs(PathPrefix, ("Recurring", PathPrefix + "/recurring"), (job.RecurringJobId, null)) +
             $"<div id=\"auto-refresh-container\" data-refresh=\"true\">" +
             $"<div style=\"display:flex;align-items:center;gap:12px;margin-top:16px;margin-bottom:8px\">" +
             $"<h1 class=\"page-title\" style=\"margin-bottom:0\">{encodedId}</h1>" +

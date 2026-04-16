@@ -53,20 +53,35 @@ internal sealed class QueuesPage : IComponent
         if (queues.Count == 0)
         {
             var emptyBody =
+                HtmlFragments.Breadcrumbs(PathPrefix, ("Queues", null)) +
                 HtmlFragments.PageHeader("Queues", "Active processing queues") +
                 HtmlFragments.EmptyState("0 0 24 24", "No active queues.");
             return HtmlShell.Wrap(Title, PathPrefix, "queues", emptyBody, Counters);
         }
 
-        var cards = string.Join(string.Empty, queues.Select(q => HtmlFragments.QueueCard(q, PathPrefix)));
+        // Sort queues by activity (Processing > Enqueued > Name)
+        var sortedQueues = queues
+            .OrderByDescending(q => q.Processing)
+            .ThenByDescending(q => q.Enqueued)
+            .ThenBy(q => q.Queue, StringComparer.Ordinal)
+            .ToList();
+
+        var cards = string.Join(string.Empty, sortedQueues.Select(q => HtmlFragments.QueueCard(q, PathPrefix)));
 
         var heatmap = BuildWorkerHeatmap(processingJobs);
 
         var body =
             "<div id=\"queues-page-content\" data-refresh=\"true\">" +
+            HtmlFragments.Breadcrumbs(PathPrefix, ("Queues", null)) +
             HtmlFragments.PageHeader("Queues", "Monitor and manage job processing queues") +
+            $"<div class=\"card\">" +
+            $"<div class=\"card-header\"><h3>ACTIVE QUEUES ({queues.Count})</h3></div>" +
+            $"<div style=\"padding:20px\">" +
+            $"<div class=\"queue-list-vertical\">{cards}</div>" +
+            $"</div>" +
+            $"</div>" +
+            "<div style=\"margin-top:48px\"></div>" +
             heatmap +
-            $"<div class=\"queue-grid\">{cards}</div>" +
             "</div>";
 
         return HtmlShell.Wrap(Title, PathPrefix, "queues", body, Counters);
