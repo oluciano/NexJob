@@ -2,7 +2,7 @@ namespace NexJob.Storage;
 
 /// <summary>
 /// Defines how long completed jobs are retained before being automatically deleted.
-/// Passed to <see cref="IStorageProvider.PurgeJobsAsync"/> by the retention service.
+/// Passed to <see cref="IJobStorage.PurgeJobsAsync"/> by the retention service.
 /// </summary>
 public sealed class RetentionPolicy
 {

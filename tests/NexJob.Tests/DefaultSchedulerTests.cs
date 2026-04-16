@@ -13,7 +13,7 @@ public sealed class DefaultSchedulerTests
 
     public DefaultSchedulerTests()
     {
-        _sut = new DefaultScheduler(_storage, new NexJobOptions(), _wakeUp);
+        _sut = new DefaultScheduler(_storage, _storage, _storage, new NexJobOptions(), _wakeUp);
     }
 
     // ─── EnqueueAsync ─────────────────────────────────────────────────────────

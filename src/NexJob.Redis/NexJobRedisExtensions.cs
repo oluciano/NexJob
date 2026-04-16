@@ -1,4 +1,6 @@
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using NexJob.Configuration;
 using NexJob.Storage;
 using StackExchange.Redis;
@@ -8,6 +10,7 @@ namespace NexJob.Redis;
 /// <summary>
 /// Extension methods for registering the Redis storage provider with NexJob.
 /// </summary>
+[ExcludeFromCodeCoverage]
 public static class NexJobRedisExtensions
 {
     /// <summary>
@@ -21,8 +24,15 @@ public static class NexJobRedisExtensions
         string connectionString)
     {
         var mux = ConnectionMultiplexer.Connect(connectionString);
-        services.AddSingleton<IStorageProvider>(_ => new RedisStorageProvider(mux.GetDatabase()));
-        services.AddSingleton<IRuntimeSettingsStore>(_ => new RedisRuntimeSettingsStore(mux.GetDatabase()));
+        var db = mux.GetDatabase();
+        services.TryAddSingleton(db);
+        services.AddSingleton(_ => new RedisStorageProvider(db));
+        services.AddSingleton<IStorageProvider>(sp => sp.GetRequiredService<RedisStorageProvider>());
+        services.AddSingleton<IJobStorage>(sp => sp.GetRequiredService<RedisStorageProvider>());
+        services.AddSingleton<IRecurringStorage>(sp => sp.GetRequiredService<RedisStorageProvider>());
+        services.AddSingleton<IDashboardStorage>(sp => sp.GetRequiredService<RedisStorageProvider>());
+
+        services.AddSingleton<IRuntimeSettingsStore>(_ => new RedisRuntimeSettingsStore(db));
 
         return services;
     }
@@ -38,11 +48,29 @@ public static class NexJobRedisExtensions
         this IServiceCollection services,
         IConnectionMultiplexer multiplexer)
     {
-        services.AddSingleton<IStorageProvider>(
-            _ => new RedisStorageProvider(multiplexer.GetDatabase()));
-        services.AddSingleton<IRuntimeSettingsStore>(
-            _ => new RedisRuntimeSettingsStore(multiplexer.GetDatabase()));
+        var db = multiplexer.GetDatabase();
+        services.TryAddSingleton(db);
+        services.AddSingleton(_ => new RedisStorageProvider(db));
+        services.AddSingleton<IStorageProvider>(sp => sp.GetRequiredService<RedisStorageProvider>());
+        services.AddSingleton<IJobStorage>(sp => sp.GetRequiredService<RedisStorageProvider>());
+        services.AddSingleton<IRecurringStorage>(sp => sp.GetRequiredService<RedisStorageProvider>());
+        services.AddSingleton<IDashboardStorage>(sp => sp.GetRequiredService<RedisStorageProvider>());
 
+        services.AddSingleton<IRuntimeSettingsStore>(
+            _ => new RedisRuntimeSettingsStore(db));
+
+        return services;
+    }
+
+    /// <summary>
+    /// Enables global throttle enforcement via Redis across all worker nodes.
+    /// Without this, [ThrottleAttribute] limits are per-process only.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <returns>The original <paramref name="services"/> for chaining.</returns>
+    public static IServiceCollection AddNexJobDistributedThrottle(this IServiceCollection services)
+    {
+        services.AddSingleton<IDistributedThrottleStore, RedisDistributedThrottleStore>();
         return services;
     }
 }

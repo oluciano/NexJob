@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Confluent.Kafka;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -7,6 +8,7 @@ namespace NexJob.Trigger.Kafka;
 /// <summary>
 /// Extension methods for registering NexJob Kafka trigger.
 /// </summary>
+[ExcludeFromCodeCoverage]
 public static class KafkaNexJobExtensions
 {
     /// <summary>

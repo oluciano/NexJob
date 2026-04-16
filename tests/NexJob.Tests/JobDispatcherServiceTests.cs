@@ -1,8 +1,10 @@
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using NexJob;
 using NexJob.Internal;
+using NexJob.Storage;
 using Xunit;
 
 namespace NexJob.Tests;
@@ -252,6 +254,108 @@ public sealed class JobDispatcherServiceTests
 
         await host.StopAsync();
     }
+
+    // ─── StopAsync timeout warning ────────────────────────────────────────────
+
+    [Fact]
+    public async Task StopAsync_WithActiveJobs_LogsWarningOnTimeout()
+    {
+        // A job that starts, signals, and then blocks indefinitely
+        var jobStarted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseJob = new SemaphoreSlim(0, 1); // never released
+
+        var logSink = new ListLoggerProvider();
+
+        using var host = Host.CreateDefaultBuilder()
+            .ConfigureLogging(l => l.AddProvider(logSink))
+            .ConfigureServices(services =>
+            {
+                services.AddNexJob(opt =>
+                {
+                    opt.Workers = 1;
+                    opt.MaxAttempts = 1;
+                    opt.PollingInterval = TimeSpan.FromMilliseconds(20);
+                    opt.ShutdownTimeout = TimeSpan.FromMilliseconds(100);
+                });
+                services.AddTransient(_ => new GateableJob(jobStarted, releaseJob));
+            })
+            .Build();
+
+        await host.StartAsync();
+
+        var scheduler = host.Services.GetRequiredService<IScheduler>();
+        await scheduler.EnqueueAsync<GateableJob, GateableInput>(new());
+
+        await jobStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        await host.StopAsync();
+
+        logSink.Messages.Should().Contain(m => m.Contains("Shutdown timeout") && m.Contains("still active"),
+            "a warning must be logged when active jobs remain after ShutdownTimeout");
+
+        releaseJob.Release();
+    }
+
+    // ─── all queues paused ────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Dispatcher_AllQueuesPaused_SkipsPolling()
+    {
+        var tcs = new TaskCompletionSource<bool>();
+        using var host = BuildHost(s => s.AddTransient(_ => new QuickSuccessJob(tcs)));
+        await host.StartAsync();
+
+        var control = host.Services.GetRequiredService<IJobControlService>();
+        var scheduler = host.Services.GetRequiredService<IScheduler>();
+        var storage = (InMemoryStorageProvider)host.Services.GetRequiredService<NexJob.Storage.IStorageProvider>();
+
+        // Pause before enqueuing so the dispatcher never picks it up
+        await control.PauseQueueAsync("default");
+        var jobId = await scheduler.EnqueueAsync<QuickSuccessJob, QuickInput>(new());
+
+        await Task.Delay(300);
+
+        var job = await storage.GetJobByIdAsync(jobId);
+        job!.Status.Should().Be(JobStatus.Enqueued, "dispatcher must skip paused queues");
+        tcs.Task.IsCompleted.Should().BeFalse();
+
+        await host.StopAsync();
+    }
+
+    // ─── FetchNextAsync throws ────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Dispatcher_FetchNextThrows_LogsErrorAndContinues()
+    {
+        var logSink = new ListLoggerProvider();
+
+        using var host = Host.CreateDefaultBuilder()
+            .ConfigureLogging(l => l.AddProvider(logSink))
+            .ConfigureServices(services =>
+            {
+                // Register ThrowOnceJobStorage BEFORE AddNexJob so TryAdd skips it
+                services.AddSingleton<IJobStorage>(sp =>
+                    new ThrowOnceJobStorage(sp.GetRequiredService<InMemoryStorageProvider>()));
+
+                services.AddNexJob(opt =>
+                {
+                    opt.Workers = 1;
+                    opt.MaxAttempts = 1;
+                    opt.PollingInterval = TimeSpan.FromMilliseconds(20);
+                });
+            })
+            .Build();
+
+        await host.StartAsync();
+
+        // Allow at least one poll cycle to trigger the throw + one recovery cycle
+        await Task.Delay(300);
+
+        await host.StopAsync();
+
+        logSink.Messages.Should().Contain(m => m.Contains("Error fetching next job"),
+            "dispatcher must log an error when FetchNextAsync throws");
+    }
 }
 
 // ─── Stub jobs ────────────────────────────────────────────────────────────────
@@ -290,4 +394,89 @@ public sealed class AlwaysFailJob(TaskCompletionSource<bool> signalOnDeadLetter)
         signalOnDeadLetter.TrySetResult(true);
         throw new InvalidOperationException("intentional failure");
     }
+}
+
+// ─── ThrowOnceJobStorage ──────────────────────────────────────────────────────
+
+/// <summary>
+/// Wraps InMemoryStorageProvider and throws once on the first FetchNextAsync call,
+/// then delegates normally. Used to verify the dispatcher recovers from storage errors.
+/// </summary>
+internal sealed class ThrowOnceJobStorage : IJobStorage
+{
+    private readonly InMemoryStorageProvider _inner;
+    private int _fetchCount;
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="ThrowOnceJobStorage"/> class.
+    /// </summary>
+    /// <param name="inner">The inner storage provider.</param>
+    public ThrowOnceJobStorage(InMemoryStorageProvider inner) => _inner = inner;
+
+    /// <inheritdoc/>
+    public Task<JobRecord?> FetchNextAsync(IReadOnlyList<string> queues, CancellationToken cancellationToken = default)
+    {
+        if (System.Threading.Interlocked.Increment(ref _fetchCount) == 1)
+        {
+            throw new InvalidOperationException("simulated storage failure");
+        }
+
+        return _inner.FetchNextAsync(queues, cancellationToken);
+    }
+
+    /// <inheritdoc/>
+    public Task<EnqueueResult> EnqueueAsync(JobRecord job, DuplicatePolicy duplicatePolicy = DuplicatePolicy.AllowAfterFailed, CancellationToken cancellationToken = default)
+        => _inner.EnqueueAsync(job, duplicatePolicy, cancellationToken);
+
+    /// <inheritdoc/>
+    public Task AcknowledgeAsync(JobId jobId, CancellationToken cancellationToken = default)
+        => _inner.AcknowledgeAsync(jobId, cancellationToken);
+
+    /// <inheritdoc/>
+    public Task SetFailedAsync(JobId jobId, Exception exception, DateTimeOffset? retryAt, CancellationToken cancellationToken = default)
+        => _inner.SetFailedAsync(jobId, exception, retryAt, cancellationToken);
+
+    /// <inheritdoc/>
+    public Task SetExpiredAsync(JobId jobId, CancellationToken cancellationToken = default)
+        => _inner.SetExpiredAsync(jobId, cancellationToken);
+
+    /// <inheritdoc/>
+    public Task UpdateHeartbeatAsync(JobId jobId, CancellationToken cancellationToken = default)
+        => _inner.UpdateHeartbeatAsync(jobId, cancellationToken);
+
+    /// <inheritdoc/>
+    public Task CommitJobResultAsync(JobId jobId, JobExecutionResult result, CancellationToken cancellationToken = default)
+        => _inner.CommitJobResultAsync(jobId, result, cancellationToken);
+
+    /// <inheritdoc/>
+    public Task RequeueOrphanedJobsAsync(TimeSpan heartbeatTimeout, CancellationToken cancellationToken = default)
+        => _inner.RequeueOrphanedJobsAsync(heartbeatTimeout, cancellationToken);
+
+    /// <inheritdoc/>
+    public Task EnqueueContinuationsAsync(JobId parentJobId, CancellationToken cancellationToken = default)
+        => _inner.EnqueueContinuationsAsync(parentJobId, cancellationToken);
+
+    /// <inheritdoc/>
+    public Task ReportProgressAsync(JobId jobId, int percent, string? message, CancellationToken ct = default)
+        => _inner.ReportProgressAsync(jobId, percent, message, ct);
+
+    /// <inheritdoc/>
+    public Task<int> PurgeJobsAsync(RetentionPolicy policy, CancellationToken cancellationToken = default)
+        => _inner.PurgeJobsAsync(policy, cancellationToken);
+
+    /// <inheritdoc/>
+    public Task RegisterServerAsync(ServerRecord server, CancellationToken cancellationToken = default)
+        => _inner.RegisterServerAsync(server, cancellationToken);
+
+    /// <inheritdoc/>
+    public Task HeartbeatServerAsync(string serverId, CancellationToken cancellationToken = default)
+        => _inner.HeartbeatServerAsync(serverId, cancellationToken);
+
+    /// <inheritdoc/>
+    public Task DeregisterServerAsync(string serverId, CancellationToken cancellationToken = default)
+        => _inner.DeregisterServerAsync(serverId, cancellationToken);
+
+    /// <inheritdoc/>
+    public Task<IReadOnlyList<ServerRecord>> GetActiveServersAsync(TimeSpan activeTimeout, CancellationToken cancellationToken = default)
+        => _inner.GetActiveServersAsync(activeTimeout, cancellationToken);
 }

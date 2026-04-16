@@ -658,6 +658,7 @@ public sealed class MongoStorageProvider : IStorageProvider
                     .Set(d => d.LastErrorMessage, result.Exception?.Message)
                     .Set(d => d.LastErrorStackTrace, result.Exception?.StackTrace)
                     .Unset(d => d.HeartbeatAt)
+                    .Unset(d => d.RetryAt)
                     .Set(d => d.ExecutionLogs, entries);
             }
 

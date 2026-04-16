@@ -4,15 +4,14 @@ namespace NexJob.Configuration;
 
 /// <summary>
 /// Configuration for a recurring job definition from appsettings.json.
-/// Job resolution uses simple class names (no assembly qualification required) registered via
-/// <see cref="NexJobServiceCollectionExtensions.AddNexJobJobs"/>. Input type is inferred
-/// from the job's <see cref="IJob{TInput}"/> interface — no explicit declaration needed.
+/// Job resolution uses simple class names (no assembly qualification required).
+/// Input type is inferred automatically from the job's
+/// <see cref="IJob{TInput}"/> interface — no explicit declaration needed.
 /// </summary>
 public sealed class RecurringJobSettings
 {
     /// <summary>
     /// Simple class name of the job implementation (e.g. "CleanupJob").
-    /// Resolved from types registered via <see cref="NexJobServiceCollectionExtensions.AddNexJobJobs"/>.
     /// Required.
     /// </summary>
     public string Job { get; set; } = string.Empty;

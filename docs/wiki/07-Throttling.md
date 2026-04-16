@@ -60,39 +60,43 @@ Throttling is implemented via `SemaphoreSlim` per named resource.
 | Memory-intensive operations | `"heavy-compute"` |
 | Third-party webhook delivery | `"webhook-sender"` |
 
----
+## Scope: per-process vs. cluster-wide
 
-## Not Cluster-Wide
+By default, `[Throttle]` is enforced **per worker process**.
+In a 3-node deployment with `[Throttle("api", maxConcurrent: 5)]`,
+the effective limit is 15 concurrent jobs across the cluster.
 
-**Important:** `[Throttle]` is enforced per process, not cluster-wide. If you have 3 worker instances with `[Throttle("api", maxConcurrent: 5)]`, the effective concurrent limit is 15.
+### Opt-in: cluster-wide throttling via Redis
 
-For true distributed throttling, use a storage-based solution (e.g., Redis semaphore) inside your job:
+Install `NexJob.Redis` and enable distributed throttling:
 
 ```csharp
-public sealed class DistributedThrottledJob : IJob
-{
-    private readonly IConnectionMultiplexer _redis;
-
-    public async Task ExecuteAsync(CancellationToken ct)
-    {
-        using var semaphore = await _redis.GetDistributedSemaphoreAsync("my-resource", 5, ct);
-        await semaphore.WaitAsync(ct);
-        try
-        {
-            // Execute throttled work
-        }
-        finally
-        {
-            semaphore.Release();
-        }
-    }
-}
+services.AddNexJob(opt => opt.UseRedis("localhost:6379"))
+        .UseDistributedThrottle();
 ```
+
+With distributed throttling enabled, `[Throttle("api", maxConcurrent: 5)]`
+enforces a **global limit of 5** across all nodes — regardless of how many
+workers are running.
+
+Configure the slot TTL (default: 1 hour — should exceed your longest job):
+
+```csharp
+services.AddNexJob(opt =>
+{
+    opt.UseRedis("localhost:6379");
+    opt.DistributedThrottleTtl = TimeSpan.FromHours(4);
+})
+.UseDistributedThrottle();
+```
+
+**Note:** `UseDistributedThrottle()` requires `NexJob.Redis`. If Redis is
+unavailable, the system degrades to per-process throttling automatically.
 
 ---
 
 ## Next Steps
 
 - [Retry & Dead Letter](06-Retry-And-Dead-Letter.md) — Handle failures when throttled jobs timeout
-- [Configuration Reference](11-Configuration-Reference.md) — Worker concurrency settings
+- [Configuration Reference](11-Configuration-Reference.md) — `DistributedThrottleTtl` option
 - [Best Practices](13-Best-Practices.md) — Production throttling guidelines

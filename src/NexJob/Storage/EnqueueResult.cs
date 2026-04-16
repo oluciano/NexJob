@@ -1,7 +1,7 @@
 namespace NexJob.Storage;
 
 /// <summary>
-/// Result returned by <see cref="IStorageProvider.EnqueueAsync"/> containing the job identifier
+/// Result returned by <see cref="IJobStorage.EnqueueAsync"/> containing the job identifier
 /// and a flag indicating whether the enqueue was rejected due to a <see cref="DuplicatePolicy"/>.
 /// </summary>
 /// <param name="JobId">The identifier of the enqueued job, or the existing job if deduplicated.</param>

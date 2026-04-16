@@ -36,6 +36,11 @@ builder.Services.AddNexJob(options =>
     options.RetentionExpired = TimeSpan.FromDays(7);    // Default: 7 days
     options.RetentionInterval = TimeSpan.FromHours(1);  // How often to purge
 
+    // TTL for distributed throttle slots in Redis.
+    // Must exceed your longest expected job execution time.
+    // Only relevant when UseDistributedThrottle() is enabled.
+    options.DistributedThrottleTtl = TimeSpan.FromHours(1); // Default: 1 hour
+
     // Max lines in job execution log
     options.MaxJobLogLines = 200; // Default: 200
 

@@ -1,14 +1,16 @@
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Rendering;
 using NexJob.Storage;
 
 namespace NexJob.Dashboard.Pages;
 
+[ExcludeFromCodeCoverage]
 internal sealed class JobsPage : IComponent
 {
     private RenderHandle _handle;
 
-    [Parameter] public IStorageProvider Storage { get; set; } = default!;
+    [Parameter] public IDashboardStorage Storage { get; set; } = default!;
     [Parameter] public string PathPrefix { get; set; } = "/dashboard";
     [Parameter] public string Title { get; set; } = "NexJob";
     [Parameter] public NavCounters? Counters { get; set; }
@@ -23,23 +25,22 @@ internal sealed class JobsPage : IComponent
     async Task IComponent.SetParametersAsync(ParameterView parameters)
     {
         parameters.SetParameterProperties(this);
-        var filter = new JobFilter { Status = StatusFilter, Search = Search };
+
+        // Fetch queues for the filter dropdown
+        var queues = await Storage.GetQueueMetricsAsync(CancellationToken.None).ConfigureAwait(false);
+
+        // Use native storage filter for Status, Search, and Queue — much more efficient
+        var filter = new JobFilter
+        {
+            Status = StatusFilter,
+            Search = Search,
+            Queue = QueueFilter,
+        };
+
         var result = await Storage.GetJobsAsync(filter, Page, 50, CancellationToken.None).ConfigureAwait(false);
 
-        // Apply in-memory queue filter
-        if (!string.IsNullOrWhiteSpace(QueueFilter))
-        {
-            result = new PagedResult<JobRecord>
-            {
-                Items = result.Items.Where(j => string.Equals(j.Queue, QueueFilter, StringComparison.Ordinal)).ToList(),
-                TotalCount = result.TotalCount,
-                Page = result.Page,
-                PageSize = result.PageSize,
-            };
-        }
-
-        // Apply in-memory tag filter (IStorageProvider.GetJobsByTagAsync returns all matches,
-        // but we need paged results, so filter client-side from the already-paged set here)
+        // Apply in-memory tag filter (IStorageProvider doesn't have native Tag support in JobFilter yet,
+        // so we still filter the current page client-side)
         if (!string.IsNullOrWhiteSpace(TagFilter))
         {
             var taggedIds = (await Storage.GetJobsByTagAsync(TagFilter.Trim()).ConfigureAwait(false))
@@ -54,10 +55,10 @@ internal sealed class JobsPage : IComponent
             };
         }
 
-        _handle.Render(b => b.AddMarkupContent(0, BuildHtml(result)));
+        _handle.Render(b => b.AddMarkupContent(0, BuildHtml(result, queues)));
     }
 
-    private string BuildHtml(PagedResult<JobRecord> result)
+    private string BuildHtml(PagedResult<JobRecord> result, IReadOnlyList<QueueMetrics> queues)
     {
         var now = DateTimeOffset.UtcNow;
         var currentStatus = StatusFilter?.ToString() ?? string.Empty;
@@ -71,11 +72,15 @@ internal sealed class JobsPage : IComponent
 
         var body =
             $"<div id=\"jobs-page-content\" data-refresh=\"true\">" +
-            HtmlFragments.PageHeader("Jobs", $"{result.TotalCount} job{(result.TotalCount == 1 ? string.Empty : "s")} total") +
-            HtmlFragments.FilterBar(PathPrefix, currentStatus, Search, TagFilter, QueueFilter) +
-            $"<div class=\"section\">" +
+            HtmlFragments.Breadcrumbs(PathPrefix, ("Jobs", null)) +
+            HtmlFragments.PageHeader("Jobs", "Browse and search all background jobs") +
+            HtmlFragments.FilterBar(PathPrefix, currentStatus, Search, TagFilter, QueueFilter, queues) +
+            $"<div class=\"card\">" +
+            $"<div class=\"card-header\"><h3>{result.TotalCount} job{(result.TotalCount == 1 ? string.Empty : "s")} found</h3></div>" +
+            $"<div style=\"padding:24px\">" +
             list +
             pagination +
+            $"</div>" +
             $"</div>" +
             $"</div>";
 

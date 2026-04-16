@@ -2,7 +2,7 @@ namespace NexJob.Storage;
 
 /// <summary>
 /// Encapsulates the complete outcome of a single job execution.
-/// Passed to <see cref="IStorageProvider.CommitJobResultAsync"/> to persist
+/// Passed to <see cref="IJobStorage.CommitJobResultAsync"/> to persist
 /// all state transitions atomically.
 /// </summary>
 public sealed class JobExecutionResult

@@ -8,12 +8,12 @@ namespace NexJob.Internal;
 /// </summary>
 internal sealed class JobContext : IJobContext
 {
-    private readonly IStorageProvider _storage;
+    private readonly IJobStorage _storage;
 
     /// <summary>
     /// Initializes a new <see cref="JobContext"/> from the fetched <paramref name="job"/> record.
     /// </summary>
-    public JobContext(JobRecord job, IStorageProvider storage)
+    public JobContext(JobRecord job, IJobStorage storage)
     {
         JobId = job.Id;
         Attempt = job.Attempts;

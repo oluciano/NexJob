@@ -14,14 +14,14 @@ namespace NexJob.Internal;
 /// </summary>
 internal sealed class JobRetentionService : BackgroundService
 {
-    private readonly IStorageProvider _storage;
+    private readonly IJobStorage _storage;
     private readonly IRuntimeSettingsStore _runtimeStore;
     private readonly NexJobOptions _options;
     private readonly ILogger<JobRetentionService> _logger;
 
     /// <summary>Initializes a new <see cref="JobRetentionService"/>.</summary>
     public JobRetentionService(
-        IStorageProvider storage,
+        IJobStorage storage,
         IRuntimeSettingsStore runtimeStore,
         NexJobOptions options,
         ILogger<JobRetentionService> logger)

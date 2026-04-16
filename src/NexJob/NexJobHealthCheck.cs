@@ -12,10 +12,10 @@ namespace NexJob;
 /// </summary>
 public sealed class NexJobHealthCheck : IHealthCheck
 {
-    private readonly IStorageProvider _storage;
+    private readonly IDashboardStorage _storage;
 
     /// <summary>Initializes a new <see cref="NexJobHealthCheck"/>.</summary>
-    public NexJobHealthCheck(IStorageProvider storage)
+    public NexJobHealthCheck(IDashboardStorage storage)
     {
         _storage = storage;
     }

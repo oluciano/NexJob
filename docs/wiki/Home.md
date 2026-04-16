@@ -14,8 +14,8 @@ dotnet add package NexJob
 
 ```csharp
 // Program.cs — register NexJob and scan for jobs
-builder.Services.AddNexJob();
-builder.Services.AddNexJobJobs(typeof(Program).Assembly);
+builder.Services.AddNexJob()
+               .AddNexJobJobs(typeof(Program).Assembly);
 ```
 
 ```csharp

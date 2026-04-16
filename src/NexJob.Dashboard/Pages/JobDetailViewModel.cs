@@ -1,8 +1,10 @@
+using System.Diagnostics.CodeAnalysis;
 using NexJob.Storage;
 
 namespace NexJob.Dashboard.Pages;
 
 /// <summary>View model for the Job Detail page.</summary>
+[ExcludeFromCodeCoverage]
 internal sealed class JobDetailViewModel
 {
     /// <summary>The job record being displayed.</summary>

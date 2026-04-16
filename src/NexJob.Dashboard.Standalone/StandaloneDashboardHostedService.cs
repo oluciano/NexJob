@@ -55,9 +55,20 @@ internal sealed class StandaloneDashboardHostedService : IHostedService
         builder.Services.AddSingleton(
             _rootProvider.GetRequiredService<IStorageProvider>());
         builder.Services.AddSingleton(
+            _rootProvider.GetRequiredService<IJobStorage>());
+        builder.Services.AddSingleton(
+            _rootProvider.GetRequiredService<IRecurringStorage>());
+        builder.Services.AddSingleton(
+            _rootProvider.GetRequiredService<IDashboardStorage>());
+        builder.Services.AddSingleton(
+            _rootProvider.GetRequiredService<IJobControlService>());
+        builder.Services.AddSingleton(
             _rootProvider.GetRequiredService<NexJobOptions>());
         builder.Services.AddSingleton(
             _rootProvider.GetRequiredService<NexJob.Configuration.IRuntimeSettingsStore>());
+
+        // Dashboard requires IMemoryCache for metrics caching
+        builder.Services.AddMemoryCache();
 
         _app = builder.Build();
         _app.UseNexJobDashboard(_options.Path, opt =>
