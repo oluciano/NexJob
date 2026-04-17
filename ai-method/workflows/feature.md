@@ -8,6 +8,8 @@
    - Sealed classes by default
    - XML docs for public APIs
    - Zero warnings
+   - 3N matrix: N1 positive + N2 negative + N3 invalid input
+   - No existing passing tests modified
 3. Validation (03-validation-mode) → compliance check
    - StyleCop compliant
    - All tests pass
@@ -25,3 +27,5 @@
 - [ ] XML documentation complete
 - [ ] StyleCop compliant
 - [ ] CHANGELOG updated
+- [ ] 3N matrix applied (N1 positive, N2 negative, N3 invalid input)
+- [ ] No existing passing test was modified without explicit justification + comment
