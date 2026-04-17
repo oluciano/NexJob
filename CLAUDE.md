@@ -8,55 +8,54 @@ It defines architecture, constraints, and behavioral guarantees.
 ## Project Status
 
 NexJob is a production-oriented background job processing library.
-Current published version: **v1.0.0**
-Active development: **v2.0.0**
+Current published version: **v3.0.0**
+Active development: **v4.0.0**
 
-### Implemented (v1.0.0)
+### Implemented (v3.0.0)
 - `IJob` / `IJob<T>` — simple and structured jobs
 - Wake-up channel — near-zero latency local dispatch
 - `deadlineAfter` — deadline enforcement before execution
 - `IDeadLetterHandler<TJob>` — permanent failure fallback
 - Retry policies — global + per-job `[Retry]` attribute
-- `[Throttle]` — resource-based concurrency limits
+- `[Throttle]` — resource-based concurrency limits + distributed via Redis
 - `IJobContext` — injectable runtime context
 - Recurring jobs — via code + via `appsettings.json`
 - Schema migrations — auto-applied at startup
 - Graceful shutdown
-- Dashboard — dark UI, timeline, live updates, standalone mode
-- OpenTelemetry — `NexJobActivitySource` + `NexJobMetrics` already in core
+- Dashboard — light/dark UI, timeline, live updates, standalone mode
+- OpenTelemetry — `NexJobActivitySource` + `NexJobMetrics`
 - 5 storage providers: InMemory, PostgreSQL, SQL Server, Redis, MongoDB
 - `DuplicatePolicy` — atomic deduplication across all providers
 - `CommitJobResultAsync` — idempotent result commit
 - `IJobExecutionFilter` — middleware pipeline
 - Job retention + auto-cleanup
-
-### In Development (v2.0.0)
-- `JobRecordFactory` — extracted factory for building `JobRecord` (prerequisite for triggers)
-- `NexJob.Trigger.*` — external trigger packages (Azure Service Bus, AWS SQS, RabbitMQ, Kafka, Google Pub/Sub)
-- `NexJob.OpenTelemetry` — opt-in instrumentation package exposing existing `ActivitySource` + `Meter`
+- `IStorageProvider` split: `IJobStorage`, `IRecurringStorage`, `IDashboardStorage`
+- `JobExecutor` — extracted from `JobDispatcherService`
+- `IJobInvokerFactory`, `IJobRetryPolicy`, `IDeadLetterDispatcher`, `IJobControlService`
+- `NexJobBuilder` — fluent builder returned by `AddNexJob()`
+- `UseDashboardReadReplica()` — opt-in read replica (PostgreSQL, SQL Server)
+- `UseDistributedThrottle()` — opt-in global Redis throttle enforcement
+- Triggers: AzureServiceBus, AwsSqs, RabbitMQ, Kafka, GooglePubSub
 
 ---
 
-## Squad Lanes — v2
+## Squad Lanes
 
-Claude Code owns:
-- All core (`src/NexJob`) changes — the only agent allowed to touch core
-- `JobRecordFactory` extraction
-- All `NexJob.Trigger.*` implementations (trigger packages are external to core — they depend on core, never the reverse)
-- `NexJob.OpenTelemetry` package
-- Testcontainers integration tests for all triggers
-- Benchmarks
+**Bruxo (Claude Code — Sonnet)** owns:
+- All core (`src/NexJob`) changes — only agent allowed to touch core
+- High-risk features: storage contracts, dispatcher logic, execution pipeline
+- Complex multi-file refactors
+- Any task where a mistake causes data loss or behavioral regression
 
-Qwen owns:
-- SDK client implementations within trigger packages (message lock renewal, visibility timeout, offset commit)
-- Review of trigger contracts and broker-specific guarantees
+**Gemini** owns:
+- Trigger package implementation (medium complexity)
+- Dashboard features and redesigns
+- Backend tasks and refactors outside core
+- Documentation, wiki, CHANGELOG
 
-Gemini owns:
-- Docs and usage examples for each trigger package
-- Dashboard updates for v2 metrics
-- Wiki updates
-
-**Hard rule:** trigger packages are external consumers of core. They call `IScheduler.EnqueueAsync` and `JobWakeUpChannel.Signal()`. They never modify `IStorageProvider`, `JobRecord`, or any core internal.
+**Hard rule:** Trigger packages are external consumers of core.
+They call `IScheduler.EnqueueAsync` and `JobWakeUpChannel.Signal()`.
+They never modify `IStorageProvider`, `JobRecord`, or any core internal.
 
 ---
 
@@ -70,168 +69,64 @@ Gemini owns:
 
 ---
 
-## Trigger Architecture (v2)
+## Architecture — Current State (v3)
 
-Triggers are adapters — they receive a broker message and translate it into a NexJob job.
+### Storage interfaces (segregated)
+```
+IJobStorage       → hot-path execution (FetchNext, CommitResult, SetExpired, heartbeat)
+IRecurringStorage → recurring job scheduling
+IDashboardStorage → read-heavy dashboard queries
+IStorageProvider  → IJobStorage + IRecurringStorage + IDashboardStorage (composed)
+```
 
+### Internal execution pipeline
+```
+JobDispatcherService  → polling loop + worker slots (~180 lines)
+JobExecutor           → single job execution pipeline (~260 lines)
+  IJobInvokerFactory  → type resolution + scope creation
+  IJobRetryPolicy     → retry delay calculation
+  IDeadLetterDispatcher → handler resolution and invocation
+  IJobFilterPipeline  → middleware pipeline
+```
+
+### Trigger architecture
 ```
 [Broker message]
       ↓
-NexJob.Trigger.{Broker}   ← external package, depends only on NexJob.Core
+NexJob.Trigger.{Broker}   ← external package, depends only on NexJob core
       ↓
-JobRecordFactory.Build()  ← shared factory, no duplication
+JobRecordFactory.Build()  ← shared factory
       ↓
 IScheduler.EnqueueAsync() ← existing contract, unchanged
       ↓
 JobWakeUpChannel.Signal() ← existing mechanism, unchanged
-      ↓
-[NexJob pipeline — unmodified]
 ```
 
-Key invariants for trigger implementations:
-- Dead-letter the broker message if `EnqueueAsync` throws — never silently drop
-- Extract `traceparent` from broker message headers and pass via `JobRecord.TraceParent`
-- Use idempotency key from broker `MessageId` / deduplication ID to prevent double-enqueue on redelivery
-- Never hold a broker message lock longer than necessary — complete ack/nack before returning
+---
+
+## Non-Negotiable Invariants
+
+- Storage is the single source of truth — no in-memory state overrides it
+- Dispatcher is stateless — all state transitions must be persisted
+- Deadline must be enforced before execution begins — expired jobs never execute
+- Dead-letter handlers must never crash the dispatcher (exceptions swallowed, log only)
+- Wake-up signaling must never block (Channel bounded capacity=1, DropWrite)
+- Zero warnings in Release builds (TreatWarningsAsErrors=true)
 
 ---
 
-## OTel — What Already Exists (do not recreate)
+## Test Integrity (Universal — All Squad Members)
 
-`NexJobActivitySource` and `NexJobMetrics` are already in `src/NexJob/Telemetry/`.
+### 3N Mandatory Matrix
+Every feature or bug fix must produce minimum 3 tests:
+- **N1 — Positive:** happy path works as expected
+- **N2 — Negative:** failure path fails as expected
+- **N3 — Invalid Input:** null, empty, boundary — handled gracefully
 
-`NexJob.OpenTelemetry` package only needs to:
-- Expose `AddNexJobInstrumentation()` extension that registers `NexJobActivitySource.Name` and `NexJobMetrics.MeterName`
-- Add `nexjob.trigger_source` tag to existing spans when a trigger is the origin
+### Existing Tests Are Immutable Contracts
+NEVER rewrite, rename, or delete a passing test to make new code pass.
+When a test breaks after a change: fix the production code, not the test.
+Only valid reason to change a test: behavior was explicitly changed by the architect.
+If changed: add comment `// Behavior changed in vX.Y: <reason>`.
 
-Do not create new `ActivitySource` or `Meter` instances — use the existing ones.
-
----
-
-## Job Model
-
-- `IJob` → simple jobs (no input)
-- `IJob<T>` → structured jobs (typed input, JSON serialized)
-
----
-
-## Dispatch Model
-
-- Wake-up signaling for local enqueue (`JobWakeUpChannel` — capacity 1, DropWrite)
-- Polling fallback for distributed scenarios
-- Triggers call `Signal()` after successful `EnqueueAsync` — same as `DefaultScheduler`
-
----
-
-## Storage Model
-
-- Storage is the single source of truth
-- Dispatcher is stateless — all state transitions persisted
-- `IStorageProvider` is stable — do not add methods without explicit architectural decision
-- `JobRecord.TraceParent` already exists for W3C context propagation
-
----
-
-## Design Constraints (Runtime Guarantees)
-
-1. Wake-up signaling must never block
-2. Deadline must be enforced before execution begins
-3. Dead-letter handlers must never crash the dispatcher
-4. Simple jobs must remain simple (`IJob`)
-5. No unnecessary DTO requirements
-6. Storage is authoritative for all state
-7. Zero warnings in Release builds
-8. Trigger packages must not create circular dependencies with core
-
----
-
-## AI Execution System
-
-All AI-assisted tasks use the **NexJob AI Operating Model**.
-
-**Entry point:** `ai-method/QUICK_REFERENCE_ULTRA.md`
-**Full docs:** `ai-method/README.md`
-
-### How to Use
-
-1. **Load foundation:** `ai-method/core/00-foundation-minimal.md` (every task)
-2. **Choose workflow:** `ai-method/workflows/{feature|bugfix|test|refactor|reliability|release}.md`
-3. **Choose mode:** `ai-method/modes/{01-architect|02-execution|03-validation|04-release}-mode.md`
-4. **Load skill:** `skills/nexjob-trigger.md` for any trigger work, `skills/nexjob-core.md` for core work
-
-### Core Invariants (Always Enforced)
-
-- Storage is the single source of truth
-- Dispatcher is stateless
-- Deadline enforced before execution
-- Dead-letter handlers never crash
-- Wake-up signaling never blocks
-- Trigger packages never modify core
-
----
-
-## Code Quality
-
-- Zero warnings in `Release` builds
-- `<TreatWarningsAsErrors>true</TreatWarningsAsErrors>` must be respected
-- No `NotImplementedException` or placeholders
-- All public APIs must have XML documentation (`///`)
-- Classes `sealed` by default
-- `async/await` everywhere — never `.Result` or `.Wait()`
-- `CancellationToken` propagated in all async calls
-- Always use `.ConfigureAwait(false)` in library projects (`src/NexJob*`)
-- `StringComparison.Ordinal` or `OrdinalIgnoreCase` for all string comparisons
-- Banned APIs: `DateTime.Now` (use `UtcNow`), `.Result`, `.Wait()`
-- **80% Unit Coverage** — strictly enforced via CI for all new code
-- **Must-Have Testing Matrix** — every feature must cover: Retry & Dead-Letter, Concurrency, Crash Recovery, Deadline Enforcement, and Wake-Up Latency
-- StyleCop violations fail the build (SA1202, SA1204, SA1413, SA1508)
-- Always run `dotnet format` before committing
-- **Testing Standard (Must-Have):** 100% unit test coverage per logic class is the mandate (80% global floor) for Core, Providers, and Triggers.\n  - Integration and Reliability tests are excluded from the coverage metric and must stay out of the `ci.yml`.\n  - Every method or feature MUST have a Testing Matrix (Positive/Negative/Inputs).
-- **Disciplined Engineering Cycle (Must-Have):**\n    1. **Hardening:** Create unit tests targeting 100% branch coverage without modifying production code.\n    2. **Build:** Verify 0 warnings/errors (TreatWarningsAsErrors).\n    3. **Test:** Run all unit tests for the current project.\n    4. **Integrate:** Run integration tests for the project (if applicable) using local infra (Docker/In-Memory).\n    5. **Finalize:** Only move to the next project in the solution after the current one is 100% verified.
-
----
-
-## AI Guardrails (Strict)
-
-- Always work on `develop` branch — never commit directly to `main`
-- `main` is release-only
-- Do not propose full rewrites
-- Do not introduce new abstractions without clear benefit
-- Do not change public contracts unless explicitly requested
-- Prefer incremental, low-risk changes
-- Never touch `IStorageProvider` signature without explicit architect approval
-
----
-
-## PR Creation Rules
-
-```bash
-gh pr create \
-  --title "<type>(<scope>): <description>" \
-  --base develop \
-  --body "## Summary
-<one or two sentences describing what this PR does>
-
-## Type of change
-- [ ] Bug fix
-- [ ] New feature
-- [ ] New trigger provider
-- [ ] New storage provider
-- [ ] Refactor / cleanup
-- [ ] Documentation
-- [ ] Tests
-
-## Checklist
-- [ ] \`dotnet build\` passes with **0 warnings**
-- [ ] \`dotnet test\` passes — no regressions
-- [ ] New behaviour is covered by tests
-- [ ] Public API has XML documentation (\`///\`)
-- [ ] Commit messages follow Conventional Commits
-
-## Related issues
-<!-- Closes #123 -->"
-```
-
-## Engineering Rules
-
-See `CONTRIBUTING.md`
+800 tests that can be rewritten on demand are worth less than 10 that cannot.

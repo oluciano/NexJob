@@ -19,7 +19,7 @@ Before executing any task, read:
 
 NexJob is a production-oriented background job processing library for .NET 8.
 MIT licensed. Alternative to Hangfire — storage-pluggable, trigger-ready, OTel-native.
-Current published version: **v2.0.0**. Active development: **v3.0.0** (branch: `v3_implementation`).
+Current published version: **v3.0.0**. Active development: **v4.0.0** (branch: `v3_implementation`).
 
 ---
 
@@ -212,10 +212,28 @@ gh pr create \
 Claude.ai          → architect — thinks, validates, generates prompts
 Bruxo (Claude Code) → senior executor — critical features, multi-file, architectural risk
 Codex              → senior executor — refactoring, testability, well-specified features
-Gemini (you)       → senior executor — triggers, docs, wiki, PR review, scoped backend tasks
+Gemini (you)       → senior executor — trigger packages, dashboard, backend tasks outside core, documentation
 ```
 
 Tasks are routed by architectural risk:
 - High risk / multi-file / invariant-adjacent → bruxo or Codex
 - Scoped / documented / low-risk → Gemini
 - Always: architect approves before execution
+
+---
+
+## Test Integrity (Universal — All Squad Members)
+
+### 3N Mandatory Matrix
+Every feature or bug fix must produce minimum 3 tests:
+- **N1 — Positive:** happy path works as expected
+- **N2 — Negative:** failure path fails as expected
+- **N3 — Invalid Input:** null, empty, boundary — handled gracefully
+
+### Existing Tests Are Immutable Contracts
+NEVER rewrite, rename, or delete a passing test to make new code pass.
+When a test breaks after a change: fix the production code, not the test.
+Only valid reason to change a test: behavior was explicitly changed by the architect.
+If changed: add comment `// Behavior changed in vX.Y: <reason>`.
+
+800 tests that can be rewritten on demand are worth less than 10 that cannot.
