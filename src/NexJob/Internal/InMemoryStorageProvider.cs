@@ -589,19 +589,6 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
                 job.HeartbeatAt = null;
                 job.ExecutionLogs = result.Logs;
 
-                // Enqueue continuations inline
-                foreach (var child in _jobs.Values.Where(j => j.ParentJobId == jobId && j.Status == JobStatus.AwaitingContinuation))
-                {
-                    lock (child)
-                    {
-                        if (child.Status == JobStatus.AwaitingContinuation)
-                        {
-                            child.Status = JobStatus.Enqueued;
-                            WriteToChannel(child);
-                        }
-                    }
-                }
-
                 // Update recurring result
                 if (result.RecurringJobId is not null && _recurringJobs.TryGetValue(result.RecurringJobId, out var rj))
                 {
@@ -631,6 +618,28 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
                     {
                         rj.LastExecutionStatus = JobStatus.Failed;
                         rj.LastExecutionError = result.Exception?.Message;
+                    }
+                }
+            }
+        }
+
+        // Promote continuations after releasing lock(job) — eliminates nested-lock deadlock risk.
+        // Channel.Writer.TryWrite is thread-safe; no outer lock needed.
+        if (result.Succeeded)
+        {
+            foreach (var child in _jobs.Values)
+            {
+                if (child.ParentJobId != jobId || child.Status != JobStatus.AwaitingContinuation)
+                {
+                    continue;
+                }
+
+                lock (child)
+                {
+                    if (child.Status == JobStatus.AwaitingContinuation)
+                    {
+                        child.Status = JobStatus.Enqueued;
+                        WriteToChannel(child);
                     }
                 }
             }
@@ -735,8 +744,15 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
     private static bool IsActiveState(JobStatus status) =>
         status is JobStatus.Enqueued or JobStatus.Processing or JobStatus.Scheduled or JobStatus.AwaitingContinuation;
 
-    private JobRecord? FindExistingJobByKey(string idempotencyKey) =>
-        _jobs.Values.FirstOrDefault(j => string.Equals(j.IdempotencyKey, idempotencyKey, StringComparison.Ordinal));
+    private JobRecord? FindExistingJobByKey(string idempotencyKey)
+    {
+        if (_idempotencyIndex.TryGetValue(idempotencyKey, out var id) && _jobs.TryGetValue(id, out var job))
+        {
+            return job;
+        }
+
+        return null;
+    }
 
     private Channel<Guid>[] GetOrCreateQueueChannels(string queue) =>
         _queues.GetOrAdd(queue, static _ =>
