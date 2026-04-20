@@ -30,7 +30,7 @@ internal sealed class DefaultJobInvokerFactory : IJobInvokerFactory
     }
 
     /// <inheritdoc/>
-    public async Task<JobInvocationContext> PrepareAsync(JobRecord job, CancellationToken ct = default)
+    public Task<JobInvocationContext> PrepareAsync(JobRecord job, CancellationToken ct = default)
     {
         var scope = _scopeFactory.CreateScope();
 
@@ -54,7 +54,7 @@ internal sealed class DefaultJobInvokerFactory : IJobInvokerFactory
         var invoker = GetOrBuildInvoker(jobType, inputType);
         var throttleAttrs = jobType.GetCustomAttributes<ThrottleAttribute>(inherit: true);
 
-        return await Task.FromResult(new JobInvocationContext(scope, jobInstance, input, invoker, throttleAttrs)).ConfigureAwait(false);
+        return Task.FromResult(new JobInvocationContext(scope, jobInstance, input, invoker, throttleAttrs));
     }
 
     private static Func<object, object, CancellationToken, Task> GetOrBuildInvoker(

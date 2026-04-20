@@ -96,7 +96,7 @@ internal sealed class JobExecutor
         catch (Exception ex)
         {
             sw.Stop();
-            var retryAt = await HandleFailureAsync(job, ex, activity).ConfigureAwait(false);
+            var retryAt = HandleFailureAsync(job, ex, activity);
 
             await _storage.CommitJobResultAsync(job.Id, new JobExecutionResult
             {
@@ -209,7 +209,7 @@ internal sealed class JobExecutor
         }
     }
 
-    private async Task<DateTimeOffset?> HandleFailureAsync(JobRecord job, Exception ex, Activity? activity)
+    private DateTimeOffset? HandleFailureAsync(JobRecord job, Exception ex, Activity? activity)
     {
         _logger.LogWarning(ex, "Job {JobId} failed on attempt {Attempt}", job.Id, job.Attempts);
 
@@ -237,7 +237,7 @@ internal sealed class JobExecutor
                 job.Id);
         }
 
-        return await Task.FromResult(retryAt).ConfigureAwait(false);
+        return retryAt;
     }
 
     private async Task RunHeartbeatAsync(JobId jobId, CancellationToken cancellationToken)

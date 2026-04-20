@@ -62,8 +62,7 @@ internal sealed class MigrationPipeline : IMigrationPipeline
         for (var version = currentVersion; version > storedVersion; version--)
         {
             var descriptor = _descriptors
-                .ToList()
-                .Find(d => d.NewType == currentTargetType);
+                .FirstOrDefault(d => d.NewType == currentTargetType);
 
             if (descriptor is null)
             {
