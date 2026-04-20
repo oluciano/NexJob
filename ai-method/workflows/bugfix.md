@@ -6,6 +6,8 @@
 3. Execution (02-execution-mode) → minimal fix + regression test
    - Minimal change (no refactoring)
    - Zero warnings
+   - Regression test must cover 3N: positive, negative, invalid input
+   - Never modify existing tests to pass — fix production code
 4. Validation (03-validation-mode) → compliance check
    - StyleCop compliant
    - All tests pass
@@ -17,8 +19,9 @@
 
 ## Exit criteria
 - [ ] Root cause documented
-- [ ] Regression test passes
+- [ ] Regression test passes (N1 positive, N2 negative, N3 invalid input)
 - [ ] All tests pass
 - [ ] Zero warnings (Release build)
 - [ ] StyleCop compliant
 - [ ] CHANGELOG updated
+- [ ] No existing passing test was modified without justification

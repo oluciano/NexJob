@@ -148,6 +148,24 @@ _retryPolicy
 
 ---
 
+## Test Integrity (Universal — All Squad Members)
+
+### 3N Mandatory Matrix
+Every feature or bug fix must produce minimum 3 tests:
+- **N1 — Positive:** happy path works as expected
+- **N2 — Negative:** failure path fails as expected
+- **N3 — Invalid Input:** null, empty, boundary — handled gracefully
+
+### Existing Tests Are Immutable Contracts
+NEVER rewrite, rename, or delete a passing test to make new code pass.
+When a test breaks after a change: fix the production code, not the test.
+Only valid reason to change a test: behavior was explicitly changed by the architect.
+If changed: add comment `// Behavior changed in vX.Y: <reason>`.
+
+800 tests that can be rewritten on demand are worth less than 10 that cannot.
+
+---
+
 ## AI Guardrails (Strict)
 
 - Do not propose full rewrites

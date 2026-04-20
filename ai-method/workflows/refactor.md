@@ -16,6 +16,7 @@
 - Public API changes → STOP, ask
 - Behavior becomes less obvious → STOP, ask
 - Architecture changes creeping in → STOP, ask
+- Tempted to rewrite a test to make it pass → STOP, this is a behavior change
 
 ## Exit criteria
 - [ ] All original tests pass (unmodified)
