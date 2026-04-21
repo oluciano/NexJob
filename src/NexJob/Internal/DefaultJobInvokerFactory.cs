@@ -33,28 +33,35 @@ internal sealed class DefaultJobInvokerFactory : IJobInvokerFactory
     public Task<JobInvocationContext> PrepareAsync(JobRecord job, CancellationToken ct = default)
     {
         var scope = _scopeFactory.CreateScope();
+        try
+        {
+            scope.ServiceProvider.GetRequiredService<IJobContextAccessor>().Context =
+                new JobContext(job, _storage);
 
-        scope.ServiceProvider.GetRequiredService<IJobContextAccessor>().Context =
-            new JobContext(job, _storage);
+            var jobType = JobTypeResolver.ResolveJobType(job.JobType)
+                          ?? throw new InvalidOperationException($"Cannot load job type: {job.JobType}");
+            var inputType = JobTypeResolver.ResolveInputType(job.InputType)
+                           ?? throw new InvalidOperationException($"Cannot load input type: {job.InputType}");
 
-        var jobType = JobTypeResolver.ResolveJobType(job.JobType)
-                      ?? throw new InvalidOperationException($"Cannot load job type: {job.JobType}");
-        var inputType = JobTypeResolver.ResolveInputType(job.InputType)
-                       ?? throw new InvalidOperationException($"Cannot load input type: {job.InputType}");
+            var currentVersion = jobType.GetCustomAttribute<SchemaVersionAttribute>()?.Version ?? 1;
+            var migratedJson = scope.ServiceProvider
+                .GetRequiredService<IMigrationPipeline>()
+                .Migrate(job.InputJson, job.SchemaVersion, currentVersion, inputType);
 
-        var currentVersion = jobType.GetCustomAttribute<SchemaVersionAttribute>()?.Version ?? 1;
-        var migratedJson = scope.ServiceProvider
-            .GetRequiredService<IMigrationPipeline>()
-            .Migrate(job.InputJson, job.SchemaVersion, currentVersion, inputType);
+            var input = JsonSerializer.Deserialize(migratedJson, inputType)
+                        ?? throw new InvalidOperationException($"Deserialized null input for job {job.Id}.");
 
-        var input = JsonSerializer.Deserialize(migratedJson, inputType)
-                    ?? throw new InvalidOperationException($"Deserialized null input for job {job.Id}.");
+            var jobInstance = scope.ServiceProvider.GetRequiredService(jobType);
+            var invoker = GetOrBuildInvoker(jobType, inputType);
+            var throttleAttrs = jobType.GetCustomAttributes<ThrottleAttribute>(inherit: true);
 
-        var jobInstance = scope.ServiceProvider.GetRequiredService(jobType);
-        var invoker = GetOrBuildInvoker(jobType, inputType);
-        var throttleAttrs = jobType.GetCustomAttributes<ThrottleAttribute>(inherit: true);
-
-        return Task.FromResult(new JobInvocationContext(scope, jobInstance, input, invoker, throttleAttrs));
+            return Task.FromResult(new JobInvocationContext(scope, jobInstance, input, invoker, throttleAttrs));
+        }
+        catch
+        {
+            scope.Dispose();
+            throw;
+        }
     }
 
     private static Func<object, object, CancellationToken, Task> GetOrBuildInvoker(
