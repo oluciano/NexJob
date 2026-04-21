@@ -6,11 +6,30 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-### Added
+## [4.0.0] - 2026-04-21
+
+### Fixed
+
+- `MigrationPipeline` now throws `InvalidOperationException` on an incomplete migration chain instead of silently returning a partial result — previously masked broken migration sequences at startup.
+- `JobInvoker` disposes `IServiceScope` on `PrepareAsync` failure — eliminates scope leak when job type resolution or payload deserialization fails before execution begins.
+- `GooglePubSubTrigger.StartAsync` stores the subscriber run task and surfaces startup failures on `StopAsync` — aligns with the existing pattern used by `AwsSqsTrigger` (see Wave K).
+- `RecurringJobService` now acquires the distributed lock before enqueuing due jobs — prevents duplicate recurring job firings on multi-instance deployments where the scheduler tick fires simultaneously.
+- `JobDispatcherService` adds a 5-second back-off on the error path to prevent a hot polling loop when storage is unavailable.
+- `AwsSqsTrigger.StopAsync` awaits and logs faults from the polling task instead of silently discarding them — operators now see the root cause when SQS credentials or queue URL are invalid at startup.
+- `ServerHeartbeatService.StartAsync` downgrades the registration failure from `LogError` to `LogWarning` and explicitly describes the degraded mode: jobs execute but the instance does not appear in dashboard or cluster tracking.
+- `InMemoryStorageProvider.FindExistingJobByKey` now uses the idempotency index instead of a full scan; nested lock in `CommitJobResultAsync` removed.
 
 ### Changed
 
-### Fixed
+- `DefaultScheduler`: extracted `CommitEnqueueAsync` to eliminate 8× copy-pasted post-enqueue flow across all storage branches.
+- `JobTypeResolver`: removed dead `try/catch`, eliminated spurious `async` state machines, fixed `ToList` inside hot loop.
+- `DefaultDeadLetterDispatcher`: handler resolution no longer uses reflection — replaced with a compiled expression cache, removing reflection from the execution hot path.
+- `InMemoryStorageProvider`: extracted `ResolveDuplicate` helper to consolidate 6× copy-pasted duplicate-policy branching.
+- `DashboardController`: extracted `HandleActionsAsync` into focused private methods per action group.
+- `JobDispatcherService`: worker slot release centralised via `slotTransferred` flag — eliminates duplicate release risk on the fast-exit path.
+- `RecurringJobService`: removed misleading `CalculateNextExecution` wrapper, inline sentinel at the single call site.
+- `RedisStorageProvider.EnqueueAsync`: replaced recursive retry with an explicit bounded loop.
+- `CommitJobResultAsync` (PostgreSQL, SQL Server, MongoDB, Redis): flattened with guard clauses and private state helpers to match `InMemoryStorageProvider` structure.
 
 ## [3.0.0] - 2026-04-15
 
@@ -405,7 +424,8 @@ The project has entered an official **Reliability Lock**. Development is focused
 - Recurring concurrency policy: `SkipIfRunning` / `AllowConcurrent`
 - CI/CD pipeline publishing all packages on `v*` tag push
 
-[Unreleased]: https://github.com/oluciano/NexJob/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/oluciano/NexJob/compare/v4.0.0...HEAD
+[4.0.0]: https://github.com/oluciano/NexJob/compare/v3.0.0...v4.0.0
 [2.0.0]: https://github.com/oluciano/NexJob/compare/v1.0.0...v2.0.0
 [1.0.0]: https://github.com/oluciano/NexJob/compare/v0.8.0...v1.0.0
 [0.8.0]: https://github.com/oluciano/NexJob/compare/v0.7.0...v0.8.0
