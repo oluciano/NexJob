@@ -93,24 +93,6 @@ internal sealed class RecurringJobRegistrar
     }
 
     /// <summary>
-    /// Calculates the next execution time for a job.
-    /// </summary>
-    /// <param name="jobConfig">The job configuration.</param>
-    /// <returns>The calculated next execution time, or null if invalid.</returns>
-    private static DateTimeOffset? CalculateNextExecution(RecurringJobSettings jobConfig)
-    {
-        try
-        {
-            _ = DefaultScheduler.ParseCron(jobConfig.Cron);
-            return DateTimeOffset.UtcNow.AddSeconds(-1);
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-    /// <summary>
     /// Resolves the input type for a given job type.
     /// </summary>
     /// <param name="jobType">The job type.</param>
@@ -229,7 +211,8 @@ internal sealed class RecurringJobRegistrar
 
             var inputJson = jobConfig.ResolvedInputJson ?? SerializeInput(jobConfig.Input, inputType);
 
-            var nextExecution = CalculateNextExecution(jobConfig);
+            // Use a past timestamp so the scheduler picks up this job on the next polling cycle.
+            var nextExecution = (DateTimeOffset?)DateTimeOffset.UtcNow.AddSeconds(-1);
 
             var recurringJob = new RecurringJobRecord
             {
