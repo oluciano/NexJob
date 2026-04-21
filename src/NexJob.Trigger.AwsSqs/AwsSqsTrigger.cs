@@ -72,7 +72,22 @@ internal sealed class AwsSqsTrigger : IHostedService
 
         if (_pollingTask is not null)
         {
-            await Task.WhenAny(_pollingTask, Task.Delay(Timeout.Infinite, cancellationToken)).ConfigureAwait(false);
+            // Wait for the polling task to complete, respecting the shutdown token.
+            await Task.WhenAny(_pollingTask, Task.Delay(Timeout.Infinite, cancellationToken))
+                .ConfigureAwait(false);
+
+            // Surface any fault from the polling task so it is not silently discarded.
+            if (_pollingTask.IsFaulted)
+            {
+                try
+                {
+                    await _pollingTask.ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "AWS SQS polling task faulted.");
+                }
+            }
         }
 
         _stoppingCts?.Dispose();
