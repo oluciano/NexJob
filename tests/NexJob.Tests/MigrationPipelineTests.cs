@@ -62,15 +62,17 @@ public sealed class MigrationPipelineTests
 
     // ─── no migration registered ──────────────────────────────────────────────
 
+    // Behavior changed in v4.0: missing migration descriptor now throws instead of silently returning original JSON.
     [Fact]
-    public void Migrate_WithNoMigrationRegistered_ReturnsOriginalJson()
+    public void Migrate_WithNoMigrationRegistered_ThrowsInvalidOperationException()
     {
         var pipeline = BuildPipeline();
         const string json = "{\"OldName\":\"hello\"}";
 
-        var result = pipeline.Migrate(json, storedVersion: 1, currentVersion: 2, typeof(V2Payload));
+        var act = () => pipeline.Migrate(json, storedVersion: 1, currentVersion: 2, typeof(V2Payload));
 
-        result.Should().Be(json);
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*Missing migration descriptor*");
     }
 }
 
