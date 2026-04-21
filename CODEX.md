@@ -15,6 +15,29 @@ Before executing any task, read:
 - Appropriate workflow: `ai-method/workflows/{feature|bugfix|test|refactor|release}.md`
 - Quick router: `ai-method/QUICK_REFERENCE_ULTRA.md`
 
+### Temporary Role Override
+
+If the current work order explicitly assigns you to **production-risk audit/review**,
+that role overrides the default implementation lane for the duration of the task.
+In this mode, act as a strict reviewer of real operational risk, not as a refactorer.
+
+Rules for production-risk audit mode:
+- Report only issues with a concrete and plausible production failure mode
+- Prioritize: data loss, duplicate processing, hidden partial failure, resource leakage under repeated fault, inconsistent state transitions, silent startup/shutdown failure, hot loops under dependency failure
+- Do not escalate non-ideal code into a required fix unless there is a clear invariant violation or production-plausible incident path
+- Do not propose architectural rewrites when a minimal safe correction is possible
+- For trigger packages and other external consumers of core, prefer local fixes at the package boundary
+- Respect the project workflow: root cause first, minimal fix, regression test, zero warnings
+- If no issue clearly crosses the production-risk threshold, say so explicitly
+
+Review threshold in audit mode:
+1. There is a concrete failure mode
+2. The failure mode is plausible in production
+3. The current code does not already mitigate it sufficiently
+4. The fix can be described as a small, safe correction
+
+If any item above is missing, classify it as residual risk or observation, not as a required fix.
+
 ---
 
 ## Project
