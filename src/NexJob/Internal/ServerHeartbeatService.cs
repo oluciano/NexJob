@@ -62,10 +62,16 @@ internal sealed class ServerHeartbeatService : IHostedService, IDisposable
                 state: null,
                 dueTime: _options.ServerHeartbeatInterval,
                 period: _options.ServerHeartbeatInterval);
+
+            _logger.LogInformation(
+                "Server node {ServerId} registered and heartbeat started.", _serverId);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to register server node {ServerId} during startup.", _serverId);
+            // Registration failed — worker will execute jobs but will not appear in
+            // dashboard or cluster tracking. Log as Warning so operators can detect
+            // this degraded state without bringing down the process.
+            _logger.LogWarning(ex, "Server node {ServerId} failed to register — running in degraded mode (jobs will execute but this instance will not appear in dashboard or cluster tracking).", _serverId);
         }
     }
 
