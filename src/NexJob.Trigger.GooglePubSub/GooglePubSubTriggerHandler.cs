@@ -42,20 +42,28 @@ internal sealed class GooglePubSubTriggerHandler : IHostedService
     }
 
     /// <inheritdoc/>
-    public Task StartAsync(CancellationToken cancellationToken)
+    public async Task StartAsync(CancellationToken cancellationToken)
     {
-        // Store the run task — StopAsync will observe it.
         // StartAsync on the Google subscriber returns a Task that completes when the
-        // subscriber is fully stopped, so we store it rather than awaiting here.
+        // subscriber is fully stopped — store it so StopAsync can observe it later.
         _runTask = _subscriber.StartAsync(HandleMessageAsync, cancellationToken);
+
+        // Yield once so the task scheduler has a chance to execute any synchronous
+        // startup work inside the subscriber before we inspect its state.
+        await Task.Yield();
+
+        // Surface an immediate fault (e.g. invalid credentials, missing subscription)
+        // before the host considers startup successful.
+        if (_runTask.IsFaulted)
+        {
+            await _runTask.ConfigureAwait(false);
+        }
 
         _logger.LogInformation(
             "Google Pub/Sub trigger started. Project: {Project}, Subscription: {Subscription}, Target queue: {TargetQueue}",
             _options.ProjectId,
             _options.SubscriptionId,
             _options.TargetQueue);
-
-        return Task.CompletedTask;
     }
 
     /// <inheritdoc/>
