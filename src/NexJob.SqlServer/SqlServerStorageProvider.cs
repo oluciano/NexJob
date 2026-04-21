@@ -68,20 +68,11 @@ public sealed class SqlServerStorageProvider : IStorageProvider
                 var existingId = new JobId(existing.Id);
                 var existingStatus = ParseStatus(existing.Status);
 
-                if (IsActiveState(existingStatus))
+                var existingResult = ResolveDuplicate(existingId, existingStatus, duplicatePolicy);
+                if (existingResult.WasRejected || IsActiveState(existingStatus))
                 {
                     await tx.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                    return new EnqueueResult(existingId, WasRejected: false);
-                }
-
-                var reject = existingStatus == JobStatus.Failed
-                    ? duplicatePolicy is DuplicatePolicy.RejectIfFailed or DuplicatePolicy.RejectAlways
-                    : duplicatePolicy == DuplicatePolicy.RejectAlways;
-
-                if (reject)
-                {
-                    await tx.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                    return new EnqueueResult(existingId, WasRejected: true);
+                    return existingResult;
                 }
             }
 
@@ -143,21 +134,7 @@ public sealed class SqlServerStorageProvider : IStorageProvider
                 var winnerId = new JobId(winner.Id);
                 var winnerStatus = ParseStatus(winner.Status);
 
-                if (IsActiveState(winnerStatus))
-                {
-                    return new EnqueueResult(winnerId, WasRejected: false);
-                }
-
-                var reject = winnerStatus == JobStatus.Failed
-                    ? duplicatePolicy is DuplicatePolicy.RejectIfFailed or DuplicatePolicy.RejectAlways
-                    : duplicatePolicy == DuplicatePolicy.RejectAlways;
-
-                if (reject)
-                {
-                    return new EnqueueResult(winnerId, WasRejected: true);
-                }
-
-                return new EnqueueResult(winnerId, WasRejected: false);
+                return ResolveDuplicate(winnerId, winnerStatus, duplicatePolicy);
             }
         }
 
@@ -985,6 +962,20 @@ public sealed class SqlServerStorageProvider : IStorageProvider
     }
 
     // ── Schema ────────────────────────────────────────────────────────────────
+
+    private static EnqueueResult ResolveDuplicate(JobId id, JobStatus status, DuplicatePolicy policy)
+    {
+        if (IsActiveState(status))
+        {
+            return new EnqueueResult(id, WasRejected: false);
+        }
+
+        var wasRejected = status == JobStatus.Failed
+            ? policy is DuplicatePolicy.RejectIfFailed or DuplicatePolicy.RejectAlways
+            : policy == DuplicatePolicy.RejectAlways;
+
+        return new EnqueueResult(id, WasRejected: wasRejected);
+    }
 
     private static JobStatus ParseStatus(string status) =>
         Enum.TryParse<JobStatus>(status, out var parsed) ? parsed : JobStatus.Failed;

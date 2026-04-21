@@ -69,18 +69,10 @@ public sealed class MongoStorageProvider : IStorageProvider
 
             if (existing is not null)
             {
-                if (IsActiveState(existing.Status))
+                var existingResult = ResolveDuplicate(existing.Id, existing.Status, duplicatePolicy);
+                if (existingResult.WasRejected || IsActiveState(existing.Status))
                 {
-                    return new EnqueueResult(existing.Id, WasRejected: false);
-                }
-
-                var reject = existing.Status == JobStatus.Failed
-                    ? duplicatePolicy is DuplicatePolicy.RejectIfFailed or DuplicatePolicy.RejectAlways
-                    : duplicatePolicy == DuplicatePolicy.RejectAlways;
-
-                if (reject)
-                {
-                    return new EnqueueResult(existing.Id, WasRejected: true);
+                    return existingResult;
                 }
             }
         }
@@ -106,16 +98,7 @@ public sealed class MongoStorageProvider : IStorageProvider
 
             if (winner is not null)
             {
-                if (IsActiveState(winner.Status))
-                {
-                    return new EnqueueResult(winner.Id, WasRejected: false);
-                }
-
-                var reject = winner.Status == JobStatus.Failed
-                    ? duplicatePolicy is DuplicatePolicy.RejectIfFailed or DuplicatePolicy.RejectAlways
-                    : duplicatePolicy == DuplicatePolicy.RejectAlways;
-
-                return new EnqueueResult(winner.Id, WasRejected: reject);
+                return ResolveDuplicate(winner.Id, winner.Status, duplicatePolicy);
             }
 
             throw;
@@ -774,6 +757,20 @@ public sealed class MongoStorageProvider : IStorageProvider
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────
+
+    private static EnqueueResult ResolveDuplicate(JobId id, JobStatus status, DuplicatePolicy policy)
+    {
+        if (IsActiveState(status))
+        {
+            return new EnqueueResult(id, WasRejected: false);
+        }
+
+        var wasRejected = status == JobStatus.Failed
+            ? policy is DuplicatePolicy.RejectIfFailed or DuplicatePolicy.RejectAlways
+            : policy == DuplicatePolicy.RejectAlways;
+
+        return new EnqueueResult(id, WasRejected: wasRejected);
+    }
 
     private static bool IsActiveState(JobStatus status) =>
         status is JobStatus.Enqueued or JobStatus.Processing or JobStatus.Scheduled or JobStatus.AwaitingContinuation;
