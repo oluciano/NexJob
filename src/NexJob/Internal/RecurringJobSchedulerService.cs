@@ -63,6 +63,7 @@ internal sealed class RecurringJobSchedulerService : BackgroundService
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error in RecurringJobSchedulerService");
+                await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken).ConfigureAwait(false);
             }
         }
 
@@ -98,6 +99,22 @@ internal sealed class RecurringJobSchedulerService : BackgroundService
             if (!recurring.Enabled)
             {
                 _logger.LogDebug("Skipping disabled recurring job '{Id}'.", recurring.RecurringJobId);
+                continue;
+            }
+
+            // Acquire distributed lock — prevents duplicate firing in multi-instance deployments.
+            // TTL covers the full polling interval so a slow instance doesn't re-fire before
+            // NextExecution is advanced.
+            var lockTtl = (_options.PollingInterval * 2) + TimeSpan.FromSeconds(5);
+            var acquired = await _recurringStorage
+                .TryAcquireRecurringJobLockAsync(recurring.RecurringJobId, lockTtl, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (!acquired)
+            {
+                _logger.LogDebug(
+                    "Recurring job '{Id}' lock not acquired — another instance is handling it.",
+                    recurring.RecurringJobId);
                 continue;
             }
 
@@ -141,6 +158,12 @@ internal sealed class RecurringJobSchedulerService : BackgroundService
             {
                 _logger.LogError(ex,
                     "Failed to enqueue recurring job '{Id}'", recurring.RecurringJobId);
+            }
+            finally
+            {
+                await _recurringStorage
+                    .ReleaseRecurringJobLockAsync(recurring.RecurringJobId, cancellationToken)
+                    .ConfigureAwait(false);
             }
         }
     }
