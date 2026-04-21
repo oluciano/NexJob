@@ -12,10 +12,10 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - `MigrationPipeline` now throws `InvalidOperationException` on an incomplete migration chain instead of silently returning a partial result — previously masked broken migration sequences at startup.
 - `JobInvoker` disposes `IServiceScope` on `PrepareAsync` failure — eliminates scope leak when job type resolution or payload deserialization fails before execution begins.
-- `GooglePubSubTrigger.StartAsync` stores the subscriber run task and surfaces startup failures on `StopAsync` — aligns with the existing pattern used by `AwsSqsTrigger` (see Wave K).
+- `GooglePubSubTrigger.StartAsync` now detects an immediate subscriber fault via `Task.Yield()` + `IsFaulted` check and propagates it before returning — the host no longer considers startup successful when the subscriber fails synchronously. `StopAsync` continues to observe `_runTask` for late faults.
+- `AwsSqsTrigger.StartAsync` now detects an immediate polling loop fault via `Task.Yield()` + `IsFaulted` check and propagates it before returning — startup failures (invalid queue URL, missing credentials) are no longer invisible to the host. `Task.Run` token changed to `CancellationToken.None` so the loop is not cancelled by the startup token; shutdown remains controlled by `_stoppingCts`. `StopAsync` continues to surface faults from the polling task.
 - `RecurringJobService` now acquires the distributed lock before enqueuing due jobs — prevents duplicate recurring job firings on multi-instance deployments where the scheduler tick fires simultaneously.
 - `JobDispatcherService` adds a 5-second back-off on the error path to prevent a hot polling loop when storage is unavailable.
-- `AwsSqsTrigger.StopAsync` awaits and logs faults from the polling task instead of silently discarding them — operators now see the root cause when SQS credentials or queue URL are invalid at startup.
 - `ServerHeartbeatService.StartAsync` downgrades the registration failure from `LogError` to `LogWarning` and explicitly describes the degraded mode: jobs execute but the instance does not appear in dashboard or cluster tracking.
 - `InMemoryStorageProvider.FindExistingJobByKey` now uses the idempotency index instead of a full scan; nested lock in `CommitJobResultAsync` removed.
 

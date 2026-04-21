@@ -47,17 +47,29 @@ internal sealed class AwsSqsTrigger : IHostedService
     /// <summary>
     /// Starts the AWS SQS trigger polling loop.
     /// </summary>
-    public Task StartAsync(CancellationToken cancellationToken)
+    public async Task StartAsync(CancellationToken cancellationToken)
     {
         _stoppingCts = new CancellationTokenSource();
-        _pollingTask = Task.Run(() => PollLoopAsync(_stoppingCts.Token), cancellationToken);
+
+        // Use CancellationToken.None so the polling loop is not cancelled when the
+        // startup token expires — shutdown is controlled by _stoppingCts instead.
+        _pollingTask = Task.Run(() => PollLoopAsync(_stoppingCts.Token), CancellationToken.None);
+
+        // Yield once so the task scheduler can execute any synchronous startup work
+        // inside PollLoopAsync before we inspect the task state.
+        await Task.Yield();
+
+        // Surface an immediate fault (e.g. invalid queue URL, missing credentials)
+        // before the host considers startup successful.
+        if (_pollingTask.IsFaulted)
+        {
+            await _pollingTask.ConfigureAwait(false);
+        }
 
         _logger.LogInformation(
             "AWS SQS trigger started. Queue URL: {QueueUrl}, Target queue: {TargetQueue}",
             _options.QueueUrl,
             _options.TargetQueue);
-
-        return Task.CompletedTask;
     }
 
     /// <summary>
