@@ -4,6 +4,29 @@
 
 ---
 
+## Testing Pyramid & Strategy
+
+| Layer | Project | Focus | 3N Applied | Environment |
+| :--- | :--- | :--- | :--- | :--- |
+| **Unit** | `*.Tests` | Isolated logic, branch coverage | Full (N1, N2, N3) | InMemory / Mocks |
+| **Integration** | `*.IntegrationTests` | Happy path, infra contracts | N1 | Real Storage (Docker) |
+| **Reliability** | `*.ReliabilityTests` | Chaos, concurrency, crash recovery | N2 (Complex failures) | Real Storage (Stress) |
+| **Distributed** | `*.ReliabilityTests.Distributed` | Cluster coordination, failover | N2 (Network/Cluster) | Multi-node |
+
+---
+
+## Test Integrity (3N Mandatory Matrix)
+
+Every feature or bug fix must produce minimum 3 tests:
+- **N1 — Positive:** happy path works as expected.
+- **N2 — Negative:** failure path fails as expected.
+- **N3 — Invalid Input:** null, empty, boundary — handled gracefully.
+
+> **N2 Case Study: Recurring Job Distributed Lock**
+> A unit test (N2) can verify the `catch` block for storage errors. However, a **Distributed Reliability Test (N2-Dist)** is required to verify that only 1 out of N instances acquires the lock when competing for the same recurring job execution window.
+
+---
+
 ## Entry Criteria
 
 - Scenario to test is clearly described
@@ -49,7 +72,8 @@ Then: Job is marked Expired, handler never invoked
 **Use:** 02-execution-mode.md
 
 **Output:**
-- Test code (real behavior, no mocks)
+- Test code (real behavior, no mocks where possible)
+- **Satisfies 3N Matrix (N1, N2, N3)**
 - Passes locally
 - Zero warnings
 
@@ -76,9 +100,10 @@ Then: Job is marked Expired, handler never invoked
 
 ### Coverage
 
-- Happy path covered
-- Error cases covered
-- Edge cases covered
+- **80% global line coverage floor** (strictly enforced)
+- Happy path covered (N1)
+- Error cases covered (N2)
+- Edge cases / Invalid input covered (N3)
 - Timeout scenarios (if applicable)
 
 ### Reliability Tests
