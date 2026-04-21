@@ -17,6 +17,7 @@ internal sealed class GooglePubSubTriggerHandler : IHostedService
     private readonly IScheduler _scheduler;
     private readonly NexJobOptions _nexJobOptions;
     private readonly ILogger<GooglePubSubTriggerHandler> _logger;
+    private Task _runTask = Task.CompletedTask;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="GooglePubSubTriggerHandler"/> class.
@@ -43,7 +44,10 @@ internal sealed class GooglePubSubTriggerHandler : IHostedService
     /// <inheritdoc/>
     public Task StartAsync(CancellationToken cancellationToken)
     {
-        _ = _subscriber.StartAsync(HandleMessageAsync, cancellationToken);
+        // Store the run task — StopAsync will observe it.
+        // StartAsync on the Google subscriber returns a Task that completes when the
+        // subscriber is fully stopped, so we store it rather than awaiting here.
+        _runTask = _subscriber.StartAsync(HandleMessageAsync, cancellationToken);
 
         _logger.LogInformation(
             "Google Pub/Sub trigger started. Project: {Project}, Subscription: {Subscription}, Target queue: {TargetQueue}",
@@ -58,6 +62,18 @@ internal sealed class GooglePubSubTriggerHandler : IHostedService
     public async Task StopAsync(CancellationToken cancellationToken)
     {
         await _subscriber.StopAsync(cancellationToken).ConfigureAwait(false);
+
+        // Await the run task so any startup failure surfaces here rather than
+        // being silently discarded.
+        try
+        {
+            await _runTask.ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogError(ex, "Google Pub/Sub subscriber run task faulted during shutdown.");
+        }
+
         _logger.LogInformation("Google Pub/Sub trigger stopped.");
     }
 
