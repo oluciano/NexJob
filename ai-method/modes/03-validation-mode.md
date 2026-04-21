@@ -150,11 +150,14 @@ Watch for subtle architectural violations:
 ## Test Coverage Checks
 
 - [ ] New behavior has tests?
+- [ ] 3N matrix applied? (N1 positive, N2 negative, N3 invalid input)
 - [ ] Tests are deterministic? (no race conditions, timing dependencies)
 - [ ] Tests avoid mocks when possible? (use real storage)
 - [ ] Edge cases covered? (deadline expire, retry exhaustion, crash recovery)
 - [ ] Integration tests pass?
 - [ ] Reliability suite passes (if applicable)?
+- [ ] **No existing passing test was modified without justification?**
+- [ ] **If test was modified — comment explains the behavior change?**
 
 ---
 
@@ -179,6 +182,8 @@ When validating, report:
 - Missing XML docs on public API
 - Untraced state transitions
 - Synchronous blocking
+- **Existing passing test was modified to make new code pass (without documented behavior change)**
+- **New feature missing 3N test matrix**
 
 ---
 

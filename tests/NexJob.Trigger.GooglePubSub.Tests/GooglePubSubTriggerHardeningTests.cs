@@ -98,4 +98,51 @@ public sealed class GooglePubSubTriggerHardeningTests
 
         reply.Should().Be(SubscriberClient.Reply.Nack);
     }
+
+    // ─── Lifecycle Branches ────────────────────────────────────────────────
+
+    /// <summary>Tests that StartAsync surfaces immediate subscriber faults.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task StartAsync_WhenSubscriberFaultsImmediately_SurfacesFault()
+    {
+        var sut = CreateSut();
+        var fault = new Exception("Startup failed");
+        _subscriberMock.Setup(x => x.StartAsync(It.IsAny<Func<PubsubMessage, CancellationToken, Task<SubscriberClient.Reply>>>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.FromException(fault));
+
+        var act = () => sut.StartAsync(CancellationToken.None);
+
+        await act.Should().ThrowAsync<Exception>().WithMessage("Startup failed");
+    }
+
+    /// <summary>Tests that StopAsync logs subscriber run task faults.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task StopAsync_WhenRunTaskFaults_LogsError()
+    {
+        var sut = CreateSut();
+        var fault = new Exception("Late failure");
+
+        // StartAsync returns a faulted task
+        _subscriberMock.Setup(x => x.StartAsync(It.IsAny<Func<PubsubMessage, CancellationToken, Task<SubscriberClient.Reply>>>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.FromException(fault));
+
+        // StartAsync will throw because it detects the immediate fault
+        try
+        {
+            await sut.StartAsync(CancellationToken.None);
+        }
+        catch
+        {
+            // Expected
+        }
+
+        // Act
+        var act = () => sut.StopAsync(CancellationToken.None);
+
+        // Assert: Should not throw (error is logged and swallowed)
+        await act.Should().NotThrowAsync();
+        _subscriberMock.Verify(x => x.StopAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
 }

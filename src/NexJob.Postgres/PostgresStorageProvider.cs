@@ -73,20 +73,11 @@ public sealed class PostgresStorageProvider : IStorageProvider
                 var existingId = new JobId(existing.Id);
                 var existingStatus = ParseStatus(existing.Status);
 
-                if (IsActiveState(existingStatus))
+                var existingResult = ResolveDuplicate(existingId, existingStatus, duplicatePolicy);
+                if (existingResult.WasRejected || IsActiveState(existingStatus))
                 {
                     await tx.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                    return new EnqueueResult(existingId, WasRejected: false);
-                }
-
-                var reject = existingStatus == JobStatus.Failed
-                    ? duplicatePolicy is DuplicatePolicy.RejectIfFailed or DuplicatePolicy.RejectAlways
-                    : duplicatePolicy == DuplicatePolicy.RejectAlways;
-
-                if (reject)
-                {
-                    await tx.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                    return new EnqueueResult(existingId, WasRejected: true);
+                    return existingResult;
                 }
             }
 
@@ -149,21 +140,7 @@ public sealed class PostgresStorageProvider : IStorageProvider
                 var winnerId = new JobId(winner.Id);
                 var winnerStatus = ParseStatus(winner.Status);
 
-                if (IsActiveState(winnerStatus))
-                {
-                    return new EnqueueResult(winnerId, WasRejected: false);
-                }
-
-                var reject = winnerStatus == JobStatus.Failed
-                    ? duplicatePolicy is DuplicatePolicy.RejectIfFailed or DuplicatePolicy.RejectAlways
-                    : duplicatePolicy == DuplicatePolicy.RejectAlways;
-
-                if (reject)
-                {
-                    return new EnqueueResult(winnerId, WasRejected: true);
-                }
-
-                return new EnqueueResult(winnerId, WasRejected: false);
+                return ResolveDuplicate(winnerId, winnerStatus, duplicatePolicy);
             }
         }
 
@@ -775,12 +752,11 @@ public sealed class PostgresStorageProvider : IStorageProvider
         await conn.OpenAsync(cancellationToken);
         await using var tx = await conn.BeginTransactionAsync(cancellationToken);
 
-        // Idempotency guard
         var currentStatus = await conn.ExecuteScalarAsync<string?>(
             "SELECT status FROM nexjob_jobs WHERE id = @id FOR UPDATE",
             new { id = jobId.Value }, transaction: tx);
 
-        if (currentStatus is null or "Succeeded" or "Failed" or "Expired")
+        if (IsTerminalStatus(currentStatus))
         {
             await tx.RollbackAsync(cancellationToken);
             return;
@@ -790,93 +766,19 @@ public sealed class PostgresStorageProvider : IStorageProvider
 
         if (result.Succeeded)
         {
-            await conn.ExecuteAsync(
-                """
-                UPDATE nexjob_jobs
-                SET status = 'Succeeded', completed_at = NOW(), heartbeat_at = NULL, execution_logs = @Logs::jsonb
-                WHERE id = @id
-                """,
-                new { id = jobId.Value, Logs = logsJson },
-                transaction: tx);
-
-            // Enqueue continuations
-            await conn.ExecuteAsync(
-                """
-                UPDATE nexjob_jobs
-                SET status = 'Enqueued', scheduled_at = NULL
-                WHERE parent_job_id = @id AND status = 'AwaitingContinuation'
-                """,
-                new { id = jobId.Value },
-                transaction: tx);
-
-            // Update recurring result
-            if (result.RecurringJobId is not null)
-            {
-                await conn.ExecuteAsync(
-                    """
-                    UPDATE nexjob_recurring_jobs
-                    SET last_execution_status = 'Succeeded', last_execution_error = NULL, updated_at = NOW()
-                    WHERE recurring_job_id = @rid
-                    """,
-                    new { rid = result.RecurringJobId },
-                    transaction: tx);
-            }
+            await ApplySuccessAsync(conn, tx, jobId, result, logsJson);
+            await tx.CommitAsync(cancellationToken);
+            return;
         }
-        else
+
+        if (result.RetryAt.HasValue)
         {
-            if (result.RetryAt.HasValue)
-            {
-                await conn.ExecuteAsync(
-                    """
-                    UPDATE nexjob_jobs
-                    SET status = 'Scheduled', retry_at = @retryAt,
-                        exception_message = @msg, exception_stack_trace = @stack,
-                        heartbeat_at = NULL, execution_logs = @Logs::jsonb
-                    WHERE id = @id
-                    """,
-                    new
-                    {
-                        id = jobId.Value,
-                        retryAt = result.RetryAt.Value,
-                        msg = result.Exception?.Message,
-                        stack = result.Exception?.StackTrace,
-                        Logs = logsJson,
-                    },
-                    transaction: tx);
-            }
-            else
-            {
-                await conn.ExecuteAsync(
-                    """
-                    UPDATE nexjob_jobs
-                    SET status = 'Failed', completed_at = NOW(), retry_at = NULL,
-                        exception_message = @msg, exception_stack_trace = @stack,
-                        heartbeat_at = NULL, execution_logs = @Logs::jsonb
-                    WHERE id = @id
-                    """,
-                    new
-                    {
-                        id = jobId.Value,
-                        msg = result.Exception?.Message,
-                        stack = result.Exception?.StackTrace,
-                        Logs = logsJson,
-                    },
-                    transaction: tx);
-
-                if (result.RecurringJobId is not null)
-                {
-                    await conn.ExecuteAsync(
-                        """
-                        UPDATE nexjob_recurring_jobs
-                        SET last_execution_status = 'Failed', last_execution_error = @msg, updated_at = NOW()
-                        WHERE recurring_job_id = @rid
-                        """,
-                        new { rid = result.RecurringJobId, msg = result.Exception?.Message },
-                        transaction: tx);
-                }
-            }
+            await ApplyRetryAsync(conn, tx, jobId, result, logsJson);
+            await tx.CommitAsync(cancellationToken);
+            return;
         }
 
+        await ApplyFailureAsync(conn, tx, jobId, result, logsJson);
         await tx.CommitAsync(cancellationToken);
     }
 
@@ -978,6 +880,23 @@ public sealed class PostgresStorageProvider : IStorageProvider
 
     // ── Schema ────────────────────────────────────────────────────────────────
 
+    private static bool IsTerminalStatus(string? status) =>
+        status is "Succeeded" or "Failed" or "Expired" or null;
+
+    private static EnqueueResult ResolveDuplicate(JobId id, JobStatus status, DuplicatePolicy policy)
+    {
+        if (IsActiveState(status))
+        {
+            return new EnqueueResult(id, WasRejected: false);
+        }
+
+        var wasRejected = status == JobStatus.Failed
+            ? policy is DuplicatePolicy.RejectIfFailed or DuplicatePolicy.RejectAlways
+            : policy == DuplicatePolicy.RejectAlways;
+
+        return new EnqueueResult(id, WasRejected: wasRejected);
+    }
+
     private static JobStatus ParseStatus(string status) =>
         Enum.TryParse<JobStatus>(status, out var parsed) ? parsed : JobStatus.Failed;
 
@@ -985,6 +904,98 @@ public sealed class PostgresStorageProvider : IStorageProvider
         status is JobStatus.Enqueued or JobStatus.Processing or JobStatus.Scheduled or JobStatus.AwaitingContinuation;
 
     private NpgsqlConnection Open() => _dataSource?.CreateConnection() ?? new NpgsqlConnection(_connectionString);
+
+    private async Task ApplySuccessAsync(
+        IDbConnection conn, IDbTransaction tx, JobId jobId, JobExecutionResult result,
+        string logsJson)
+    {
+        await conn.ExecuteAsync(
+            """
+            UPDATE nexjob_jobs
+            SET status = 'Succeeded', completed_at = NOW(), heartbeat_at = NULL, execution_logs = @Logs::jsonb
+            WHERE id = @id
+            """,
+            new { id = jobId.Value, Logs = logsJson },
+            transaction: tx);
+
+        await conn.ExecuteAsync(
+            """
+            UPDATE nexjob_jobs
+            SET status = 'Enqueued', scheduled_at = NULL
+            WHERE parent_job_id = @id AND status = 'AwaitingContinuation'
+            """,
+            new { id = jobId.Value },
+            transaction: tx);
+
+        if (result.RecurringJobId is not null)
+        {
+            await conn.ExecuteAsync(
+                """
+                UPDATE nexjob_recurring_jobs
+                SET last_execution_status = 'Succeeded', last_execution_error = NULL, updated_at = NOW()
+                WHERE recurring_job_id = @rid
+                """,
+                new { rid = result.RecurringJobId },
+                transaction: tx);
+        }
+    }
+
+    private async Task ApplyRetryAsync(
+        IDbConnection conn, IDbTransaction tx, JobId jobId, JobExecutionResult result,
+        string logsJson)
+    {
+        await conn.ExecuteAsync(
+            """
+            UPDATE nexjob_jobs
+            SET status = 'Scheduled', retry_at = @retryAt,
+                exception_message = @msg, exception_stack_trace = @stack,
+                heartbeat_at = NULL, execution_logs = @Logs::jsonb
+            WHERE id = @id
+            """,
+            new
+            {
+                id = jobId.Value,
+                retryAt = result.RetryAt!.Value,
+                msg = result.Exception?.Message,
+                stack = result.Exception?.StackTrace,
+                Logs = logsJson,
+            },
+            transaction: tx);
+    }
+
+    private async Task ApplyFailureAsync(
+        IDbConnection conn, IDbTransaction tx, JobId jobId, JobExecutionResult result,
+        string logsJson)
+    {
+        await conn.ExecuteAsync(
+            """
+            UPDATE nexjob_jobs
+            SET status = 'Failed', completed_at = NOW(), retry_at = NULL,
+                exception_message = @msg, exception_stack_trace = @stack,
+                heartbeat_at = NULL, execution_logs = @Logs::jsonb
+            WHERE id = @id
+            """,
+            new
+            {
+                id = jobId.Value,
+                msg = result.Exception?.Message,
+                stack = result.Exception?.StackTrace,
+                Logs = logsJson,
+            },
+            transaction: tx);
+
+        if (result.RecurringJobId is not null)
+        {
+            await conn.ExecuteAsync(
+                """
+                UPDATE nexjob_recurring_jobs
+                SET last_execution_status = 'Failed', last_execution_error = @msg, updated_at = NOW()
+                WHERE recurring_job_id = @rid
+                """,
+                new { rid = result.RecurringJobId, msg = result.Exception?.Message },
+                transaction: tx);
+        }
+    }
 }
 #pragma warning restore MA0004
 

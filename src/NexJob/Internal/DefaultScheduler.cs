@@ -48,33 +48,9 @@ internal sealed class DefaultScheduler : IScheduler
         CancellationToken cancellationToken = default)
     {
         using var activity = NexJobActivitySource.StartEnqueue(job.JobType, job.Queue);
-
-        var result = await _jobStorage.EnqueueAsync(job, duplicatePolicy, cancellationToken).ConfigureAwait(false);
-
-        if (result.WasRejected && job.IdempotencyKey is not null)
-        {
-            throw new DuplicateJobException(job.IdempotencyKey, result.JobId, duplicatePolicy);
-        }
-
-        activity?.SetTag("nexjob.job_id", result.JobId.Value.ToString());
-
-        // Extract simple type name from assembly-qualified name (e.g., "MyNamespace.MyJob, ...")
-        var qualifiedName = job.JobType.Split(',')[0];
-        var simpleTypeName = qualifiedName[(qualifiedName.LastIndexOf('.') + 1)..];
-
-        NexJobMetrics.JobsEnqueued.Add(1,
-            new TagList
-            {
-                { "nexjob.job_type", simpleTypeName },
-                { "nexjob.queue", job.Queue },
-            });
-
-        if (!result.WasRejected)
-        {
-            _wakeUp.Signal();
-        }
-
-        return result.JobId;
+        var simpleTypeName = job.JobType.Split(',')[0].Split('.')[^1];
+        return await CommitEnqueueAsync(job, duplicatePolicy, simpleTypeName, null, null, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -94,23 +70,8 @@ internal sealed class DefaultScheduler : IScheduler
             expiresAt: deadlineAfter.HasValue ? DateTimeOffset.UtcNow + deadlineAfter.Value : null);
 
         using var activity = NexJobActivitySource.StartEnqueue(typeof(TJob).FullName ?? typeof(TJob).Name, job.Queue);
-
-        var result = await _jobStorage.EnqueueAsync(job, duplicatePolicy, cancellationToken).ConfigureAwait(false);
-
-        if (result.WasRejected && job.IdempotencyKey is not null)
-        {
-            throw new DuplicateJobException(job.IdempotencyKey, result.JobId, duplicatePolicy);
-        }
-
-        activity?.SetTag("nexjob.job_id", result.JobId.Value.ToString());
-        NexJobMetrics.JobsEnqueued.Add(1, new TagList { { "nexjob.job_type", typeof(TJob).Name }, { "nexjob.queue", job.Queue } });
-
-        if (!result.WasRejected)
-        {
-            _wakeUp.Signal();
-        }
-
-        return result.JobId;
+        return await CommitEnqueueAsync(job, duplicatePolicy, typeof(TJob).Name, null, null, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -129,23 +90,8 @@ internal sealed class DefaultScheduler : IScheduler
             expiresAt: deadlineAfter.HasValue ? DateTimeOffset.UtcNow + deadlineAfter.Value : null);
 
         using var activity = NexJobActivitySource.StartEnqueue(typeof(TJob).FullName ?? typeof(TJob).Name, job.Queue);
-
-        var result = await _jobStorage.EnqueueAsync(job, duplicatePolicy, cancellationToken).ConfigureAwait(false);
-
-        if (result.WasRejected && job.IdempotencyKey is not null)
-        {
-            throw new DuplicateJobException(job.IdempotencyKey, result.JobId, duplicatePolicy);
-        }
-
-        activity?.SetTag("nexjob.job_id", result.JobId.Value.ToString());
-        NexJobMetrics.JobsEnqueued.Add(1, new TagList { { "nexjob.job_type", typeof(TJob).Name }, { "nexjob.queue", job.Queue } });
-
-        if (!result.WasRejected)
-        {
-            _wakeUp.Signal();
-        }
-
-        return result.JobId;
+        return await CommitEnqueueAsync(job, duplicatePolicy, typeof(TJob).Name, null, null, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -162,13 +108,13 @@ internal sealed class DefaultScheduler : IScheduler
             status: JobStatus.Scheduled, scheduledAt: scheduledAt);
 
         using var activity = NexJobActivitySource.StartEnqueue(typeof(TJob).FullName ?? typeof(TJob).Name, job.Queue);
-        var jobId = await _jobStorage.EnqueueAsync(job, DuplicatePolicy.AllowAfterFailed, cancellationToken).ConfigureAwait(false);
-
-        activity?.SetTag("nexjob.job_id", jobId.JobId.Value.ToString());
-        activity?.SetTag("nexjob.delay_seconds", delay.TotalSeconds);
-        NexJobMetrics.JobsEnqueued.Add(1, new TagList { { "nexjob.job_type", typeof(TJob).Name }, { "nexjob.queue", job.Queue }, { "nexjob.scheduled", "true" } });
-
-        return jobId.JobId;
+        return await CommitEnqueueAsync(
+            job,
+            DuplicatePolicy.AllowAfterFailed,
+            typeof(TJob).Name,
+            a => a?.SetTag("nexjob.delay_seconds", delay.TotalSeconds),
+            new[] { new KeyValuePair<string, object?>("nexjob.scheduled", "true") },
+            cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -184,13 +130,13 @@ internal sealed class DefaultScheduler : IScheduler
             status: JobStatus.Scheduled, scheduledAt: scheduledAt);
 
         using var activity = NexJobActivitySource.StartEnqueue(typeof(TJob).FullName ?? typeof(TJob).Name, job.Queue);
-        var jobId = await _jobStorage.EnqueueAsync(job, DuplicatePolicy.AllowAfterFailed, cancellationToken).ConfigureAwait(false);
-
-        activity?.SetTag("nexjob.job_id", jobId.JobId.Value.ToString());
-        activity?.SetTag("nexjob.delay_seconds", delay.TotalSeconds);
-        NexJobMetrics.JobsEnqueued.Add(1, new TagList { { "nexjob.job_type", typeof(TJob).Name }, { "nexjob.queue", job.Queue }, { "nexjob.scheduled", "true" } });
-
-        return jobId.JobId;
+        return await CommitEnqueueAsync(
+            job,
+            DuplicatePolicy.AllowAfterFailed,
+            typeof(TJob).Name,
+            a => a?.SetTag("nexjob.delay_seconds", delay.TotalSeconds),
+            new[] { new KeyValuePair<string, object?>("nexjob.scheduled", "true") },
+            cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -206,13 +152,13 @@ internal sealed class DefaultScheduler : IScheduler
             status: JobStatus.Scheduled, scheduledAt: runAt);
 
         using var activity = NexJobActivitySource.StartEnqueue(typeof(TJob).FullName ?? typeof(TJob).Name, job.Queue);
-        var jobId = await _jobStorage.EnqueueAsync(job, DuplicatePolicy.AllowAfterFailed, cancellationToken).ConfigureAwait(false);
-
-        activity?.SetTag("nexjob.job_id", jobId.JobId.Value.ToString());
-        activity?.SetTag("nexjob.scheduled_at", runAt.ToString("o"));
-        NexJobMetrics.JobsEnqueued.Add(1, new TagList { { "nexjob.job_type", typeof(TJob).Name }, { "nexjob.queue", job.Queue }, { "nexjob.scheduled", "true" } });
-
-        return jobId.JobId;
+        return await CommitEnqueueAsync(
+            job,
+            DuplicatePolicy.AllowAfterFailed,
+            typeof(TJob).Name,
+            a => a?.SetTag("nexjob.scheduled_at", runAt.ToString("o")),
+            new[] { new KeyValuePair<string, object?>("nexjob.scheduled", "true") },
+            cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -227,13 +173,13 @@ internal sealed class DefaultScheduler : IScheduler
             status: JobStatus.Scheduled, scheduledAt: runAt);
 
         using var activity = NexJobActivitySource.StartEnqueue(typeof(TJob).FullName ?? typeof(TJob).Name, job.Queue);
-        var jobId = await _jobStorage.EnqueueAsync(job, DuplicatePolicy.AllowAfterFailed, cancellationToken).ConfigureAwait(false);
-
-        activity?.SetTag("nexjob.job_id", jobId.JobId.Value.ToString());
-        activity?.SetTag("nexjob.scheduled_at", runAt.ToString("o"));
-        NexJobMetrics.JobsEnqueued.Add(1, new TagList { { "nexjob.job_type", typeof(TJob).Name }, { "nexjob.queue", job.Queue }, { "nexjob.scheduled", "true" } });
-
-        return jobId.JobId;
+        return await CommitEnqueueAsync(
+            job,
+            DuplicatePolicy.AllowAfterFailed,
+            typeof(TJob).Name,
+            a => a?.SetTag("nexjob.scheduled_at", runAt.ToString("o")),
+            new[] { new KeyValuePair<string, object?>("nexjob.scheduled", "true") },
+            cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -323,13 +269,13 @@ internal sealed class DefaultScheduler : IScheduler
             status: JobStatus.AwaitingContinuation, scheduledAt: null, tags: null, expiresAt: null, traceParent: null, parentJobId: parentJobId);
 
         using var activity = NexJobActivitySource.StartEnqueue(typeof(TJob).FullName ?? typeof(TJob).Name, job.Queue);
-        var jobId = await _jobStorage.EnqueueAsync(job, DuplicatePolicy.AllowAfterFailed, cancellationToken).ConfigureAwait(false);
-
-        activity?.SetTag("nexjob.job_id", jobId.JobId.Value.ToString());
-        activity?.SetTag("nexjob.parent_job_id", parentJobId.Value.ToString());
-        NexJobMetrics.JobsEnqueued.Add(1, new TagList { { "nexjob.job_type", typeof(TJob).Name }, { "nexjob.queue", job.Queue }, { "nexjob.continuation", "true" } });
-
-        return jobId.JobId;
+        return await CommitEnqueueAsync(
+            job,
+            DuplicatePolicy.AllowAfterFailed,
+            typeof(TJob).Name,
+            a => a?.SetTag("nexjob.parent_job_id", parentJobId.Value.ToString()),
+            new[] { new KeyValuePair<string, object?>("nexjob.continuation", "true") },
+            cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -345,13 +291,13 @@ internal sealed class DefaultScheduler : IScheduler
             status: JobStatus.AwaitingContinuation, scheduledAt: null, tags: null, expiresAt: null, traceParent: null, parentJobId: parentJobId);
 
         using var activity = NexJobActivitySource.StartEnqueue(typeof(TJob).FullName ?? typeof(TJob).Name, job.Queue);
-        var jobId = await _jobStorage.EnqueueAsync(job, DuplicatePolicy.AllowAfterFailed, cancellationToken).ConfigureAwait(false);
-
-        activity?.SetTag("nexjob.job_id", jobId.JobId.Value.ToString());
-        activity?.SetTag("nexjob.parent_job_id", parentJobId.Value.ToString());
-        NexJobMetrics.JobsEnqueued.Add(1, new TagList { { "nexjob.job_type", typeof(TJob).Name }, { "nexjob.queue", job.Queue }, { "nexjob.continuation", "true" } });
-
-        return jobId.JobId;
+        return await CommitEnqueueAsync(
+            job,
+            DuplicatePolicy.AllowAfterFailed,
+            typeof(TJob).Name,
+            a => a?.SetTag("nexjob.parent_job_id", parentJobId.Value.ToString()),
+            new[] { new KeyValuePair<string, object?>("nexjob.continuation", "true") },
+            cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -380,5 +326,47 @@ internal sealed class DefaultScheduler : IScheduler
         {
             return CronExpression.Parse(cron, CronFormat.Standard);
         }
+    }
+
+    private async Task<JobId> CommitEnqueueAsync(
+        JobRecord job,
+        DuplicatePolicy duplicatePolicy,
+        string metricJobType,
+        Action<Activity?>? tagActivity,
+        IReadOnlyList<KeyValuePair<string, object?>>? extraTags,
+        CancellationToken ct)
+    {
+        var result = await _jobStorage.EnqueueAsync(job, duplicatePolicy, ct).ConfigureAwait(false);
+
+        if (result.WasRejected && job.IdempotencyKey is not null)
+        {
+            throw new DuplicateJobException(job.IdempotencyKey, result.JobId, duplicatePolicy);
+        }
+
+        tagActivity?.Invoke(Activity.Current);
+        Activity.Current?.SetTag("nexjob.job_id", result.JobId.Value.ToString());
+
+        var tagList = new TagList
+        {
+            { "nexjob.job_type", metricJobType },
+            { "nexjob.queue", job.Queue },
+        };
+
+        if (extraTags is not null)
+        {
+            foreach (var tag in extraTags)
+            {
+                tagList.Add(tag.Key, tag.Value);
+            }
+        }
+
+        NexJobMetrics.JobsEnqueued.Add(1, tagList);
+
+        if (!result.WasRejected)
+        {
+            _wakeUp.Signal();
+        }
+
+        return result.JobId;
     }
 }

@@ -72,7 +72,29 @@ public sealed class ServerHeartbeatServiceHardeningTests
         var sut = new ServerHeartbeatService(_storage.Object, Options.Create(options), NullLogger<ServerHeartbeatService>.Instance);
         sut.Should().NotBeNull();
 
-        // We verify registration happens with a generated ID
-        // Indirectly tested via StartAsync if we used this sut instance
+        // Verify it generated a composite ID
+        var field = typeof(ServerHeartbeatService).GetField("_serverId", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        var id = (string)field!.GetValue(sut)!;
+        id.Should().Contain(":");
+    }
+
+    /// <summary>Tests that heartbeat handles storage failure.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task HeartbeatAsync_WhenStorageThrows_SurvivesAndLogs()
+    {
+        // Arrange
+        _storage.Setup(x => x.HeartbeatServerAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new Exception("Heartbeat failed"));
+
+        var sut = CreateSut();
+        var method = typeof(ServerHeartbeatService).GetMethod("HeartbeatAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+
+        // Act
+        var task = (Task)method!.Invoke(sut, null)!;
+
+        // Assert: Should not throw
+        await task.Awaiting(t => t).Should().NotThrowAsync();
+        _storage.Verify(x => x.HeartbeatServerAsync("test-server", It.IsAny<CancellationToken>()), Times.Once);
     }
 }

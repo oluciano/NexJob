@@ -79,73 +79,77 @@ internal sealed class JobDispatcherService : BackgroundService
         {
             await workerSlots.WaitAsync(stoppingToken).ConfigureAwait(false);
 
-            // Filter out paused queues and queues outside their execution window
-            RuntimeSettings runtime;
+            var slotTransferred = false;
             try
             {
-                runtime = await _runtimeStore.GetAsync(stoppingToken).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-                workerSlots.Release();
-                break;
-            }
-
-            var activeQueues = GetActiveQueues(runtime);
-            if (activeQueues.Count == 0)
-            {
-                workerSlots.Release();
-                var delay = runtime.PollingInterval ?? _options.PollingInterval;
-                _logger.LogDebug(
-                    "No active queues at this time — all queues are paused or outside their execution window. Next poll in {Delay}ms",
-                    delay.TotalMilliseconds);
-                await Task.Delay(delay, stoppingToken).ConfigureAwait(false);
-                continue;
-            }
-
-            JobRecord? job;
-            try
-            {
-                job = await _storage.FetchNextAsync(activeQueues, stoppingToken).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-                workerSlots.Release();
-                break;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error fetching next job from storage");
-                workerSlots.Release();
-                await Task.Delay(_options.PollingInterval, stoppingToken).ConfigureAwait(false);
-                continue;
-            }
-
-            if (job is null)
-            {
-                workerSlots.Release();
-
-                var pollingInterval = runtime.PollingInterval ?? _options.PollingInterval;
-
-                await _wakeUp.WaitAsync(pollingInterval, stoppingToken).ConfigureAwait(false);
-
-                continue;
-            }
-
-            // Fire-and-forget: slot and active count are released in the finally block inside the task
-            Interlocked.Increment(ref _activeJobCount);
-            _ = Task.Run(async () =>
-            {
+                // Filter out paused queues and queues outside their execution window
+                RuntimeSettings runtime;
                 try
                 {
-                    await _executor.ExecuteJobAsync(job).ConfigureAwait(false);
+                    runtime = await _runtimeStore.GetAsync(stoppingToken).ConfigureAwait(false);
                 }
-                finally
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+
+                var activeQueues = GetActiveQueues(runtime);
+                if (activeQueues.Count == 0)
+                {
+                    var delay = runtime.PollingInterval ?? _options.PollingInterval;
+                    _logger.LogDebug(
+                        "No active queues at this time — all queues are paused or outside their execution window. Next poll in {Delay}ms",
+                        delay.TotalMilliseconds);
+                    await Task.Delay(delay, stoppingToken).ConfigureAwait(false);
+                    continue;
+                }
+
+                JobRecord? job;
+                try
+                {
+                    job = await _storage.FetchNextAsync(activeQueues, stoppingToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error fetching next job from storage");
+                    await Task.Delay(_options.PollingInterval, stoppingToken).ConfigureAwait(false);
+                    continue;
+                }
+
+                if (job is null)
+                {
+                    var pollingInterval = runtime.PollingInterval ?? _options.PollingInterval;
+                    await _wakeUp.WaitAsync(pollingInterval, stoppingToken).ConfigureAwait(false);
+                    continue;
+                }
+
+                // Transfer slot ownership to the worker task
+                slotTransferred = true;
+                Interlocked.Increment(ref _activeJobCount);
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await _executor.ExecuteJobAsync(job).ConfigureAwait(false);
+                    }
+                    finally
+                    {
+                        workerSlots.Release();
+                        Interlocked.Decrement(ref _activeJobCount);
+                    }
+                }, CancellationToken.None);
+            }
+            finally
+            {
+                if (!slotTransferred)
                 {
                     workerSlots.Release();
-                    Interlocked.Decrement(ref _activeJobCount);
                 }
-            }, CancellationToken.None);
+            }
         }
 
         _logger.LogInformation("JobDispatcherService stopped.");

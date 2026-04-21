@@ -32,3 +32,5 @@ load: release-mode (04-release-mode.md)
 - deadline checked before execution
 - dead-letter handler never crashes
 - zero warnings in Release build
+- 3N matrix required for every feature/bugfix (N1 positive, N2 negative, N3 invalid input)
+- never rewrite existing passing test to make new code pass

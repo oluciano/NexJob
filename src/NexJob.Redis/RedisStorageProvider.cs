@@ -148,7 +148,6 @@ public sealed class RedisStorageProvider : IStorageProvider
         var idemKey = job.IdempotencyKey is not null ? IdempotencyRedisKey(job.IdempotencyKey) : string.Empty;
         var idemTtlSeconds = (int)TimeSpan.FromDays(7).TotalSeconds;
 
-        // Build hash fields for the Lua script
         var hashFields = BuildJobHash(job);
         var hashArgs = new List<RedisValue>();
         foreach (var field in hashFields)
@@ -157,7 +156,6 @@ public sealed class RedisStorageProvider : IStorageProvider
             hashArgs.Add(field.Value.ToString());
         }
 
-        // Execute atomic idempotency check + hash set via Lua script
         var scriptArgs = new RedisValue[]
         {
             idemKey,
@@ -166,50 +164,50 @@ public sealed class RedisStorageProvider : IStorageProvider
         };
         var combinedArgs = scriptArgs.Concat(hashArgs).ToArray();
 
-        var rawResult = await _db.ScriptEvaluateAsync(EnqueueScript.ExecutableScript, keys: null, values: combinedArgs).ConfigureAwait(false);
-
-        if (!rawResult.IsNull)
+        // Loop allows one retry after deleting a stale idempotency key.
+        // Maximum two iterations: initial attempt + one retry after key deletion.
+        for (var attempt = 0; attempt < 2; attempt++)
         {
-            var resultArray = (RedisValue[])rawResult!;
-            if (resultArray.Length == 2)
+            var rawResult = await _db.ScriptEvaluateAsync(
+                EnqueueScript.ExecutableScript, keys: null, values: combinedArgs)
+                .ConfigureAwait(false);
+
+            if (!rawResult.IsNull)
             {
-                var resultType = resultArray[0].ToString();
-                var returnedId = resultArray[1].ToString();
-
-                if (string.Equals(resultType, "EXISTS", StringComparison.Ordinal))
+                var resultArray = (RedisValue[])rawResult!;
+                if (resultArray.Length == 2)
                 {
-                    // Existing job found — apply duplicate policy
-                    var existingJobId = new JobId(Guid.Parse(returnedId!));
-                    var jobHash = await _db.HashGetAllAsync(JobKey(returnedId!)).ConfigureAwait(false);
-                    var existingStatus = GetStatusFromHash(jobHash);
+                    var resultType = resultArray[0].ToString();
+                    var returnedId = resultArray[1].ToString();
 
-                    if (IsActiveState(existingStatus))
+                    if (string.Equals(resultType, "EXISTS", StringComparison.Ordinal))
                     {
-                        return new EnqueueResult(existingJobId, WasRejected: false);
+                        var existingJobId = new JobId(Guid.Parse(returnedId!));
+                        var jobHash = await _db.HashGetAllAsync(JobKey(returnedId!)).ConfigureAwait(false);
+                        var existingStatus = GetStatusFromHash(jobHash);
+
+                        var enqueueResult = ResolveDuplicate(existingJobId, existingStatus, duplicatePolicy);
+
+                        if (enqueueResult.WasRejected || IsActiveState(existingStatus))
+                        {
+                            return enqueueResult;
+                        }
+
+                        // Policy allows re-enqueue: delete stale key and retry once
+                        if (!string.IsNullOrEmpty(idemKey))
+                        {
+                            await _db.KeyDeleteAsync(idemKey).ConfigureAwait(false);
+                        }
+
+                        continue; // retry the loop
                     }
-
-                    var reject = existingStatus == JobStatus.Failed
-                        ? duplicatePolicy is DuplicatePolicy.RejectIfFailed or DuplicatePolicy.RejectAlways
-                        : duplicatePolicy == DuplicatePolicy.RejectAlways;
-
-                    if (reject)
-                    {
-                        return new EnqueueResult(existingJobId, WasRejected: true);
-                    }
-
-                    // Duplicate policy allows re-enqueuing — delete old idempotency key and retry
-                    if (!string.IsNullOrEmpty(idemKey))
-                    {
-                        await _db.KeyDeleteAsync(idemKey).ConfigureAwait(false);
-                    }
-
-                    // Recursively call EnqueueAsync to re-attempt (prevents infinite loops by design)
-                    return await EnqueueAsync(job, duplicatePolicy, cancellationToken).ConfigureAwait(false);
                 }
             }
+
+            break; // new job created — proceed to queue/schedule
         }
 
-        // New job was created by the script — add it to appropriate queue/scheduled set
+        // New job was created by the script — add to appropriate queue/scheduled set
         if (job.Status == JobStatus.AwaitingContinuation && job.ParentJobId.HasValue)
         {
             await _db.SetAddAsync(ContinuationSetKey(job.ParentJobId.Value.Value), id).ConfigureAwait(false);
@@ -1085,6 +1083,20 @@ public sealed class RedisStorageProvider : IStorageProvider
 
     private static bool IsActiveState(JobStatus status) =>
         status is JobStatus.Enqueued or JobStatus.Processing or JobStatus.Scheduled or JobStatus.AwaitingContinuation;
+
+    private static EnqueueResult ResolveDuplicate(JobId id, JobStatus status, DuplicatePolicy policy)
+    {
+        if (IsActiveState(status))
+        {
+            return new EnqueueResult(id, WasRejected: false);
+        }
+
+        var wasRejected = status == JobStatus.Failed
+            ? policy is DuplicatePolicy.RejectIfFailed or DuplicatePolicy.RejectAlways
+            : policy == DuplicatePolicy.RejectAlways;
+
+        return new EnqueueResult(id, WasRejected: wasRejected);
+    }
 
     private static JobStatus GetStatusFromHash(HashEntry[] hash)
     {

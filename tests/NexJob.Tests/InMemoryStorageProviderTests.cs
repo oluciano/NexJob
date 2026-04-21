@@ -1,6 +1,7 @@
 using FluentAssertions;
 using NexJob;
 using NexJob.Internal;
+using NexJob.Storage;
 using Xunit;
 
 namespace NexJob.Tests;
@@ -675,6 +676,84 @@ public sealed class InMemoryStorageProviderTests
         active.Should().NotContain(s => s.Id == "server-stale");
     }
 
+    // ─── CommitJobResultAsync — regression: idempotency index + lock fix ─────
+
+    [Fact]
+    public async Task FindExistingJobByKey_UsesIndex_ReturnsOriginalJobId()
+    {
+        // N1 — Positive: second enqueue with same key returns the original job id (index path)
+        var job = MakeJob(idempotencyKey: "regression-index-key");
+        var first = await _sut.EnqueueAsync(job);
+
+        var duplicate = MakeJob(idempotencyKey: "regression-index-key");
+        var second = await _sut.EnqueueAsync(duplicate);
+
+        second.JobId.Should().Be(first.JobId, "the index must route the lookup to the original job");
+        second.WasRejected.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task CommitJobResultAsync_OnAlreadyTerminalJob_IsNoOp()
+    {
+        // N2 — Negative: calling CommitJobResultAsync on a Succeeded job must be a no-op
+        var job = MakeJob();
+        await _sut.EnqueueAsync(job);
+        var fetched = (await _sut.FetchNextAsync(["default"]))!;
+
+        var successResult = new JobExecutionResult { Succeeded = true, Logs = [], };
+        await _sut.CommitJobResultAsync(fetched.Id, successResult);
+
+        // Second call with a failure result — must not overwrite the terminal state
+        var act = async () => await _sut.CommitJobResultAsync(
+            fetched.Id,
+            new JobExecutionResult
+            {
+                Succeeded = false,
+                Logs = [],
+                Exception = new InvalidOperationException("must not be applied"),
+            });
+
+        await act.Should().NotThrowAsync();
+        fetched.Status.Should().Be(JobStatus.Succeeded, "terminal state must not be overwritten by a second commit");
+    }
+
+    [Fact]
+    public async Task CommitJobResultAsync_ConcurrentCompletion_NeitherDeadlocksNorDropsContinuations()
+    {
+        // N3 — Concurrent: two jobs each with a continuation complete simultaneously — no deadlock
+        var parentA = MakeJob();
+        var parentB = MakeJob();
+        await _sut.EnqueueAsync(parentA);
+        await _sut.EnqueueAsync(parentB);
+
+        var childA = MakeContinuation(parentA.Id);
+        var childB = MakeContinuation(parentB.Id);
+        await _sut.EnqueueAsync(childA);
+        await _sut.EnqueueAsync(childB);
+
+        var fetchedA = (await _sut.FetchNextAsync(["default"]))!;
+        var fetchedB = (await _sut.FetchNextAsync(["default"]))!;
+
+        var successResult = new JobExecutionResult { Succeeded = true, Logs = [], };
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await Task.WhenAll(
+            _sut.CommitJobResultAsync(fetchedA.Id, successResult, cts.Token),
+            _sut.CommitJobResultAsync(fetchedB.Id, successResult, cts.Token));
+
+        cts.IsCancellationRequested.Should().BeFalse("concurrent commits must not deadlock");
+
+        var storedA = await _sut.GetJobByIdAsync(fetchedA.Id);
+        var storedB = await _sut.GetJobByIdAsync(fetchedB.Id);
+        storedA!.Status.Should().Be(JobStatus.Succeeded);
+        storedB!.Status.Should().Be(JobStatus.Succeeded);
+
+        var storedChildA = await _sut.GetJobByIdAsync(childA.Id);
+        var storedChildB = await _sut.GetJobByIdAsync(childB.Id);
+        storedChildA!.Status.Should().Be(JobStatus.Enqueued, "continuation A must be promoted after parent succeeds");
+        storedChildB!.Status.Should().Be(JobStatus.Enqueued, "continuation B must be promoted after parent succeeds");
+    }
+
     // ─── helpers ─────────────────────────────────────────────────────────────
 
     private static JobRecord MakeJob(
@@ -735,6 +814,21 @@ public sealed class InMemoryStorageProviderTests
             CreatedAt = DateTimeOffset.UtcNow,
             MaxAttempts = 10,
             Tags = tags,
+        };
+
+    private static JobRecord MakeContinuation(JobId parentId) =>
+        new()
+        {
+            Id = JobId.New(),
+            JobType = typeof(StubJob).AssemblyQualifiedName!,
+            InputType = typeof(string).AssemblyQualifiedName!,
+            InputJson = "\"cont\"",
+            Queue = "default",
+            Priority = JobPriority.Normal,
+            Status = JobStatus.AwaitingContinuation,
+            ParentJobId = parentId,
+            CreatedAt = DateTimeOffset.UtcNow,
+            MaxAttempts = 10,
         };
 }
 

@@ -571,69 +571,34 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
     {
         if (!_jobs.TryGetValue(jobId.Value, out var job))
         {
-            return Task.CompletedTask; // idempotent: job not found, nothing to do
+            return Task.CompletedTask; // idempotent: job not found
         }
 
         lock (job)
         {
-            // Idempotency guard: if already in a terminal state, skip
             if (job.Status is JobStatus.Succeeded or JobStatus.Failed or JobStatus.Expired)
             {
-                return Task.CompletedTask;
+                return Task.CompletedTask; // idempotency guard
             }
 
             if (result.Succeeded)
             {
-                job.Status = JobStatus.Succeeded;
-                job.CompletedAt = DateTimeOffset.UtcNow;
-                job.HeartbeatAt = null;
-                job.ExecutionLogs = result.Logs;
-
-                // Enqueue continuations inline
-                foreach (var child in _jobs.Values.Where(j => j.ParentJobId == jobId && j.Status == JobStatus.AwaitingContinuation))
-                {
-                    lock (child)
-                    {
-                        if (child.Status == JobStatus.AwaitingContinuation)
-                        {
-                            child.Status = JobStatus.Enqueued;
-                            WriteToChannel(child);
-                        }
-                    }
-                }
-
-                // Update recurring result
-                if (result.RecurringJobId is not null && _recurringJobs.TryGetValue(result.RecurringJobId, out var rj))
-                {
-                    rj.LastExecutionStatus = JobStatus.Succeeded;
-                    rj.LastExecutionError = null;
-                }
+                ApplySuccess(job, result);
+            }
+            else if (result.RetryAt.HasValue)
+            {
+                ApplyRetry(job, result);
             }
             else
             {
-                job.ExecutionLogs = result.Logs;
-                job.LastErrorMessage = result.Exception?.Message;
-                job.LastErrorStackTrace = result.Exception?.StackTrace;
-                job.HeartbeatAt = null;
-
-                if (result.RetryAt.HasValue)
-                {
-                    job.Status = JobStatus.Scheduled;
-                    job.RetryAt = result.RetryAt.Value;
-                }
-                else
-                {
-                    job.Status = JobStatus.Failed;
-                    job.CompletedAt = DateTimeOffset.UtcNow;
-                    job.RetryAt = null;
-
-                    if (result.RecurringJobId is not null && _recurringJobs.TryGetValue(result.RecurringJobId, out var rj))
-                    {
-                        rj.LastExecutionStatus = JobStatus.Failed;
-                        rj.LastExecutionError = result.Exception?.Message;
-                    }
-                }
+                ApplyFailure(job, result);
             }
+        }
+
+        // Promote continuations AFTER releasing lock(job) — no nested lock risk
+        if (result.Succeeded)
+        {
+            PromoteContinuations(jobId);
         }
 
         return Task.CompletedTask;
@@ -735,8 +700,25 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
     private static bool IsActiveState(JobStatus status) =>
         status is JobStatus.Enqueued or JobStatus.Processing or JobStatus.Scheduled or JobStatus.AwaitingContinuation;
 
-    private JobRecord? FindExistingJobByKey(string idempotencyKey) =>
-        _jobs.Values.FirstOrDefault(j => string.Equals(j.IdempotencyKey, idempotencyKey, StringComparison.Ordinal));
+    private static void ApplyRetry(JobRecord job, JobExecutionResult result)
+    {
+        job.ExecutionLogs = result.Logs;
+        job.LastErrorMessage = result.Exception?.Message;
+        job.LastErrorStackTrace = result.Exception?.StackTrace;
+        job.HeartbeatAt = null;
+        job.Status = JobStatus.Scheduled;
+        job.RetryAt = result.RetryAt!.Value;
+    }
+
+    private JobRecord? FindExistingJobByKey(string idempotencyKey)
+    {
+        if (_idempotencyIndex.TryGetValue(idempotencyKey, out var id) && _jobs.TryGetValue(id, out var job))
+        {
+            return job;
+        }
+
+        return null;
+    }
 
     private Channel<Guid>[] GetOrCreateQueueChannels(string queue) =>
         _queues.GetOrAdd(queue, static _ =>
@@ -751,6 +733,59 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
     {
         var channels = GetOrCreateQueueChannels(job.Queue);
         channels[PriorityIndex(job.Priority)].Writer.TryWrite(job.Id.Value);
+    }
+
+    private void ApplySuccess(JobRecord job, JobExecutionResult result)
+    {
+        job.Status = JobStatus.Succeeded;
+        job.CompletedAt = DateTimeOffset.UtcNow;
+        job.HeartbeatAt = null;
+        job.ExecutionLogs = result.Logs;
+
+        if (result.RecurringJobId is not null
+            && _recurringJobs.TryGetValue(result.RecurringJobId, out var rj))
+        {
+            rj.LastExecutionStatus = JobStatus.Succeeded;
+            rj.LastExecutionError = null;
+        }
+    }
+
+    private void ApplyFailure(JobRecord job, JobExecutionResult result)
+    {
+        job.ExecutionLogs = result.Logs;
+        job.LastErrorMessage = result.Exception?.Message;
+        job.LastErrorStackTrace = result.Exception?.StackTrace;
+        job.HeartbeatAt = null;
+        job.Status = JobStatus.Failed;
+        job.CompletedAt = DateTimeOffset.UtcNow;
+        job.RetryAt = null;
+
+        if (result.RecurringJobId is not null
+            && _recurringJobs.TryGetValue(result.RecurringJobId, out var rj))
+        {
+            rj.LastExecutionStatus = JobStatus.Failed;
+            rj.LastExecutionError = result.Exception?.Message;
+        }
+    }
+
+    private void PromoteContinuations(JobId jobId)
+    {
+        foreach (var child in _jobs.Values)
+        {
+            if (child.ParentJobId != jobId || child.Status != JobStatus.AwaitingContinuation)
+            {
+                continue;
+            }
+
+            lock (child)
+            {
+                if (child.Status == JobStatus.AwaitingContinuation)
+                {
+                    child.Status = JobStatus.Enqueued;
+                    WriteToChannel(child);
+                }
+            }
+        }
     }
 
     private void PromoteDueScheduledJobs()

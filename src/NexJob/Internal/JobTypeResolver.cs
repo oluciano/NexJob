@@ -7,38 +7,20 @@ namespace NexJob.Internal;
 internal static class JobTypeResolver
 {
     /// <summary>
-    /// Resolves the CLR <see cref="Type"/> for a job from its persisted type name.
-    /// Returns null if the type cannot be loaded (e.g., due to missing assembly or typo).
+    /// Resolves the CLR <see cref="Type"/> for a job from its assembly-qualified name.
+    /// Returns null if the job type cannot be loaded.
     /// </summary>
     /// <param name="assemblyQualifiedName">The AssemblyQualifiedName stored in the job record.</param>
-    /// <returns>The resolved Type, or null if resolution fails.</returns>
-    public static Type? ResolveJobType(string assemblyQualifiedName)
-    {
-        try
-        {
-            return Type.GetType(assemblyQualifiedName, throwOnError: false);
-        }
-        catch
-        {
-            return null;
-        }
-    }
+    /// <returns>The resolved job <see cref="Type"/>, or null if resolution fails.</returns>
+    public static Type? ResolveJobType(string assemblyQualifiedName) =>
+        Type.GetType(assemblyQualifiedName, throwOnError: false);
 
     /// <summary>
-    /// Resolves the CLR <see cref="Type"/> for a job input from its persisted type name.
-    /// Returns null if the type cannot be loaded.
+    /// Resolves the CLR input <see cref="Type"/> for a job from its assembly-qualified name.
+    /// Returns null if the input type cannot be loaded.
     /// </summary>
-    /// <param name="assemblyQualifiedName">The AssemblyQualifiedName stored in the job record.</param>
-    /// <returns>The resolved Type, or null if resolution fails.</returns>
-    public static Type? ResolveInputType(string assemblyQualifiedName)
-    {
-        try
-        {
-            return Type.GetType(assemblyQualifiedName, throwOnError: false);
-        }
-        catch
-        {
-            return null;
-        }
-    }
+    /// <param name="assemblyQualifiedName">The AssemblyQualifiedName of the input stored in the job record.</param>
+    /// <returns>The resolved input <see cref="Type"/>, or null if resolution fails.</returns>
+    public static Type? ResolveInputType(string assemblyQualifiedName) =>
+        Type.GetType(assemblyQualifiedName, throwOnError: false);
 }

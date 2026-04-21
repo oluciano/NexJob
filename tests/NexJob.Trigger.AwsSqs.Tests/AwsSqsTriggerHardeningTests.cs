@@ -87,4 +87,30 @@ public sealed class AwsSqsTriggerHardeningTests
 
         _sqsMock.Verify(x => x.ChangeMessageVisibilityAsync(It.IsAny<ChangeMessageVisibilityRequest>(), It.IsAny<CancellationToken>()), Times.Once);
     }
+
+    // ─── Lifecycle Branches ────────────────────────────────────────────────
+
+    /// <summary>Tests that StopAsync logs polling task faults.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task StopAsync_WhenPollingTaskFaults_LogsError()
+    {
+        var sut = CreateSut();
+
+        // Mock ReceiveMessageAsync to throw immediately
+        _sqsMock.Setup(x => x.ReceiveMessageAsync(It.IsAny<ReceiveMessageRequest>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new Exception("Polling failed"));
+
+        // Start will launch the task, but it will fault quickly
+        await sut.StartAsync(CancellationToken.None);
+
+        // Wait for it to fault
+        await Task.Delay(50);
+
+        // Act
+        var act = () => sut.StopAsync(CancellationToken.None);
+
+        // Assert: Should not throw (error is logged and swallowed)
+        await act.Should().NotThrowAsync();
+    }
 }

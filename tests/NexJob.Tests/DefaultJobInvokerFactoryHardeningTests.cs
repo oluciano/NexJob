@@ -128,6 +128,30 @@ public sealed class DefaultJobInvokerFactoryHardeningTests
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*Deserialized null input*");
     }
 
+    /// <summary>Tests that scope is disposed on failure.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task PrepareAsync_WhenFailureOccurs_DisposesScope()
+    {
+        var sut = CreateSut();
+        var job = new JobRecord
+        {
+            JobType = "InvalidType",
+            InputType = typeof(NoInput).AssemblyQualifiedName ?? string.Empty,
+        };
+
+        try
+        {
+            await sut.PrepareAsync(job);
+        }
+        catch
+        {
+            // Expected
+        }
+
+        _scope.Verify(x => x.Dispose(), Times.Once);
+    }
+
     // ─── GetOrBuildInvoker Branches ────────────────────────────────────────
 
     /// <summary>Tests that invoker is correctly compiled and cached for NoInput jobs.</summary>

@@ -127,6 +127,10 @@ If ANY answer is NO → fix before returning.
 - Follow reliability patterns
 - Cover the scenario completely
 - No placeholder implementations
+- **3N matrix required:** N1 positive + N2 negative + N3 invalid input
+- **Never modify an existing passing test** to make new code pass
+  - If a test breaks: fix the production code, not the test
+  - Only exception: behavior explicitly changed by architect → add comment `// Behavior changed in vX.Y: <reason>`
 
 ---
 

@@ -62,12 +62,14 @@ internal sealed class MigrationPipeline : IMigrationPipeline
         for (var version = currentVersion; version > storedVersion; version--)
         {
             var descriptor = _descriptors
-                .ToList()
-                .Find(d => d.NewType == currentTargetType);
+                .FirstOrDefault(d => d.NewType == currentTargetType);
 
             if (descriptor is null)
             {
-                break;
+                throw new InvalidOperationException(
+                    $"Missing migration descriptor for type '{currentTargetType.Name}' " +
+                    $"(upgrading from schema version {storedVersion} to {currentVersion}). " +
+                    $"Register a migration from the previous version to '{currentTargetType.Name}'.");
             }
 
             var closedMigrationType = migrationInterfaceType.MakeGenericType(descriptor.OldType, descriptor.NewType);
@@ -75,7 +77,9 @@ internal sealed class MigrationPipeline : IMigrationPipeline
 
             if (migration is null)
             {
-                break;
+                throw new InvalidOperationException(
+                    $"Migration '{closedMigrationType.Name}' is not registered in the DI container. " +
+                    $"Register IJobMigration<{descriptor.OldType.Name}, {descriptor.NewType.Name}> before starting NexJob.");
             }
 
             chain.Insert(0, migration);

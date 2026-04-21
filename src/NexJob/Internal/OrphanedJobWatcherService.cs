@@ -50,6 +50,11 @@ internal sealed class OrphanedJobWatcherService : BackgroundService
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error in OrphanedJobWatcherService");
+                // Cap backoff to HeartbeatTimeout so fast test loops are not stalled.
+                var errorDelay = TimeSpan.FromSeconds(5) < _options.HeartbeatTimeout
+                    ? TimeSpan.FromSeconds(5)
+                    : _options.HeartbeatTimeout;
+                await Task.Delay(errorDelay, stoppingToken).ConfigureAwait(false);
             }
         }
 

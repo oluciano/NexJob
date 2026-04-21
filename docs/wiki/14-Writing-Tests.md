@@ -1,6 +1,38 @@
 # Writing Tests
 
-Test jobs reliably without mocks where possible. Use InMemory storage for fast, deterministic tests.
+NexJob follows a multi-layered testing strategy to ensure both speed and reliability.
+
+---
+
+## Testing Pyramid & Strategy
+
+| Layer | Project | Focus | 3N Applied | Environment |
+| :--- | :--- | :--- | :--- | :--- |
+| **Unit** | `*.Tests` | Isolated logic, branch coverage | Full (N1, N2, N3) | InMemory / Mocks |
+| **Integration** | `*.IntegrationTests` | Happy path, infra contracts | N1 | Real Storage (Docker) |
+| **Reliability** | `*.ReliabilityTests` | Chaos, concurrency, crash recovery | N2 (Complex failures) | Real Storage (Stress) |
+| **Distributed** | `*.ReliabilityTests.Distributed` | Cluster coordination, failover | N2 (Network/Cluster) | Multi-node |
+
+> **Case Study: Recurring Job Distributed Lock (N2 Distributed)**
+> A unit test (N1/N2) can verify that the code *calls* `TryAcquireLockAsync`. However, only a **Distributed Reliability Test** can verify that when 5 instances of NexJob start at the exact same millisecond, exactly one instance enqueues the recurring job while the other 4 log a "lock not acquired" message. This prevents double-firing in production clusters.
+
+### 1. Unit Tests (The Foundation)
+Target 100% logic coverage per class. Use mocks (`Moq`) for external dependencies.
+**Mandate:** 80% global line coverage floor for PR approval.
+
+### 2. Integration Tests (Contract Validation)
+Ensure implementations (Postgres, SQL Server, etc.) correctly fulfill `IJobStorage` and `IRecurringStorage` contracts. Focus on N1 (Happy Path) across all supported providers.
+
+### 3. Reliability Tests (Hardening)
+Test complex failure scenarios that cannot be easily mocked:
+- **Crash Recovery:** Process death during execution.
+- **High Concurrency:** Race conditions in `FetchNextAsync`.
+- **Latency:** Signal-to-execution delay under load.
+
+### 4. Distributed Reliability (Cluster)
+Test multi-node invariants:
+- **Distributed Locks:** Ensuring a recurring job only fires once in a cluster.
+- **Orphaned Jobs:** Recovering jobs from a crashed node.
 
 ---
 

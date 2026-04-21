@@ -31,17 +31,20 @@ public sealed class JobInternalUtilsHardeningTests
 
     // ─── MigrationPipeline ───────────────────────────────────────────────────
 
-    /// <summary>Tests that migration pipeline handles cases with no migrations registered.</summary>
+    // Behavior changed in v4.0: missing migration descriptor now throws instead of silently returning original JSON.
+
+    /// <summary>Tests that migration pipeline throws when no descriptor is registered for a version gap.</summary>
     [Fact]
-    public void MigrationPipeline_NoMigrations_ReturnsOriginalJson()
+    public void MigrationPipeline_NoMigrations_ThrowsInvalidOperationException()
     {
         var sp = new Mock<IServiceProvider>();
         var sut = new MigrationPipeline(sp.Object, Enumerable.Empty<MigrationDescriptor>());
         var json = "{\"foo\":\"bar\"}";
 
-        var result = sut.Migrate(json, 1, 2, typeof(object));
+        var act = () => sut.Migrate(json, 1, 2, typeof(object));
 
-        result.Should().Be(json);
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*Missing migration descriptor*");
     }
 
     /// <summary>Support job.</summary>

@@ -103,6 +103,22 @@ public sealed class DashboardMiddleware
         await context.Response.WriteAsync(html).ConfigureAwait(false);
     }
 
+    private static bool TryGetJobId(string subPath, out JobId jobId)
+    {
+        var parts = subPath.Split('/');
+        if (parts.Length >= 2 && Guid.TryParse(parts[1], out var guid))
+        {
+            jobId = new JobId(guid);
+            return true;
+        }
+
+        jobId = default;
+        return false;
+    }
+
+    private static string GetRecurringId(string subPath) =>
+        Uri.UnescapeDataString(subPath.Split('/')[1]);
+
     private static async Task<string> RenderAsync<TComponent>(
         HtmlRenderer renderer, ParameterView parameters)
         where TComponent : IComponent
@@ -153,60 +169,78 @@ public sealed class DashboardMiddleware
         var recurringStorage = context.RequestServices.GetRequiredService<IRecurringStorage>();
         var dashboardStorage = context.RequestServices.GetRequiredService<IDashboardStorage>();
         var controlService = context.RequestServices.GetRequiredService<IJobControlService>();
+        var runtimeStore = context.RequestServices.GetRequiredService<IRuntimeSettingsStore>();
 
-        if (subPath.StartsWith("jobs/", StringComparison.Ordinal) && subPath.Contains("/runnow", StringComparison.Ordinal))
+        if (subPath.StartsWith("jobs/", StringComparison.Ordinal))
         {
-            var idStr = subPath.Split('/')[1];
-            if (Guid.TryParse(idStr, out var guid))
-            {
-                await controlService.RequeueJobAsync(new JobId(guid), context.RequestAborted).ConfigureAwait(false);
-                LocalRedirect(context, $"{_pathPrefix}/jobs/{guid}");
-                return true;
-            }
+            return await TryHandleJobActionAsync(context, subPath, controlService).ConfigureAwait(false)
+                || await TryHandleBulkActionAsync(context, subPath, dashboardStorage, controlService).ConfigureAwait(false);
         }
 
-        if (subPath.StartsWith("jobs/", StringComparison.Ordinal) && subPath.Contains("/requeue", StringComparison.Ordinal))
+        if (subPath.StartsWith("recurring/", StringComparison.Ordinal))
         {
-            var idStr = subPath.Split('/')[1];
-            if (Guid.TryParse(idStr, out var guid))
-            {
-                await controlService.RequeueJobAsync(new JobId(guid), context.RequestAborted).ConfigureAwait(false);
-                LocalRedirect(context, $"{_pathPrefix}/failed");
-                return true;
-            }
+            return await TryHandleRecurringActionAsync(context, subPath, recurringStorage).ConfigureAwait(false);
         }
 
-        if (subPath.StartsWith("jobs/", StringComparison.Ordinal) && subPath.Contains("/delete", StringComparison.Ordinal))
+        if (subPath.StartsWith("settings/", StringComparison.Ordinal)
+            || subPath.StartsWith("queues/", StringComparison.Ordinal))
         {
-            var idStr = subPath.Split('/')[1];
-            if (Guid.TryParse(idStr, out var guid))
-            {
-                await controlService.DeleteJobAsync(new JobId(guid), context.RequestAborted).ConfigureAwait(false);
-                LocalRedirect(context, $"{_pathPrefix}/failed");
-                return true;
-            }
+            return await TryHandleSettingsActionAsync(context, subPath, runtimeStore, controlService).ConfigureAwait(false);
         }
 
-        if (subPath.StartsWith("recurring/", StringComparison.Ordinal) && subPath.Contains("/delete", StringComparison.Ordinal))
+        return false;
+    }
+
+    private async Task<bool> TryHandleJobActionAsync(
+        HttpContext context, string subPath, IJobControlService controlService)
+    {
+        if (subPath.Contains("/runnow", StringComparison.Ordinal) && TryGetJobId(subPath, out var runNowId))
         {
-            var recurringId = Uri.UnescapeDataString(subPath.Split('/')[1]);
+            await controlService.RequeueJobAsync(runNowId, context.RequestAborted).ConfigureAwait(false);
+            LocalRedirect(context, $"{_pathPrefix}/jobs/{runNowId.Value}");
+            return true;
+        }
+
+        if (subPath.Contains("/requeue", StringComparison.Ordinal) && TryGetJobId(subPath, out var requeueId))
+        {
+            await controlService.RequeueJobAsync(requeueId, context.RequestAborted).ConfigureAwait(false);
+            LocalRedirect(context, $"{_pathPrefix}/failed");
+            return true;
+        }
+
+        if (subPath.Contains("/delete", StringComparison.Ordinal) && TryGetJobId(subPath, out var deleteId))
+        {
+            await controlService.DeleteJobAsync(deleteId, context.RequestAborted).ConfigureAwait(false);
+            LocalRedirect(context, $"{_pathPrefix}/failed");
+            return true;
+        }
+
+        return false;
+    }
+
+    private async Task<bool> TryHandleRecurringActionAsync(
+        HttpContext context, string subPath, IRecurringStorage recurringStorage)
+    {
+        if (subPath.Contains("/delete", StringComparison.Ordinal))
+        {
+            var recurringId = GetRecurringId(subPath);
             await recurringStorage.DeleteRecurringJobAsync(recurringId, context.RequestAborted).ConfigureAwait(false);
             LocalRedirect(context, $"{_pathPrefix}/recurring");
             return true;
         }
 
-        if (subPath.StartsWith("recurring/", StringComparison.Ordinal) && subPath.Contains("/trigger", StringComparison.Ordinal))
+        if (subPath.Contains("/trigger", StringComparison.Ordinal))
         {
-            var recurringId = Uri.UnescapeDataString(subPath.Split('/')[1]);
+            var recurringId = GetRecurringId(subPath);
             await recurringStorage.SetRecurringJobNextExecutionAsync(
                 recurringId, DateTimeOffset.UtcNow.AddSeconds(-1), context.RequestAborted).ConfigureAwait(false);
             LocalRedirect(context, $"{_pathPrefix}/recurring/{Uri.UnescapeDataString(recurringId)}");
             return true;
         }
 
-        if (subPath.StartsWith("recurring/", StringComparison.Ordinal) && subPath.Contains("/pause", StringComparison.Ordinal))
+        if (subPath.Contains("/pause", StringComparison.Ordinal))
         {
-            var recurringId = Uri.UnescapeDataString(subPath.Split('/')[1]);
+            var recurringId = GetRecurringId(subPath);
             var allJobs = await recurringStorage.GetRecurringJobsAsync(context.RequestAborted).ConfigureAwait(false);
             var existing = allJobs.FirstOrDefault(r => string.Equals(r.RecurringJobId, recurringId, StringComparison.Ordinal));
             if (existing is not null)
@@ -218,9 +252,9 @@ public sealed class DashboardMiddleware
             return true;
         }
 
-        if (subPath.StartsWith("recurring/", StringComparison.Ordinal) && subPath.Contains("/resume", StringComparison.Ordinal))
+        if (subPath.Contains("/resume", StringComparison.Ordinal))
         {
-            var recurringId = Uri.UnescapeDataString(subPath.Split('/')[1]);
+            var recurringId = GetRecurringId(subPath);
             var allJobs = await recurringStorage.GetRecurringJobsAsync(context.RequestAborted).ConfigureAwait(false);
             var existing = allJobs.FirstOrDefault(r => string.Equals(r.RecurringJobId, recurringId, StringComparison.Ordinal));
             if (existing is not null)
@@ -232,9 +266,9 @@ public sealed class DashboardMiddleware
             return true;
         }
 
-        if (subPath.StartsWith("recurring/", StringComparison.Ordinal) && subPath.Contains("/update-config", StringComparison.Ordinal))
+        if (subPath.Contains("/update-config", StringComparison.Ordinal))
         {
-            var recurringId = Uri.UnescapeDataString(subPath.Split('/')[1]);
+            var recurringId = GetRecurringId(subPath);
             var form = await context.Request.ReadFormAsync(context.RequestAborted).ConfigureAwait(false);
             var cronOverrideRaw = form["cronOverride"].ToString();
 
@@ -287,23 +321,21 @@ public sealed class DashboardMiddleware
             return true;
         }
 
-        if (subPath.StartsWith("recurring/", StringComparison.Ordinal) && subPath.Contains("/force-delete", StringComparison.Ordinal))
+        if (subPath.Contains("/force-delete", StringComparison.Ordinal))
         {
-            var recurringId = Uri.UnescapeDataString(subPath.Split('/')[1]);
+            var recurringId = GetRecurringId(subPath);
             await recurringStorage.ForceDeleteRecurringJobAsync(recurringId, context.RequestAborted).ConfigureAwait(false);
             LocalRedirect(context, $"{_pathPrefix}/recurring");
             return true;
         }
 
-        if (subPath.StartsWith("recurring/", StringComparison.Ordinal) && subPath.Contains("/restore", StringComparison.Ordinal))
+        if (subPath.Contains("/restore", StringComparison.Ordinal))
         {
-            var recurringId = Uri.UnescapeDataString(subPath.Split('/')[1]);
+            var recurringId = GetRecurringId(subPath);
             await recurringStorage.RestoreRecurringJobAsync(recurringId, context.RequestAborted).ConfigureAwait(false);
             LocalRedirect(context, $"{_pathPrefix}/recurring/{Uri.EscapeDataString(recurringId)}");
             return true;
         }
-
-        // ── Bulk actions ──────────────────────────────────────────────────────
 
         if (string.Equals(subPath, "recurring/bulk", StringComparison.Ordinal))
         {
@@ -341,72 +373,102 @@ public sealed class DashboardMiddleware
             return true;
         }
 
-        if (string.Equals(subPath, "jobs/bulk", StringComparison.Ordinal) ||
-            string.Equals(subPath, "jobs/bulk-requeue", StringComparison.Ordinal) ||
-            string.Equals(subPath, "jobs/bulk-delete", StringComparison.Ordinal))
+        if (string.Equals(subPath, "recurring/pause-all", StringComparison.Ordinal))
         {
-            string action;
-            string[] ids;
-
-            if (context.Request.ContentType?.StartsWith("application/json", StringComparison.OrdinalIgnoreCase) == true)
-            {
-                var payload = await context.Request.ReadFromJsonAsync<BulkActionRequest>(context.RequestAborted).ConfigureAwait(false);
-                if (payload is null)
-                {
-                    return false;
-                }
-
-                action = subPath.EndsWith("-requeue", StringComparison.Ordinal) ? "requeue" : "delete";
-                ids = payload.Ids;
-            }
-            else
-            {
-                var form = await context.Request.ReadFormAsync(context.RequestAborted).ConfigureAwait(false);
-                action = form["bulkAction"].ToString();
-                var rawIds = form["ids"].ToArray();
-                ids = rawIds.Where(i => i is not null).Select(i => i!).ToArray();
-            }
-
-            // if nothing selected (and from form), act on all failed jobs
-            if (ids.Length == 0 && string.Equals(action, "requeue", StringComparison.Ordinal))
-            {
-                var all = await dashboardStorage.GetJobsAsync(
-                    new JobFilter { Status = JobStatus.Failed }, 1, int.MaxValue, context.RequestAborted).ConfigureAwait(false);
-                ids = all.Items.Select(j => j.Id.Value.ToString()).ToArray();
-            }
-
-            foreach (var idStr in ids)
-            {
-                if (!Guid.TryParse(idStr, out var guid))
-                {
-                    continue;
-                }
-
-                var jobId = new JobId(guid);
-                if (string.Equals(action, "requeue", StringComparison.Ordinal))
-                {
-                    await controlService.RequeueJobAsync(jobId, context.RequestAborted).ConfigureAwait(false);
-                }
-                else if (string.Equals(action, "delete", StringComparison.Ordinal))
-                {
-                    await controlService.DeleteJobAsync(jobId, context.RequestAborted).ConfigureAwait(false);
-                }
-            }
-
-            if (context.Request.Headers.ContainsKey("X-Requested-With"))
-            {
-                context.Response.StatusCode = 200;
-                return true;
-            }
-
-            LocalRedirect(context, $"{_pathPrefix}/failed");
+            var runtimeStore = context.RequestServices.GetRequiredService<IRuntimeSettingsStore>();
+            var rt = await runtimeStore.GetAsync(context.RequestAborted).ConfigureAwait(false);
+            rt.RecurringJobsPaused = true;
+            await runtimeStore.SaveAsync(rt, context.RequestAborted).ConfigureAwait(false);
+            LocalRedirect(context, $"{_pathPrefix}/settings");
             return true;
         }
 
-        // ── Settings live-config actions ──────────────────────────────────────
+        if (string.Equals(subPath, "recurring/resume-all", StringComparison.Ordinal))
+        {
+            var runtimeStore = context.RequestServices.GetRequiredService<IRuntimeSettingsStore>();
+            var rt = await runtimeStore.GetAsync(context.RequestAborted).ConfigureAwait(false);
+            rt.RecurringJobsPaused = false;
+            await runtimeStore.SaveAsync(rt, context.RequestAborted).ConfigureAwait(false);
+            LocalRedirect(context, $"{_pathPrefix}/settings");
+            return true;
+        }
 
-        var runtimeStore = context.RequestServices.GetRequiredService<IRuntimeSettingsStore>();
+        return false;
+    }
 
+    private async Task<bool> TryHandleBulkActionAsync(
+        HttpContext context, string subPath,
+        IDashboardStorage dashboardStorage, IJobControlService controlService)
+    {
+        if (!string.Equals(subPath, "jobs/bulk", StringComparison.Ordinal) &&
+            !string.Equals(subPath, "jobs/bulk-requeue", StringComparison.Ordinal) &&
+            !string.Equals(subPath, "jobs/bulk-delete", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        string action;
+        string[] ids;
+
+        if (context.Request.ContentType?.StartsWith("application/json", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            var payload = await context.Request.ReadFromJsonAsync<BulkActionRequest>(context.RequestAborted).ConfigureAwait(false);
+            if (payload is null)
+            {
+                return false;
+            }
+
+            action = subPath.EndsWith("-requeue", StringComparison.Ordinal) ? "requeue" : "delete";
+            ids = payload.Ids;
+        }
+        else
+        {
+            var form = await context.Request.ReadFormAsync(context.RequestAborted).ConfigureAwait(false);
+            action = form["bulkAction"].ToString();
+            var rawIds = form["ids"].ToArray();
+            ids = rawIds.Where(i => i is not null).Select(i => i!).ToArray();
+        }
+
+        // if nothing selected (and from form), act on all failed jobs
+        if (ids.Length == 0 && string.Equals(action, "requeue", StringComparison.Ordinal))
+        {
+            var all = await dashboardStorage.GetJobsAsync(
+                new JobFilter { Status = JobStatus.Failed }, 1, int.MaxValue, context.RequestAborted).ConfigureAwait(false);
+            ids = all.Items.Select(j => j.Id.Value.ToString()).ToArray();
+        }
+
+        foreach (var idStr in ids)
+        {
+            if (!Guid.TryParse(idStr, out var guid))
+            {
+                continue;
+            }
+
+            var jobId = new JobId(guid);
+            if (string.Equals(action, "requeue", StringComparison.Ordinal))
+            {
+                await controlService.RequeueJobAsync(jobId, context.RequestAborted).ConfigureAwait(false);
+            }
+            else if (string.Equals(action, "delete", StringComparison.Ordinal))
+            {
+                await controlService.DeleteJobAsync(jobId, context.RequestAborted).ConfigureAwait(false);
+            }
+        }
+
+        if (context.Request.Headers.ContainsKey("X-Requested-With"))
+        {
+            context.Response.StatusCode = 200;
+            return true;
+        }
+
+        LocalRedirect(context, $"{_pathPrefix}/failed");
+        return true;
+    }
+
+    private async Task<bool> TryHandleSettingsActionAsync(
+        HttpContext context, string subPath, IRuntimeSettingsStore runtimeStore,
+        IJobControlService controlService)
+    {
         if (string.Equals(subPath, "settings/workers", StringComparison.Ordinal))
         {
             var form = await context.Request.ReadFormAsync(context.RequestAborted).ConfigureAwait(false);
@@ -481,24 +543,6 @@ public sealed class DashboardMiddleware
         {
             var queueName = Uri.UnescapeDataString(subPath.Split('/')[1]);
             await controlService.ResumeQueueAsync(queueName, context.RequestAborted).ConfigureAwait(false);
-            LocalRedirect(context, $"{_pathPrefix}/settings");
-            return true;
-        }
-
-        if (string.Equals(subPath, "recurring/pause-all", StringComparison.Ordinal))
-        {
-            var rt = await runtimeStore.GetAsync(context.RequestAborted).ConfigureAwait(false);
-            rt.RecurringJobsPaused = true;
-            await runtimeStore.SaveAsync(rt, context.RequestAborted).ConfigureAwait(false);
-            LocalRedirect(context, $"{_pathPrefix}/settings");
-            return true;
-        }
-
-        if (string.Equals(subPath, "recurring/resume-all", StringComparison.Ordinal))
-        {
-            var rt = await runtimeStore.GetAsync(context.RequestAborted).ConfigureAwait(false);
-            rt.RecurringJobsPaused = false;
-            await runtimeStore.SaveAsync(rt, context.RequestAborted).ConfigureAwait(false);
             LocalRedirect(context, $"{_pathPrefix}/settings");
             return true;
         }
