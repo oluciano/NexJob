@@ -60,7 +60,8 @@ jobs:
           # Triggers
           dotnet pack src/NexJob.Trigger.AwsSqs/NexJob.Trigger.AwsSqs.csproj --no-build --configuration Release --output ./nupkg
           dotnet pack src/NexJob.Trigger.AzureServiceBus/NexJob.Trigger.AzureServiceBus.csproj --no-build --configuration Release --output ./nupkg
-          dotnet pack src/NexJob.Trigger.Kafka/NexJob.Trigger.Kafka.csproj --no-build --configuration Release --output ./nupkg
+          # Kafka (Unified)
+          dotnet pack src/NexJob.Kafka/NexJob.Kafka.csproj --no-build --configuration Release --output ./nupkg
           dotnet pack src/NexJob.Trigger.RabbitMQ/NexJob.Trigger.RabbitMQ.csproj --no-build --configuration Release --output ./nupkg
           dotnet pack src/NexJob.Trigger.GooglePubSub/NexJob.Trigger.GooglePubSub.csproj --no-build --configuration Release --output ./nupkg
           
