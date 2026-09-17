@@ -6,6 +6,23 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`NexJob.Kafka` (Unified Package)**:
+  - Added resilient Kafka Outbox Producer enabling durable message publishing backed by NexJob storage, retries with jitter, and dead-letter handling.
+  - `KafkaProducerOptions`: Broker options with DataAnnotations validation and `ValidateOnStart()` fail-fast startup.
+  - `IKafkaProducerClient` & `ConfluentKafkaProducerClient`: Singleton producer client with automatic graceful flush on application shutdown.
+  - `KafkaProducerJob`: Durable `IJob<KafkaPublishPayload>` background job with OpenTelemetry `traceparent` context propagation and custom headers injection.
+  - `scheduler.EnqueueKafkaAsync`: Unified scheduling extensions supporting strongly typed objects `<T>` (serialized via `System.Text.Json`), raw strings, and raw byte arrays.
+  - `scheduler.EnqueueKafkaRawAsync`: Dedicated overloads for explicit raw string and binary byte array publishing.
+  - Fluent registration extensions on `NexJobBuilder` and `IServiceCollection`: `AddKafkaProducer` and `AddKafkaTrigger`.
+  - `tests/NexJob.Kafka.IntegrationTests`: Integration testing with real Kafka broker via Testcontainers.
+  - Complete documentation: `src/NexJob.Kafka/README.md`, `docs/wiki/20-Kafka.md`, and 12-Factor App / Docker / Kubernetes guidelines in `docs/wiki/11-Configuration-Reference.md`.
+
+### Changed
+
+- **Package Renaming**: Renamed `NexJob.Trigger.Kafka` to `NexJob.Kafka` (`NexJob.Kafka.csproj`), unifying consumer triggers and outbox producer into a single first-class integration package.
+
 ## [4.0.1] - 2026-09-17
 
 ### Security

@@ -3,15 +3,18 @@
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <PackageId>NexJob.Trigger.Kafka</PackageId>
+    <PackageId>NexJob.Kafka</PackageId>
     <IsPackable>true</IsPackable>
-    <Description>Kafka trigger for NexJob — enqueue jobs from Kafka messages.</Description>
-    <PackageTags>nexjob;background-jobs;kafka;trigger</PackageTags>
+    <Description>Apache Kafka integration for NexJob — durable outbox producer and message-driven triggers.</Description>
+    <PackageTags>nexjob;background-jobs;kafka;trigger;outbox;producer</PackageTags>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
 
   <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>NexJob.Kafka.Tests</_Parameter1>
+    </AssemblyAttribute>
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
       <_Parameter1>NexJob.Trigger.Kafka.Tests</_Parameter1>
     </AssemblyAttribute>

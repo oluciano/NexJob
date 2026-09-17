@@ -119,6 +119,42 @@ builder.Services.AddNexJob(builder.Configuration, options =>
 
 ---
 
+## Environment Variables (Docker & Kubernetes / 12-Factor Apps)
+
+NexJob is built for cloud-native deployments. Configuration does not need to live in `appsettings.json` — all options can be supplied via environment variables in Docker and Kubernetes.
+
+### 1. Hierarchical .NET Mapping (`NexJob__*`)
+Any `NexJob` configuration key can be supplied using the standard .NET double-underscore (`__`) syntax:
+
+```bash
+# In Dockerfile, docker-compose.yml, or Kubernetes Deployment manifest:
+export NexJob__Workers=20
+export NexJob__PollingInterval="00:00:10"
+export NexJob__MaxAttempts=5
+export NexJob__Dashboard__Enabled="true"
+```
+
+When registering via `IConfiguration`:
+```csharp
+builder.Services.AddNexJob(builder.Configuration);
+```
+.NET automatically binds the environment variables into `NexJobOptions`.
+
+### 2. Direct Retrieval (`Environment.GetEnvironmentVariable`)
+Options actions allow direct environment variable retrieval without requiring configuration providers:
+
+```csharp
+builder.Services.AddNexJob(options =>
+{
+    if (int.TryParse(Environment.GetEnvironmentVariable("NEXJOB_WORKERS"), out var workers))
+    {
+        options.Workers = workers;
+    }
+});
+```
+
+---
+
 ## Runtime Settings
 
 Modifiable at runtime via dashboard or API. Persisted in storage.

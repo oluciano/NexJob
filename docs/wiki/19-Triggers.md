@@ -103,22 +103,29 @@ builder.Services.AddNexJobRabbitMqTrigger(options =>
 
 ## Kafka
 
+> [!NOTE]
+> Kafka capabilities have evolved from a simple trigger into a dedicated, unified package: **`NexJob.Kafka`**.
+> It provides both **Kafka Triggers (Consumers)** and a **Resilient Outbox Producer**.
+> For full configuration, environment variables, and producer patterns, see the dedicated guide: **[Kafka Integration (20-Kafka.md)](20-Kafka.md)**.
+
 Installation:
 ```bash
-dotnet add package NexJob.Trigger.Kafka
+dotnet add package NexJob.Kafka
 ```
 
-Usage:
+Usage (Consumer / Trigger):
 ```csharp
-using NexJob.Trigger.Kafka;
+using NexJob.Kafka;
 
-builder.Services.AddNexJobKafkaTrigger(options =>
-{
-    options.BootstrapServers = "localhost:9092";
-    options.Topic = "nexjob-jobs";
-    options.GroupId = "nexjob-consumer-group";
-});
+builder.Services.AddNexJob()
+    .AddKafkaTrigger(options =>
+    {
+        options.BootstrapServers = "localhost:9092";
+        options.Topic = "nexjob-jobs";
+        options.GroupId = "nexjob-consumer-group";
+    });
 ```
+*(Legacy `AddNexJobKafkaTrigger` remains supported for backward compatibility).*
 
 ---
 
