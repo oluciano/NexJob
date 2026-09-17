@@ -79,11 +79,12 @@ public sealed class ThrottleEndToEndTests
         // All 4 jobs should complete
         await tcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
+        // Behavior changed in v4.0.1: wait for host shutdown to ensure worker commits job result to storage before asserting metrics
+        await host.StopAsync();
+
         var storage = (InMemoryStorageProvider)host.Services.GetRequiredService<NexJob.Storage.IStorageProvider>();
         var metrics = await storage.GetMetricsAsync();
         metrics.Succeeded.Should().BeGreaterOrEqualTo(1);
-
-        await host.StopAsync();
     }
 }
 
