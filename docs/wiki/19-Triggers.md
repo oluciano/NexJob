@@ -202,6 +202,58 @@ Key features:
 
 ---
 
+## Salesforce Streaming API (Legacy / CometD)
+
+Installation:
+```bash
+dotnet add package NexJob.Trigger.SalesforceStreaming
+```
+
+Consumes Salesforce PushTopic events, Change Data Capture (CDC), and Platform Events over HTTP long-polling using the CometD/Bayeux protocol. Designed for legacy environments and orgs connecting via standard Bayeux endpoints without gRPC/HTTP2 requirements.
+
+Usage:
+```csharp
+using NexJob;
+using NexJob.Trigger.SalesforceStreaming;
+
+// Register trigger with default SalesforceStreamingEventJob
+builder.Services.AddNexJob()
+    .AddSalesforceStreamingTrigger(options =>
+    {
+        options.Channel = "/data/Order__ChangeEvent";
+        options.Authentication.AuthType = SalesforceStreamingAuthType.OAuth2ClientCredentials;
+        options.Authentication.AuthEndpoint = "https://login.salesforce.com/services/oauth2/token";
+        options.Authentication.ClientId = "3MVG9...";
+        options.Authentication.ClientSecret = "secret...";
+        options.TargetQueue = "salesforce-events";
+        options.ReplayPreset = SalesforceStreamingReplayPreset.Latest;
+    });
+
+// Or register with a custom strongly-typed job
+builder.Services.AddNexJob()
+    .AddSalesforceStreamingTrigger<ProcessSalesforceOrderJob>(options =>
+    {
+        options.Channel = "/topic/InvoiceUpdates";
+        options.Authentication.AuthType = SalesforceStreamingAuthType.OAuth2UsernamePassword;
+        options.Authentication.ClientId = "3MVG9...";
+        options.Authentication.ClientSecret = "secret...";
+        options.Authentication.Username = "integration@company.com";
+        options.Authentication.Password = "Password123";
+        options.Authentication.SecurityToken = "TokenXYZ";
+        options.DeadLetterQueue = "salesforce-dlq";
+    });
+```
+
+Key features:
+- **CometD/Bayeux Protocol**: Standard Bayeux handshake, subscription with replay extension, long-polling connect loop, and graceful disconnect.
+- **Multi-Authentication Support**: OAuth 2.0 Username-Password, OAuth 2.0 Client Credentials, and direct Session ID / Bearer token.
+- **Replay ID Checkpointing**: `IStreamingReplayIdStore` with atomic file-based persistence (`FileStreamingReplayIdStore`) and memory store (`InMemoryStreamingReplayIdStore`).
+- **Session Expiry Resilience**: Automatic token invalidation and re-handshake upon `403::Unknown client` session expiry.
+- **Exponential Backoff**: Resilient reconnection loop with configurable delays and backoff multipliers.
+- **All 5 Trigger Guarantees**: Guaranteed at-least-once enqueue, broker-native idempotency keys, W3C traceparent propagation, dispatcher signal, and commit replay ID only after enqueue.
+
+---
+
 ## Error handling
 
 **Malformed message (missing `nexjob.job_type`):**

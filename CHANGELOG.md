@@ -4,6 +4,22 @@ All notable changes to NexJob are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`NexJob.Trigger.SalesforceStreaming`**:
+  - Implemented Salesforce Streaming API trigger supporting the CometD/Bayeux protocol over HTTP long-polling (issue #133).
+  - Compatible with PushTopic (`/topic/*`), Change Data Capture (`/data/*`), Platform Events (`/event/*`), and Generic Streaming (`/u/*`) channels.
+  - Multi-authentication support: OAuth 2.0 Username-Password flow, OAuth 2.0 Client Credentials flow, and direct Session ID / Bearer token.
+  - Bayeux protocol client (`ISalesforceBayeuxClient`) handling handshake, replay extension subscription, long-polling connect loop, and graceful disconnect.
+  - Resilient Replay ID checkpointing via `IStreamingReplayIdStore`, including atomic file-based persistence (`FileStreamingReplayIdStore`) and in-memory store (`InMemoryStreamingReplayIdStore`).
+  - Automatic session recovery and re-handshake on `403::Unknown client` / session expiry with exponential backoff on connection drops.
+  - All 5 Trigger Guarantees: at-least-once delivery, broker-native idempotency keys, W3C `traceparent` context propagation, automatic dispatcher wake-up signaling, and replay ID commits strictly after successful enqueue.
+  - Fluent registration extensions on `IServiceCollection` and `NexJobBuilder` (`AddSalesforceStreamingTrigger<TJob>` and `AddNexJobSalesforceStreamingTrigger`).
+  - Comprehensive unit test suite with 3N matrix achieving 90.1% line coverage (`tests/NexJob.Trigger.SalesforceStreaming.Tests`).
+  - Complete documentation in `src/NexJob.Trigger.SalesforceStreaming/README.md` and `docs/wiki/19-Triggers.md`.
+
 ## [5.0.0] - 2026-09-17
 
 ### Added

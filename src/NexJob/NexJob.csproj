@@ -46,6 +46,9 @@
       <_Parameter1>NexJob.Trigger.Salesforce</_Parameter1>
     </AssemblyAttribute>
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>NexJob.Trigger.SalesforceStreaming</_Parameter1>
+    </AssemblyAttribute>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
       <_Parameter1>NexJob.Trigger.AwsSqs.Tests</_Parameter1>
     </AssemblyAttribute>
   </ItemGroup>
