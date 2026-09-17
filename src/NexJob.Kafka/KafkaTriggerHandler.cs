@@ -51,6 +51,8 @@ internal sealed class KafkaTriggerHandler : BackgroundService
 
         _consumer.Subscribe(_options.Topic);
 
+        await Task.Yield();
+
         while (!stoppingToken.IsCancellationRequested)
         {
             ConsumeResult<string, string>? result = null;

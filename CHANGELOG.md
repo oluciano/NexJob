@@ -4,7 +4,83 @@ All notable changes to NexJob are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [5.0.0] - 2026-09-17
+
+### Added
+
+- **`NexJob.Trigger.Salesforce`**:
+  - Implemented Salesforce Pub/Sub API trigger consuming Change Data Capture (CDC) events and custom Platform Events over bidirectional gRPC streams.
+  - Apache Avro schema caching (`ISalesforceSchemaService`) and binary payload decoding to JSON.
+  - Resilient Replay ID checkpointing via `IReplayIdStore`, including atomic file-based persistence (`FileReplayIdStore`) and memory store (`InMemoryReplayIdStore`).
+  - Replay fallback policies (`ReplayFallbackPolicy.FailFast`, `ResetToLatest`, `ResetToEarliest`) handling expired retention offsets.
+  - Automatic OAuth2 client credentials token provider (`SalesforceTokenProvider`) with thread-safe caching and proactive refresh.
+  - Fluent registration extensions on `NexJobBuilder` and `IServiceCollection` (`AddSalesforceTrigger<TJob>` and `AddSalesforceTrigger`).
+  - Unit tests (`tests/NexJob.Trigger.Salesforce.Tests`, 85 tests) and in-process mock Kestrel gRPC/OAuth integration tests (`tests/NexJob.Trigger.Salesforce.IntegrationTests`).
+  - Complete documentation in `src/NexJob.Trigger.Salesforce/README.md` and `docs/wiki/19-Triggers.md`.
+
+- **`NexJob.RabbitMQ` (Unified Package)**:
+  - Added resilient RabbitMQ Outbox Producer enabling durable message publishing backed by NexJob storage, Publisher Confirms, retries with backoff, and dead-letter handling.
+  - `RabbitMqProducerOptions`: Configuration options with DataAnnotations validation and `ValidateOnStart()` fail-fast startup.
+  - `IRabbitMqProducerClient` & `RabbitMqProducerClient`: Singleton producer client with thread-safe channel management and Publisher Confirms (`ConfirmSelect` / `WaitForConfirms`).
+  - `RabbitMqProducerJob`: Durable `IJob<RabbitMqPublishPayload>` background job with W3C `traceparent` context propagation and custom headers injection.
+  - `scheduler.EnqueueRabbitMqAsync`: Unified scheduling extensions supporting strongly typed objects `<T>` (serialized via `System.Text.Json`), raw strings, and raw byte arrays.
+  - `scheduler.EnqueueRabbitMqRawAsync`: Dedicated overloads for explicit raw string and binary byte array publishing.
+  - Fluent registration extensions on `NexJobBuilder` and `IServiceCollection`: `AddRabbitMqProducer` and `AddRabbitMqTrigger`.
+  - `tests/NexJob.RabbitMQ.IntegrationTests`: End-to-end integration testing with real RabbitMQ broker via Testcontainers.
+  - Complete documentation: `src/NexJob.RabbitMQ/README.md`, `docs/wiki/21-RabbitMQ.md`, and 12-Factor App guidelines in `docs/wiki/11-Configuration-Reference.md`.
+
+- **`NexJob.Kafka` (Unified Package)**:
+  - Added resilient Kafka Outbox Producer enabling durable message publishing backed by NexJob storage, retries with jitter, and dead-letter handling.
+  - `KafkaProducerOptions`: Broker options with DataAnnotations validation and `ValidateOnStart()` fail-fast startup.
+  - `IKafkaProducerClient` & `ConfluentKafkaProducerClient`: Singleton producer client with automatic graceful flush on application shutdown.
+  - `KafkaProducerJob`: Durable `IJob<KafkaPublishPayload>` background job with OpenTelemetry `traceparent` context propagation and custom headers injection.
+  - `scheduler.EnqueueKafkaAsync`: Unified scheduling extensions supporting strongly typed objects `<T>` (serialized via `System.Text.Json`), raw strings, and raw byte arrays.
+  - `scheduler.EnqueueKafkaRawAsync`: Dedicated overloads for explicit raw string and binary byte array publishing.
+  - Fluent registration extensions on `NexJobBuilder` and `IServiceCollection`: `AddKafkaProducer` and `AddKafkaTrigger`.
+  - `tests/NexJob.Kafka.IntegrationTests`: Integration testing with real Kafka broker via Testcontainers.
+  - Complete documentation: `src/NexJob.Kafka/README.md`, `docs/wiki/20-Kafka.md`, and 12-Factor App / Docker / Kubernetes guidelines in `docs/wiki/11-Configuration-Reference.md`.
+
+### Changed
+
+- **Package Renaming**:
+  - Renamed `NexJob.Trigger.RabbitMQ` to `NexJob.RabbitMQ` (`NexJob.RabbitMQ.csproj`), unifying consumer triggers and outbox producer into a single first-class integration package.
+  - Renamed `NexJob.Trigger.Kafka` to `NexJob.Kafka` (`NexJob.Kafka.csproj`), unifying consumer triggers and outbox producer into a single first-class integration package.
+
+## [4.0.1] - 2026-09-17
+
+### Security
+
+- Resolved transitive vulnerabilities across solution:
+  - `NexJob.Trigger.AzureServiceBus`: pinned `System.Text.Json` to `8.0.5` (fixes GHSA-8g4q-xg66-9fp4).
+  - `NexJob.MongoDB`: updated `SharpCompress` to `0.48.0` (fixes GHSA-6c8g-7p36-r338) and `Snappier` to `1.3.1` (fixes GHSA-pggp-6c3x-2xmx).
+  - Integration test suites: updated `SSH.NET` to `2026.0.0` (fixes GHSA-q939-rpr3-3284).
+
+### Fixed
+
+- Pinned broker package dependencies in `NexJob.Trigger.AzureServiceBus` (`7.18.2`), `NexJob.Trigger.GooglePubSub` (`3.18.0`), and `NexJob.Trigger.Kafka` (`2.14.0`) to avoid transitive package downgrade errors (`NU1605`) on .NET 8 SDKs.
+
+### Documentation
+
+- Documented `NexJob.Dashboard` and `NexJob.Dashboard.Standalone` packages in `README.md` and wiki.
+- Clarified mandatory `builder.Services.AddMemoryCache()` requirement and troubleshooting instructions for dashboard setup.
+
+## [4.0.1] - 2026-09-17
+
+### Security
+
+- Resolved transitive vulnerabilities across solution:
+  - `NexJob.Trigger.AzureServiceBus`: pinned `System.Text.Json` to `8.0.5` (fixes GHSA-8g4q-xg66-9fp4).
+  - `NexJob.MongoDB`: updated `SharpCompress` to `0.48.0` (fixes GHSA-6c8g-7p36-r338) and `Snappier` to `1.3.1` (fixes GHSA-pggp-6c3x-2xmx).
+  - Integration test suites: updated `SSH.NET` to `2026.0.0` (fixes GHSA-q939-rpr3-3284).
+
+### Fixed
+
+- Pinned broker package dependencies in `NexJob.Trigger.AzureServiceBus` (`7.18.2`), `NexJob.Trigger.GooglePubSub` (`3.18.0`), and `NexJob.Trigger.Kafka` (`2.14.0`) to avoid transitive package downgrade errors (`NU1605`) on .NET 8 SDKs.
+
+### Documentation
+
+- Documented `NexJob.Dashboard` and `NexJob.Dashboard.Standalone` packages in `README.md` and wiki.
+- Clarified mandatory `builder.Services.AddMemoryCache()` requirement and troubleshooting instructions for dashboard setup.
 
 ## [4.0.1] - 2026-09-17
 

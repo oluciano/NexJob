@@ -81,44 +81,58 @@ builder.Services.AddNexJobAwsSqsTrigger(options =>
 
 ## RabbitMQ
 
+> [!NOTE]
+> RabbitMQ capabilities have evolved from a simple trigger into a dedicated, unified package: **`NexJob.RabbitMQ`**.
+> It provides both **RabbitMQ Triggers (Consumers)** and a **Resilient Outbox Producer** with Publisher Confirms.
+> For full configuration, outbox producer examples, and environment variables, see the dedicated guide: **[RabbitMQ Integration (21-RabbitMQ.md)](21-RabbitMQ.md)**.
+
 Installation:
 ```bash
-dotnet add package NexJob.Trigger.RabbitMQ
+dotnet add package NexJob.RabbitMQ
 ```
 
-Usage:
+Usage (Consumer / Trigger):
 ```csharp
-using NexJob.Trigger.RabbitMQ;
+using NexJob;
 
-builder.Services.AddNexJobRabbitMqTrigger(options =>
-{
-    options.HostName = "localhost";
-    options.QueueName = "nexjob-trigger";
-    options.UserName = "guest";
-    options.Password = "guest";
-});
+builder.Services.AddNexJob()
+    .AddRabbitMqTrigger(options =>
+    {
+        options.HostName = "localhost";
+        options.QueueName = "nexjob-trigger";
+        options.UserName = "guest";
+        options.Password = "guest";
+    });
 ```
+*(Legacy `AddNexJobRabbitMqTrigger` remains supported for backward compatibility).*
 
 ---
 
 ## Kafka
 
+> [!NOTE]
+> Kafka capabilities have evolved from a simple trigger into a dedicated, unified package: **`NexJob.Kafka`**.
+> It provides both **Kafka Triggers (Consumers)** and a **Resilient Outbox Producer**.
+> For full configuration, environment variables, and producer patterns, see the dedicated guide: **[Kafka Integration (20-Kafka.md)](20-Kafka.md)**.
+
 Installation:
 ```bash
-dotnet add package NexJob.Trigger.Kafka
+dotnet add package NexJob.Kafka
 ```
 
-Usage:
+Usage (Consumer / Trigger):
 ```csharp
-using NexJob.Trigger.Kafka;
+using NexJob.Kafka;
 
-builder.Services.AddNexJobKafkaTrigger(options =>
-{
-    options.BootstrapServers = "localhost:9092";
-    options.Topic = "nexjob-jobs";
-    options.GroupId = "nexjob-consumer-group";
-});
+builder.Services.AddNexJob()
+    .AddKafkaTrigger(options =>
+    {
+        options.BootstrapServers = "localhost:9092";
+        options.Topic = "nexjob-jobs";
+        options.GroupId = "nexjob-consumer-group";
+    });
 ```
+*(Legacy `AddNexJobKafkaTrigger` remains supported for backward compatibility).*
 
 ---
 
@@ -139,6 +153,52 @@ builder.Services.AddNexJobGooglePubSubTrigger(options =>
     options.SubscriptionId = "my-subscription";
 });
 ```
+
+---
+
+## Salesforce Pub/Sub API
+
+Installation:
+```bash
+dotnet add package NexJob.Trigger.Salesforce
+```
+
+Consumes Salesforce Change Data Capture (CDC) events and custom Platform Events over high-throughput bidirectional gRPC streams, automatically decodes Apache Avro binary payloads to JSON, manages Replay ID checkpointing, and enqueues background jobs with zero message loss.
+
+Usage:
+```csharp
+using NexJob;
+using NexJob.Trigger.Salesforce;
+
+// Register trigger with default SalesforceEventJob
+builder.Services.AddNexJob()
+    .AddSalesforceTrigger(options =>
+    {
+        options.Topic = "/data/ChangeEvents"; // Standard CDC or Platform Event topic
+        options.ClientId = "3MVG9...";
+        options.ClientSecret = "secret...";
+        options.TargetQueue = "salesforce-events";
+        options.ReplayPreset = SalesforceReplayPreset.Latest;
+        options.FallbackPolicy = ReplayFallbackPolicy.ResetToLatest;
+    });
+
+// Or register with a strongly typed custom job
+builder.Services.AddNexJob()
+    .AddSalesforceTrigger<ProcessAccountChangeJob>(options =>
+    {
+        options.Topic = "/data/AccountChangeEvent";
+        options.ClientId = "3MVG9...";
+        options.ClientSecret = "secret...";
+    });
+```
+
+Key features:
+- **Bi-directional gRPC Streaming**: Uses official Salesforce Pub/Sub API protobufs and flow control.
+- **Apache Avro binary decoding**: In-memory schema caching (`ISalesforceSchemaService`) and decoding into JSON payloads.
+- **Replay ID Checkpointing**: `IReplayIdStore` with atomic file-based persistence (`FileReplayIdStore`) and in-memory store (`InMemoryReplayIdStore`).
+- **Resilient Fallback Policies**: `ReplayFallbackPolicy.FailFast`, `ResetToLatest`, and `ResetToEarliest` handle expired offsets gracefully.
+- **OAuth2 Token Caching**: Automatic token acquisition, caching, and refresh ahead of expiration.
+- **Distributed Tracing**: Extracts W3C `traceparent` from event headers into `JobRecord.TraceParent`.
 
 ---
 
