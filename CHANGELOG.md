@@ -6,6 +6,17 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [4.0.1] - 2026-09-17
+
+### Fixed
+
+- Pinned broker package dependencies in `NexJob.Trigger.AzureServiceBus` (`7.18.2`), `NexJob.Trigger.GooglePubSub` (`3.18.0`), and `NexJob.Trigger.Kafka` (`2.14.0`) to avoid transitive package downgrade errors (`NU1605`) on .NET 8 SDKs.
+
+### Documentation
+
+- Documented `NexJob.Dashboard` and `NexJob.Dashboard.Standalone` packages in `README.md` and wiki.
+- Clarified mandatory `builder.Services.AddMemoryCache()` requirement and troubleshooting instructions for dashboard setup.
+
 ## [4.0.0] - 2026-04-21
 
 ### Fixed
