@@ -8,6 +8,13 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [4.0.1] - 2026-09-17
 
+### Security
+
+- Resolved transitive vulnerabilities across solution:
+  - `NexJob.Trigger.AzureServiceBus`: pinned `System.Text.Json` to `8.0.5` (fixes GHSA-8g4q-xg66-9fp4).
+  - `NexJob.MongoDB`: updated `SharpCompress` to `0.48.0` (fixes GHSA-6c8g-7p36-r338) and `Snappier` to `1.3.1` (fixes GHSA-pggp-6c3x-2xmx).
+  - Integration test suites: updated `SSH.NET` to `2026.0.0` (fixes GHSA-q939-rpr3-3284).
+
 ### Fixed
 
 - Pinned broker package dependencies in `NexJob.Trigger.AzureServiceBus` (`7.18.2`), `NexJob.Trigger.GooglePubSub` (`3.18.0`), and `NexJob.Trigger.Kafka` (`2.14.0`) to avoid transitive package downgrade errors (`NU1605`) on .NET 8 SDKs.
