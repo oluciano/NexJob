@@ -4,11 +4,14 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\NexJob\NexJob.csproj" />
-    <ProjectReference Include="..\..\src\NexJob.Trigger.RabbitMQ\NexJob.Trigger.RabbitMQ.csproj" />
+    <ProjectReference Include="..\..\src\NexJob.RabbitMQ\NexJob.RabbitMQ.csproj" />
   </ItemGroup>
 
   <ItemGroup>

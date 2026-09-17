@@ -4,11 +4,14 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\NexJob\NexJob.csproj" />
-    <ProjectReference Include="..\..\src\NexJob.Trigger.RabbitMQ\NexJob.Trigger.RabbitMQ.csproj" />
+    <ProjectReference Include="..\..\src\NexJob.RabbitMQ\NexJob.RabbitMQ.csproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -21,5 +24,6 @@
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.1" />
     <PackageReference Include="Moq" Version="4.20.70" />
     <PackageReference Include="FluentAssertions" Version="6.12.0" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.1" />
   </ItemGroup>
 </Project>

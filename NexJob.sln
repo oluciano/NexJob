@@ -1,4 +1,4 @@
-﻿
+
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
@@ -49,9 +49,9 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NexJob.Trigger.AwsSqs", "sr
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NexJob.Trigger.AwsSqs.Tests", "tests\NexJob.Trigger.AwsSqs.Tests\NexJob.Trigger.AwsSqs.Tests.csproj", "{C7A94E2F-3D81-4B6E-9F5A-82D0E1C3B7F4}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NexJob.Trigger.RabbitMQ", "src\NexJob.Trigger.RabbitMQ\NexJob.Trigger.RabbitMQ.csproj", "{5F7B848C-A197-4466-93D5-E1EFF83A8926}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NexJob.RabbitMQ", "src\NexJob.RabbitMQ\NexJob.RabbitMQ.csproj", "{5F7B848C-A197-4466-93D5-E1EFF83A8926}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NexJob.Trigger.RabbitMQ.Tests", "tests\NexJob.Trigger.RabbitMQ.Tests\NexJob.Trigger.RabbitMQ.Tests.csproj", "{67F6513C-50DB-4220-9154-37C1E23728A5}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NexJob.RabbitMQ.Tests", "tests\NexJob.RabbitMQ.Tests\NexJob.RabbitMQ.Tests.csproj", "{67F6513C-50DB-4220-9154-37C1E23728A5}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NexJob.Kafka", "src\NexJob.Kafka\NexJob.Kafka.csproj", "{CC3A5491-0A72-455B-879B-F75DF482CF45}"
 EndProject
@@ -63,7 +63,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NexJob.Trigger.GooglePubSub
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NexJob.OpenTelemetry", "src\NexJob.OpenTelemetry\NexJob.OpenTelemetry.csproj", "{E54C471F-30D9-42C1-9025-57974E73550A}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NexJob.Trigger.RabbitMQ.IntegrationTests", "tests\NexJob.Trigger.RabbitMQ.IntegrationTests\NexJob.Trigger.RabbitMQ.IntegrationTests.csproj", "{BC6E6030-B99F-482A-AF29-736D63CE14EA}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NexJob.RabbitMQ.IntegrationTests", "tests\NexJob.RabbitMQ.IntegrationTests\NexJob.RabbitMQ.IntegrationTests.csproj", "{BC6E6030-B99F-482A-AF29-736D63CE14EA}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NexJob.Trigger.AwsSqs.IntegrationTests", "tests\NexJob.Trigger.AwsSqs.IntegrationTests\NexJob.Trigger.AwsSqs.IntegrationTests.csproj", "{A79E538D-DEF6-460C-AB04-4D6CBDCF6FB8}"
 EndProject
