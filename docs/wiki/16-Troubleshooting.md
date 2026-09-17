@@ -191,6 +191,31 @@ app.UseNexJobDashboard();
 builder.Services.AddNexJobStandaloneDashboard();
 ```
 
+### Cause: Missing Dashboard NuGet Package
+
+**Symptom:** Compiler error `CS1061: 'IApplicationBuilder' does not contain a definition for 'UseNexJobDashboard'`.
+
+**Fix:** Install the dedicated package:
+```bash
+# For ASP.NET Core
+dotnet add package NexJob.Dashboard
+
+# For Worker Services
+dotnet add package NexJob.Dashboard.Standalone
+```
+And add `using NexJob.Dashboard;` (or `using NexJob.Dashboard.Standalone;`).
+
+### Cause: Missing `IMemoryCache` Registration
+
+**Symptom:** Runtime exception at startup: `InvalidOperationException: No service for type 'Microsoft.Extensions.Caching.Memory.IMemoryCache' has been registered.`
+
+**Diagnose:** The dashboard requires `IMemoryCache` to aggregate and cache metrics.
+
+**Fix:** Register memory cache before building the host in `Program.cs`:
+```csharp
+builder.Services.AddMemoryCache();
+```
+
 ---
 
 ## Next Steps
