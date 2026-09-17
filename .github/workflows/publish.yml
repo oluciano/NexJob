@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
 
 jobs:
   test:
@@ -66,6 +67,7 @@ jobs:
           dotnet pack src/NexJob.RabbitMQ/NexJob.RabbitMQ.csproj --no-build --configuration Release --output ./nupkg
           dotnet pack src/NexJob.Trigger.GooglePubSub/NexJob.Trigger.GooglePubSub.csproj --no-build --configuration Release --output ./nupkg
           dotnet pack src/NexJob.Trigger.Salesforce/NexJob.Trigger.Salesforce.csproj --no-build --configuration Release --output ./nupkg
+          dotnet pack src/NexJob.Trigger.SalesforceStreaming/NexJob.Trigger.SalesforceStreaming.csproj --no-build --configuration Release --output ./nupkg
           
           # Templates
           dotnet pack templates/NexJob.Templates.csproj --configuration Release --output ./nupkg
@@ -76,6 +78,7 @@ jobs:
 
   release:
     name: Create GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
     needs: publish
     runs-on: ubuntu-latest
     permissions:
@@ -89,4 +92,4 @@ jobs:
           gh release create "${{ github.ref_name }}" \
             --title "${{ github.ref_name }}" \
             --generate-notes \
-            --prerelease=${{ contains(github.ref_name, '-') }}
+            --prerelease=${{ contains(github.ref_name, '-') }} || true
