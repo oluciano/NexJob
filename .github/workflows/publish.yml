@@ -64,6 +64,7 @@ jobs:
           dotnet pack src/NexJob.Kafka/NexJob.Kafka.csproj --no-build --configuration Release --output ./nupkg
           dotnet pack src/NexJob.Trigger.RabbitMQ/NexJob.Trigger.RabbitMQ.csproj --no-build --configuration Release --output ./nupkg
           dotnet pack src/NexJob.Trigger.GooglePubSub/NexJob.Trigger.GooglePubSub.csproj --no-build --configuration Release --output ./nupkg
+          dotnet pack src/NexJob.Trigger.Salesforce/NexJob.Trigger.Salesforce.csproj --no-build --configuration Release --output ./nupkg
           
           # Templates
           dotnet pack templates/NexJob.Templates.csproj --configuration Release --output ./nupkg

@@ -50,7 +50,7 @@ See [Getting Started](01-Getting-Started.md) for a complete walkthrough.
 - **Operational visibility** — built-in dashboard, traces, and metrics
 - **Low-latency dispatch** — wake-up channel for near-zero latency local enqueue
 - **Free storage providers** — PostgreSQL, SQL Server, Redis, MongoDB, InMemory
-- **Event-driven triggers** — enqueue jobs from Azure Service Bus, SQS, RabbitMQ, Kafka, or Pub/Sub
+- **Event-driven triggers** — enqueue jobs from Azure Service Bus, SQS, RabbitMQ, Kafka, Google Pub/Sub, or Salesforce Pub/Sub API
 
 ### NexJob vs Alternatives
 
