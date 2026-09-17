@@ -1,4 +1,4 @@
-
+﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
@@ -74,6 +74,10 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NexJob.Trigger.Salesforce.Tests", "tests\NexJob.Trigger.Salesforce.Tests\NexJob.Trigger.Salesforce.Tests.csproj", "{EA239871-6B36-49FC-8D1F-6B472E771C3B}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NexJob.Trigger.Salesforce.IntegrationTests", "tests\NexJob.Trigger.Salesforce.IntegrationTests\NexJob.Trigger.Salesforce.IntegrationTests.csproj", "{4C7758A8-417C-41F1-BB89-490161B5386C}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NexJob.Trigger.SalesforceStreaming", "src\NexJob.Trigger.SalesforceStreaming\NexJob.Trigger.SalesforceStreaming.csproj", "{D986E3E3-5BA9-494D-8E0B-3093D3B0134B}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NexJob.Trigger.SalesforceStreaming.Tests", "tests\NexJob.Trigger.SalesforceStreaming.Tests\NexJob.Trigger.SalesforceStreaming.Tests.csproj", "{C5C85192-D776-4DA9-A8C4-96260036BC2D}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -208,6 +212,14 @@ Global
 		{4C7758A8-417C-41F1-BB89-490161B5386C}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{4C7758A8-417C-41F1-BB89-490161B5386C}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{4C7758A8-417C-41F1-BB89-490161B5386C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D986E3E3-5BA9-494D-8E0B-3093D3B0134B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D986E3E3-5BA9-494D-8E0B-3093D3B0134B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D986E3E3-5BA9-494D-8E0B-3093D3B0134B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D986E3E3-5BA9-494D-8E0B-3093D3B0134B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C5C85192-D776-4DA9-A8C4-96260036BC2D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C5C85192-D776-4DA9-A8C4-96260036BC2D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C5C85192-D776-4DA9-A8C4-96260036BC2D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C5C85192-D776-4DA9-A8C4-96260036BC2D}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{06E9B0C8-A9B6-4DE4-A1CC-C52159A873D1} = {EFA88835-38F5-4A7A-9B3A-9444915331C6}
@@ -241,5 +253,7 @@ Global
 		{A646071C-B866-4EE0-AA07-E7945C6651E0} = {EFA88835-38F5-4A7A-9B3A-9444915331C6}
 		{EA239871-6B36-49FC-8D1F-6B472E771C3B} = {E96B56A5-5E21-43D0-A041-2AAB3B9E7280}
 		{4C7758A8-417C-41F1-BB89-490161B5386C} = {E96B56A5-5E21-43D0-A041-2AAB3B9E7280}
+		{D986E3E3-5BA9-494D-8E0B-3093D3B0134B} = {EFA88835-38F5-4A7A-9B3A-9444915331C6}
+		{C5C85192-D776-4DA9-A8C4-96260036BC2D} = {E96B56A5-5E21-43D0-A041-2AAB3B9E7280}
 	EndGlobalSection
 EndGlobal
