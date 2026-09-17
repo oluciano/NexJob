@@ -149,6 +149,52 @@ builder.Services.AddNexJobGooglePubSubTrigger(options =>
 
 ---
 
+## Salesforce Pub/Sub API
+
+Installation:
+```bash
+dotnet add package NexJob.Trigger.Salesforce
+```
+
+Consumes Salesforce Change Data Capture (CDC) events and custom Platform Events over high-throughput bidirectional gRPC streams, automatically decodes Apache Avro binary payloads to JSON, manages Replay ID checkpointing, and enqueues background jobs with zero message loss.
+
+Usage:
+```csharp
+using NexJob;
+using NexJob.Trigger.Salesforce;
+
+// Register trigger with default SalesforceEventJob
+builder.Services.AddNexJob()
+    .AddSalesforceTrigger(options =>
+    {
+        options.Topic = "/data/ChangeEvents"; // Standard CDC or Platform Event topic
+        options.ClientId = "3MVG9...";
+        options.ClientSecret = "secret...";
+        options.TargetQueue = "salesforce-events";
+        options.ReplayPreset = SalesforceReplayPreset.Latest;
+        options.FallbackPolicy = ReplayFallbackPolicy.ResetToLatest;
+    });
+
+// Or register with a strongly typed custom job
+builder.Services.AddNexJob()
+    .AddSalesforceTrigger<ProcessAccountChangeJob>(options =>
+    {
+        options.Topic = "/data/AccountChangeEvent";
+        options.ClientId = "3MVG9...";
+        options.ClientSecret = "secret...";
+    });
+```
+
+Key features:
+- **Bi-directional gRPC Streaming**: Uses official Salesforce Pub/Sub API protobufs and flow control.
+- **Apache Avro binary decoding**: In-memory schema caching (`ISalesforceSchemaService`) and decoding into JSON payloads.
+- **Replay ID Checkpointing**: `IReplayIdStore` with atomic file-based persistence (`FileReplayIdStore`) and in-memory store (`InMemoryReplayIdStore`).
+- **Resilient Fallback Policies**: `ReplayFallbackPolicy.FailFast`, `ResetToLatest`, and `ResetToEarliest` handle expired offsets gracefully.
+- **OAuth2 Token Caching**: Automatic token acquisition, caching, and refresh ahead of expiration.
+- **Distributed Tracing**: Extracts W3C `traceparent` from event headers into `JobRecord.TraceParent`.
+
+---
+
 ## Error handling
 
 **Malformed message (missing `nexjob.job_type`):**

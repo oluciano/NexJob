@@ -43,7 +43,8 @@ jobs:
             -targetdir:"./coverage-report" \
             -reporttypes:TextSummary \
             -title:NexJob-Coverage \
-            -assemblyfilters:"+NexJob;+NexJob.Dashboard;+NexJob.Dashboard.Standalone;+NexJob.Kafka;+NexJob.Trigger.*"
+            -assemblyfilters:"+NexJob;+NexJob.Dashboard;+NexJob.Dashboard.Standalone;+NexJob.Kafka;+NexJob.Trigger.*" \
+            -classfilters:"-Eventbus.V1.*"
 
       - name: Check Coverage Threshold
         run: |

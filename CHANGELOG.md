@@ -8,6 +8,16 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`NexJob.Trigger.Salesforce`**:
+  - Implemented Salesforce Pub/Sub API trigger consuming Change Data Capture (CDC) events and custom Platform Events over bidirectional gRPC streams.
+  - Apache Avro schema caching (`ISalesforceSchemaService`) and binary payload decoding to JSON.
+  - Resilient Replay ID checkpointing via `IReplayIdStore`, including atomic file-based persistence (`FileReplayIdStore`) and memory store (`InMemoryReplayIdStore`).
+  - Replay fallback policies (`ReplayFallbackPolicy.FailFast`, `ResetToLatest`, `ResetToEarliest`) handling expired retention offsets.
+  - Automatic OAuth2 client credentials token provider (`SalesforceTokenProvider`) with thread-safe caching and proactive refresh.
+  - Fluent registration extensions on `NexJobBuilder` and `IServiceCollection` (`AddSalesforceTrigger<TJob>` and `AddSalesforceTrigger`).
+  - Unit tests (`tests/NexJob.Trigger.Salesforce.Tests`, 85 tests) and in-process mock Kestrel gRPC/OAuth integration tests (`tests/NexJob.Trigger.Salesforce.IntegrationTests`).
+  - Complete documentation in `src/NexJob.Trigger.Salesforce/README.md` and `docs/wiki/19-Triggers.md`.
+
 - **`NexJob.Kafka` (Unified Package)**:
   - Added resilient Kafka Outbox Producer enabling durable message publishing backed by NexJob storage, retries with jitter, and dead-letter handling.
   - `KafkaProducerOptions`: Broker options with DataAnnotations validation and `ValidateOnStart()` fail-fast startup.
