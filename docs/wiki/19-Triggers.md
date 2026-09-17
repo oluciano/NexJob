@@ -81,23 +81,30 @@ builder.Services.AddNexJobAwsSqsTrigger(options =>
 
 ## RabbitMQ
 
+> [!NOTE]
+> RabbitMQ capabilities have evolved from a simple trigger into a dedicated, unified package: **`NexJob.RabbitMQ`**.
+> It provides both **RabbitMQ Triggers (Consumers)** and a **Resilient Outbox Producer** with Publisher Confirms.
+> For full configuration, outbox producer examples, and environment variables, see the dedicated guide: **[RabbitMQ Integration (21-RabbitMQ.md)](21-RabbitMQ.md)**.
+
 Installation:
 ```bash
-dotnet add package NexJob.Trigger.RabbitMQ
+dotnet add package NexJob.RabbitMQ
 ```
 
-Usage:
+Usage (Consumer / Trigger):
 ```csharp
-using NexJob.Trigger.RabbitMQ;
+using NexJob;
 
-builder.Services.AddNexJobRabbitMqTrigger(options =>
-{
-    options.HostName = "localhost";
-    options.QueueName = "nexjob-trigger";
-    options.UserName = "guest";
-    options.Password = "guest";
-});
+builder.Services.AddNexJob()
+    .AddRabbitMqTrigger(options =>
+    {
+        options.HostName = "localhost";
+        options.QueueName = "nexjob-trigger";
+        options.UserName = "guest";
+        options.Password = "guest";
+    });
 ```
+*(Legacy `AddNexJobRabbitMqTrigger` remains supported for backward compatibility).*
 
 ---
 

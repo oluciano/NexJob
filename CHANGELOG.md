@@ -18,6 +18,17 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - Unit tests (`tests/NexJob.Trigger.Salesforce.Tests`, 85 tests) and in-process mock Kestrel gRPC/OAuth integration tests (`tests/NexJob.Trigger.Salesforce.IntegrationTests`).
   - Complete documentation in `src/NexJob.Trigger.Salesforce/README.md` and `docs/wiki/19-Triggers.md`.
 
+- **`NexJob.RabbitMQ` (Unified Package)**:
+  - Added resilient RabbitMQ Outbox Producer enabling durable message publishing backed by NexJob storage, Publisher Confirms, retries with backoff, and dead-letter handling.
+  - `RabbitMqProducerOptions`: Configuration options with DataAnnotations validation and `ValidateOnStart()` fail-fast startup.
+  - `IRabbitMqProducerClient` & `RabbitMqProducerClient`: Singleton producer client with thread-safe channel management and Publisher Confirms (`ConfirmSelect` / `WaitForConfirms`).
+  - `RabbitMqProducerJob`: Durable `IJob<RabbitMqPublishPayload>` background job with W3C `traceparent` context propagation and custom headers injection.
+  - `scheduler.EnqueueRabbitMqAsync`: Unified scheduling extensions supporting strongly typed objects `<T>` (serialized via `System.Text.Json`), raw strings, and raw byte arrays.
+  - `scheduler.EnqueueRabbitMqRawAsync`: Dedicated overloads for explicit raw string and binary byte array publishing.
+  - Fluent registration extensions on `NexJobBuilder` and `IServiceCollection`: `AddRabbitMqProducer` and `AddRabbitMqTrigger`.
+  - `tests/NexJob.RabbitMQ.IntegrationTests`: End-to-end integration testing with real RabbitMQ broker via Testcontainers.
+  - Complete documentation: `src/NexJob.RabbitMQ/README.md`, `docs/wiki/21-RabbitMQ.md`, and 12-Factor App guidelines in `docs/wiki/11-Configuration-Reference.md`.
+
 - **`NexJob.Kafka` (Unified Package)**:
   - Added resilient Kafka Outbox Producer enabling durable message publishing backed by NexJob storage, retries with jitter, and dead-letter handling.
   - `KafkaProducerOptions`: Broker options with DataAnnotations validation and `ValidateOnStart()` fail-fast startup.
@@ -31,7 +42,9 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
-- **Package Renaming**: Renamed `NexJob.Trigger.Kafka` to `NexJob.Kafka` (`NexJob.Kafka.csproj`), unifying consumer triggers and outbox producer into a single first-class integration package.
+- **Package Renaming**:
+  - Renamed `NexJob.Trigger.RabbitMQ` to `NexJob.RabbitMQ` (`NexJob.RabbitMQ.csproj`), unifying consumer triggers and outbox producer into a single first-class integration package.
+  - Renamed `NexJob.Trigger.Kafka` to `NexJob.Kafka` (`NexJob.Kafka.csproj`), unifying consumer triggers and outbox producer into a single first-class integration package.
 
 ## [4.0.1] - 2026-09-17
 

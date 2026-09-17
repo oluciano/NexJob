@@ -153,6 +153,22 @@ builder.Services.AddNexJob(options =>
 });
 ```
 
+### 3. Broker Integrations (Kafka & RabbitMQ)
+Broker connection and producer settings support standard 12-factor environment variables:
+
+```bash
+# Kafka
+export KAFKA_BOOTSTRAP_SERVERS="kafka:9092"
+export KAFKA_TOPIC="orders"
+
+# RabbitMQ
+export RABBITMQ_HOST="rabbitmq.internal"
+export RABBITMQ_PORT="5672"
+export RABBITMQ_USER="admin"
+export RABBITMQ_PASSWORD="secretpassword"
+export RABBITMQ_VIRTUAL_HOST="/"
+```
+
 ---
 
 ## Runtime Settings

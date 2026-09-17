@@ -115,6 +115,7 @@ See [Getting Started](01-Getting-Started.md) for a complete walkthrough.
 | [Job Filters](02-Job-Types.md#job-execution-filters) | Cross-cutting middleware for job execution |
 | [External Triggers](19-Triggers.md) | Enqueue jobs from message brokers |
 | [Kafka Integration](20-Kafka.md) | Kafka Triggers & Resilient Outbox Producer |
+| [RabbitMQ Integration](21-RabbitMQ.md) | RabbitMQ Triggers & Resilient Outbox Producer |
 
 ### Operate in production
 
