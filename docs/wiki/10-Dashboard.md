@@ -4,20 +4,53 @@ Monitor, debug, and manage jobs through a built-in dark UI.
 
 ---
 
+## Packages
+
+The dashboard UI is self-contained and pre-packaged, but kept in dedicated NuGet packages to avoid dragging web dependencies into headless workers:
+
+| Application Type | NuGet Package | Setup Method |
+|---|---|---|
+| **ASP.NET Core Web App** | `NexJob.Dashboard` | `app.UseNexJobDashboard()` |
+| **Worker Service / Console** | `NexJob.Dashboard.Standalone` | `services.AddNexJobStandaloneDashboard()` |
+
+---
+
 ## ASP.NET Core
 
+### 1. Install Package
+
+```bash
+dotnet add package NexJob.Dashboard
+```
+
+### 2. Configure `Program.cs`
+
+> [!IMPORTANT]
+> `builder.Services.AddMemoryCache()` is **mandatory**. The dashboard caches aggregated metrics for real-time performance and will throw an `InvalidOperationException` if memory cache is not registered.
+
 ```csharp
+using NexJob.Dashboard;
+
+var builder = WebApplication.CreateBuilder(args);
+
+// 1. Mandatory for dashboard metrics cache
+builder.Services.AddMemoryCache();
+
+// 2. Register NexJob and your storage provider
+builder.Services.AddNexJob()
+    .UseInMemoryStorage(); // or .UsePostgreSqlStorage(...)
+
 var app = builder.Build();
 
-// Enable dashboard at /dashboard
+// 3. Mount dashboard middleware (default: /dashboard)
 app.UseNexJobDashboard();
 
-// Or custom path and options
-app.UseNexJobDashboard("/jobs", options =>
-{
-    options.Title = "My Jobs";
-    options.PollIntervalSeconds = 5;
-});
+// Or custom path and options:
+// app.UseNexJobDashboard("/jobs", options =>
+// {
+//     options.Title = "My Jobs";
+//     options.PollIntervalSeconds = 5;
+// });
 
 app.Run();
 ```
@@ -26,22 +59,37 @@ app.Run();
 
 ## Standalone (Worker Services)
 
-For Worker Services without ASP.NET Core, use the standalone dashboard.
+For Worker Services or console applications that do not have their own ASP.NET Core HTTP pipeline, use the standalone dashboard. It runs an embedded HTTP server hosting the UI.
 
-```csharp
-builder.Services.AddNexJobStandaloneDashboard();
+### 1. Install Package
+
+```bash
+dotnet add package NexJob.Dashboard.Standalone
 ```
 
-The dashboard runs an embedded HTTP server on `http://localhost:5005/dashboard`.
-
-Configure the port:
+### 2. Configure `Program.cs`
 
 ```csharp
-builder.Services.AddNexJobStandaloneDashboard(options =>
-{
-    options.Port = 8080;
-    options.Host = "0.0.0.0";
-});
+using NexJob.Dashboard.Standalone;
+
+var builder = Host.CreateApplicationBuilder(args);
+
+builder.Services.AddNexJob()
+    .UseInMemoryStorage();
+
+// Registers embedded HTTP server (default: http://localhost:5005/dashboard)
+builder.Services.AddNexJobStandaloneDashboard();
+
+// Or customize host and port:
+// builder.Services.AddNexJobStandaloneDashboard(options =>
+// {
+//     options.Port = 8080;
+//     options.Host = "0.0.0.0";
+//     options.Path = "/dashboard";
+// });
+
+var host = builder.Build();
+host.Run();
 ```
 
 ---

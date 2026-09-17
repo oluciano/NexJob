@@ -127,6 +127,8 @@ All providers implement `IRuntimeSettingsStore` — runtime configuration persis
 
 | Package | NuGet | Description |
 |---|---|---|
+| `NexJob.Dashboard` | [![NuGet](https://img.shields.io/badge/nuget-v2.0.0-blue)](https://www.nuget.org/packages/NexJob.Dashboard) | Embedded ASP.NET Core dashboard middleware |
+| `NexJob.Dashboard.Standalone` | [![NuGet](https://img.shields.io/badge/nuget-v2.0.0-blue)](https://www.nuget.org/packages/NexJob.Dashboard.Standalone) | Embedded HTTP dashboard server for Worker Services |
 | `NexJob.OpenTelemetry` | [![NuGet](https://img.shields.io/badge/nuget-v2.0.0-blue)](https://www.nuget.org/packages/NexJob.OpenTelemetry) | OTel SDK instrumentation |
 | `NexJob.Trigger.AzureServiceBus` | [![NuGet](https://img.shields.io/badge/nuget-v2.0.0-blue)](https://www.nuget.org/packages/NexJob.Trigger.AzureServiceBus) | Azure Service Bus trigger |
 | `NexJob.Trigger.AwsSqs` | [![NuGet](https://img.shields.io/badge/nuget-v2.0.0-blue)](https://www.nuget.org/packages/NexJob.Trigger.AwsSqs) | AWS SQS trigger |
@@ -141,11 +143,54 @@ All providers implement `IRuntimeSettingsStore` — runtime configuration persis
 The dashboard provides a visual timeline of every job's lifecycle — no log reconstruction needed.
 See failures, retries, expired jobs, and execution timing at a glance.
 
-```csharp
-app.UseNexJobDashboard("/dashboard");
+### ASP.NET Core Web App
+
+Install package:
+```bash
+dotnet add package NexJob.Dashboard
 ```
 
-One line. No configuration required.
+Configure in `Program.cs`:
+```csharp
+using NexJob.Dashboard;
+
+var builder = WebApplication.CreateBuilder(args);
+
+// Required: memory cache for dashboard metrics
+builder.Services.AddMemoryCache();
+
+// Register NexJob + Storage provider
+builder.Services.AddNexJob()
+    .UseInMemoryStorage();
+
+var app = builder.Build();
+
+// Mount dashboard at /dashboard
+app.UseNexJobDashboard("/dashboard");
+
+app.Run();
+```
+
+### Worker Service (Standalone)
+
+For Worker Services or console applications without ASP.NET Core:
+```bash
+dotnet add package NexJob.Dashboard.Standalone
+```
+
+Configure in `Program.cs`:
+```csharp
+using NexJob.Dashboard.Standalone;
+
+builder.Services.AddNexJob()
+    .UseInMemoryStorage();
+
+// Starts an embedded HTTP server at http://localhost:5005/dashboard
+builder.Services.AddNexJobStandaloneDashboard(options =>
+{
+    options.Port = 5005;
+});
+```
 
 ---
 
