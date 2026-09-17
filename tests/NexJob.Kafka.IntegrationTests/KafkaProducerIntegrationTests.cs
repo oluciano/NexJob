@@ -13,20 +13,14 @@ namespace NexJob.Kafka.IntegrationTests;
 /// <summary>
 /// Integration tests verifying real end-to-end message publishing to an Apache Kafka container.
 /// </summary>
-public sealed class KafkaProducerIntegrationTests : IAsyncLifetime
+[Collection("Kafka")]
+public sealed class KafkaProducerIntegrationTests
 {
-    private readonly KafkaContainer _kafkaContainer = new KafkaBuilder()
-        .WithImage("confluentinc/cp-kafka:7.6.0")
-        .Build();
+    private readonly KafkaFixture _fixture;
 
-    public async Task InitializeAsync()
+    public KafkaProducerIntegrationTests(KafkaFixture fixture)
     {
-        await _kafkaContainer.StartAsync();
-    }
-
-    public async Task DisposeAsync()
-    {
-        await _kafkaContainer.DisposeAsync();
+        _fixture = fixture;
     }
 
     [Fact]
@@ -34,7 +28,7 @@ public sealed class KafkaProducerIntegrationTests : IAsyncLifetime
     {
         // Arrange
         var topic = "integration-test-topic";
-        var bootstrapServers = _kafkaContainer.GetBootstrapAddress();
+        var bootstrapServers = _fixture.BootstrapServers;
 
         var services = new ServiceCollection();
         services.AddLogging();

@@ -73,15 +73,23 @@ jobs:
       matrix:
         include:
           - name: InMemory-EndToEnd
+            project: tests/NexJob.IntegrationTests
             filter: '(FullyQualifiedName~InMemoryStorageProviderTests)|(FullyQualifiedName~JobExecutionEndToEndTests)'
           - name: Redis
+            project: tests/NexJob.IntegrationTests
             filter: 'FullyQualifiedName~RedisStorageProviderTests'
           - name: Postgres
+            project: tests/NexJob.IntegrationTests
             filter: 'FullyQualifiedName~PostgresStorageProviderTests'
           - name: Mongo
+            project: tests/NexJob.IntegrationTests
             filter: 'FullyQualifiedName~MongoStorageProviderTests'
           - name: SqlServer
+            project: tests/NexJob.IntegrationTests
             filter: 'FullyQualifiedName~SqlServerStorageProviderTests'
+          - name: Kafka
+            project: tests/NexJob.Kafka.IntegrationTests
+            filter: ''
 
     steps:
       - uses: actions/checkout@v6.0.2
@@ -99,14 +107,24 @@ jobs:
 
       - name: Run integration tests
         run: |
-          dotnet test tests/NexJob.IntegrationTests \
-            --no-build \
-            --configuration Release \
-            --verbosity normal \
-            --filter "${{ matrix.filter }}" \
-            --logger "trx;LogFileName=${{ matrix.name }}.trx" \
-            --blame-hang \
-            --blame-hang-timeout 5m
+          if [ -n "${{ matrix.filter }}" ]; then
+            dotnet test ${{ matrix.project }} \
+              --no-build \
+              --configuration Release \
+              --verbosity normal \
+              --filter "${{ matrix.filter }}" \
+              --logger "trx;LogFileName=${{ matrix.name }}.trx" \
+              --blame-hang \
+              --blame-hang-timeout 5m
+          else
+            dotnet test ${{ matrix.project }} \
+              --no-build \
+              --configuration Release \
+              --verbosity normal \
+              --logger "trx;LogFileName=${{ matrix.name }}.trx" \
+              --blame-hang \
+              --blame-hang-timeout 5m
+          fi
 
       - name: Upload integration test artifacts
         uses: actions/upload-artifact@v4
@@ -114,8 +132,8 @@ jobs:
         with:
           name: integration-${{ matrix.name }}-artifacts
           path: |
-            tests/NexJob.IntegrationTests/TestResults/**/*.trx
-            tests/NexJob.IntegrationTests/TestResults/**/*
+            ${{ matrix.project }}/TestResults/**/*.trx
+            ${{ matrix.project }}/TestResults/**/*
 
   format-check:
     name: Format Check
