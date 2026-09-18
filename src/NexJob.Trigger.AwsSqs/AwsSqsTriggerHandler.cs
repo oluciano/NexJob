@@ -11,31 +11,31 @@ namespace NexJob.Trigger.AwsSqs;
 /// AWS SQS trigger for NexJob. Receives messages from an SQS queue and automatically
 /// enqueues them as NexJob jobs.
 /// </summary>
-internal sealed class AwsSqsTrigger : IHostedService
+internal sealed class AwsSqsTriggerHandler : IHostedService
 {
     private readonly AwsSqsTriggerOptions _options;
     private readonly ISqsClient _sqsClient;
     private readonly IScheduler _scheduler;
     private readonly NexJobOptions _nexJobOptions;
-    private readonly ILogger<AwsSqsTrigger> _logger;
+    private readonly ILogger<AwsSqsTriggerHandler> _logger;
 
     private CancellationTokenSource? _stoppingCts;
     private Task? _pollingTask;
 
     /// <summary>
-    /// Initializes a new <see cref="AwsSqsTrigger"/>.
+    /// Initializes a new <see cref="AwsSqsTriggerHandler"/>.
     /// </summary>
     /// <param name="options">AWS SQS trigger configuration.</param>
     /// <param name="sqsClient">The SQS client for receiving messages.</param>
     /// <param name="scheduler">The NexJob scheduler for enqueueing jobs.</param>
     /// <param name="nexJobOptions">Global NexJob configuration options.</param>
     /// <param name="logger">Logger for diagnostic output.</param>
-    public AwsSqsTrigger(
+    public AwsSqsTriggerHandler(
         IOptions<AwsSqsTriggerOptions> options,
         ISqsClient sqsClient,
         IScheduler scheduler,
         NexJobOptions nexJobOptions,
-        ILogger<AwsSqsTrigger> logger)
+        ILogger<AwsSqsTriggerHandler> logger)
     {
         _options = options.Value;
         _sqsClient = sqsClient;

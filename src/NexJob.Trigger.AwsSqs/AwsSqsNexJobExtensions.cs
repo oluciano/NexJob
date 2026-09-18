@@ -10,7 +10,7 @@ namespace NexJob.Trigger.AwsSqs;
 /// Extension methods for registering AWS SQS trigger with NexJob.
 /// </summary>
 [ExcludeFromCodeCoverage]
-public static class ServiceCollectionExtensions
+public static class AwsSqsNexJobExtensions
 {
     /// <summary>
     /// Adds AWS SQS trigger to NexJob.
@@ -30,7 +30,7 @@ public static class ServiceCollectionExtensions
             .ValidateOnStart();
 
         services.TryAddTransient<ISqsClient>(_ => new SqsClient(new AmazonSQSClient()));
-        services.AddHostedService<AwsSqsTrigger>();
+        services.AddHostedService<AwsSqsTriggerHandler>();
 
         return services;
     }

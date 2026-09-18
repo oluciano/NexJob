@@ -9,7 +9,7 @@ using Xunit;
 namespace NexJob.Trigger.AwsSqs.Tests;
 
 /// <summary>
-/// Hardening unit tests for <see cref="AwsSqsTrigger"/>.
+/// Hardening unit tests for <see cref="AwsSqsTriggerHandler"/>.
 /// Targets 100% branch coverage for SQS polling and visibility management.
 /// </summary>
 public sealed class AwsSqsTriggerHardeningTests
@@ -24,14 +24,14 @@ public sealed class AwsSqsTriggerHardeningTests
     };
     private readonly NexJobOptions _nexJobOptions = new();
 
-    private AwsSqsTrigger CreateSut()
+    private AwsSqsTriggerHandler CreateSut()
     {
-        return new AwsSqsTrigger(
+        return new AwsSqsTriggerHandler(
             Options.Create(_options),
             _sqsMock.Object,
             _schedulerMock.Object,
             _nexJobOptions,
-            NullLogger<AwsSqsTrigger>.Instance);
+            NullLogger<AwsSqsTriggerHandler>.Instance);
     }
 
     // ─── Polling Loop Branches ─────────────────────────────────────────────
@@ -63,7 +63,7 @@ public sealed class AwsSqsTriggerHardeningTests
         var msgNoTrace = new Message();
         var msgEmptyTrace = new Message { MessageAttributes = { ["traceparent"] = new MessageAttributeValue { StringValue = string.Empty } } };
 
-        var method = typeof(AwsSqsTrigger).GetMethod("ExtractTraceparent", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+        var method = typeof(AwsSqsTriggerHandler).GetMethod("ExtractTraceparent", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
 
         method!.Invoke(null, new object[] { msgWithTrace }).Should().Be("00-trace");
         method!.Invoke(null, new object[] { msgNoTrace }).Should().BeNull();
@@ -82,7 +82,7 @@ public sealed class AwsSqsTriggerHardeningTests
             .ThrowsAsync(new Exception("Expired"));
 
         using var cts = new CancellationTokenSource();
-        var method = typeof(AwsSqsTrigger).GetMethod("ExtendVisibilityAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        var method = typeof(AwsSqsTriggerHandler).GetMethod("ExtendVisibilityAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
         await (Task)method!.Invoke(sut, new object[] { "rh123", cts.Token })!;
 
         _sqsMock.Verify(x => x.ChangeMessageVisibilityAsync(It.IsAny<ChangeMessageVisibilityRequest>(), It.IsAny<CancellationToken>()), Times.Once);

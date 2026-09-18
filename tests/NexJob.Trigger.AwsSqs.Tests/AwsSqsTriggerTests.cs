@@ -8,7 +8,7 @@ using Xunit;
 namespace NexJob.Trigger.AwsSqs.Tests;
 
 /// <summary>
-/// Tests for <see cref="AwsSqsTrigger"/>.
+/// Tests for <see cref="AwsSqsTriggerHandler"/>.
 /// Verifies message processing, visibility extension, enqueue, deletion, and graceful shutdown.
 /// </summary>
 public sealed class AwsSqsTriggerTests
@@ -31,9 +31,9 @@ public sealed class AwsSqsTriggerTests
             VisibilityExtensionIntervalSeconds = 3,
         });
         var nexJobOptions = new NexJobOptions { MaxAttempts = 3 };
-        var logger = new MockLogger<AwsSqsTrigger>();
+        var logger = new MockLogger<AwsSqsTriggerHandler>();
 
-        var trigger = new AwsSqsTrigger(
+        var trigger = new AwsSqsTriggerHandler(
             options,
             sqsClient,
             scheduler,
@@ -82,9 +82,9 @@ public sealed class AwsSqsTriggerTests
             VisibilityExtensionIntervalSeconds = 3,
         });
         var nexJobOptions = new NexJobOptions { MaxAttempts = 3 };
-        var logger = new MockLogger<AwsSqsTrigger>();
+        var logger = new MockLogger<AwsSqsTriggerHandler>();
 
-        var trigger = new AwsSqsTrigger(
+        var trigger = new AwsSqsTriggerHandler(
             options,
             sqsClient,
             scheduler,
@@ -126,9 +126,9 @@ public sealed class AwsSqsTriggerTests
             VisibilityExtensionIntervalSeconds = 1,
         });
         var nexJobOptions = new NexJobOptions { MaxAttempts = 3 };
-        var logger = new MockLogger<AwsSqsTrigger>();
+        var logger = new MockLogger<AwsSqsTriggerHandler>();
 
-        var trigger = new AwsSqsTrigger(
+        var trigger = new AwsSqsTriggerHandler(
             options,
             sqsClient,
             scheduler,
@@ -171,9 +171,9 @@ public sealed class AwsSqsTriggerTests
             VisibilityExtensionIntervalSeconds = 15,
         });
         var nexJobOptions = new NexJobOptions { MaxAttempts = 3 };
-        var logger = new MockLogger<AwsSqsTrigger>();
+        var logger = new MockLogger<AwsSqsTriggerHandler>();
 
-        var trigger = new AwsSqsTrigger(
+        var trigger = new AwsSqsTriggerHandler(
             options,
             sqsClient,
             scheduler,
@@ -207,9 +207,9 @@ public sealed class AwsSqsTriggerTests
             VisibilityExtensionIntervalSeconds = 3,
         });
         var nexJobOptions = new NexJobOptions { MaxAttempts = 3 };
-        var logger = new MockLogger<AwsSqsTrigger>();
+        var logger = new MockLogger<AwsSqsTriggerHandler>();
 
-        var trigger = new AwsSqsTrigger(
+        var trigger = new AwsSqsTriggerHandler(
             options,
             sqsClient,
             scheduler,

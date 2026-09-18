@@ -3,7 +3,7 @@ using Amazon.SQS.Model;
 namespace NexJob.Trigger.AwsSqs;
 
 /// <summary>
-/// Abstraction over the SQS client methods used by <see cref="AwsSqsTrigger"/>.
+/// Abstraction over the SQS client methods used by <see cref="AwsSqsTriggerHandler"/>.
 /// Enables testability without depending on the full <c>IAmazonSQS</c> interface.
 /// </summary>
 public interface ISqsClient
