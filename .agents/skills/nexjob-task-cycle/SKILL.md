@@ -56,6 +56,15 @@ When a task is new, non-trivial, or ambiguous (or when explicitly requested via 
 4. **Interactive Alignment:**
    - Present 2 to 4 concise, targeted trade-off questions to the developer.
    - Once aligned, formalize the **Definition of Done (DoD)** and the **3N Testing Plan**.
+5. **Backlog Crystallization (GitHub Issues Integration):**
+   - Materialize each groomed item into a dedicated GitHub Issue via `gh issue create`.
+   - **Language Mandate:** Issues must be written **strictly in English**.
+   - Use conventional titles (`type(scope): description`), assign relevant labels (`bug`, `enhancement`, `documentation`, `tests`), and structure the body with:
+     - **Context & Motivation**
+     - **Current vs Expected Behavior**
+     - **Definition of Done (DoD)**
+     - **3N Testing Matrix Plan**
+   - Capture the issue ID (e.g. `#138`) to link in the eventual Pull Request.
 
 *For deep architectural questions and broker-specific dilemmas, refer to [grooming-guide.md](./references/grooming-guide.md).*
 
@@ -161,5 +170,8 @@ gh pr create \
 - [x] \`dotnet build -c Release\` passed with 0 warnings (TreatWarningsAsErrors)
 - [x] \`dotnet test\` passed with 3N test coverage (Positive/Negative/Input)
 - [x] No protected core files or storage interfaces modified
-- [x] Public API has XML documentation (///)"
+- [x] Public API has XML documentation (///)
+
+## Related issues
+Closes #<id>"
 ```
