@@ -20,16 +20,15 @@ Before executing any task, read:
 
 NexJob is a production-oriented background job processing library for .NET 8.
 MIT licensed. Alternative to Hangfire — storage-pluggable, trigger-ready, OTel-native.
-Current published version: **v3.0.0**. Active development: **v4.0.0** (branch: `v3_implementation`).
+Current published version: **v5.1.0**. Active development: **develop**.
 
 ---
 
-## What Is v3
+## What Is v3+
 
-v3 is an internal architecture refactor focused on testability and SOLID compliance.
-No new public features — all changes are internal.
+v3 introduced internal architecture refactoring focused on testability and SOLID compliance, followed by v4 reliability hardening and v5 unified producers and Salesforce triggers.
 
-Key changes shipped in v3:
+Key architectural foundations:
 - `IStorageProvider` split into `IJobStorage`, `IRecurringStorage`, `IDashboardStorage`
 - `JobExecutor` extracted from `JobDispatcherService`
 - `IJobInvokerFactory` — encapsulates type resolution, migration, scope creation
@@ -42,7 +41,7 @@ Key changes shipped in v3:
 
 ---
 
-## Implemented (v3.0.0)
+## Implemented (v5.1.0)
 
 **Core execution:**
 - `IJob` / `IJob<T>`, wake-up channel, deadline enforcement, retry, throttle, recurring jobs
@@ -62,12 +61,14 @@ Key changes shipped in v3:
 - 5 providers: InMemory, PostgreSQL, SQL Server, Redis, MongoDB
 - `UseDashboardReadReplica()` — opt-in read replica (PostgreSQL, SQL Server)
 
-**Triggers (v2, stable):**
+**Triggers & Outbox Producers:**
 - `NexJob.Trigger.AzureServiceBus` ✅
 - `NexJob.Trigger.AwsSqs` ✅
-- `NexJob.Trigger.RabbitMQ` ✅
-- `NexJob.Trigger.Kafka` ✅
 - `NexJob.Trigger.GooglePubSub` ✅
+- `NexJob.Trigger.Salesforce` (gRPC Pub/Sub API) ✅
+- `NexJob.Trigger.SalesforceStreaming` (CometD/Bayeux API) ✅
+- `NexJob.RabbitMQ` (Trigger + Outbox Producer) ✅
+- `NexJob.Kafka` (Trigger + Outbox Producer) ✅
 - `NexJob.OpenTelemetry` ✅
 
 **Dashboard:**

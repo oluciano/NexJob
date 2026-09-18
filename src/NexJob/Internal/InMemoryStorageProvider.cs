@@ -103,7 +103,7 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
                         job.ProcessingStartedAt = DateTimeOffset.UtcNow;
                         job.HeartbeatAt = DateTimeOffset.UtcNow;
                         job.Attempts++;
-                        return Task.FromResult<JobRecord?>(job).Result;
+                        return job;
                     }
                 }
             }
