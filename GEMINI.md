@@ -11,6 +11,7 @@ Before executing any task, read:
 - `ai-method/core/00-foundation-minimal.md` — always, every task
 - Appropriate workflow: `ai-method/workflows/{feature|bugfix|test|refactor|release}.md`
 - `skills/nexjob-trigger.md` — for any trigger work
+- `.agents/skills/nexjob-task-cycle/SKILL.md` — for disciplined grooming, 3N matrix, and verification gate
 - Quick router: `ai-method/QUICK_REFERENCE_ULTRA.md`
 
 ---
