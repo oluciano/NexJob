@@ -11,6 +11,7 @@ internal sealed class MockScheduler : IScheduler
     private readonly object _lock = new();
 
     public bool ShouldFailEnqueue { get; set; }
+    public Func<JobRecord, bool>? FailEnqueuePredicate { get; set; }
     public TimeSpan EnqueueDelay { get; set; } = TimeSpan.Zero;
 
     public IReadOnlyList<JobRecord> EnqueueCalls
@@ -41,7 +42,7 @@ internal sealed class MockScheduler : IScheduler
             _enqueueCalls.Add(job);
         }
 
-        if (ShouldFailEnqueue)
+        if (ShouldFailEnqueue || (FailEnqueuePredicate is not null && FailEnqueuePredicate(job)))
         {
             throw new InvalidOperationException("Simulated enqueue failure");
         }
