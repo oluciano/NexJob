@@ -332,18 +332,34 @@ public sealed class MongoStorageProvider : IStorageProvider
     /// <inheritdoc/>
     public async Task RequeueOrphanedJobsAsync(TimeSpan heartbeatTimeout, CancellationToken cancellationToken = default)
     {
-        var cutoff = DateTimeOffset.UtcNow - heartbeatTimeout;
+        var now = DateTimeOffset.UtcNow;
+        var cutoff = now - heartbeatTimeout;
 
-        var filter = Builders<JobDocument>.Filter.And(
+        var exhaustedFilter = Builders<JobDocument>.Filter.And(
             Builders<JobDocument>.Filter.Eq(d => d.Status, JobStatus.Processing),
-            Builders<JobDocument>.Filter.Lt(d => d.HeartbeatAt, cutoff));
+            Builders<JobDocument>.Filter.Lt(d => d.HeartbeatAt, cutoff),
+            new BsonDocument("$expr", new BsonDocument("$gte", new BsonArray { "$Attempts", "$MaxAttempts" })));
 
-        var update = Builders<JobDocument>.Update
+        var exhaustedUpdate = Builders<JobDocument>.Update
+            .Set(d => d.Status, JobStatus.Failed)
+            .Set(d => d.CompletedAt, now)
+            .Set(d => d.LastErrorMessage, "Orphaned execution exceeded maximum attempts.")
+            .Unset(d => d.HeartbeatAt)
+            .Unset(d => d.ProcessingStartedAt);
+
+        await _jobs.UpdateManyAsync(exhaustedFilter, exhaustedUpdate, cancellationToken: cancellationToken).ConfigureAwait(false);
+
+        var retryFilter = Builders<JobDocument>.Filter.And(
+            Builders<JobDocument>.Filter.Eq(d => d.Status, JobStatus.Processing),
+            Builders<JobDocument>.Filter.Lt(d => d.HeartbeatAt, cutoff),
+            new BsonDocument("$expr", new BsonDocument("$lt", new BsonArray { "$Attempts", "$MaxAttempts" })));
+
+        var retryUpdate = Builders<JobDocument>.Update
             .Set(d => d.Status, JobStatus.Enqueued)
             .Unset(d => d.HeartbeatAt)
             .Unset(d => d.ProcessingStartedAt);
 
-        await _jobs.UpdateManyAsync(filter, update, cancellationToken: cancellationToken).ConfigureAwait(false);
+        await _jobs.UpdateManyAsync(retryFilter, retryUpdate, cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
     // ── Continuations ─────────────────────────────────────────────────────────

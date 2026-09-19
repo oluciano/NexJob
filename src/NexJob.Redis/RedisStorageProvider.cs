@@ -532,14 +532,39 @@ public sealed class RedisStorageProvider : IStorageProvider
             var createdAt = DateTimeOffset.TryParse(createdAtStr, CultureInfo.InvariantCulture,
                 DateTimeStyles.RoundtripKind, out var ca) ? ca : DateTimeOffset.UtcNow;
 
-            await _db.HashSetAsync(JobKey(id), new[]
+            var attemptsStr = dict.GetValueOrDefault("attempts", "0");
+            var maxAttemptsStr = dict.GetValueOrDefault("maxAttempts", "10");
+            var attempts = int.TryParse(attemptsStr, NumberStyles.Integer, CultureInfo.InvariantCulture, out var att) ? att : 0;
+            var maxAttempts = int.TryParse(maxAttemptsStr, NumberStyles.Integer, CultureInfo.InvariantCulture, out var ma) ? ma : 10;
+
+            if (attempts >= maxAttempts)
             {
-                new HashEntry("status", "Enqueued"),
-                new HashEntry("heartbeatAt", string.Empty),
-                new HashEntry("processingStartedAt", string.Empty),
-            }).ConfigureAwait(false);
-            await _db.HashDeleteAsync(ProcessingKey, id).ConfigureAwait(false);
-            await _db.SortedSetAddAsync(QueueKey(queue), id, QueueScore(priority, createdAt)).ConfigureAwait(false);
+                var existingError = dict.GetValueOrDefault("exceptionMessage");
+                var errorMsg = string.IsNullOrEmpty(existingError)
+                    ? "Orphaned execution exceeded maximum attempts."
+                    : existingError;
+
+                await _db.HashSetAsync(JobKey(id), new[]
+                {
+                    new HashEntry("status", "Failed"),
+                    new HashEntry("heartbeatAt", string.Empty),
+                    new HashEntry("processingStartedAt", string.Empty),
+                    new HashEntry("completedAt", DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture)),
+                    new HashEntry("exceptionMessage", errorMsg),
+                }).ConfigureAwait(false);
+                await _db.HashDeleteAsync(ProcessingKey, id).ConfigureAwait(false);
+            }
+            else
+            {
+                await _db.HashSetAsync(JobKey(id), new[]
+                {
+                    new HashEntry("status", "Enqueued"),
+                    new HashEntry("heartbeatAt", string.Empty),
+                    new HashEntry("processingStartedAt", string.Empty),
+                }).ConfigureAwait(false);
+                await _db.HashDeleteAsync(ProcessingKey, id).ConfigureAwait(false);
+                await _db.SortedSetAddAsync(QueueKey(queue), id, QueueScore(priority, createdAt)).ConfigureAwait(false);
+            }
         }
     }
 
