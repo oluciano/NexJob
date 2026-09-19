@@ -15,6 +15,8 @@ internal sealed class MockSqsClient : ISqsClient
 
     public List<string> DeleteCalls { get; } = new();
     public int VisibilityExtensionCalls { get; private set; }
+    public List<ChangeMessageVisibilityRequest> ChangeVisibilityRequests { get; } = new();
+    public Exception? ChangeVisibilityException { get; set; }
 
     /// <summary>
     /// Adds a test message to the mock queue.
@@ -67,7 +69,17 @@ internal sealed class MockSqsClient : ISqsClient
         ChangeMessageVisibilityRequest request,
         CancellationToken cancellationToken = default)
     {
-        VisibilityExtensionCalls++;
+        ChangeVisibilityRequests.Add(request);
+        if (request.VisibilityTimeout > 0)
+        {
+            VisibilityExtensionCalls++;
+        }
+
+        if (ChangeVisibilityException is not null)
+        {
+            throw ChangeVisibilityException;
+        }
+
         await Task.Delay(SimulateProcessingDelay, cancellationToken).ConfigureAwait(false);
         return new ChangeMessageVisibilityResponse();
     }

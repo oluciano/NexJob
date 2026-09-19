@@ -91,6 +91,9 @@ jobs:
           - name: Kafka
             project: tests/NexJob.Kafka.IntegrationTests
             filter: ''
+          - name: Sqs
+            project: tests/NexJob.Trigger.AwsSqs.IntegrationTests
+            filter: ''
 
     steps:
       - uses: actions/checkout@v6.0.2

@@ -4,12 +4,10 @@ This backlog records findings during the **Reliability Hardening Phase**. These 
 
 ## Triggers
 
-### TD001: AWS SQS Integration Test Flakiness (Regression Risk)
+### ~~TD001: AWS SQS Integration Test Flakiness (Regression Risk)~~ ✅ RESOLVED
 - **Component:** `NexJob.Trigger.AwsSqs`
-- **Issue:** Integration test `EnqueueFailure_MessageNotDeleted` frequently fails to receive the message back from LocalStack after a simulated enqueue failure.
-- **Finding:** Unit tests confirm `Delete` is not called, but the message may be stuck in a visibility extension loop or have an incorrect visibility timeout during error handling.
-- **Impact:** Messages might take too long to be retried or get lost in specific failure modes.
-- **Action:** Review `ExtendVisibilityAsync` and visibility timeout logic in `AwsSqsTrigger.cs`.
+- **Fixed in:** `AwsSqsTriggerHandler.ProcessMessageAsync` — cancels visibility extension loop and immediately calls `ChangeMessageVisibilityAsync(queueUrl, receiptHandle, visibilityTimeout: 0)` on enqueue failure.
+- **Tests:** `SqsFutureHardeningTests.Sqs_EnqueueFailure_ShouldStopVisibilityExtensionImmediately` and `AwsSqsTriggerTests.EnqueueFailure_MessageNotDeleted` in integration tests.
 
 ### ~~TD002: Kafka Missing Header Error Handling~~ ✅ RESOLVED
 - **Component:** `NexJob.Trigger.Kafka`
