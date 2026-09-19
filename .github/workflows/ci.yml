@@ -78,21 +78,27 @@ jobs:
             filter: '(FullyQualifiedName~InMemoryStorageProviderTests)|(FullyQualifiedName~JobExecutionEndToEndTests)'
           - name: Redis
             project: tests/NexJob.IntegrationTests
-            filter: 'FullyQualifiedName~RedisStorageProviderTests'
+            filter: 'FullyQualifiedName~Redis'
           - name: Postgres
             project: tests/NexJob.IntegrationTests
-            filter: 'FullyQualifiedName~PostgresStorageProviderTests'
+            filter: 'FullyQualifiedName~Postgres'
           - name: Mongo
             project: tests/NexJob.IntegrationTests
-            filter: 'FullyQualifiedName~MongoStorageProviderTests'
+            filter: 'FullyQualifiedName~Mongo'
           - name: SqlServer
             project: tests/NexJob.IntegrationTests
-            filter: 'FullyQualifiedName~SqlServerStorageProviderTests'
+            filter: 'FullyQualifiedName~SqlServer'
+          - name: RabbitMQ
+            project: tests/NexJob.RabbitMQ.IntegrationTests
+            filter: ''
           - name: Kafka
             project: tests/NexJob.Kafka.IntegrationTests
             filter: ''
           - name: Sqs
             project: tests/NexJob.Trigger.AwsSqs.IntegrationTests
+            filter: ''
+          - name: Salesforce
+            project: tests/NexJob.Trigger.Salesforce.IntegrationTests
             filter: ''
 
     steps:
