@@ -32,6 +32,9 @@ It synthesizes the best principles of context engineering and verification gates
         [Phase 4: Automated Verification Gate]
                          │
                          ▼
+     [Phase 4.5: Continuous Changelog Maintenance]
+                         │
+                         ▼
         [Phase 5: Handoff & PR Generation]
 ```
 
@@ -143,6 +146,22 @@ dotnet test --no-build
 
 ---
 
+## Phase 4.5: Continuous Changelog Maintenance
+
+> **Goal:** Keep `CHANGELOG.md` synchronized with every delivered change so releases are always ready.
+
+Before generating the Pull Request:
+1. Open `CHANGELOG.md`.
+2. Ensure an `## [Unreleased]` section exists at the top.
+3. Add a concise, professional bullet point under the appropriate category:
+   - `### Added` for new features or packages.
+   - `### Fixed` for bug fixes.
+   - `### Changed` for behavioral/config changes.
+   - `### Security` for vulnerability fixes.
+4. Reference the package/scope, description of behavior, and linked issue/PR (e.g. `(issue #146, PR #153)`).
+
+---
+
 ## Phase 5: Handoff & PR Generation
 
 > **Goal:** Deliver a fully documented, ready-to-merge Pull Request.
@@ -171,6 +190,7 @@ gh pr create \
 - [x] \`dotnet test\` passed with 3N test coverage (Positive/Negative/Input)
 - [x] No protected core files or storage interfaces modified
 - [x] Public API has XML documentation (///)
+- [x] \`CHANGELOG.md\` updated under \`[Unreleased]\`
 
 ## Related issues
 Closes #<id>"

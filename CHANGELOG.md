@@ -4,6 +4,45 @@ All notable changes to NexJob are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`NexJob.Telemetry`**:
+  - Implemented standard OpenTelemetry `ObservableGauge` instruments: `nexjob.queue.depth` (tagged with `nexjob.queue`), `nexjob.workers.active`, and `nexjob.workers.total` for Kubernetes HPA and Prometheus autoscaling (issue #146, PR #153).
+  - Background asynchronous metric sampling via `ServerHeartbeatService` polling `IDashboardStorage.GetQueueMetricsAsync` without impacting execution hot path.
+  - Thread-safe, non-allocating atomic worker observation in `JobDispatcherService` via `Volatile.Read` and `NexJobMetrics.SyncLock`.
+  - Comprehensive unit test suite with 3N matrix covering gauges, provider registration, exception handling, and tag assertions (`tests/NexJob.Tests/NexJobMetricsTests.cs`).
+  - Documented metric instruments and scrape semantics in `docs/wiki/12-OpenTelemetry.md`.
+
+- **Documentation**:
+  - Added dedicated, comprehensive `README.md` files for all storage provider packages (`NexJob.Postgres`, `NexJob.SqlServer`, `NexJob.MongoDB`, `NexJob.Redis`) and dashboard packages (`NexJob.Dashboard`, `NexJob.Dashboard.Standalone`) (PR #137).
+  - Added dedicated `README.md` for `NexJob.Trigger.GooglePubSub`.
+
+- **Engineering Governance**:
+  - Added disciplined `nexjob-task-cycle` agent skill with technical grooming, 3N test matrix, boundary enforcement, and automated verification gates (commit `eb1b91a`, PR #138).
+  - Added comprehensive 3N unit test suite for Azure Service Bus trigger (`tests/NexJob.Trigger.AzureServiceBus.Tests`).
+
+### Fixed
+
+- **Core Storage Providers**:
+  - Prevented infinite requeue loops for orphaned poison-pill jobs when retry attempts are exhausted in `OrphanedJobWatcherService` across all 5 storage providers (`InMemoryStorageProvider`, `PostgresStorageProvider`, `SqlServerStorageProvider`, `MongoJobStorage`, `RedisJobStorage`) (issue #143, PR #149).
+  - Eliminated banned `.Result` sync-over-async invocations in `InMemoryStorageProvider` (commit `fada371`).
+
+- **`NexJob.Trigger.AwsSqs`**:
+  - Resolved message visibility timeout flakiness and delays on enqueue failures by immediately invoking `ChangeMessageVisibilityAsync(VisibilityTimeout = 0)` (issue #141, PR #150).
+
+- **CI Test Suite**:
+  - Included missing integration test suites (RabbitMQ, Salesforce) and broadened regex filters in `.github/workflows/ci.yml` (issue #139, PR #152).
+
+### Changed
+
+- **Health Checks**:
+  - Made health check timeout (`HealthCheckTimeout`, default 3s) and dead-letter failure threshold (`HealthCheckFailedThreshold`, default 10) configurable via `NexJobOptions` and `NexJobSettings` (issue #147, PR #151).
+
+- **`NexJob.Trigger.AwsSqs`**:
+  - Standardized trigger handler and extension naming across SQS packages (commit `107b5bf`).
+
 ## [5.1.0] - 2026-09-17
 
 ### Added
@@ -19,6 +58,11 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - Fluent registration extensions on `IServiceCollection` and `NexJobBuilder` (`AddSalesforceStreamingTrigger<TJob>` and `AddNexJobSalesforceStreamingTrigger`).
   - Comprehensive unit test suite with 3N matrix achieving 90.1% line coverage (`tests/NexJob.Trigger.SalesforceStreaming.Tests`).
   - Complete documentation in `src/NexJob.Trigger.SalesforceStreaming/README.md` and `docs/wiki/19-Triggers.md`.
+
+### Fixed
+
+- **CI/Publishing**:
+  - Included `NexJob.Trigger.SalesforceStreaming` in packaging and NuGet publication workflows (PR #136).
 
 ## [5.0.0] - 2026-09-17
 
@@ -534,7 +578,10 @@ The project has entered an official **Reliability Lock**. Development is focused
 - Recurring concurrency policy: `SkipIfRunning` / `AllowConcurrent`
 - CI/CD pipeline publishing all packages on `v*` tag push
 
-[Unreleased]: https://github.com/oluciano/NexJob/compare/v4.0.0...HEAD
+[Unreleased]: https://github.com/oluciano/NexJob/compare/v5.1.0...HEAD
+[5.1.0]: https://github.com/oluciano/NexJob/compare/v5.0.0...v5.1.0
+[5.0.0]: https://github.com/oluciano/NexJob/compare/v4.0.1...v5.0.0
+[4.0.1]: https://github.com/oluciano/NexJob/compare/v4.0.0...v4.0.1
 [4.0.0]: https://github.com/oluciano/NexJob/compare/v3.0.0...v4.0.0
 [2.0.0]: https://github.com/oluciano/NexJob/compare/v1.0.0...v2.0.0
 [1.0.0]: https://github.com/oluciano/NexJob/compare/v0.8.0...v1.0.0
