@@ -481,16 +481,21 @@ public sealed class SqlServerStorageProvider : IStorageProvider
     public async Task RequeueOrphanedJobsAsync(
         TimeSpan heartbeatTimeout, CancellationToken cancellationToken = default)
     {
-        var cutoff = DateTimeOffset.UtcNow - heartbeatTimeout;
+        var now = DateTimeOffset.UtcNow;
+        var cutoff = now - heartbeatTimeout;
         await using var conn = Open();
         await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
         await conn.ExecuteAsync(
             """
             UPDATE nexjob_jobs
-            SET status = 'Enqueued', heartbeat_at = NULL, processing_started_at = NULL
+            SET status = CASE WHEN attempts >= max_attempts THEN 'Failed' ELSE 'Enqueued' END,
+                completed_at = CASE WHEN attempts >= max_attempts THEN @now ELSE NULL END,
+                exception_message = CASE WHEN attempts >= max_attempts AND exception_message IS NULL THEN 'Orphaned execution exceeded maximum attempts.' ELSE exception_message END,
+                heartbeat_at = NULL,
+                processing_started_at = NULL
             WHERE status = 'Processing' AND heartbeat_at < @cutoff
             """,
-            new { cutoff });
+            new { cutoff, now }).ConfigureAwait(false);
     }
 
     // ── Continuations ─────────────────────────────────────────────────────────

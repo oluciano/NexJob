@@ -341,10 +341,21 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
                     continue;
                 }
 
-                job.Status = JobStatus.Enqueued;
-                job.ProcessingStartedAt = null;
-                job.HeartbeatAt = null;
-                WriteToChannel(job);
+                if (job.Attempts >= job.MaxAttempts)
+                {
+                    job.Status = JobStatus.Failed;
+                    job.CompletedAt = DateTimeOffset.UtcNow;
+                    job.ProcessingStartedAt = null;
+                    job.HeartbeatAt = null;
+                    job.LastErrorMessage ??= "Orphaned execution exceeded maximum attempts.";
+                }
+                else
+                {
+                    job.Status = JobStatus.Enqueued;
+                    job.ProcessingStartedAt = null;
+                    job.HeartbeatAt = null;
+                    WriteToChannel(job);
+                }
             }
         }
 

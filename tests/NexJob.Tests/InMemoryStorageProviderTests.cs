@@ -212,6 +212,47 @@ public sealed class InMemoryStorageProviderTests
     }
 
     [Fact]
+    public async Task RequeueOrphanedJobsAsync_WhenAttemptsExhausted_MovesToFailed()
+    {
+        var job = MakeJob(maxAttempts: 1);
+        await _sut.EnqueueAsync(job);
+        var fetched = await _sut.FetchNextAsync(["default"]);
+
+        fetched!.Attempts.Should().Be(1);
+
+        // Force heartbeat into the past
+        fetched.HeartbeatAt = DateTimeOffset.UtcNow.AddMinutes(-10);
+
+        await _sut.RequeueOrphanedJobsAsync(TimeSpan.FromMinutes(5));
+
+        var stored = await _sut.GetJobByIdAsync(fetched.Id);
+        stored!.Status.Should().Be(JobStatus.Failed);
+        stored.HeartbeatAt.Should().BeNull();
+        stored.ProcessingStartedAt.Should().BeNull();
+        stored.CompletedAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task RequeueOrphanedJobsAsync_WhenAttemptsUnderLimit_RequeuesJob()
+    {
+        var job = MakeJob(maxAttempts: 2);
+        await _sut.EnqueueAsync(job);
+        var fetched = await _sut.FetchNextAsync(["default"]);
+
+        fetched!.Attempts.Should().Be(1);
+
+        // Force heartbeat into the past
+        fetched.HeartbeatAt = DateTimeOffset.UtcNow.AddMinutes(-10);
+
+        await _sut.RequeueOrphanedJobsAsync(TimeSpan.FromMinutes(5));
+
+        var stored = await _sut.GetJobByIdAsync(fetched.Id);
+        stored!.Status.Should().Be(JobStatus.Enqueued);
+        stored.HeartbeatAt.Should().BeNull();
+        stored.ProcessingStartedAt.Should().BeNull();
+    }
+
+    [Fact]
     public async Task RequeueOrphanedJobsAsync_DoesNotRequeueActiveJob()
     {
         var job = MakeJob();
@@ -758,7 +799,8 @@ public sealed class InMemoryStorageProviderTests
 
     private static JobRecord MakeJob(
         JobPriority priority = JobPriority.Normal,
-        string? idempotencyKey = null) =>
+        string? idempotencyKey = null,
+        int maxAttempts = 10) =>
         new()
         {
             Id = JobId.New(),
@@ -770,7 +812,7 @@ public sealed class InMemoryStorageProviderTests
             Status = JobStatus.Enqueued,
             IdempotencyKey = idempotencyKey,
             CreatedAt = DateTimeOffset.UtcNow,
-            MaxAttempts = 10,
+            MaxAttempts = maxAttempts,
         };
 
     private static RecurringJobRecord MakeRecurring(string id, string cron = "0 * * * *") =>
