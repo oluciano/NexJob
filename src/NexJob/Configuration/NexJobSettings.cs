@@ -52,4 +52,10 @@ public sealed class NexJobSettings
 
     /// <summary>Recurring job definitions from configuration.</summary>
     public List<RecurringJobSettings> RecurringJobs { get; set; } = [];
+
+    /// <summary>Maximum time allowed for storage health check probe. Defaults to <c>5 seconds</c>.</summary>
+    public TimeSpan HealthCheckTimeout { get; set; } = TimeSpan.FromSeconds(5);
+
+    /// <summary>Number of failed jobs above which health check reports Degraded. Defaults to <c>100</c>.</summary>
+    public int HealthCheckFailedThreshold { get; set; } = 100;
 }
