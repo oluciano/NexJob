@@ -12,38 +12,64 @@ namespace NexJob.Postgres;
 /// Uses <c>SELECT FOR UPDATE SKIP LOCKED</c> for atomic job claiming, preventing
 /// double-processing across multiple workers or server instances.
 /// </summary>
-public sealed class PostgresStorageProvider : IStorageProvider
+public sealed class PostgresStorageProvider : IStorageProvider, IDisposable, IAsyncDisposable
 {
-    private readonly string _connectionString;
-    private readonly NpgsqlDataSource? _dataSource;
+    private readonly NpgsqlDataSource _dataSource;
+    private readonly bool _ownsDataSource;
+    private bool _disposed;
 
     /// <summary>
     /// Initialises the provider and applies all pending schema migrations.
     /// Acquires a PostgreSQL advisory lock so only one instance migrates at a time.
     /// </summary>
+    /// <param name="connectionString">The PostgreSQL connection string.</param>
     public PostgresStorageProvider(string connectionString)
     {
-        _connectionString = connectionString;
+        ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
+        var dataSource = NpgsqlDataSource.Create(connectionString);
+        _dataSource = dataSource;
+        _ownsDataSource = true;
+
         // Allow Dapper to match snake_case column names to PascalCase properties
         // (e.g., recurring_job_id → RecurringJobId, completed_at → CompletedAt)
         Dapper.DefaultTypeMap.MatchNamesWithUnderscores = true;
-        // Sync-over-async is acceptable here: runs once at startup, before any requests are served.
+        try
+        {
+            // Sync-over-async is acceptable here: runs once at startup, before any requests are served.
 #pragma warning disable RS0030
-        new SchemaMigrator().MigrateAsync(connectionString).GetAwaiter().GetResult();
+            new SchemaMigrator().MigrateAsync(connectionString).GetAwaiter().GetResult();
 #pragma warning restore RS0030
+        }
+        catch
+        {
+            dataSource.Dispose();
+            throw;
+        }
     }
 
     /// <summary>
     /// Initialises the provider with an existing <see cref="NpgsqlDataSource"/>.
-    /// Migrations are NOT applied when using this constructor (typically used for read replicas).
+    /// Migrations are NOT applied when using this constructor (typically used for read replicas or external data sources).
     /// </summary>
     /// <param name="dataSource">The data source.</param>
     /// <param name="options">The nex job options.</param>
-    public PostgresStorageProvider(NpgsqlDataSource dataSource, NexJobOptions options)
+    /// <param name="ownsDataSource">Whether this provider instance owns the data source and should dispose it on disposal.</param>
+    public PostgresStorageProvider(NpgsqlDataSource dataSource, NexJobOptions? options = null, bool ownsDataSource = false)
     {
-        _dataSource = dataSource;
-        _connectionString = dataSource.ConnectionString;
+        _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
+        _ownsDataSource = ownsDataSource;
+
+        Dapper.DefaultTypeMap.MatchNamesWithUnderscores = true;
     }
+
+    /// <summary>Gets the underlying PostgreSQL data source.</summary>
+    internal NpgsqlDataSource DataSource => _dataSource;
+
+    /// <summary>Gets a value indicating whether this instance owns and will dispose the data source.</summary>
+    internal bool OwnsDataSource => _ownsDataSource;
+
+    /// <summary>Gets a value indicating whether this provider has been disposed.</summary>
+    internal bool IsDisposed => _disposed;
 
     // ── EnqueueAsync ──────────────────────────────────────────────────────────
 
@@ -883,6 +909,38 @@ public sealed class PostgresStorageProvider : IStorageProvider
         return deleted;
     }
 
+    // ── Disposal ──────────────────────────────────────────────────────────────
+
+    /// <inheritdoc/>
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        if (_ownsDataSource)
+        {
+            _dataSource.Dispose();
+        }
+    }
+
+    /// <inheritdoc/>
+    public async ValueTask DisposeAsync()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        if (_ownsDataSource)
+        {
+            await _dataSource.DisposeAsync().ConfigureAwait(false);
+        }
+    }
+
     // ── Schema ────────────────────────────────────────────────────────────────
 
     private static bool IsTerminalStatus(string? status) =>
@@ -908,7 +966,11 @@ public sealed class PostgresStorageProvider : IStorageProvider
     private static bool IsActiveState(JobStatus status) =>
         status is JobStatus.Enqueued or JobStatus.Processing or JobStatus.Scheduled or JobStatus.AwaitingContinuation;
 
-    private NpgsqlConnection Open() => _dataSource?.CreateConnection() ?? new NpgsqlConnection(_connectionString);
+    private NpgsqlConnection Open()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        return _dataSource.CreateConnection();
+    }
 
     private async Task ApplySuccessAsync(
         IDbConnection conn, IDbTransaction tx, JobId jobId, JobExecutionResult result,
