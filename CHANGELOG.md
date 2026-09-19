@@ -8,6 +8,10 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`NexJob.Postgres`**:
+  - Implemented `AddNexJobPostgres(this IServiceCollection services, NpgsqlDataSource dataSource)` registration overload enabling reuse of pre-configured application data sources with connection pooling and telemetry (issue #148).
+  - Implemented `IDisposable` and `IAsyncDisposable` on `PostgresStorageProvider` with explicit ownership tracking (`ownsDataSource`), safely managing lifecycle for internal vs externally injected data sources (issue #148).
+
 - **`NexJob.Telemetry`**:
   - Implemented standard OpenTelemetry `ObservableGauge` instruments: `nexjob.queue.depth` (tagged with `nexjob.queue`), `nexjob.workers.active`, and `nexjob.workers.total` for Kubernetes HPA and Prometheus autoscaling (issue #146, PR #153).
   - Background asynchronous metric sampling via `ServerHeartbeatService` polling `IDashboardStorage.GetQueueMetricsAsync` without impacting execution hot path.
@@ -36,6 +40,9 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - Included missing integration test suites (RabbitMQ, Salesforce) and broadened regex filters in `.github/workflows/ci.yml` (issue #139, PR #152).
 
 ### Changed
+
+- **`NexJob.Postgres`**:
+  - `PostgresStorageProvider` now builds and manages an internal `NpgsqlDataSource` by default instead of instantiating raw `NpgsqlConnection` per operation, leveraging Npgsql 7/8+ connection pooling, prepared statement caching, and automatic multi-host failover (issue #148).
 
 - **Health Checks**:
   - Made health check timeout (`HealthCheckTimeout`, default 3s) and dead-letter failure threshold (`HealthCheckFailedThreshold`, default 10) configurable via `NexJobOptions` and `NexJobSettings` (issue #147, PR #151).

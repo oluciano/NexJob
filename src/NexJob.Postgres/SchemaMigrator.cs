@@ -9,7 +9,7 @@ namespace NexJob.Postgres;
 /// Uses <c>pg_advisory_lock</c> to prevent concurrent migration races when multiple
 /// instances start simultaneously.
 /// </summary>
-internal sealed class SchemaMigrator
+internal static class SchemaMigrator
 {
     /// <summary>All versioned migrations in ascending version order.</summary>
     internal static readonly IReadOnlyList<SchemaMigration> AllMigrations =
@@ -28,16 +28,46 @@ internal sealed class SchemaMigrator
     private const long AdvisoryLockKey = 7_242_374_305L;
 
     /// <summary>
+    /// Runs all pending migrations using <paramref name="dataSource"/>.
+    /// Acquires a PostgreSQL advisory lock so only one instance migrates at a time.
+    /// </summary>
+    /// <param name="dataSource">The PostgreSQL data source.</param>
+    /// <param name="ct">Token to cancel the operation.</param>
+    public static async Task MigrateAsync(NpgsqlDataSource dataSource, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(dataSource);
+        await using var conn = dataSource.CreateConnection();
+        await conn.OpenAsync(ct).ConfigureAwait(false);
+        await MigrateInternalAsync(conn, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
     /// Runs all pending migrations against <paramref name="connectionString"/>.
     /// Acquires a PostgreSQL advisory lock so only one instance migrates at a time.
     /// </summary>
     /// <param name="connectionString">The PostgreSQL connection string.</param>
     /// <param name="ct">Token to cancel the operation.</param>
-    public async Task MigrateAsync(string connectionString, CancellationToken ct = default)
+    public static async Task MigrateAsync(string connectionString, CancellationToken ct = default)
     {
         await using var conn = new NpgsqlConnection(connectionString);
         await conn.OpenAsync(ct).ConfigureAwait(false);
+        await MigrateInternalAsync(conn, ct).ConfigureAwait(false);
+    }
 
+    /// <summary>
+    /// Returns the subset of <paramref name="all"/> whose version is not in <paramref name="applied"/>,
+    /// ordered by version ascending. Exposed for unit testing without a real database connection.
+    /// </summary>
+    /// <param name="all">Full ordered list of known migrations.</param>
+    /// <param name="applied">Set of already-applied version numbers.</param>
+    internal static IEnumerable<SchemaMigration> GetPendingMigrations(
+        IReadOnlyList<SchemaMigration> all,
+        IReadOnlySet<int> applied)
+        => all.Where(m => !applied.Contains(m.Version))
+              .OrderBy(m => m.Version);
+
+    private static async Task MigrateInternalAsync(NpgsqlConnection conn, CancellationToken ct)
+    {
         // Acquire advisory lock — blocks until acquired
         await conn.ExecuteAsync($"SELECT pg_advisory_lock({AdvisoryLockKey})").ConfigureAwait(false);
 
@@ -86,17 +116,5 @@ internal sealed class SchemaMigrator
             await conn.ExecuteAsync($"SELECT pg_advisory_unlock({AdvisoryLockKey})").ConfigureAwait(false);
         }
     }
-
-    /// <summary>
-    /// Returns the subset of <paramref name="all"/> whose version is not in <paramref name="applied"/>,
-    /// ordered by version ascending. Exposed for unit testing without a real database connection.
-    /// </summary>
-    /// <param name="all">Full ordered list of known migrations.</param>
-    /// <param name="applied">Set of already-applied version numbers.</param>
-    internal static IEnumerable<SchemaMigration> GetPendingMigrations(
-        IReadOnlyList<SchemaMigration> all,
-        IReadOnlySet<int> applied)
-        => all.Where(m => !applied.Contains(m.Version))
-              .OrderBy(m => m.Version);
 }
 #pragma warning restore MA0004

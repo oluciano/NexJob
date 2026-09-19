@@ -18,10 +18,14 @@ public static class NexJobPostgresExtensions
     /// </summary>
     /// <param name="services">The service collection to configure.</param>
     /// <param name="connectionString">Npgsql connection string.</param>
+    /// <returns>The service collection.</returns>
     public static IServiceCollection AddNexJobPostgres(
         this IServiceCollection services,
         string connectionString)
     {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
+
         services.AddSingleton(_ => new PostgresStorageProvider(connectionString));
         services.AddSingleton<IStorageProvider>(sp => sp.GetRequiredService<PostgresStorageProvider>());
         services.AddSingleton<IJobStorage>(sp => sp.GetRequiredService<PostgresStorageProvider>());
@@ -29,6 +33,30 @@ public static class NexJobPostgresExtensions
         services.AddSingleton<IDashboardStorage>(sp => sp.GetRequiredService<PostgresStorageProvider>());
 
         services.AddSingleton<IRuntimeSettingsStore>(_ => new PostgresRuntimeSettingsStore(connectionString));
+        return services;
+    }
+
+    /// <summary>
+    /// Registers <see cref="PostgresStorageProvider"/> as the <see cref="IStorageProvider"/>
+    /// for NexJob using an existing <see cref="NpgsqlDataSource"/>. Call this <em>before</em> <c>AddNexJob()</c>.
+    /// </summary>
+    /// <param name="services">The service collection to configure.</param>
+    /// <param name="dataSource">Npgsql data source instance.</param>
+    /// <returns>The service collection.</returns>
+    public static IServiceCollection AddNexJobPostgres(
+        this IServiceCollection services,
+        NpgsqlDataSource dataSource)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(dataSource);
+
+        services.AddSingleton(_ => new PostgresStorageProvider(dataSource));
+        services.AddSingleton<IStorageProvider>(sp => sp.GetRequiredService<PostgresStorageProvider>());
+        services.AddSingleton<IJobStorage>(sp => sp.GetRequiredService<PostgresStorageProvider>());
+        services.AddSingleton<IRecurringStorage>(sp => sp.GetRequiredService<PostgresStorageProvider>());
+        services.AddSingleton<IDashboardStorage>(sp => sp.GetRequiredService<PostgresStorageProvider>());
+
+        services.AddSingleton<IRuntimeSettingsStore>(_ => new PostgresRuntimeSettingsStore(dataSource.ConnectionString));
         return services;
     }
 
@@ -54,7 +82,7 @@ public static class NexJobPostgresExtensions
         {
             var options = sp.GetRequiredService<NexJobOptions>();
             var dataSource = NpgsqlDataSource.Create(readReplicaConnectionString);
-            return new PostgresStorageProvider(dataSource, options);
+            return new PostgresStorageProvider(dataSource, options, ownsDataSource: true);
         });
 
         return builder;
