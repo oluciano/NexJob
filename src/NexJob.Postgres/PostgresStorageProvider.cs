@@ -37,7 +37,7 @@ public sealed class PostgresStorageProvider : IStorageProvider, IDisposable, IAs
         {
             // Sync-over-async is acceptable here: runs once at startup, before any requests are served.
 #pragma warning disable RS0030
-            new SchemaMigrator().MigrateAsync(connectionString).GetAwaiter().GetResult();
+            SchemaMigrator.MigrateAsync(dataSource).GetAwaiter().GetResult();
 #pragma warning restore RS0030
         }
         catch
