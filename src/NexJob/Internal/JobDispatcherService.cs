@@ -3,6 +3,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using NexJob.Configuration;
 using NexJob.Storage;
+using NexJob.Telemetry;
 
 namespace NexJob.Internal;
 
@@ -74,6 +75,9 @@ internal sealed class JobDispatcherService : BackgroundService
             _options.Workers, string.Join(", ", _options.Queues));
 
         using var workerSlots = new SemaphoreSlim(_options.Workers, _options.Workers);
+        NexJobMetrics.SetWorkerMetricsProviders(
+            () => Volatile.Read(ref _activeJobCount),
+            () => _options.Workers);
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -152,6 +156,7 @@ internal sealed class JobDispatcherService : BackgroundService
             }
         }
 
+        NexJobMetrics.SetWorkerMetricsProviders(null, null);
         _logger.LogInformation("JobDispatcherService stopped.");
     }
 

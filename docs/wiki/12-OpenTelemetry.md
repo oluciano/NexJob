@@ -72,8 +72,11 @@ NexJob uses `Meter` named `"NexJob"`.
 | `nexjob.jobs.failed` | Counter | Total jobs failed (dead-letter) |
 | `nexjob.jobs.expired` | Counter | Total jobs expired (deadline exceeded) |
 | `nexjob.job.duration` | Histogram | Job execution time in milliseconds |
+| `nexjob.queue.depth` | ObservableGauge | Current number of enqueued jobs waiting in the queue (tagged with `nexjob.queue`) |
+| `nexjob.workers.active` | ObservableGauge | Number of workers currently executing jobs |
+| `nexjob.workers.total` | ObservableGauge | Total number of worker slots configured on the node |
 
-All metrics include `job.type` and `job.queue` as dimensions.
+All counter and histogram metrics include `job.type` and `job.queue` as dimensions. The `nexjob.queue.depth` gauge is tagged with `nexjob.queue`.
 
 ---
 
