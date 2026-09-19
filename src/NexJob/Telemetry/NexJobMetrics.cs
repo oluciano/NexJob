@@ -35,4 +35,106 @@ public static class NexJobMetrics
     /// <summary>Records job execution duration in milliseconds.</summary>
     internal static readonly Histogram<double> JobDuration =
         Meter.CreateHistogram<double>("nexjob.job.duration", "ms", "Job execution duration in milliseconds.");
+
+    /// <summary>Observable gauge for queue depth, tagged by queue name.</summary>
+    internal static readonly ObservableGauge<long> QueueDepth =
+        Meter.CreateObservableGauge<long>(
+            "nexjob.queue.depth",
+            () => ObserveQueueDepth(),
+            "jobs",
+            "Current number of enqueued jobs waiting in the queue.");
+
+    /// <summary>Observable gauge for number of active workers currently executing jobs.</summary>
+    internal static readonly ObservableGauge<int> WorkersActive =
+        Meter.CreateObservableGauge<int>(
+            "nexjob.workers.active",
+            () => ObserveWorkersActive(),
+            "workers",
+            "Number of workers currently executing jobs.");
+
+    /// <summary>Observable gauge for total number of configured worker slots.</summary>
+    internal static readonly ObservableGauge<int> WorkersTotal =
+        Meter.CreateObservableGauge<int>(
+            "nexjob.workers.total",
+            () => ObserveWorkersTotal(),
+            "workers",
+            "Total number of worker slots configured.");
+
+    /// <summary>Synchronization lock used for safe provider registration and metric observation.</summary>
+    internal static readonly object SyncLock = new();
+
+    private static Func<int>? _activeWorkersProvider;
+    private static Func<int>? _totalWorkersProvider;
+    private static Func<IEnumerable<Measurement<long>>>? _queueDepthProvider;
+
+    /// <summary>
+    /// Configures the callback providers for active and total worker gauges.
+    /// </summary>
+    /// <param name="activeWorkersProvider">Delegate returning the current active workers count.</param>
+    /// <param name="totalWorkersProvider">Delegate returning the total worker slots count.</param>
+    public static void SetWorkerMetricsProviders(Func<int>? activeWorkersProvider, Func<int>? totalWorkersProvider)
+    {
+        lock (SyncLock)
+        {
+            _activeWorkersProvider = activeWorkersProvider;
+            _totalWorkersProvider = totalWorkersProvider;
+        }
+    }
+
+    /// <summary>
+    /// Configures the callback provider for the queue depth gauge.
+    /// </summary>
+    /// <param name="queueDepthProvider">Delegate returning measurements of queue depth tagged by queue.</param>
+    public static void SetQueueDepthProvider(Func<IEnumerable<Measurement<long>>>? queueDepthProvider)
+    {
+        lock (SyncLock)
+        {
+            _queueDepthProvider = queueDepthProvider;
+        }
+    }
+
+    private static IEnumerable<Measurement<long>> ObserveQueueDepth()
+    {
+        lock (SyncLock)
+        {
+            try
+            {
+                return _queueDepthProvider?.Invoke() ?? [];
+            }
+            catch
+            {
+                return [];
+            }
+        }
+    }
+
+    private static int ObserveWorkersActive()
+    {
+        lock (SyncLock)
+        {
+            try
+            {
+                return _activeWorkersProvider?.Invoke() ?? 0;
+            }
+            catch
+            {
+                return 0;
+            }
+        }
+    }
+
+    private static int ObserveWorkersTotal()
+    {
+        lock (SyncLock)
+        {
+            try
+            {
+                return _totalWorkersProvider?.Invoke() ?? 0;
+            }
+            catch
+            {
+                return 0;
+            }
+        }
+    }
 }
