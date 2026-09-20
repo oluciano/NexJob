@@ -12,6 +12,7 @@ using Xunit;
 
 namespace NexJob.StressTests;
 
+[Collection("StressTests")]
 [Trait("Category", "Stress")]
 public sealed class PostgresStorageStressTests : IClassFixture<PostgresStressFixture>
 {
@@ -28,7 +29,7 @@ public sealed class PostgresStorageStressTests : IClassFixture<PostgresStressFix
         // Arrange
         const int totalJobs = 3000;
         const int concurrentWorkers = 20;
-        StressJob.Reset();
+        PostgresStressJob.Reset();
 
         var baseConn = _fixture.ConnectionString;
         var dbName = $"nexjob_stress_{Guid.NewGuid():N}";
@@ -58,7 +59,7 @@ public sealed class PostgresStorageStressTests : IClassFixture<PostgresStressFix
                     opt.PollingInterval = TimeSpan.FromMilliseconds(10);
                 });
 
-                services.AddTransient<StressJob>();
+                services.AddTransient<PostgresStressJob>();
             })
             .Build();
 
@@ -74,7 +75,7 @@ public sealed class PostgresStorageStressTests : IClassFixture<PostgresStressFix
             new ParallelOptions { MaxDegreeOfParallelism = 20, },
             i =>
             {
-                scheduler.EnqueueAsync<StressJob, StressJobInput>(
+                scheduler.EnqueueAsync<PostgresStressJob, StressJobInput>(
                     new StressJobInput { Index = i, Payload = $"payload-{i}", })
                     .GetAwaiter()
                     .GetResult();
@@ -83,7 +84,7 @@ public sealed class PostgresStorageStressTests : IClassFixture<PostgresStressFix
         // Wait for all jobs to be processed
         var waitSw = Stopwatch.StartNew();
         var timeout = TimeSpan.FromSeconds(60);
-        while (StressJob.ExecutionCount < totalJobs && waitSw.Elapsed < timeout)
+        while (PostgresStressJob.ExecutionCount < totalJobs && waitSw.Elapsed < timeout)
         {
             await Task.Delay(100);
         }
@@ -92,7 +93,7 @@ public sealed class PostgresStorageStressTests : IClassFixture<PostgresStressFix
         sw.Stop();
 
         // Assert
-        StressJob.ExecutionCount.Should().Be(totalJobs, "all enqueued jobs must be processed to completion without deadlocks");
+        PostgresStressJob.ExecutionCount.Should().Be(totalJobs, "all enqueued jobs must be processed to completion without deadlocks");
 
         // Verify storage state via IDashboardStorage
         var storage = host.Services.GetRequiredService<IDashboardStorage>();

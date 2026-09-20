@@ -56,6 +56,10 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`NexJob.StressTests`**:
+  - Configured `AllowAdmin = true` on Redis connection multiplexer for `FlushDatabaseAsync` during test initialization.
+  - Isolated static job execution counters into distinct `PostgresStressJob` and `RedisStressJob` types and added `[Collection("StressTests")]` to prevent state collision under parallel test execution.
+
 - **`NexJob.Dashboard`**:
   - Resolved `System.InvalidOperationException: The current thread is not associated with the Dispatcher` when rendering Blazor pages with asynchronous network storage providers (PostgreSQL, SQL Server, MongoDB) by preserving Dispatcher execution context during component parameter loading (issue #128).
 

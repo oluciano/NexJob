@@ -12,6 +12,7 @@ using Xunit;
 
 namespace NexJob.StressTests;
 
+[Collection("StressTests")]
 [Trait("Category", "Stress")]
 public sealed class RedisStorageStressTests : IClassFixture<RedisStressFixture>
 {
@@ -28,9 +29,11 @@ public sealed class RedisStorageStressTests : IClassFixture<RedisStressFixture>
         // Arrange
         const int totalJobs = 3000;
         const int concurrentWorkers = 20;
-        StressJob.Reset();
+        RedisStressJob.Reset();
 
-        var redis = await ConnectionMultiplexer.ConnectAsync(_fixture.ConnectionString);
+        var redisConfig = ConfigurationOptions.Parse(_fixture.ConnectionString);
+        redisConfig.AllowAdmin = true;
+        using var redis = await ConnectionMultiplexer.ConnectAsync(redisConfig);
         var server = redis.GetServer(redis.GetEndPoints()[0]);
         await server.FlushDatabaseAsync();
 
@@ -44,7 +47,7 @@ public sealed class RedisStorageStressTests : IClassFixture<RedisStressFixture>
                     opt.PollingInterval = TimeSpan.FromMilliseconds(10);
                 });
 
-                services.AddTransient<StressJob>();
+                services.AddTransient<RedisStressJob>();
             })
             .Build();
 
@@ -60,7 +63,7 @@ public sealed class RedisStorageStressTests : IClassFixture<RedisStressFixture>
             new ParallelOptions { MaxDegreeOfParallelism = 20, },
             i =>
             {
-                scheduler.EnqueueAsync<StressJob, StressJobInput>(
+                scheduler.EnqueueAsync<RedisStressJob, StressJobInput>(
                     new StressJobInput { Index = i, Payload = $"payload-redis-{i}", })
                     .GetAwaiter()
                     .GetResult();
@@ -69,7 +72,7 @@ public sealed class RedisStorageStressTests : IClassFixture<RedisStressFixture>
         // Wait for all jobs to be processed
         var waitSw = Stopwatch.StartNew();
         var timeout = TimeSpan.FromSeconds(60);
-        while (StressJob.ExecutionCount < totalJobs && waitSw.Elapsed < timeout)
+        while (RedisStressJob.ExecutionCount < totalJobs && waitSw.Elapsed < timeout)
         {
             await Task.Delay(100);
         }
@@ -78,7 +81,7 @@ public sealed class RedisStorageStressTests : IClassFixture<RedisStressFixture>
         sw.Stop();
 
         // Assert
-        StressJob.ExecutionCount.Should().Be(totalJobs, "all enqueued jobs must be processed to completion in Redis");
+        RedisStressJob.ExecutionCount.Should().Be(totalJobs, "all enqueued jobs must be processed to completion in Redis");
 
         var storage = host.Services.GetRequiredService<IDashboardStorage>();
         var metrics = await storage.GetMetricsAsync();
