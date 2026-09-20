@@ -4,7 +4,7 @@ using NexJob;
 
 namespace NexJob.StressTests;
 
-public sealed class StressJob : IJob<StressJobInput>
+public sealed class RedisStressJob : IJob<StressJobInput>
 {
     private static long _executionCount;
 
