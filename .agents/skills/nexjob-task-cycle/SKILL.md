@@ -116,7 +116,7 @@ Apply the following mandatory engineering rules:
 - **Sealed by default:** All new classes must be `sealed` unless designed for extension.
 - **Async purity:** `async`/`await` throughout. Never use `.Result` or `.Wait()`.
 - **CancellationToken:** Propagated across all async call chains.
-- **ConfigureAwait:** Always append `.ConfigureAwait(false)` across library projects (`src/NexJob*`).
+- **ConfigureAwait:** Always append `.ConfigureAwait(false)` across library projects (`src/NexJob*`), EXCEPT in Blazor component rendering lifecycle (`src/NexJob.Dashboard/Pages`) which must preserve the `DispatcherSynchronizationContext`.
 - **Time Invariant:** Use `DateTime.UtcNow`. Banned API: `DateTime.Now`.
 - **String Comparisons:** Always specify `StringComparison.Ordinal` or `StringComparison.OrdinalIgnoreCase`.
 - **Documentation:** Full XML documentation (`///`) on all public types and members.

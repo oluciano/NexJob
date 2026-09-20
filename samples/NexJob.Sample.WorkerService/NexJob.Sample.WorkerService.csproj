@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk.Worker">
+<Project Sdk="Microsoft.NET.Sdk.Worker">
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
     <Nullable>enable</Nullable>
@@ -6,6 +6,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\NexJob\NexJob.csproj" />
+    <ProjectReference Include="..\..\src\NexJob.Postgres\NexJob.Postgres.csproj" />
     <ProjectReference Include="..\..\src\NexJob.Dashboard.Standalone\NexJob.Dashboard.Standalone.csproj" />
     <PackageReference Include="System.Text.Encodings.Web" Version="8.0.0" />
   </ItemGroup>

@@ -3,38 +3,42 @@ using NexJob.Storage;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add NexJob with in-memory storage
-builder.Services.AddNexJob(opt => opt.UseInMemory())
-               .AddNexJobJobs(typeof(Program).Assembly);
+// Add NexJob with default in-memory storage and register all jobs in this assembly
+builder.Services.AddNexJob()
+    .AddNexJobJobs(typeof(Program).Assembly);
 
-// Register dead-letter handler
+// Register dead-letter handler for permanent failures
 builder.Services.AddTransient<IDeadLetterHandler<SendEmailJob>, SendEmailDeadLetterHandler>();
 
 var app = builder.Build();
 
-// Endpoint to enqueue a job
+// Endpoint to enqueue a background job with an optional deadline
 app.MapPost("/send", async (string email, IScheduler scheduler) =>
 {
     var jobId = await scheduler.EnqueueAsync<SendEmailJob, SendEmailInput>(
         new(email),
-        deadlineAfter: TimeSpan.FromSeconds(10));  // Job expires in 10 seconds if not started
+        deadlineAfter: TimeSpan.FromSeconds(10)); // Job expires in 10 seconds if not started
 
     return Results.Accepted($"/job/{jobId}", new { jobId });
 });
 
-// Endpoint to check job status
-app.MapGet("/job/{jobId}", async (Guid jobId, IStorageProvider storage) =>
+// Endpoint to check job status using segregated IDashboardStorage
+app.MapGet("/job/{jobId:guid}", async (Guid jobId, IDashboardStorage storage) =>
 {
     var job = await storage.GetJobByIdAsync(new JobId(jobId));
     if (job is null)
-        return Results.NotFound();
+    {
+        return Results.NotFound(new { message = $"Job '{jobId}' not found." });
+    }
 
     return Results.Ok(new
     {
         job.Id,
-        job.Status,
+        Status = job.Status.ToString(),
         job.Attempts,
         Deadline = job.ExpiresAt,
+        job.CreatedAt,
+        job.CompletedAt,
     });
 });
 

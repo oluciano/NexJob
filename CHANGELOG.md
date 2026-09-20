@@ -8,6 +8,19 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Samples & Reference Architecture**:
+  - Comprehensive modernization of all existing samples and addition of reference projects for all plugins, brokers, and storage topologies (issue #128):
+    - `NexJob.Sample.MinimalApi`: Modernized to .NET 8 Minimal APIs with deadline enforcement, segregated `IDashboardStorage`, and dead-letter handling.
+    - `NexJob.Sample.WebApi`: Modernized with dual storage (InMemory / PostgreSQL), REST endpoints for job lifecycle management, recurring jobs, and `.http` test definitions.
+    - `NexJob.Sample.WorkerService`: Headless console Worker Service demonstrating embedded standalone HTTP dashboard server and graceful shutdown.
+    - `NexJob.Sample.ConfiguredRecurring`: Clean declarative recurring job schedules from `appsettings.json` with timezone support.
+    - `NexJob.Sample.RabbitMQ`: Production outbox producer and trigger consumer demonstrating the 5 trigger guarantees and automatic acks.
+    - `NexJob.Sample.Kafka`: Partitioned event publishing via Outbox and consumer trigger with offset tracking and consumer groups.
+    - `NexJob.Sample.Storage`: Enterprise storage topology with PostgreSQL primary write path, isolated PostgreSQL read replica (`UseDashboardReadReplica`), Redis distributed throttle (`UseDistributedThrottle`), OpenTelemetry instrumentation, and custom pipeline filters (`IJobExecutionFilter`).
+    - `NexJob.Sample.CloudTriggers`: Unified cloud consumer triggers covering AWS SQS, Azure Service Bus, Google Cloud Pub/Sub, and Salesforce (gRPC CDC and CometD Streaming), including interactive simulation endpoints.
+    - `samples/docker-compose.yml`: Ready-to-run local infrastructure stack with PostgreSQL 16, Redis 7, RabbitMQ 3.13 Management, and Kafka KRaft.
+    - `samples/README.md`: Centralized catalog documentation with architecture matrix, quickstart commands, and scenario guides.
+
 - **`NexJob.Postgres`**:
   - Implemented `AddNexJobPostgres(this IServiceCollection services, NpgsqlDataSource dataSource)` registration overload enabling reuse of pre-configured application data sources with connection pooling and telemetry (issue #148).
   - Implemented `IDisposable` and `IAsyncDisposable` on `PostgresStorageProvider` with explicit ownership tracking (`ownsDataSource`), safely managing lifecycle for internal vs externally injected data sources (issue #148).
@@ -28,6 +41,9 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - Added comprehensive 3N unit test suite for Azure Service Bus trigger (`tests/NexJob.Trigger.AzureServiceBus.Tests`).
 
 ### Fixed
+
+- **`NexJob.Dashboard`**:
+  - Resolved `System.InvalidOperationException: The current thread is not associated with the Dispatcher` when rendering Blazor pages with asynchronous network storage providers (PostgreSQL, SQL Server, MongoDB) by preserving Dispatcher execution context during component parameter loading (issue #128).
 
 - **Core Storage Providers**:
   - Prevented infinite requeue loops for orphaned poison-pill jobs when retry attempts are exhausted in `OrphanedJobWatcherService` across all 5 storage providers (`InMemoryStorageProvider`, `PostgresStorageProvider`, `SqlServerStorageProvider`, `MongoJobStorage`, `RedisJobStorage`) (issue #143, PR #149).

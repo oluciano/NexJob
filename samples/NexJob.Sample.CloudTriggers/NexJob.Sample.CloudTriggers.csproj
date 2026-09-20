@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\NexJob\NexJob.csproj" />
+    <ProjectReference Include="..\..\src\NexJob.Trigger.AwsSqs\NexJob.Trigger.AwsSqs.csproj" />
+    <ProjectReference Include="..\..\src\NexJob.Trigger.AzureServiceBus\NexJob.Trigger.AzureServiceBus.csproj" />
+    <ProjectReference Include="..\..\src\NexJob.Trigger.GooglePubSub\NexJob.Trigger.GooglePubSub.csproj" />
+    <ProjectReference Include="..\..\src\NexJob.Trigger.Salesforce\NexJob.Trigger.Salesforce.csproj" />
+    <ProjectReference Include="..\..\src\NexJob.Trigger.SalesforceStreaming\NexJob.Trigger.SalesforceStreaming.csproj" />
+    <ProjectReference Include="..\..\src\NexJob.Dashboard\NexJob.Dashboard.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -14,7 +14,7 @@ A bare-bones ASP.NET Core Minimal API demonstrating NexJob's core features: **en
 ## Run
 
 ```bash
-cd samples/MinimalApiSample
+cd samples/NexJob.Sample.MinimalApi
 dotnet run
 ```
 

@@ -137,7 +137,7 @@ Every trigger you implement must satisfy all 5 guarantees — read `skills/nexjo
 - Classes `sealed` by default
 - `async/await` only — never `.Result` or `.Wait()`
 - `CancellationToken` propagated in all async calls
-- `.ConfigureAwait(false)` in all library projects (`src/NexJob*`)
+- `.ConfigureAwait(false)` in all library projects (`src/NexJob*`) — **EXCEPT in `src/NexJob.Dashboard` component rendering lifecycle** (`IComponent.SetParametersAsync` / `HtmlRenderer`), where the Blazor Dispatcher `SynchronizationContext` must be preserved for `_handle.Render()`
 - `StringComparison.Ordinal` or `OrdinalIgnoreCase` for string comparisons
 - Banned APIs: `DateTime.Now` (use `UtcNow`), `.Result`, `.Wait()`
 - **80% Unit Coverage** — strictly enforced via CI for all new code
