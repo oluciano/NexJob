@@ -700,29 +700,15 @@ public sealed class MongoStorageProvider : IStorageProvider
                 cancellationToken).ConfigureAwait(false);
         }
 
-        if (policy.RetainDeadLetter > TimeSpan.Zero)
+        if (policy.RetainDeadLetter > TimeSpan.Zero && policy.RetainFailed == TimeSpan.Zero)
         {
             var cutoff = now - policy.RetainDeadLetter;
-            var deadLetterFilter = Builders<JobDocument>.Filter.And(
-                Builders<JobDocument>.Filter.Or(
-                    Builders<JobDocument>.Filter.Eq("Status", "DeadLetter"),
-                    Builders<JobDocument>.Filter.Eq("status", "DeadLetter")),
-                Builders<JobDocument>.Filter.Or(
-                    Builders<JobDocument>.Filter.Lt(j => j.CompletedAt, cutoff),
-                    Builders<JobDocument>.Filter.And(
-                        Builders<JobDocument>.Filter.Eq(j => j.CompletedAt, null),
-                        Builders<JobDocument>.Filter.Lt(j => j.CreatedAt, cutoff))));
-
-            if (policy.RetainFailed == TimeSpan.Zero)
-            {
-                deadLetterFilter = Builders<JobDocument>.Filter.Or(
-                    deadLetterFilter,
-                    Builders<JobDocument>.Filter.And(
-                        Builders<JobDocument>.Filter.Eq(j => j.Status, JobStatus.Failed),
-                        Builders<JobDocument>.Filter.Lt(j => j.CompletedAt, cutoff)));
-            }
-
-            deleted += await PurgeChunkedAsync(deadLetterFilter, batchSize, cancellationToken).ConfigureAwait(false);
+            deleted += await PurgeChunkedAsync(
+                Builders<JobDocument>.Filter.And(
+                    Builders<JobDocument>.Filter.Eq(j => j.Status, JobStatus.Failed),
+                    Builders<JobDocument>.Filter.Lt(j => j.CompletedAt, cutoff)),
+                batchSize,
+                cancellationToken).ConfigureAwait(false);
         }
 
         if (policy.RetainExpired > TimeSpan.Zero)
