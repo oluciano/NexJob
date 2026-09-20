@@ -31,4 +31,27 @@ public static class RabbitMqNexJobExtensions
 
         return services;
     }
+
+    /// <summary>
+    /// Adds a RabbitMQ trigger to NexJob that consumes messages from a queue and invokes a specific job.
+    /// </summary>
+    /// <typeparam name="TJob">The job type implementing <see cref="IJob{TInput}"/> with a string input.</typeparam>
+    /// <param name="services">The service collection.</param>
+    /// <param name="configure">An action to configure the <see cref="RabbitMqTriggerOptions"/>.</param>
+    /// <returns>The service collection for chaining.</returns>
+    public static IServiceCollection AddNexJobRabbitMqTrigger<TJob>(
+        this IServiceCollection services,
+        Action<RabbitMqTriggerOptions> configure)
+        where TJob : class, IJob<string>
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configure);
+
+        services.AddTransient<TJob>();
+        return services.AddNexJobRabbitMqTrigger(options =>
+        {
+            configure(options);
+            options.JobType = typeof(TJob).AssemblyQualifiedName;
+        });
+    }
 }

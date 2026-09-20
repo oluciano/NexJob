@@ -83,6 +83,25 @@ public static class KafkaProducerExtensions
     }
 
     /// <summary>
+    /// Registers the Kafka trigger (consumer) with the NexJob builder targeting a specific job.
+    /// </summary>
+    /// <typeparam name="TJob">The job type implementing <see cref="IJob{TInput}"/> with a string input.</typeparam>
+    /// <param name="builder">The NexJob builder.</param>
+    /// <param name="configure">An action to configure the <see cref="Trigger.Kafka.KafkaTriggerOptions"/>.</param>
+    /// <returns>The NexJob builder for chaining.</returns>
+    public static NexJobBuilder AddKafkaTrigger<TJob>(
+        this NexJobBuilder builder,
+        Action<Trigger.Kafka.KafkaTriggerOptions> configure)
+        where TJob : class, IJob<string>
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        ArgumentNullException.ThrowIfNull(configure);
+
+        Trigger.Kafka.KafkaNexJobExtensions.AddNexJobKafkaTrigger<TJob>(builder.Services, configure);
+        return builder;
+    }
+
+    /// <summary>
     /// Registers the Kafka trigger (consumer) with the service collection.
     /// </summary>
     /// <param name="services">The service collection.</param>
@@ -96,6 +115,24 @@ public static class KafkaProducerExtensions
         ArgumentNullException.ThrowIfNull(configure);
 
         return Trigger.Kafka.KafkaNexJobExtensions.AddNexJobKafkaTrigger(services, configure);
+    }
+
+    /// <summary>
+    /// Registers the Kafka trigger (consumer) with the service collection targeting a specific job.
+    /// </summary>
+    /// <typeparam name="TJob">The job type implementing <see cref="IJob{TInput}"/> with a string input.</typeparam>
+    /// <param name="services">The service collection.</param>
+    /// <param name="configure">An action to configure the <see cref="Trigger.Kafka.KafkaTriggerOptions"/>.</param>
+    /// <returns>The service collection for chaining.</returns>
+    public static IServiceCollection AddKafkaTrigger<TJob>(
+        this IServiceCollection services,
+        Action<Trigger.Kafka.KafkaTriggerOptions> configure)
+        where TJob : class, IJob<string>
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configure);
+
+        return Trigger.Kafka.KafkaNexJobExtensions.AddNexJobKafkaTrigger<TJob>(services, configure);
     }
 
     /// <summary>

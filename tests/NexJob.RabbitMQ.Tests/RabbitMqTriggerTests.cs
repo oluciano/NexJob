@@ -1,5 +1,7 @@
+using System.Security.Cryptography;
 using System.Text;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Moq;
@@ -304,4 +306,297 @@ public sealed class RabbitMqTriggerTests
         _scheduler.EnqueueCalls.Should().BeEmpty("no job_type means no job should be created");
         _channelMock.Verify(m => m.BasicNack(1, false, false), Times.Once);
     }
+
+    /// <summary>
+    /// Verifies that when nexjob.job_type header is absent, the configured JobType from options is used.
+    /// </summary>
+    [Fact]
+    public async Task JobTypeInOptions_FallbackUsed_WhenHeaderMissing()
+    {
+        // Arrange
+        AsyncEventingBasicConsumer? consumer = null;
+        _channelMock.Setup(m => m.BasicConsume(
+                It.IsAny<string>(), false, It.IsAny<string>(), It.IsAny<bool>(),
+                It.IsAny<bool>(), It.IsAny<IDictionary<string, object>>(),
+                It.IsAny<IBasicConsumer>()))
+            .Callback<string, bool, string, bool, bool, IDictionary<string, object>, IBasicConsumer>(
+                (_, _, _, _, _, _, c) => consumer = (AsyncEventingBasicConsumer)c)
+            .Returns("consumer-tag");
+
+        var options = new RabbitMqTriggerOptions
+        {
+            HostName = "localhost",
+            QueueName = "test-queue",
+            TargetQueue = "default",
+            JobType = "ConfiguredRabbitConsumerJob",
+        };
+
+        var handler = new RabbitMqTriggerHandler(
+            Options.Create(options),
+            _connectionFactoryMock.Object,
+            _scheduler,
+            _nexJobOptions,
+            _loggerMock.Object);
+
+        await handler.StartAsync(CancellationToken.None);
+
+        var body = Encoding.UTF8.GetBytes("{\"orderId\":123}");
+        var props = new Mock<IBasicProperties>();
+        props.Setup(p => p.CorrelationId).Returns("corr-123");
+        props.Setup(p => p.Headers).Returns(new Dictionary<string, object>());
+
+        // Act
+        await consumer!.HandleBasicDeliver(
+            "consumer-tag", 1, false, "exchange", "routing-key", props.Object, body);
+
+        await _scheduler.WaitForEnqueueAsync(CancellationToken.None);
+
+        // Assert
+        _scheduler.EnqueueCalls.Should().HaveCount(1);
+        _scheduler.EnqueueCalls[0].JobType.Should().Be("ConfiguredRabbitConsumerJob");
+        _scheduler.EnqueueCalls[0].IdempotencyKey.Should().Be("corr-123");
+        _channelMock.Verify(m => m.BasicAck(1, false), Times.Once);
+    }
+
+    /// <summary>
+    /// Verifies that when both header and options JobType are present, the header takes precedence.
+    /// </summary>
+    [Fact]
+    public async Task HeaderJobType_TakesPrecedence_OverOptionsJobType()
+    {
+        // Arrange
+        AsyncEventingBasicConsumer? consumer = null;
+        _channelMock.Setup(m => m.BasicConsume(
+                It.IsAny<string>(), false, It.IsAny<string>(), It.IsAny<bool>(),
+                It.IsAny<bool>(), It.IsAny<IDictionary<string, object>>(),
+                It.IsAny<IBasicConsumer>()))
+            .Callback<string, bool, string, bool, bool, IDictionary<string, object>, IBasicConsumer>(
+                (_, _, _, _, _, _, c) => consumer = (AsyncEventingBasicConsumer)c)
+            .Returns("consumer-tag");
+
+        var options = new RabbitMqTriggerOptions
+        {
+            HostName = "localhost",
+            QueueName = "test-queue",
+            TargetQueue = "default",
+            JobType = "FallbackRabbitJob",
+        };
+
+        var handler = new RabbitMqTriggerHandler(
+            Options.Create(options),
+            _connectionFactoryMock.Object,
+            _scheduler,
+            _nexJobOptions,
+            _loggerMock.Object);
+
+        await handler.StartAsync(CancellationToken.None);
+
+        var body = Encoding.UTF8.GetBytes("{\"orderId\":456}");
+        var props = new Mock<IBasicProperties>();
+        props.Setup(p => p.CorrelationId).Returns("corr-456");
+        props.Setup(p => p.Headers).Returns(new Dictionary<string, object>
+        {
+            ["nexjob.job_type"] = Encoding.UTF8.GetBytes("HeaderPriorityRabbitJob"),
+        });
+
+        // Act
+        await consumer!.HandleBasicDeliver(
+            "consumer-tag", 1, false, "exchange", "routing-key", props.Object, body);
+
+        await _scheduler.WaitForEnqueueAsync(CancellationToken.None);
+
+        // Assert
+        _scheduler.EnqueueCalls.Should().HaveCount(1);
+        _scheduler.EnqueueCalls[0].JobType.Should().Be("HeaderPriorityRabbitJob");
+        _channelMock.Verify(m => m.BasicAck(1, false), Times.Once);
+    }
+
+    /// <summary>
+    /// Verifies that when neither CorrelationId nor MessageId is provided, idempotencyKey falls back to deterministic SHA256 of body.
+    /// </summary>
+    [Fact]
+    public async Task IdempotencyFallback_Sha256_WhenCorrelationIdAndMessageIdMissing()
+    {
+        // Arrange
+        AsyncEventingBasicConsumer? consumer = null;
+        _channelMock.Setup(m => m.BasicConsume(
+                It.IsAny<string>(), false, It.IsAny<string>(), It.IsAny<bool>(),
+                It.IsAny<bool>(), It.IsAny<IDictionary<string, object>>(),
+                It.IsAny<IBasicConsumer>()))
+            .Callback<string, bool, string, bool, bool, IDictionary<string, object>, IBasicConsumer>(
+                (_, _, _, _, _, _, c) => consumer = (AsyncEventingBasicConsumer)c)
+            .Returns("consumer-tag");
+
+        var options = new RabbitMqTriggerOptions
+        {
+            HostName = "localhost",
+            QueueName = "test-queue",
+            TargetQueue = "default",
+            JobType = "DeterministicIdempotencyJob",
+        };
+
+        var handler = new RabbitMqTriggerHandler(
+            Options.Create(options),
+            _connectionFactoryMock.Object,
+            _scheduler,
+            _nexJobOptions,
+            _loggerMock.Object);
+
+        await handler.StartAsync(CancellationToken.None);
+
+        var body = Encoding.UTF8.GetBytes("{\"content\":\"unique-payload\"}");
+        var expectedSha256 = Convert.ToHexString(SHA256.HashData(body));
+
+        var props = new Mock<IBasicProperties>();
+        props.Setup(p => p.CorrelationId).Returns((string)null!);
+        props.Setup(p => p.MessageId).Returns((string)null!);
+        props.Setup(p => p.Headers).Returns(new Dictionary<string, object>());
+
+        // Act
+        await consumer!.HandleBasicDeliver(
+            "consumer-tag", 1, false, "exchange", "routing-key", props.Object, body);
+
+        await _scheduler.WaitForEnqueueAsync(CancellationToken.None);
+
+        // Assert
+        _scheduler.EnqueueCalls.Should().HaveCount(1);
+        _scheduler.EnqueueCalls[0].IdempotencyKey.Should().Be(expectedSha256);
+        _channelMock.Verify(m => m.BasicAck(1, false), Times.Once);
+    }
+
+    /// <summary>
+    /// Verifies that an empty body without CorrelationId/MessageId produces a valid non-empty SHA256 hash without throwing.
+    /// </summary>
+    [Fact]
+    public async Task IdempotencyFallback_EmptyBody_ComputesValidSha256()
+    {
+        // Arrange
+        AsyncEventingBasicConsumer? consumer = null;
+        _channelMock.Setup(m => m.BasicConsume(
+                It.IsAny<string>(), false, It.IsAny<string>(), It.IsAny<bool>(),
+                It.IsAny<bool>(), It.IsAny<IDictionary<string, object>>(),
+                It.IsAny<IBasicConsumer>()))
+            .Callback<string, bool, string, bool, bool, IDictionary<string, object>, IBasicConsumer>(
+                (_, _, _, _, _, _, c) => consumer = (AsyncEventingBasicConsumer)c)
+            .Returns("consumer-tag");
+
+        var options = new RabbitMqTriggerOptions
+        {
+            HostName = "localhost",
+            QueueName = "test-queue",
+            TargetQueue = "default",
+            JobType = "EmptyBodyJob",
+        };
+
+        var handler = new RabbitMqTriggerHandler(
+            Options.Create(options),
+            _connectionFactoryMock.Object,
+            _scheduler,
+            _nexJobOptions,
+            _loggerMock.Object);
+
+        await handler.StartAsync(CancellationToken.None);
+
+        var body = Array.Empty<byte>();
+        var expectedSha256 = Convert.ToHexString(SHA256.HashData(body));
+
+        var props = new Mock<IBasicProperties>();
+        props.Setup(p => p.CorrelationId).Returns((string)null!);
+        props.Setup(p => p.MessageId).Returns((string)null!);
+        props.Setup(p => p.Headers).Returns(new Dictionary<string, object>());
+
+        // Act
+        await consumer!.HandleBasicDeliver(
+            "consumer-tag", 1, false, "exchange", "routing-key", props.Object, body);
+
+        await _scheduler.WaitForEnqueueAsync(CancellationToken.None);
+
+        // Assert
+        _scheduler.EnqueueCalls.Should().HaveCount(1);
+        _scheduler.EnqueueCalls[0].IdempotencyKey.Should().Be(expectedSha256);
+        _channelMock.Verify(m => m.BasicAck(1, false), Times.Once);
+    }
+
+    /// <summary>
+    /// Verifies that whitespace-only JobType in options is treated as missing and message is nacked.
+    /// </summary>
+    [Fact]
+    public async Task JobTypeWhitespace_TreatedAsMissing()
+    {
+        // Arrange
+        AsyncEventingBasicConsumer? consumer = null;
+        _channelMock.Setup(m => m.BasicConsume(
+                It.IsAny<string>(), false, It.IsAny<string>(), It.IsAny<bool>(),
+                It.IsAny<bool>(), It.IsAny<IDictionary<string, object>>(),
+                It.IsAny<IBasicConsumer>()))
+            .Callback<string, bool, string, bool, bool, IDictionary<string, object>, IBasicConsumer>(
+                (_, _, _, _, _, _, c) => consumer = (AsyncEventingBasicConsumer)c)
+            .Returns("consumer-tag");
+
+        var options = new RabbitMqTriggerOptions
+        {
+            HostName = "localhost",
+            QueueName = "test-queue",
+            TargetQueue = "default",
+            JobType = "   ",
+        };
+
+        var handler = new RabbitMqTriggerHandler(
+            Options.Create(options),
+            _connectionFactoryMock.Object,
+            _scheduler,
+            _nexJobOptions,
+            _loggerMock.Object);
+
+        await handler.StartAsync(CancellationToken.None);
+
+        var body = Encoding.UTF8.GetBytes("{}");
+        var props = new Mock<IBasicProperties>();
+        props.Setup(p => p.CorrelationId).Returns("corr-whitespace");
+        props.Setup(p => p.Headers).Returns(new Dictionary<string, object>());
+
+        // Act
+        await consumer!.HandleBasicDeliver(
+            "consumer-tag", 1, false, "exchange", "routing-key", props.Object, body);
+
+        await _scheduler.WaitForEnqueueAttemptAsync(CancellationToken.None)
+            .WaitAsync(TimeSpan.FromMilliseconds(500))
+            .ContinueWith(_ => { });
+
+        // Assert
+        _scheduler.EnqueueCalls.Should().BeEmpty();
+        _channelMock.Verify(m => m.BasicNack(1, false, false), Times.Once);
+    }
+
+    /// <summary>
+    /// Verifies that AddNexJobRabbitMqTrigger generic overload correctly registers the job and configures JobType.
+    /// </summary>
+    [Fact]
+    public void AddNexJobRabbitMqTrigger_Generic_RegistersJobAndConfiguresJobType()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+
+        // Act
+        services.AddNexJobRabbitMqTrigger<TestConsumerRabbitJob>(opt =>
+        {
+            opt.HostName = "localhost";
+            opt.QueueName = "test-queue";
+        });
+
+        var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<RabbitMqTriggerOptions>>().Value;
+
+        // Assert
+        options.JobType.Should().Be(typeof(TestConsumerRabbitJob).AssemblyQualifiedName);
+        services.Any(sd => sd.ServiceType == typeof(TestConsumerRabbitJob)).Should().BeTrue();
+    }
+}
+
+/// <summary>
+/// Sample consumer job for RabbitMQ registration tests.
+/// </summary>
+public sealed class TestConsumerRabbitJob : IJob<string>
+{
+    public Task ExecuteAsync(string input, CancellationToken cancellationToken) => Task.CompletedTask;
 }

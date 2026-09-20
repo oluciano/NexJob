@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -120,7 +121,7 @@ internal sealed class RabbitMqTriggerHandler : IHostedService, IAsyncDisposable
         return null;
     }
 
-    private static string ExtractJobType(IBasicProperties props)
+    private string ExtractJobType(IBasicProperties props)
     {
         if (props.Headers is not null &&
             props.Headers.TryGetValue("nexjob.job_type", out var value) &&
@@ -129,7 +130,12 @@ internal sealed class RabbitMqTriggerHandler : IHostedService, IAsyncDisposable
             return Encoding.UTF8.GetString(bytes);
         }
 
-        throw new InvalidOperationException("Message must contain 'nexjob.job_type' header.");
+        if (!string.IsNullOrWhiteSpace(_options.JobType))
+        {
+            return _options.JobType;
+        }
+
+        throw new InvalidOperationException("Message must contain 'nexjob.job_type' header or JobType must be configured in RabbitMqTriggerOptions.");
     }
 
     private void ConnectAndConsume()
@@ -225,7 +231,9 @@ internal sealed class RabbitMqTriggerHandler : IHostedService, IAsyncDisposable
         try
         {
             // 1. Extract metadata
-            var idempotencyKey = ea.BasicProperties.CorrelationId ?? ea.BasicProperties.MessageId;
+            var idempotencyKey = ea.BasicProperties.CorrelationId
+                ?? ea.BasicProperties.MessageId
+                ?? Convert.ToHexString(SHA256.HashData(ea.Body.Span));
             var traceparent = ExtractTraceparent(ea.BasicProperties);
             var jobType = ExtractJobType(ea.BasicProperties);
             var inputJson = Encoding.UTF8.GetString(ea.Body.ToArray());

@@ -182,16 +182,25 @@ internal sealed class AzureServiceBusTriggerHandler : IHostedService
     }
 
     /// <summary>
-    /// Extracts the job type (assembly-qualified name) from message application properties.
+    /// Extracts the job type (assembly-qualified name) from message application properties or options.
     /// </summary>
-    private static string ExtractJobType(ServiceBusReceivedMessage message)
+    private string ExtractJobType(ServiceBusReceivedMessage message)
     {
         if (message.ApplicationProperties.TryGetValue("nexjob.job_type", out var jobType) &&
             jobType is not null)
         {
-            return jobType.ToString() ?? throw new InvalidOperationException("Job type is required in message properties");
+            var str = jobType.ToString();
+            if (!string.IsNullOrWhiteSpace(str))
+            {
+                return str;
+            }
         }
 
-        throw new InvalidOperationException("Message must contain 'nexjob.job_type' in ApplicationProperties");
+        if (!string.IsNullOrWhiteSpace(_options.JobType))
+        {
+            return _options.JobType;
+        }
+
+        throw new InvalidOperationException("Message must contain 'nexjob.job_type' in ApplicationProperties or JobType must be configured in AzureServiceBusTriggerOptions");
     }
 }
