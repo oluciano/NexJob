@@ -10,4 +10,8 @@ public static class HangfireNoOpJob
 
     /// <summary>No-op execute method enqueued by Hangfire.</summary>
     public static void Execute() => _onExecuted?.Invoke();
+
+    /// <summary>No-op execute method with payload enqueued by Hangfire.</summary>
+    /// <param name="payload">Payload string passed to benchmark serialization.</param>
+    public static void Execute(string payload) => _onExecuted?.Invoke();
 }

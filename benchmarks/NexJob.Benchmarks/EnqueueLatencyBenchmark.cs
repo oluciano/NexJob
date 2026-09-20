@@ -18,11 +18,22 @@ public class EnqueueLatencyBenchmark
     private IHost _nexJobHost = null!;
     private IScheduler _nexJobScheduler = null!;
     private IBackgroundJobClient _hangfireClient = null!;
+    private string _payload = string.Empty;
+    private NoOpInput _input = null!;
 
-    /// <summary>Set up both schedulers.</summary>
+    /// <summary>
+    /// Gets or sets the payload size in bytes to evaluate serialization overhead.
+    /// </summary>
+    [Params(0, 1024, 10240)]
+    public int PayloadBytes { get; set; }
+
+    /// <summary>Set up both schedulers and payload buffers.</summary>
     [GlobalSetup]
     public async Task Setup()
     {
+        _payload = PayloadBytes > 0 ? new string('x', PayloadBytes) : string.Empty;
+        _input = new NoOpInput { Payload = _payload, };
+
         _nexJobHost = Host.CreateDefaultBuilder()
             .ConfigureServices(s =>
             {
@@ -48,10 +59,10 @@ public class EnqueueLatencyBenchmark
     /// <summary>Single NexJob enqueue — measures storage write + serialization.</summary>
     [Benchmark(Baseline = true)]
     public Task NexJob_SingleEnqueue()
-        => _nexJobScheduler.EnqueueAsync<NoOpJob, NoOpInput>(new());
+        => _nexJobScheduler.EnqueueAsync<NoOpJob, NoOpInput>(_input);
 
     /// <summary>Single Hangfire enqueue — equivalent fire-and-forget write.</summary>
     [Benchmark]
     public string Hangfire_SingleEnqueue()
-        => _hangfireClient.Enqueue(() => Console.WriteLine("noop"));
+        => _hangfireClient.Enqueue(() => HangfireNoOpJob.Execute(_payload));
 }

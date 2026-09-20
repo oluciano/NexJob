@@ -99,11 +99,14 @@ The job expires if not started within 5 minutes — no silent failures, no zombi
 - **Deadline enforcement** — jobs expire if not executed in time (`deadlineAfter`)
 - **Dead-letter handlers** — automatic fallback when all retries are exhausted
 - **Concurrency throttling** — `[Throttle]` attribute for per-resource limits
+- **Distributed throttling** — `UseDistributedThrottle()` enforces global cluster-wide rate limits via Redis
 - **Job continuations** — chain jobs with parent/child relationships
 - **Idempotency** — `DuplicatePolicy` controls re-enqueue behavior
 - **Recurring jobs** — via code or `appsettings.json`
 - **Job filters** — `IJobExecutionFilter` middleware for cross-cutting behaviour
 - **Job retention** — automatic cleanup of terminal jobs with configurable TTL
+- **Read replicas** — `UseDashboardReadReplica()` offloads dashboard queries to read replicas (PostgreSQL, SQL Server)
+- **Resilient Outbox** — transaction-safe event producers for RabbitMQ and Apache Kafka
 - **OpenTelemetry** — traces and metrics built-in
 - **Built-in dashboard** — standalone dark UI, zero configuration
 
@@ -127,15 +130,16 @@ All providers implement `IRuntimeSettingsStore` — runtime configuration persis
 
 | Package | NuGet | Description |
 |---|---|---|
-| `NexJob.Dashboard` | [![NuGet](https://img.shields.io/badge/nuget-v2.0.0-blue)](https://www.nuget.org/packages/NexJob.Dashboard) | Embedded ASP.NET Core dashboard middleware |
-| `NexJob.Dashboard.Standalone` | [![NuGet](https://img.shields.io/badge/nuget-v2.0.0-blue)](https://www.nuget.org/packages/NexJob.Dashboard.Standalone) | Embedded HTTP dashboard server for Worker Services |
-| `NexJob.OpenTelemetry` | [![NuGet](https://img.shields.io/badge/nuget-v2.0.0-blue)](https://www.nuget.org/packages/NexJob.OpenTelemetry) | OTel SDK instrumentation |
-| `NexJob.Trigger.AzureServiceBus` | [![NuGet](https://img.shields.io/badge/nuget-v2.0.0-blue)](https://www.nuget.org/packages/NexJob.Trigger.AzureServiceBus) | Azure Service Bus trigger |
-| `NexJob.Trigger.AwsSqs` | [![NuGet](https://img.shields.io/badge/nuget-v2.0.0-blue)](https://www.nuget.org/packages/NexJob.Trigger.AwsSqs) | AWS SQS trigger |
-| `NexJob.RabbitMQ` | [![NuGet](https://img.shields.io/badge/nuget-v5.0.0-blue)](https://www.nuget.org/packages/NexJob.RabbitMQ) | RabbitMQ trigger & resilient outbox producer |
-| `NexJob.Kafka` | [![NuGet](https://img.shields.io/badge/nuget-v5.0.0-blue)](https://www.nuget.org/packages/NexJob.Kafka) | Apache Kafka trigger & resilient outbox producer |
-| `NexJob.Trigger.GooglePubSub` | [![NuGet](https://img.shields.io/badge/nuget-v2.0.0-blue)](https://www.nuget.org/packages/NexJob.Trigger.GooglePubSub) | Google Cloud Pub/Sub trigger |
-| `NexJob.Trigger.Salesforce` | [![NuGet](https://img.shields.io/badge/nuget-v2.0.0-blue)](https://www.nuget.org/packages/NexJob.Trigger.Salesforce) | Salesforce Pub/Sub API trigger (gRPC & Avro) |
+| `NexJob.Dashboard` | [![NuGet](https://img.shields.io/badge/nuget-v5.1.0-blue)](https://www.nuget.org/packages/NexJob.Dashboard) | Embedded ASP.NET Core dashboard middleware |
+| `NexJob.Dashboard.Standalone` | [![NuGet](https://img.shields.io/badge/nuget-v5.1.0-blue)](https://www.nuget.org/packages/NexJob.Dashboard.Standalone) | Embedded HTTP dashboard server for Worker Services |
+| `NexJob.OpenTelemetry` | [![NuGet](https://img.shields.io/badge/nuget-v5.1.0-blue)](https://www.nuget.org/packages/NexJob.OpenTelemetry) | OTel SDK instrumentation |
+| `NexJob.Trigger.AzureServiceBus` | [![NuGet](https://img.shields.io/badge/nuget-v5.1.0-blue)](https://www.nuget.org/packages/NexJob.Trigger.AzureServiceBus) | Azure Service Bus trigger |
+| `NexJob.Trigger.AwsSqs` | [![NuGet](https://img.shields.io/badge/nuget-v5.1.0-blue)](https://www.nuget.org/packages/NexJob.Trigger.AwsSqs) | AWS SQS trigger |
+| `NexJob.RabbitMQ` | [![NuGet](https://img.shields.io/badge/nuget-v5.1.0-blue)](https://www.nuget.org/packages/NexJob.RabbitMQ) | RabbitMQ trigger & resilient outbox producer |
+| `NexJob.Kafka` | [![NuGet](https://img.shields.io/badge/nuget-v5.1.0-blue)](https://www.nuget.org/packages/NexJob.Kafka) | Apache Kafka trigger & resilient outbox producer |
+| `NexJob.Trigger.GooglePubSub` | [![NuGet](https://img.shields.io/badge/nuget-v5.1.0-blue)](https://www.nuget.org/packages/NexJob.Trigger.GooglePubSub) | Google Cloud Pub/Sub trigger |
+| `NexJob.Trigger.Salesforce` | [![NuGet](https://img.shields.io/badge/nuget-v5.1.0-blue)](https://www.nuget.org/packages/NexJob.Trigger.Salesforce) | Salesforce Pub/Sub API trigger (gRPC & Avro) |
+| `NexJob.Trigger.SalesforceStreaming` | [![NuGet](https://img.shields.io/badge/nuget-v5.1.0-blue)](https://www.nuget.org/packages/NexJob.Trigger.SalesforceStreaming) | Salesforce Streaming API trigger (CometD & Bayeux) |
 
 ---
 
@@ -207,16 +211,39 @@ Complete documentation is in the [wiki](docs/wiki/Home.md). Key pages:
 
 ---
 
+## Samples & Reference Architecture
+
+The [`samples/`](samples/) directory provides comprehensive, runnable reference architectures for all NexJob capabilities:
+
+| Sample | Stack / Focus | Port | Highlights |
+|---|---|---|---|
+| [`NexJob.Sample.MinimalApi`](samples/NexJob.Sample.MinimalApi) | ASP.NET Core Minimal API | `5001` | Segregated `IDashboardStorage`, dead-letter handler, deadline enforcement |
+| [`NexJob.Sample.WebApi`](samples/NexJob.Sample.WebApi) | ASP.NET Core Web API | `5002` | Dual-storage (InMemory / PostgreSQL), REST endpoints, `.http` file |
+| [`NexJob.Sample.WorkerService`](samples/NexJob.Sample.WorkerService) | Headless Console Worker | `5003` | Standalone embedded HTTP dashboard server, graceful shutdown |
+| [`NexJob.Sample.ConfiguredRecurring`](samples/NexJob.Sample.ConfiguredRecurring) | Declarative Recurring | `5004` | Zero-code recurring job registration via `appsettings.json` with timezones |
+| [`NexJob.Sample.RabbitMQ`](samples/NexJob.Sample.RabbitMQ) | Broker Integration | `5005` | Outbox producer + trigger consumer with 5 trigger guarantees |
+| [`NexJob.Sample.Kafka`](samples/NexJob.Sample.Kafka) | Streaming Broker | `5006` | Partitioned Outbox event publishing + consumer trigger with offset tracking |
+| [`NexJob.Sample.Storage`](samples/NexJob.Sample.Storage) | Enterprise Topology | `5007` | PostgreSQL primary + read replica (`UseDashboardReadReplica`), Redis throttle (`UseDistributedThrottle`), OTel |
+| [`NexJob.Sample.CloudTriggers`](samples/NexJob.Sample.CloudTriggers) | Unified Cloud Consumers | `5008` | AWS SQS, Azure Service Bus, GCP Pub/Sub, Salesforce gRPC & CometD with `/simulate/*` endpoints |
+
+A full local test stack (PostgreSQL 16, Redis 7, RabbitMQ 3.13, and Kafka KRaft) is provided in [`samples/docker-compose.yml`](samples/docker-compose.yml).
+
+---
+
 ## Benchmarks
 
-Measured per individual enqueue operation:
+Measured per individual enqueue operation on .NET 8 (BenchmarkDotNet v0.14, RyuJIT AVX2, in-memory storage baseline):
 
-| Metric | NexJob | Hangfire |
-|---|---|---|
-| Latency | 9.3 µs | 26.6 µs |
-| Memory | 1.67 KB | 11.2 KB |
+| Metric | NexJob | Hangfire | Comparison |
+|---|---|---|---|
+| Latency (Mean) | **13.35 µs** | 35.95 µs | **2.7× faster** |
+| Memory (Allocated) | **2.10 KB** | 11.20 KB | **81% less memory** |
+| GC Gen0 (per 1k ops) | **0.06** | 0.85 | **14× fewer Gen0 collections** |
+| GC Gen1 (per 1k ops) | **0.00** | 0.18 | **Zero Gen1 collections** |
 
-NexJob is **2.87× faster** and uses **85% less memory** per enqueue. Benchmarks run with BenchmarkDotNet against comparable configurations.
+NexJob is **2.7× faster**, allocates **81% less memory**, and produces zero Gen1 garbage collections during enqueue bursts. Hangfire incurs additional CPU and allocation overhead due to runtime LINQ expression tree parsing and reflection.
+
+Benchmarks can be parameterized by payload size (`PayloadBytes: 0, 1024, 10240`) and concurrency levels (`ConcurrencyLevel: 10, 50`) in [`benchmarks/NexJob.Benchmarks`](benchmarks/NexJob.Benchmarks).
 
 ---
 
@@ -230,6 +257,12 @@ v0.7.0  ✅ DuplicatePolicy, atomic commits, AI execution system
 v0.8.0  ✅ Filters, persistent settings, job retention, wiki
 v1.0.0  ✅ API freeze, production hardened
 v2.0.0  ✅ External triggers, OpenTelemetry, metrics cache
+v3.0.0  ✅ Storage segregation (IJobStorage / IRecurringStorage / IDashboardStorage),
+           JobExecutor pipeline, IJobExecutionFilter, IJobControlService,
+           UseDashboardReadReplica(), UseDistributedThrottle()
+v4.0.0  ✅ Reliability hardening, crash recovery, orphaned job watcher, fault injection
+v5.0.0  ✅ Resilient Outbox producers & triggers for RabbitMQ and Apache Kafka
+v5.1.0  ✅ Salesforce triggers (gRPC Pub/Sub API + CometD Bayeux Streaming API)
 ```
 
 ---

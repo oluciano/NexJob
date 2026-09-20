@@ -8,6 +8,12 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`NexJob.Benchmarks`**:
+  - Parameterized single-enqueue latency benchmarks by payload size (`PayloadBytes: 0, 1024, 10240`) to evaluate serialization scaling with `System.Text.Json` vs `Newtonsoft.Json` (issue #157).
+  - Implemented `ConcurrentEnqueueBenchmark` measuring multi-threaded enqueue throughput and lock contention across varying parallelism levels (`ConcurrencyLevel: 10, 50`) (issue #157).
+  - Implemented `DispatchLatencyBenchmark` isolating and measuring wake-up channel dispatch latency from enqueue to execution (issue #157).
+  - Added comprehensive `benchmarks/NexJob.Benchmarks/README.md` detailing benchmark suites, execution commands, and verified .NET 8 results (issue #157).
+
 - **Samples & Reference Architecture**:
   - Comprehensive modernization of all existing samples and addition of reference projects for all plugins, brokers, and storage topologies (issue #128):
     - `NexJob.Sample.MinimalApi`: Modernized to .NET 8 Minimal APIs with deadline enforcement, segregated `IDashboardStorage`, and dead-letter handling.
@@ -56,6 +62,13 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - Included missing integration test suites (RabbitMQ, Salesforce) and broadened regex filters in `.github/workflows/ci.yml` (issue #139, PR #152).
 
 ### Changed
+
+- **Documentation (`README.md`)**:
+  - Synchronized package versions across the entire ecosystem to `v5.1.0` (issue #157).
+  - Added `NexJob.Trigger.SalesforceStreaming` and updated storage provider package identifiers (issue #157).
+  - Updated benchmark table with verified .NET 8 RyuJIT measurements (NexJob 13.35 µs / 2.10 KB vs Hangfire 35.95 µs / 11.20 KB) (issue #157).
+  - Expanded project roadmap through releases v3.0.0, v4.0.0, and v5.1.0 (issue #157).
+  - Added catalog reference table and guide to the modernized `samples/` directory (issue #157).
 
 - **`NexJob.Postgres`**:
   - `PostgresStorageProvider` now builds and manages an internal `NpgsqlDataSource` by default instead of instantiating raw `NpgsqlConnection` per operation, leveraging Npgsql 7/8+ connection pooling, prepared statement caching, and automatic multi-host failover (issue #148).
