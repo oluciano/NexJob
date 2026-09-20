@@ -103,7 +103,7 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
                         job.ProcessingStartedAt = DateTimeOffset.UtcNow;
                         job.HeartbeatAt = DateTimeOffset.UtcNow;
                         job.Attempts++;
-                        return Task.FromResult<JobRecord?>(job).Result;
+                        return job;
                     }
                 }
             }
@@ -341,10 +341,21 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
                     continue;
                 }
 
-                job.Status = JobStatus.Enqueued;
-                job.ProcessingStartedAt = null;
-                job.HeartbeatAt = null;
-                WriteToChannel(job);
+                if (job.Attempts >= job.MaxAttempts)
+                {
+                    job.Status = JobStatus.Failed;
+                    job.CompletedAt = DateTimeOffset.UtcNow;
+                    job.ProcessingStartedAt = null;
+                    job.HeartbeatAt = null;
+                    job.LastErrorMessage ??= "Orphaned execution exceeded maximum attempts.";
+                }
+                else
+                {
+                    job.Status = JobStatus.Enqueued;
+                    job.ProcessingStartedAt = null;
+                    job.HeartbeatAt = null;
+                    WriteToChannel(job);
+                }
             }
         }
 
@@ -654,22 +665,39 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
     public Task<int> PurgeJobsAsync(RetentionPolicy policy, CancellationToken cancellationToken = default)
     {
         var now = DateTimeOffset.UtcNow;
-        var toDelete = new List<Guid>();
+        var batchSize = policy.BatchSize > 0 ? policy.BatchSize : 1000;
+        var totalDeleted = 0;
 
         lock (_lock)
         {
-            toDelete = _jobs.Values
-                .Where(job => ShouldPurgeJob(job, now, policy))
-                .Select(job => job.Id.Value)
-                .ToList();
-
-            foreach (var id in toDelete)
+            while (!cancellationToken.IsCancellationRequested)
             {
-                _jobs.TryRemove(id, out _);
+                var batch = _jobs.Values
+                    .Where(job => ShouldPurgeJob(job, now, policy))
+                    .Take(batchSize)
+                    .Select(job => job.Id.Value)
+                    .ToList();
+
+                if (batch.Count == 0)
+                {
+                    break;
+                }
+
+                foreach (var id in batch)
+                {
+                    _jobs.TryRemove(id, out _);
+                }
+
+                totalDeleted += batch.Count;
+
+                if (batch.Count < batchSize)
+                {
+                    break;
+                }
             }
         }
 
-        return Task.FromResult(toDelete.Count);
+        return Task.FromResult(totalDeleted);
     }
 
     // ─── private helpers ─────────────────────────────────────────────────────
@@ -683,6 +711,9 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
             JobStatus.Failed when policy.RetainFailed > TimeSpan.Zero
                 && job.CompletedAt.HasValue
                 && now - job.CompletedAt.Value > policy.RetainFailed => true,
+            JobStatus.Failed when policy.RetainDeadLetter > TimeSpan.Zero
+                && job.CompletedAt.HasValue
+                && now - job.CompletedAt.Value > policy.RetainDeadLetter => true,
             JobStatus.Expired when policy.RetainExpired > TimeSpan.Zero
                 && now - job.CreatedAt > policy.RetainExpired => true,
             _ => false,

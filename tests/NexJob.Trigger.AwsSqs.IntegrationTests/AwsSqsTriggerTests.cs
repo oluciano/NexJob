@@ -113,12 +113,14 @@ public sealed class AwsSqsTriggerTests : IClassFixture<AwsSqsTriggerFixture>
 
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddNexJob();
 
         var mockStorage = new Mock<IStorageProvider>();
         mockStorage.Setup(s => s.EnqueueAsync(It.IsAny<JobRecord>(), It.IsAny<DuplicatePolicy>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new Exception("Simulated storage failure"));
-        services.AddSingleton(mockStorage.Object);
+        services.AddSingleton<IJobStorage>(mockStorage.Object);
+        services.AddSingleton<IStorageProvider>(mockStorage.Object);
+
+        services.AddNexJob();
 
         services.AddNexJobAwsSqsTrigger(options =>
         {

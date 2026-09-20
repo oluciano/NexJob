@@ -11,6 +11,7 @@ Before executing any task, read:
 - `ai-method/core/00-foundation-minimal.md` — always, every task
 - Appropriate workflow: `ai-method/workflows/{feature|bugfix|test|refactor|release}.md`
 - `skills/nexjob-trigger.md` — for any trigger work
+- `.agents/skills/nexjob-task-cycle/SKILL.md` — for disciplined grooming, 3N matrix, and verification gate
 - Quick router: `ai-method/QUICK_REFERENCE_ULTRA.md`
 
 ---
@@ -19,16 +20,15 @@ Before executing any task, read:
 
 NexJob is a production-oriented background job processing library for .NET 8.
 MIT licensed. Alternative to Hangfire — storage-pluggable, trigger-ready, OTel-native.
-Current published version: **v3.0.0**. Active development: **v4.0.0** (branch: `v3_implementation`).
+Current published version: **v5.2.0**. Active development: **develop**.
 
 ---
 
-## What Is v3
+## What Is v3+
 
-v3 is an internal architecture refactor focused on testability and SOLID compliance.
-No new public features — all changes are internal.
+v3 introduced internal architecture refactoring focused on testability and SOLID compliance, followed by v4 reliability hardening and v5 unified producers and Salesforce triggers.
 
-Key changes shipped in v3:
+Key architectural foundations:
 - `IStorageProvider` split into `IJobStorage`, `IRecurringStorage`, `IDashboardStorage`
 - `JobExecutor` extracted from `JobDispatcherService`
 - `IJobInvokerFactory` — encapsulates type resolution, migration, scope creation
@@ -41,7 +41,7 @@ Key changes shipped in v3:
 
 ---
 
-## Implemented (v3.0.0)
+## Implemented (v5.1.0)
 
 **Core execution:**
 - `IJob` / `IJob<T>`, wake-up channel, deadline enforcement, retry, throttle, recurring jobs
@@ -61,12 +61,14 @@ Key changes shipped in v3:
 - 5 providers: InMemory, PostgreSQL, SQL Server, Redis, MongoDB
 - `UseDashboardReadReplica()` — opt-in read replica (PostgreSQL, SQL Server)
 
-**Triggers (v2, stable):**
+**Triggers & Outbox Producers:**
 - `NexJob.Trigger.AzureServiceBus` ✅
 - `NexJob.Trigger.AwsSqs` ✅
-- `NexJob.Trigger.RabbitMQ` ✅
-- `NexJob.Trigger.Kafka` ✅
 - `NexJob.Trigger.GooglePubSub` ✅
+- `NexJob.Trigger.Salesforce` (gRPC Pub/Sub API) ✅
+- `NexJob.Trigger.SalesforceStreaming` (CometD/Bayeux API) ✅
+- `NexJob.RabbitMQ` (Trigger + Outbox Producer) ✅
+- `NexJob.Kafka` (Trigger + Outbox Producer) ✅
 - `NexJob.OpenTelemetry` ✅
 
 **Dashboard:**
@@ -135,15 +137,16 @@ Every trigger you implement must satisfy all 5 guarantees — read `skills/nexjo
 - Classes `sealed` by default
 - `async/await` only — never `.Result` or `.Wait()`
 - `CancellationToken` propagated in all async calls
-- `.ConfigureAwait(false)` in all library projects (`src/NexJob*`)
+- `.ConfigureAwait(false)` in all library projects (`src/NexJob*`) — **EXCEPT in `src/NexJob.Dashboard` component rendering lifecycle** (`IComponent.SetParametersAsync` / `HtmlRenderer`), where the Blazor Dispatcher `SynchronizationContext` must be preserved for `_handle.Render()`
 - `StringComparison.Ordinal` or `OrdinalIgnoreCase` for string comparisons
 - Banned APIs: `DateTime.Now` (use `UtcNow`), `.Result`, `.Wait()`
 - **80% Unit Coverage** — strictly enforced via CI for all new code
 - **Must-Have Testing Matrix** — every feature must cover: Retry & Dead-Letter, Concurrency, Crash Recovery, Deadline Enforcement, and Wake-Up Latency
 - Respect StyleCop rules (SA1202, SA1204, SA1413, SA1508)
 - Always run `dotnet format` before committing
+- Always record changes in `CHANGELOG.md` under `## [Unreleased]` before creating a PR
 - **Testing Standard (Must-Have):** 100% unit test coverage per logic class is the mandate (80% global floor) for Core, Providers, and Triggers.\n  - Integration and Reliability tests are excluded from the coverage metric and must stay out of the `ci.yml`.\n  - Every method or feature MUST have a Testing Matrix (Positive/Negative/Inputs).
-- **Disciplined Engineering Cycle (Must-Have):**\n    1. **Hardening:** Create unit tests targeting 100% branch coverage without modifying production code.\n    2. **Build:** Verify 0 warnings/errors (TreatWarningsAsErrors).\n    3. **Test:** Run all unit tests for the current project.\n    4. **Integrate:** Run integration tests for the project (if applicable) using local infra (Docker/In-Memory).\n    5. **Finalize:** Only move to the next project in the solution after the current one is 100% verified.
+- **Disciplined Engineering Cycle (Must-Have):**\n    1. **Hardening:** Create unit tests targeting 100% branch coverage without modifying production code.\n    2. **Build:** Verify 0 warnings/errors (TreatWarningsAsErrors).\n    3. **Test:** Run all unit tests for the current project.\n    4. **Integrate:** Run integration tests for the project (if applicable) using local infra (Docker/In-Memory).\n    5. **Changelog:** Record all changes in `CHANGELOG.md` under `## [Unreleased]`.\n    6. **Finalize:** Only move to the next project in the solution after the current one is 100% verified.
 
 ---
 
@@ -192,6 +195,7 @@ gh pr create \
 - [ ] \`dotnet build\` passes with **0 warnings**
 - [ ] \`dotnet test\` passes — no regressions
 - [ ] New behaviour is covered by tests
+- [ ] \`CHANGELOG.md\` updated under \`[Unreleased]\`
 - [ ] Public API has XML documentation (\`///\`)
 - [ ] Commit messages follow Conventional Commits
 

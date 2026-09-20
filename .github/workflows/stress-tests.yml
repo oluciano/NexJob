@@ -1,0 +1,70 @@
+name: Stress & Load Tests
+
+on:
+  workflow_dispatch:
+    inputs:
+      iterations:
+        description: "Number of stress test iterations"
+        required: false
+        default: "1"
+
+jobs:
+  stress-test:
+    name: Production Stress Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore dependencies
+        run: dotnet restore tests/NexJob.StressTests/NexJob.StressTests.csproj
+
+      - name: Run Production Stress Tests
+        env:
+          NEXJOB_STRESS_POSTGRES: "Host=localhost;Port=5432;Username=postgres;Password=postgres;Database=postgres"
+          NEXJOB_STRESS_REDIS: "localhost:6379"
+        run: |
+          dotnet test tests/NexJob.StressTests/NexJob.StressTests.csproj \
+            -c Release \
+            --filter "Category=Stress" \
+            --logger "trx;LogFileName=stress-results.trx" \
+            --logger "console;verbosity=normal"
+
+      - name: Upload Test Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stress-test-results
+          path: tests/NexJob.StressTests/TestResults/stress-results.trx

@@ -1,5 +1,6 @@
 using Amazon.SQS.Model;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using NexJob.Internal;
 using NexJob.Storage;
@@ -8,7 +9,7 @@ using Xunit;
 namespace NexJob.Trigger.AwsSqs.Tests;
 
 /// <summary>
-/// Tests for <see cref="AwsSqsTrigger"/>.
+/// Tests for <see cref="AwsSqsTriggerHandler"/>.
 /// Verifies message processing, visibility extension, enqueue, deletion, and graceful shutdown.
 /// </summary>
 public sealed class AwsSqsTriggerTests
@@ -31,9 +32,9 @@ public sealed class AwsSqsTriggerTests
             VisibilityExtensionIntervalSeconds = 3,
         });
         var nexJobOptions = new NexJobOptions { MaxAttempts = 3 };
-        var logger = new MockLogger<AwsSqsTrigger>();
+        var logger = new MockLogger<AwsSqsTriggerHandler>();
 
-        var trigger = new AwsSqsTrigger(
+        var trigger = new AwsSqsTriggerHandler(
             options,
             sqsClient,
             scheduler,
@@ -82,9 +83,9 @@ public sealed class AwsSqsTriggerTests
             VisibilityExtensionIntervalSeconds = 3,
         });
         var nexJobOptions = new NexJobOptions { MaxAttempts = 3 };
-        var logger = new MockLogger<AwsSqsTrigger>();
+        var logger = new MockLogger<AwsSqsTriggerHandler>();
 
-        var trigger = new AwsSqsTrigger(
+        var trigger = new AwsSqsTriggerHandler(
             options,
             sqsClient,
             scheduler,
@@ -126,9 +127,9 @@ public sealed class AwsSqsTriggerTests
             VisibilityExtensionIntervalSeconds = 1,
         });
         var nexJobOptions = new NexJobOptions { MaxAttempts = 3 };
-        var logger = new MockLogger<AwsSqsTrigger>();
+        var logger = new MockLogger<AwsSqsTriggerHandler>();
 
-        var trigger = new AwsSqsTrigger(
+        var trigger = new AwsSqsTriggerHandler(
             options,
             sqsClient,
             scheduler,
@@ -171,9 +172,9 @@ public sealed class AwsSqsTriggerTests
             VisibilityExtensionIntervalSeconds = 15,
         });
         var nexJobOptions = new NexJobOptions { MaxAttempts = 3 };
-        var logger = new MockLogger<AwsSqsTrigger>();
+        var logger = new MockLogger<AwsSqsTriggerHandler>();
 
-        var trigger = new AwsSqsTrigger(
+        var trigger = new AwsSqsTriggerHandler(
             options,
             sqsClient,
             scheduler,
@@ -207,9 +208,9 @@ public sealed class AwsSqsTriggerTests
             VisibilityExtensionIntervalSeconds = 3,
         });
         var nexJobOptions = new NexJobOptions { MaxAttempts = 3 };
-        var logger = new MockLogger<AwsSqsTrigger>();
+        var logger = new MockLogger<AwsSqsTriggerHandler>();
 
-        var trigger = new AwsSqsTrigger(
+        var trigger = new AwsSqsTriggerHandler(
             options,
             sqsClient,
             scheduler,
@@ -241,10 +242,35 @@ public sealed class AwsSqsTriggerTests
         scheduler.EnqueueCalls[0].TraceParent.Should().Be("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01");
     }
 
+    [Fact]
+    public void AddNexJobAwsSqsTrigger_Generic_RegistersJobAndConfiguresJobName()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+
+        // Act
+        services.AddNexJobAwsSqsTrigger<TestConsumerSqsJob>(opt =>
+        {
+            opt.QueueUrl = "https://sqs.us-east-1.amazonaws.com/123456789/test-queue";
+        });
+
+        var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<AwsSqsTriggerOptions>>().Value;
+
+        // Assert
+        options.JobName.Should().Be(typeof(TestConsumerSqsJob).AssemblyQualifiedName);
+        services.Any(sd => sd.ServiceType == typeof(TestConsumerSqsJob)).Should().BeTrue();
+    }
+
     // ─── Test job type ───────────────────────────────────────────────────────
 
     private sealed class TestJob : IJob
     {
         public Task ExecuteAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    }
+
+    private sealed class TestConsumerSqsJob : IJob<string>
+    {
+        public Task ExecuteAsync(string input, CancellationToken cancellationToken) => Task.CompletedTask;
     }
 }

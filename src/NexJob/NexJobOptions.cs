@@ -81,6 +81,20 @@ public sealed class NexJobOptions
     public TimeSpan ShutdownTimeout { get; set; } = TimeSpan.FromSeconds(30);
 
     /// <summary>
+    /// Maximum time allowed for storage health check probes to respond before reporting
+    /// <see cref="Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Unhealthy"/>.
+    /// Defaults to <c>5 seconds</c>.
+    /// </summary>
+    public TimeSpan HealthCheckTimeout { get; set; } = TimeSpan.FromSeconds(5);
+
+    /// <summary>
+    /// Number of failed (dead-letter) jobs above which the health check reports
+    /// <see cref="Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Degraded"/>.
+    /// Defaults to <c>100</c>.
+    /// </summary>
+    public int HealthCheckFailedThreshold { get; set; } = 100;
+
+    /// <summary>
     /// Ordered list of queue names that workers on this host will poll.
     /// Queues are drained in the order specified. Defaults to <c>["default"]</c>.
     /// </summary>
@@ -128,10 +142,23 @@ public sealed class NexJobOptions
     public TimeSpan RetentionExpired { get; set; } = TimeSpan.FromDays(7);
 
     /// <summary>
+    /// How long to retain dead-letter jobs before automatic deletion.
+    /// Defaults to 60 days. Set to <see cref="TimeSpan.Zero"/> to disable purging for this status.
+    /// </summary>
+    public TimeSpan RetentionDeadLetter { get; set; } = TimeSpan.FromDays(60);
+
+    /// <summary>
     /// How often the retention service runs to purge old terminal jobs.
     /// Defaults to 1 hour.
     /// </summary>
     public TimeSpan RetentionInterval { get; set; } = TimeSpan.FromHours(1);
+
+    /// <summary>
+    /// Maximum number of rows to delete per batch/chunk during retention purge operations.
+    /// Helps avoid database lock escalation and transaction log bloat.
+    /// Defaults to 1000.
+    /// </summary>
+    public int RetentionBatchSize { get; set; } = 1000;
 
     /// <summary>
     /// Per-queue settings loaded from <c>appsettings.json</c>, used for execution windows.
@@ -189,5 +216,7 @@ public sealed class NexJobOptions
         }
 
         Dashboard = s.Dashboard;
+        HealthCheckTimeout = s.HealthCheckTimeout;
+        HealthCheckFailedThreshold = s.HealthCheckFailedThreshold;
     }
 }

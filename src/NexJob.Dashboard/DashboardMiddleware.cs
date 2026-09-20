@@ -126,7 +126,13 @@ public sealed class DashboardMiddleware
     {
         return await renderer.Dispatcher.InvokeAsync(async () =>
         {
-            var output = await renderer.RenderComponentAsync<TComponent>(parameters).ConfigureAwait(false);
+            // NOTE (Blazor Dispatcher Invariant):
+            // Do NOT use .ConfigureAwait(false) here or in TComponent.SetParametersAsync.
+            // Blazor SSR (HtmlRenderer) requires rendering (_handle.Render) to execute on the
+            // Dispatcher's SynchronizationContext. ConfigureAwait(false) causes continuations
+            // to resume on a ThreadPool worker, causing:
+            // "System.InvalidOperationException: The current thread is not associated with the Dispatcher."
+            var output = await renderer.RenderComponentAsync<TComponent>(parameters);
             return output.ToHtmlString();
 #pragma warning restore MA0004
         }).ConfigureAwait(false);
@@ -523,6 +529,11 @@ public sealed class DashboardMiddleware
             if (int.TryParse(form["retentionExpiredDays"], NumberStyles.Integer, CultureInfo.InvariantCulture, out var expDays) && expDays >= 0)
             {
                 rt.RetentionExpired = expDays == 0 ? TimeSpan.Zero : TimeSpan.FromDays(expDays);
+            }
+
+            if (int.TryParse(form["retentionDeadLetterDays"], NumberStyles.Integer, CultureInfo.InvariantCulture, out var dlDays) && dlDays >= 0)
+            {
+                rt.RetentionDeadLetter = dlDays == 0 ? TimeSpan.Zero : TimeSpan.FromDays(dlDays);
             }
 
             await runtimeStore.SaveAsync(rt, context.RequestAborted).ConfigureAwait(false);

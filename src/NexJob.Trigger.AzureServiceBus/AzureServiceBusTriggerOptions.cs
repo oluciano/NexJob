@@ -38,4 +38,11 @@ public sealed class AzureServiceBusTriggerOptions
     /// Job priority for enqueued jobs. Defaults to Normal.
     /// </summary>
     public JobPriority JobPriority { get; set; } = JobPriority.Normal;
+
+    /// <summary>
+    /// Gets or sets the target job type (assembly-qualified name or type name) to execute for consumed messages.
+    /// When specified, messages do not require the 'nexjob.job_type' application property.
+    /// If both are present, the message application property takes precedence.
+    /// </summary>
+    public string? JobType { get; set; }
 }

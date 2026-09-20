@@ -85,15 +85,20 @@ internal sealed class GooglePubSubTriggerHandler : IHostedService
         _logger.LogInformation("Google Pub/Sub trigger stopped.");
     }
 
-    private static string ExtractJobType(PubsubMessage message)
+    private string ExtractJobType(PubsubMessage message)
     {
         if (message.Attributes.TryGetValue("nexjob.job_type", out var jobType) &&
-            !string.IsNullOrEmpty(jobType))
+            !string.IsNullOrWhiteSpace(jobType))
         {
             return jobType;
         }
 
-        throw new InvalidOperationException("Message must contain 'nexjob.job_type' attribute.");
+        if (!string.IsNullOrWhiteSpace(_options.JobType))
+        {
+            return _options.JobType;
+        }
+
+        throw new InvalidOperationException("Message must contain 'nexjob.job_type' attribute or JobType must be configured in GooglePubSubTriggerOptions.");
     }
 
     private async Task<SubscriberClient.Reply> HandleMessageAsync(

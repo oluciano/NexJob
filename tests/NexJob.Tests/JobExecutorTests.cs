@@ -237,6 +237,74 @@ public sealed class JobExecutorTests
         _invokerFactory.Verify(x => x.PrepareAsync(job, It.IsAny<CancellationToken>()), Times.Once);
     }
 
+    [Fact]
+    public async Task ExecuteJobAsync_WithHostCancellationToken_CancelsExecutingJob()
+    {
+        // Arrange
+        var job = MakeJob<CancellableTestJob, TestInput>(new TestInput("test"));
+        using var cts = new CancellationTokenSource();
+
+        _invokerFactory
+            .Setup(x => x.PrepareAsync(job, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((JobRecord j, CancellationToken _) =>
+            {
+                cts.Cancel();
+                return MakeContext(j);
+            });
+
+        // Act
+        await _sut.ExecuteJobAsync(job, cts.Token);
+
+        // Assert
+        _storage.Verify(x => x.CommitJobResultAsync(
+            job.Id,
+            It.Is<JobExecutionResult>(r => !r.Succeeded && r.Exception is OperationCanceledException),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task ExecuteJobAsync_WithAlreadyCancelledToken_CommitsFailure()
+    {
+        // Arrange
+        var job = MakeJob<CancellableTestJob, TestInput>(new TestInput("test"));
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        // Act
+        await _sut.ExecuteJobAsync(job, cts.Token);
+
+        // Assert
+        _storage.Verify(x => x.CommitJobResultAsync(
+            job.Id,
+            It.Is<JobExecutionResult>(r => !r.Succeeded && r.Exception is OperationCanceledException),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task ExecuteJobAsync_WithExplicitCancellationToken_PropagatesLinkedToken()
+    {
+        // Arrange
+        var job = MakeJob<TestJob, TestInput>(new TestInput("test"));
+        using var cts = new CancellationTokenSource();
+        CancellationToken observedToken = default;
+
+        _invokerFactory
+            .Setup(x => x.PrepareAsync(job, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((JobRecord j, CancellationToken ct) =>
+            {
+                observedToken = ct;
+                return MakeContext(j);
+            });
+
+        // Act
+        await _sut.ExecuteJobAsync(job, cts.Token);
+
+        // Assert
+        observedToken.CanBeCanceled.Should().BeTrue();
+        await cts.CancelAsync();
+        observedToken.IsCancellationRequested.Should().BeTrue("linked token must observe cancellation from host token");
+    }
+
     private static JobInvocationContext MakeContext(JobRecord job)
     {
         var jobType = JobTypeResolver.ResolveJobType(job.JobType)
@@ -312,6 +380,14 @@ public sealed class JobExecutorTests
     public sealed class FailingJob : IJob<TestInput>
     {
         public Task ExecuteAsync(TestInput input, CancellationToken cancellationToken) => throw new Exception("job failed");
+    }
+
+    public sealed class CancellableTestJob : IJob<TestInput>
+    {
+        public async Task ExecuteAsync(TestInput input, CancellationToken cancellationToken)
+        {
+            await Task.Delay(Timeout.Infinite, cancellationToken);
+        }
     }
 
     private sealed class TestServiceScope : IServiceScope

@@ -332,18 +332,34 @@ public sealed class MongoStorageProvider : IStorageProvider
     /// <inheritdoc/>
     public async Task RequeueOrphanedJobsAsync(TimeSpan heartbeatTimeout, CancellationToken cancellationToken = default)
     {
-        var cutoff = DateTimeOffset.UtcNow - heartbeatTimeout;
+        var now = DateTimeOffset.UtcNow;
+        var cutoff = now - heartbeatTimeout;
 
-        var filter = Builders<JobDocument>.Filter.And(
+        var exhaustedFilter = Builders<JobDocument>.Filter.And(
             Builders<JobDocument>.Filter.Eq(d => d.Status, JobStatus.Processing),
-            Builders<JobDocument>.Filter.Lt(d => d.HeartbeatAt, cutoff));
+            Builders<JobDocument>.Filter.Lt(d => d.HeartbeatAt, cutoff),
+            new BsonDocument("$expr", new BsonDocument("$gte", new BsonArray { "$Attempts", "$MaxAttempts" })));
 
-        var update = Builders<JobDocument>.Update
+        var exhaustedUpdate = Builders<JobDocument>.Update
+            .Set(d => d.Status, JobStatus.Failed)
+            .Set(d => d.CompletedAt, now)
+            .Set(d => d.LastErrorMessage, "Orphaned execution exceeded maximum attempts.")
+            .Unset(d => d.HeartbeatAt)
+            .Unset(d => d.ProcessingStartedAt);
+
+        await _jobs.UpdateManyAsync(exhaustedFilter, exhaustedUpdate, cancellationToken: cancellationToken).ConfigureAwait(false);
+
+        var retryFilter = Builders<JobDocument>.Filter.And(
+            Builders<JobDocument>.Filter.Eq(d => d.Status, JobStatus.Processing),
+            Builders<JobDocument>.Filter.Lt(d => d.HeartbeatAt, cutoff),
+            new BsonDocument("$expr", new BsonDocument("$lt", new BsonArray { "$Attempts", "$MaxAttempts" })));
+
+        var retryUpdate = Builders<JobDocument>.Update
             .Set(d => d.Status, JobStatus.Enqueued)
             .Unset(d => d.HeartbeatAt)
             .Unset(d => d.ProcessingStartedAt);
 
-        await _jobs.UpdateManyAsync(filter, update, cancellationToken: cancellationToken).ConfigureAwait(false);
+        await _jobs.UpdateManyAsync(retryFilter, retryUpdate, cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
     // ── Continuations ─────────────────────────────────────────────────────────
@@ -659,39 +675,51 @@ public sealed class MongoStorageProvider : IStorageProvider
     public async Task<int> PurgeJobsAsync(RetentionPolicy policy, CancellationToken cancellationToken = default)
     {
         var now = DateTimeOffset.UtcNow;
+        var batchSize = policy.BatchSize > 0 ? policy.BatchSize : 1000;
         var deleted = 0;
 
         if (policy.RetainSucceeded > TimeSpan.Zero)
         {
             var cutoff = now - policy.RetainSucceeded;
-            var result = await _jobs.DeleteManyAsync(
+            deleted += await PurgeChunkedAsync(
                 Builders<JobDocument>.Filter.And(
                     Builders<JobDocument>.Filter.Eq(j => j.Status, JobStatus.Succeeded),
                     Builders<JobDocument>.Filter.Lt(j => j.CompletedAt, cutoff)),
+                batchSize,
                 cancellationToken).ConfigureAwait(false);
-            deleted += (int)result.DeletedCount;
         }
 
         if (policy.RetainFailed > TimeSpan.Zero)
         {
             var cutoff = now - policy.RetainFailed;
-            var result = await _jobs.DeleteManyAsync(
+            deleted += await PurgeChunkedAsync(
                 Builders<JobDocument>.Filter.And(
                     Builders<JobDocument>.Filter.Eq(j => j.Status, JobStatus.Failed),
                     Builders<JobDocument>.Filter.Lt(j => j.CompletedAt, cutoff)),
+                batchSize,
                 cancellationToken).ConfigureAwait(false);
-            deleted += (int)result.DeletedCount;
+        }
+
+        if (policy.RetainDeadLetter > TimeSpan.Zero && policy.RetainFailed == TimeSpan.Zero)
+        {
+            var cutoff = now - policy.RetainDeadLetter;
+            deleted += await PurgeChunkedAsync(
+                Builders<JobDocument>.Filter.And(
+                    Builders<JobDocument>.Filter.Eq(j => j.Status, JobStatus.Failed),
+                    Builders<JobDocument>.Filter.Lt(j => j.CompletedAt, cutoff)),
+                batchSize,
+                cancellationToken).ConfigureAwait(false);
         }
 
         if (policy.RetainExpired > TimeSpan.Zero)
         {
             var cutoff = now - policy.RetainExpired;
-            var result = await _jobs.DeleteManyAsync(
+            deleted += await PurgeChunkedAsync(
                 Builders<JobDocument>.Filter.And(
                     Builders<JobDocument>.Filter.Eq(j => j.Status, JobStatus.Expired),
                     Builders<JobDocument>.Filter.Lt(j => j.CreatedAt, cutoff)),
+                batchSize,
                 cancellationToken).ConfigureAwait(false);
-            deleted += (int)result.DeletedCount;
         }
 
         return deleted;
@@ -721,6 +749,39 @@ public sealed class MongoStorageProvider : IStorageProvider
 
     private static FilterDefinition<JobDocument> ById(JobId id) =>
         Builders<JobDocument>.Filter.Eq(d => d.Id, id);
+
+    private async Task<int> PurgeChunkedAsync(FilterDefinition<JobDocument> filter, int batchSize, CancellationToken cancellationToken)
+    {
+        var totalDeleted = 0;
+
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            var ids = await _jobs.Find(filter)
+                .Limit(batchSize)
+                .Project(d => d.Id)
+                .ToListAsync(cancellationToken).ConfigureAwait(false);
+
+            if (ids.Count == 0)
+            {
+                break;
+            }
+
+            var result = await _jobs.DeleteManyAsync(
+                Builders<JobDocument>.Filter.In(d => d.Id, ids),
+                cancellationToken).ConfigureAwait(false);
+
+            totalDeleted += (int)result.DeletedCount;
+
+            if (ids.Count < batchSize)
+            {
+                break;
+            }
+
+            await Task.Yield();
+        }
+
+        return totalDeleted;
+    }
 
     private async Task PromoteDueScheduledJobsAsync(DateTimeOffset now, CancellationToken ct)
     {

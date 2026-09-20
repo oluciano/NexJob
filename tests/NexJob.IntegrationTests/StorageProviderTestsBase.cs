@@ -230,6 +230,25 @@ public abstract class StorageProviderTestsBase
     }
 
     [Fact]
+    public async Task RequeueOrphanedJobsAsync_when_attempts_exhausted_moves_to_failed()
+    {
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
+        await storage.EnqueueAsync(MakeJob(maxAttempts: 1));
+        var fetched = (await storage.FetchNextAsync(["default"]))!;
+        fetched.Status.Should().Be(JobStatus.Processing);
+        fetched.Attempts.Should().Be(1);
+
+        await Task.Delay(10);
+        await storage.RequeueOrphanedJobsAsync(TimeSpan.Zero);
+
+        var updated = await dashboard.GetJobByIdAsync(fetched.Id);
+        updated!.Status.Should().Be(JobStatus.Failed);
+        updated.HeartbeatAt.Should().BeNull();
+        updated.ProcessingStartedAt.Should().BeNull();
+        updated.CompletedAt.Should().NotBeNull();
+    }
+
+    [Fact]
     public async Task RequeueOrphanedJobsAsync_does_not_touch_fresh_heartbeat()
     {
         var (storage, _, dashboard, _) = await CreateStorageAsync();
@@ -763,7 +782,8 @@ public abstract class StorageProviderTestsBase
         string? idempotencyKey = null,
         JobPriority priority = JobPriority.Normal,
         JobStatus status = JobStatus.Enqueued,
-        JobId? parentJobId = null) =>
+        JobId? parentJobId = null,
+        int maxAttempts = 5) =>
         new()
         {
             Id = new JobId(Guid.NewGuid()),
@@ -773,7 +793,7 @@ public abstract class StorageProviderTestsBase
             Queue = queue,
             Priority = priority,
             Status = status,
-            MaxAttempts = 5,
+            MaxAttempts = maxAttempts,
             CreatedAt = DateTimeOffset.UtcNow,
             IdempotencyKey = idempotencyKey,
             ParentJobId = parentJobId,
@@ -876,6 +896,69 @@ public abstract class StorageProviderTestsBase
         deleted.Should().Be(0);
         var remaining = await dashboard.GetJobByIdAsync(record.Id);
         remaining.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task PurgeJobsAsync_DeletesDeadLetterJobsBeyondRetention()
+    {
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
+
+        var policy = new RetentionPolicy
+        {
+            RetainSucceeded = TimeSpan.Zero,
+            RetainFailed = TimeSpan.Zero,
+            RetainExpired = TimeSpan.Zero,
+            RetainDeadLetter = TimeSpan.FromSeconds(1),
+        };
+
+        var record = MakeJob();
+        await storage.EnqueueAsync(record);
+        var fetched = await storage.FetchNextAsync(["default"]);
+        await storage.SetFailedAsync(fetched!.Id, new Exception("Fatal dead-letter error"), retryAt: null);
+
+        // Wait for threshold to pass
+        await Task.Delay(TimeSpan.FromSeconds(2));
+
+        var deleted = await storage.PurgeJobsAsync(policy);
+
+        deleted.Should().Be(1);
+        var remaining = await dashboard.GetJobByIdAsync(record.Id);
+        remaining.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task PurgeJobsAsync_BatchedPurging_DeletesJobsInChunks()
+    {
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
+
+        var policy = new RetentionPolicy
+        {
+            RetainSucceeded = TimeSpan.FromSeconds(1),
+            RetainFailed = TimeSpan.Zero,
+            RetainExpired = TimeSpan.Zero,
+            RetainDeadLetter = TimeSpan.Zero,
+            BatchSize = 2,
+        };
+
+        var ids = new List<JobId>();
+        for (var i = 0; i < 4; i++)
+        {
+            var record = MakeJob();
+            await storage.EnqueueAsync(record);
+            var fetched = await storage.FetchNextAsync(["default"]);
+            await storage.CommitJobResultAsync(fetched!.Id, new JobExecutionResult { Succeeded = true, Logs = [] });
+            ids.Add(record.Id);
+        }
+
+        await Task.Delay(TimeSpan.FromSeconds(2));
+
+        var deleted = await storage.PurgeJobsAsync(policy);
+
+        deleted.Should().Be(4);
+        foreach (var id in ids)
+        {
+            (await dashboard.GetJobByIdAsync(id)).Should().BeNull();
+        }
     }
 
     // ── DuplicatePolicy concurrency ────────────────────────────────────────────

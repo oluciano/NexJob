@@ -22,6 +22,9 @@ internal sealed class QueuesPage : IComponent
     async Task IComponent.SetParametersAsync(ParameterView parameters)
     {
         parameters.SetParameterProperties(this);
+
+        // NOTE (Blazor Dispatcher Invariant):
+        // Do NOT use .ConfigureAwait(false) here. Rendering via _handle.Render requires execution on the Dispatcher.
         var queues = await Storage.GetQueueMetricsAsync();
         var processingJobs = await Storage.GetJobsAsync(
             filter: new JobFilter { Status = JobStatus.Processing },

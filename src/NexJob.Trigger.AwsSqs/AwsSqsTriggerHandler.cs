@@ -11,31 +11,31 @@ namespace NexJob.Trigger.AwsSqs;
 /// AWS SQS trigger for NexJob. Receives messages from an SQS queue and automatically
 /// enqueues them as NexJob jobs.
 /// </summary>
-internal sealed class AwsSqsTrigger : IHostedService
+internal sealed class AwsSqsTriggerHandler : IHostedService
 {
     private readonly AwsSqsTriggerOptions _options;
     private readonly ISqsClient _sqsClient;
     private readonly IScheduler _scheduler;
     private readonly NexJobOptions _nexJobOptions;
-    private readonly ILogger<AwsSqsTrigger> _logger;
+    private readonly ILogger<AwsSqsTriggerHandler> _logger;
 
     private CancellationTokenSource? _stoppingCts;
     private Task? _pollingTask;
 
     /// <summary>
-    /// Initializes a new <see cref="AwsSqsTrigger"/>.
+    /// Initializes a new <see cref="AwsSqsTriggerHandler"/>.
     /// </summary>
     /// <param name="options">AWS SQS trigger configuration.</param>
     /// <param name="sqsClient">The SQS client for receiving messages.</param>
     /// <param name="scheduler">The NexJob scheduler for enqueueing jobs.</param>
     /// <param name="nexJobOptions">Global NexJob configuration options.</param>
     /// <param name="logger">Logger for diagnostic output.</param>
-    public AwsSqsTrigger(
+    public AwsSqsTriggerHandler(
         IOptions<AwsSqsTriggerOptions> options,
         ISqsClient sqsClient,
         IScheduler scheduler,
         NexJobOptions nexJobOptions,
-        ILogger<AwsSqsTrigger> logger)
+        ILogger<AwsSqsTriggerHandler> logger)
     {
         _options = options.Value;
         _sqsClient = sqsClient;
@@ -179,6 +179,8 @@ internal sealed class AwsSqsTrigger : IHostedService
         using var extensionCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var extensionTask = ExtendVisibilityAsync(receiptHandle, extensionCts.Token);
 
+        var enqueued = false;
+
         try
         {
             // Extract trace context from message attributes
@@ -207,6 +209,7 @@ internal sealed class AwsSqsTrigger : IHostedService
 
             // Enqueue the job using scheduler — wake-up signal is handled internally
             await _scheduler.EnqueueAsync(job, DuplicatePolicy.AllowAfterFailed, cancellationToken).ConfigureAwait(false);
+            enqueued = true;
 
             // Delete message only after successful enqueue
             var deleteRequest = new DeleteMessageRequest
@@ -230,17 +233,59 @@ internal sealed class AwsSqsTrigger : IHostedService
         }
         catch (Exception ex)
         {
-            // Enqueue failed — do NOT delete the message.
-            // It will become visible again after visibility timeout expires,
-            // and eventually go to DLQ after maxReceiveCount is exceeded.
-            _logger.LogWarning(
-                ex,
-                "Failed to enqueue SQS message {MessageId}. Message will not be deleted and will reappear.",
-                messageId);
+            if (!enqueued)
+            {
+                // Enqueue failed — do NOT delete the message.
+                // Reset visibility timeout to 0 immediately so the message becomes visible
+                // for immediate reprocessing or DLQ transition, eliminating timing flakiness.
+                _logger.LogWarning(
+                    ex,
+                    "Failed to enqueue SQS message {MessageId}. Resetting visibility timeout to 0.",
+                    messageId);
+
+                // Stop the visibility extension loop first so it does not extend visibility again.
+                await extensionCts.CancelAsync().ConfigureAwait(false);
+                await extensionTask.ConfigureAwait(false);
+
+                try
+                {
+                    var changeVisibilityRequest = new ChangeMessageVisibilityRequest
+                    {
+                        QueueUrl = _options.QueueUrl,
+                        ReceiptHandle = receiptHandle,
+                        VisibilityTimeout = 0,
+                    };
+
+                    await _sqsClient.ChangeMessageVisibilityAsync(changeVisibilityRequest, cancellationToken).ConfigureAwait(false);
+
+                    _logger.LogInformation(
+                        "Reset visibility timeout to 0 for SQS message {MessageId} after enqueue failure.",
+                        messageId);
+                }
+                catch (OperationCanceledException)
+                {
+                    // Cancellation requested during reset — propagate shutdown signal
+                    throw;
+                }
+                catch (Exception resetEx)
+                {
+                    _logger.LogWarning(
+                        resetEx,
+                        "Failed to reset visibility timeout for SQS message {MessageId}.",
+                        messageId);
+                }
+            }
+            else
+            {
+                _logger.LogWarning(
+                    ex,
+                    "Failed to delete SQS message {MessageId} after successful enqueue.",
+                    messageId);
+            }
         }
         finally
         {
-            // Stop visibility extension loop
+            // Stop visibility extension loop if still running
             await extensionCts.CancelAsync().ConfigureAwait(false);
             await extensionTask.ConfigureAwait(false);
         }

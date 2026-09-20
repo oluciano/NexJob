@@ -1,10 +1,18 @@
 using System.Reflection;
 using NexJob;
 using NexJob.Dashboard;
+using NexJob.Postgres;
 using NexJob.Sample.WebApi.Jobs;
 using NexJob.Storage;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Optionally configure PostgreSQL if connection string is provided, otherwise defaults to InMemory
+var postgresConnectionString = builder.Configuration.GetConnectionString("NexJobPostgres");
+if (!string.IsNullOrWhiteSpace(postgresConnectionString))
+{
+    builder.Services.AddNexJobPostgres(postgresConnectionString);
+}
 
 // Load all NexJob settings from appsettings.json "NexJob" section
 builder.Services.AddNexJob(builder.Configuration, opt =>
@@ -21,26 +29,30 @@ var app = builder.Build();
 
 app.Lifetime.ApplicationStarted.Register(() =>
 {
-    using var scope = app.Services.CreateScope();
-    var scheduler = scope.ServiceProvider.GetRequiredService<IScheduler>();
+    _ = Task.Run(async () =>
+    {
+        using var scope = app.Services.CreateScope();
+        var scheduler = scope.ServiceProvider.GetRequiredService<IScheduler>();
 
-    scheduler.RecurringAsync<CleanupJob, CleanupRequest>(
-        "nightly-cleanup",
-        new CleanupRequest("temp-files", RetentionDays: 30),
-        cron: "0 2 * * *").GetAwaiter().GetResult();
+        await scheduler.RecurringAsync<CleanupJob, CleanupRequest>(
+            "nightly-cleanup",
+            new CleanupRequest("temp-files", RetentionDays: 30),
+            cron: "0 2 * * *");
 
-    scheduler.RecurringAsync<GenerateReportJob, ReportRequest>(
-        "daily-report",
-        new ReportRequest("daily",
-            DateOnly.FromDateTime(DateTime.Today.AddDays(-1)),
-            DateOnly.FromDateTime(DateTime.Today)),
-        cron: "0 6 * * *",
-        queue: "reports").GetAwaiter().GetResult();
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        await scheduler.RecurringAsync<GenerateReportJob, ReportRequest>(
+            "daily-report",
+            new ReportRequest("daily",
+                today.AddDays(-1),
+                today),
+            cron: "0 6 * * *",
+            queue: "reports");
 
-    scheduler.RecurringAsync<SendEmailJob, EmailPayload>(
-        "weekly-newsletter",
-        new EmailPayload("newsletter@nexjob.dev", "Weekly digest", string.Empty),
-        cron: "0 9 * * 1").GetAwaiter().GetResult();
+        await scheduler.RecurringAsync<SendEmailJob, EmailPayload>(
+            "weekly-newsletter",
+            new EmailPayload("newsletter@nexjob.dev", "Weekly digest", string.Empty),
+            cron: "0 9 * * 1");
+    });
 });
 
 // ── Fire-and-forget ───────────────────────────────────────────────────────────
@@ -99,7 +111,7 @@ app.MapPost("/campaigns/{campaignId}/schedule", async (string campaignId, Schedu
 
 // ── Job status lookup ─────────────────────────────────────────────────────────
 
-app.MapGet("/jobs/{id:guid}/status", async (Guid id, IStorageProvider storage) =>
+app.MapGet("/jobs/{id:guid}/status", async (Guid id, IDashboardStorage storage) =>
 {
     var job = await storage.GetJobByIdAsync(new JobId(id));
     if (job is null)
@@ -150,6 +162,7 @@ app.MapDelete("/jobs/cleanup/recurring", async (IScheduler scheduler) =>
 
 app.MapPost("/jobs/seed/recurring", async (IScheduler scheduler) =>
 {
+    var today = DateOnly.FromDateTime(DateTime.UtcNow);
     await scheduler.RecurringAsync<CleanupJob, CleanupRequest>(
         "hourly-cleanup", new CleanupRequest("cache", 1), "0 * * * *");
     await scheduler.RecurringAsync<CleanupJob, CleanupRequest>(
@@ -157,8 +170,8 @@ app.MapPost("/jobs/seed/recurring", async (IScheduler scheduler) =>
     await scheduler.RecurringAsync<GenerateReportJob, ReportRequest>(
         "daily-report",
         new ReportRequest("daily",
-            DateOnly.FromDateTime(DateTime.Today.AddDays(-1)),
-            DateOnly.FromDateTime(DateTime.Today)),
+            today.AddDays(-1),
+            today),
         "0 6 * * *",
         queue: "reports");
     await scheduler.RecurringAsync<SendEmailJob, EmailPayload>(
@@ -181,9 +194,10 @@ app.MapPost("/jobs/seed/failed", async (IScheduler scheduler) =>
 
 app.MapPost("/jobs/chain", async (EmailPayload email, IScheduler scheduler) =>
 {
+    var today = DateOnly.FromDateTime(DateTime.UtcNow);
     var report = new ReportRequest("sales-summary",
-        DateOnly.FromDateTime(DateTime.Today.AddDays(-7)),
-        DateOnly.FromDateTime(DateTime.Today));
+        today.AddDays(-7),
+        today);
     var reportId = await scheduler.EnqueueAsync<GenerateReportJob, ReportRequest>(report, queue: "reports");
     var emailId = await scheduler.ContinueWithAsync<SendEmailJob, EmailPayload>(reportId, email);
 
@@ -234,6 +248,7 @@ app.MapPost("/jobs/stress", async (StressRequest req, IScheduler scheduler) =>
     var ids = new List<object>();
     var rng = new Random();
 
+    var today = DateOnly.FromDateTime(DateTime.UtcNow);
     for (int i = 0; i < req.Count; i++)
     {
         var priority = (JobPriority)rng.Next(1, 5);
@@ -245,8 +260,8 @@ app.MapPost("/jobs/stress", async (StressRequest req, IScheduler scheduler) =>
                     priority: priority),
             1 => await scheduler.EnqueueAsync<GenerateReportJob, ReportRequest>(
                     new ReportRequest($"report-{i}",
-                        DateOnly.FromDateTime(DateTime.Today.AddDays(-7)),
-                        DateOnly.FromDateTime(DateTime.Today)),
+                        today.AddDays(-7),
+                        today),
                     priority: priority,
                     queue: "reports"),
             2 => await scheduler.EnqueueAsync<FlakeyJob, FlakeyRequest>(
@@ -285,7 +300,7 @@ app.MapPost("/jobs/stress/idempotent", async (IdempotentStressRequest req, ISche
 
 // ── Status ────────────────────────────────────────────────────────────────────
 
-app.MapGet("/jobs/due-recurring", async (IStorageProvider storage) =>
+app.MapGet("/jobs/due-recurring", async (IRecurringStorage storage) =>
 {
     var due = await storage.GetDueRecurringJobsAsync(DateTimeOffset.UtcNow.AddYears(1));
     return Results.Ok(due.Select(r => new

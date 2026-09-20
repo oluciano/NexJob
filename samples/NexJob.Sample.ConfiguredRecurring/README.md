@@ -4,8 +4,8 @@ A minimal WebAPI sample demonstrating NexJob's **automatic recurring job binding
 
 ## What It Does
 
-- **TesteOnlyJob**: A simple job that implements `IJob` (no input required) and logs the current time every minute
-- **Configuration-driven**: The recurring job is defined entirely in `appsettings.json` — no code registration needed
+- **HeartbeatJob**: A simple job that implements `IJob` (no input required) and logs the current UTC time every minute
+- **Configuration-driven**: The recurring job is defined entirely in `appsettings.json` using the simple `Job` type name format
 - **Dashboard**: Full NexJob dashboard at `/dashboard` for real-time job monitoring
 
 ## Running the Sample
@@ -21,28 +21,28 @@ The application will start on `http://localhost:5000` and automatically register
 
 ### 1. Job Implementation
 ```csharp
-public sealed class TesteOnlyJob(ILogger<TesteOnlyJob> logger) : IJob
+public sealed class HeartbeatJob(ILogger<HeartbeatJob> logger) : IJob
 {
     public async Task ExecuteAsync(CancellationToken cancellationToken)
     {
-        var now = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff");
-        logger.LogInformation("[TesteOnlyJob] Executing at {Time}", now);
-        Console.WriteLine($"[TesteOnlyJob] Current time: {now}");
+        var now = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss.fff");
+        logger.LogInformation("[HeartbeatJob] Executing at {Time} UTC", now);
+        Console.WriteLine($"[HeartbeatJob] Current UTC time: {now}");
         await Task.CompletedTask;
     }
 }
 ```
 
 ### 2. Configuration-Driven Recurring Jobs
-No code registration required. Just define in `appsettings.json`:
+No code registration required. Simply define the job using the short class name in `appsettings.json`:
 
 ```json
 {
   "NexJob": {
     "RecurringJobs": [
       {
-        "Id": "log-time-every-minute",
-        "JobType": "NexJob.Sample.ConfiguredRecurring.Jobs.TesteOnlyJob, NexJob.Sample.ConfiguredRecurring",
+        "Id": "heartbeat-every-minute",
+        "Job": "HeartbeatJob",
         "Cron": "*/1 * * * *",
         "Queue": "default",
         "TimeZoneId": "America/Sao_Paulo",
@@ -79,7 +79,7 @@ Watch the job execute every minute — see execution timeline, status, metrics, 
 ```
 NexJob.Sample.ConfiguredRecurring/
 ├── Jobs/
-│   └── TesteOnlyJob.cs                           # IJob implementation
+│   └── HeartbeatJob.cs                           # IJob implementation
 ├── Program.cs                                     # NexJob setup & dashboard
 ├── appsettings.json                              # Recurring job configuration
 ├── NexJob.Sample.ConfiguredRecurring.csproj      # Project file

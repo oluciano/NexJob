@@ -1,7 +1,9 @@
+using System.Diagnostics.Metrics;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NexJob.Storage;
+using NexJob.Telemetry;
 
 namespace NexJob.Internal;
 
@@ -12,6 +14,7 @@ namespace NexJob.Internal;
 internal sealed class ServerHeartbeatService : IHostedService, IDisposable
 {
     private readonly IJobStorage _storage;
+    private readonly IDashboardStorage? _dashboardStorage;
     private readonly NexJobOptions _options;
     private readonly ILogger<ServerHeartbeatService> _logger;
     private readonly string _serverId;
@@ -23,14 +26,17 @@ internal sealed class ServerHeartbeatService : IHostedService, IDisposable
     /// <param name="storage">The storage provider.</param>
     /// <param name="options">The NexJob options.</param>
     /// <param name="logger">The logger.</param>
+    /// <param name="dashboardStorage">Optional dashboard storage used to refresh queue depth metrics.</param>
     public ServerHeartbeatService(
         IJobStorage storage,
         IOptions<NexJobOptions> options,
-        ILogger<ServerHeartbeatService> logger)
+        ILogger<ServerHeartbeatService> logger,
+        IDashboardStorage? dashboardStorage = null)
     {
         _storage = storage ?? throw new ArgumentNullException(nameof(storage));
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _dashboardStorage = dashboardStorage;
 
         // Use custom ServerId from options or generate a unique composite ID based on MachineName + Guid
         _serverId = !string.IsNullOrWhiteSpace(_options.ServerId)
@@ -73,6 +79,11 @@ internal sealed class ServerHeartbeatService : IHostedService, IDisposable
             // this degraded state without bringing down the process.
             _logger.LogWarning(ex, "Server node {ServerId} failed to register — running in degraded mode (jobs will execute but this instance will not appear in dashboard or cluster tracking).", _serverId);
         }
+
+        if (_dashboardStorage is not null)
+        {
+            _ = RefreshQueueMetricsAsync(CancellationToken.None);
+        }
     }
 
     /// <inheritdoc/>
@@ -80,6 +91,7 @@ internal sealed class ServerHeartbeatService : IHostedService, IDisposable
     {
         _logger.LogDebug("Deregistering active server node...");
         _timer?.Change(Timeout.Infinite, 0);
+        NexJobMetrics.SetQueueDepthProvider(null);
 
         try
         {
@@ -121,10 +133,35 @@ internal sealed class ServerHeartbeatService : IHostedService, IDisposable
         {
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
             await _storage.HeartbeatServerAsync(_serverId, cts.Token).ConfigureAwait(false);
+
+            if (_dashboardStorage is not null)
+            {
+                await RefreshQueueMetricsAsync(cts.Token).ConfigureAwait(false);
+            }
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to update global heartbeat for server {ServerId}.", _serverId);
+        }
+    }
+
+    private async Task RefreshQueueMetricsAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (_dashboardStorage is not null)
+            {
+                var queueMetrics = await _dashboardStorage.GetQueueMetricsAsync(cancellationToken).ConfigureAwait(false);
+                var measurements = queueMetrics.Select(m =>
+                    new Measurement<long>(
+                        m.Enqueued,
+                        new KeyValuePair<string, object?>("nexjob.queue", m.Queue))).ToList();
+                NexJobMetrics.SetQueueDepthProvider(() => measurements);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Failed to refresh queue depth telemetry metric.");
         }
     }
 }

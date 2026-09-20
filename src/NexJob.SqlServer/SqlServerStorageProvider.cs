@@ -481,16 +481,21 @@ public sealed class SqlServerStorageProvider : IStorageProvider
     public async Task RequeueOrphanedJobsAsync(
         TimeSpan heartbeatTimeout, CancellationToken cancellationToken = default)
     {
-        var cutoff = DateTimeOffset.UtcNow - heartbeatTimeout;
+        var now = DateTimeOffset.UtcNow;
+        var cutoff = now - heartbeatTimeout;
         await using var conn = Open();
         await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
         await conn.ExecuteAsync(
             """
             UPDATE nexjob_jobs
-            SET status = 'Enqueued', heartbeat_at = NULL, processing_started_at = NULL
+            SET status = CASE WHEN attempts >= max_attempts THEN 'Failed' ELSE 'Enqueued' END,
+                completed_at = CASE WHEN attempts >= max_attempts THEN @now ELSE NULL END,
+                exception_message = CASE WHEN attempts >= max_attempts AND exception_message IS NULL THEN 'Orphaned execution exceeded maximum attempts.' ELSE exception_message END,
+                heartbeat_at = NULL,
+                processing_started_at = NULL
             WHERE status = 'Processing' AND heartbeat_at < @cutoff
             """,
-            new { cutoff });
+            new { cutoff, now }).ConfigureAwait(false);
     }
 
     // ── Continuations ─────────────────────────────────────────────────────────
@@ -849,39 +854,101 @@ public sealed class SqlServerStorageProvider : IStorageProvider
         await using var conn = Open();
         await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
 
+        var batchSize = policy.BatchSize > 0 ? policy.BatchSize : 1000;
         var deleted = 0;
 
         if (policy.RetainSucceeded > TimeSpan.Zero)
         {
-            deleted += await conn.ExecuteAsync(
-                """
-                DELETE FROM nexjob_jobs
-                WHERE status = 'Succeeded'
-                  AND completed_at < DATEADD(SECOND, @seconds, SYSDATETIMEOFFSET())
-                """,
-                new { seconds = -(long)policy.RetainSucceeded.TotalSeconds, }).ConfigureAwait(false);
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                var rows = await conn.ExecuteAsync(
+                    """
+                    DELETE TOP (@batchSize) FROM nexjob_jobs
+                    WHERE status = 'Succeeded'
+                      AND completed_at < DATEADD(SECOND, @seconds, SYSDATETIMEOFFSET())
+                    """,
+                    new { seconds = -(long)policy.RetainSucceeded.TotalSeconds, batchSize, }).ConfigureAwait(false);
+
+                deleted += rows;
+                if (rows < batchSize)
+                {
+                    break;
+                }
+
+                await Task.Yield();
+            }
         }
 
         if (policy.RetainFailed > TimeSpan.Zero)
         {
-            deleted += await conn.ExecuteAsync(
-                """
-                DELETE FROM nexjob_jobs
-                WHERE status = 'Failed'
-                  AND completed_at < DATEADD(SECOND, @seconds, SYSDATETIMEOFFSET())
-                """,
-                new { seconds = -(long)policy.RetainFailed.TotalSeconds, }).ConfigureAwait(false);
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                var rows = await conn.ExecuteAsync(
+                    """
+                    DELETE TOP (@batchSize) FROM nexjob_jobs
+                    WHERE status = 'Failed'
+                      AND completed_at < DATEADD(SECOND, @seconds, SYSDATETIMEOFFSET())
+                    """,
+                    new { seconds = -(long)policy.RetainFailed.TotalSeconds, batchSize, }).ConfigureAwait(false);
+
+                deleted += rows;
+                if (rows < batchSize)
+                {
+                    break;
+                }
+
+                await Task.Yield();
+            }
+        }
+
+        if (policy.RetainDeadLetter > TimeSpan.Zero)
+        {
+            var retainFailedIsZero = policy.RetainFailed == TimeSpan.Zero ? 1 : 0;
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                var rows = await conn.ExecuteAsync(
+                    """
+                    DELETE TOP (@batchSize) FROM nexjob_jobs
+                    WHERE (status = 'DeadLetter' OR (status = 'Failed' AND @retainFailedIsZero = 1))
+                      AND ISNULL(completed_at, created_at) < DATEADD(SECOND, @seconds, SYSDATETIMEOFFSET())
+                    """,
+                    new
+                    {
+                        seconds = -(long)policy.RetainDeadLetter.TotalSeconds,
+                        batchSize,
+                        retainFailedIsZero,
+                    }).ConfigureAwait(false);
+
+                deleted += rows;
+                if (rows < batchSize)
+                {
+                    break;
+                }
+
+                await Task.Yield();
+            }
         }
 
         if (policy.RetainExpired > TimeSpan.Zero)
         {
-            deleted += await conn.ExecuteAsync(
-                """
-                DELETE FROM nexjob_jobs
-                WHERE status = 'Expired'
-                  AND created_at < DATEADD(SECOND, @seconds, SYSDATETIMEOFFSET())
-                """,
-                new { seconds = -(long)policy.RetainExpired.TotalSeconds, }).ConfigureAwait(false);
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                var rows = await conn.ExecuteAsync(
+                    """
+                    DELETE TOP (@batchSize) FROM nexjob_jobs
+                    WHERE status = 'Expired'
+                      AND created_at < DATEADD(SECOND, @seconds, SYSDATETIMEOFFSET())
+                    """,
+                    new { seconds = -(long)policy.RetainExpired.TotalSeconds, batchSize, }).ConfigureAwait(false);
+
+                deleted += rows;
+                if (rows < batchSize)
+                {
+                    break;
+                }
+
+                await Task.Yield();
+            }
         }
 
         return deleted;

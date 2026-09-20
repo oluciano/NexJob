@@ -89,33 +89,9 @@ internal sealed class AzureServiceBusTriggerHandler : IHostedService
     }
 
     /// <summary>
-    /// Extracts the W3C traceparent from message application properties.
-    /// </summary>
-    private static string? ExtractTraceparent(ServiceBusReceivedMessage message)
-    {
-        return message.ApplicationProperties.TryGetValue("traceparent", out var traceparent)
-            ? traceparent?.ToString()
-            : null;
-    }
-
-    /// <summary>
-    /// Extracts the job type (assembly-qualified name) from message application properties.
-    /// </summary>
-    private static string ExtractJobType(ServiceBusReceivedMessage message)
-    {
-        if (message.ApplicationProperties.TryGetValue("nexjob.job_type", out var jobType) &&
-            jobType is not null)
-        {
-            return jobType.ToString() ?? throw new InvalidOperationException("Job type is required in message properties");
-        }
-
-        throw new InvalidOperationException("Message must contain 'nexjob.job_type' in ApplicationProperties");
-    }
-
-    /// <summary>
     /// Processes a single message from Service Bus.
     /// </summary>
-    private async Task HandleMessageAsync(ProcessMessageEventArgs args)
+    internal async Task HandleMessageAsync(ProcessMessageEventArgs args)
     {
         try
         {
@@ -185,7 +161,7 @@ internal sealed class AzureServiceBusTriggerHandler : IHostedService
     /// <summary>
     /// Handles errors from the Service Bus processor.
     /// </summary>
-    private Task HandleErrorAsync(ProcessErrorEventArgs args)
+    internal Task HandleErrorAsync(ProcessErrorEventArgs args)
     {
         _logger.LogError(
             args.Exception,
@@ -193,5 +169,38 @@ internal sealed class AzureServiceBusTriggerHandler : IHostedService
             args.ErrorSource);
 
         return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Extracts the W3C traceparent from message application properties.
+    /// </summary>
+    private static string? ExtractTraceparent(ServiceBusReceivedMessage message)
+    {
+        return message.ApplicationProperties.TryGetValue("traceparent", out var traceparent)
+            ? traceparent?.ToString()
+            : null;
+    }
+
+    /// <summary>
+    /// Extracts the job type (assembly-qualified name) from message application properties or options.
+    /// </summary>
+    private string ExtractJobType(ServiceBusReceivedMessage message)
+    {
+        if (message.ApplicationProperties.TryGetValue("nexjob.job_type", out var jobType) &&
+            jobType is not null)
+        {
+            var str = jobType.ToString();
+            if (!string.IsNullOrWhiteSpace(str))
+            {
+                return str;
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(_options.JobType))
+        {
+            return _options.JobType;
+        }
+
+        throw new InvalidOperationException("Message must contain 'nexjob.job_type' in ApplicationProperties or JobType must be configured in AzureServiceBusTriggerOptions");
     }
 }

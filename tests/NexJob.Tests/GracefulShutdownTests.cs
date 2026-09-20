@@ -153,6 +153,57 @@ public sealed class GracefulShutdownTests
 
         releaseJob.Release();
     }
+
+    // ─── cooperative cancellation propagation ────────────────────────────────
+
+    [Fact]
+    public async Task GracefulShutdown_HostStopAsync_PropagatesCancellationToInFlightJob()
+    {
+        var jobStarted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var jobCancelled = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        using var host = BuildHost(
+            s => s.AddTransient(_ => new CancellableDrainJob(jobStarted, jobCancelled)),
+            shutdownTimeout: TimeSpan.FromMilliseconds(100));
+
+        await host.StartAsync();
+
+        var scheduler = host.Services.GetRequiredService<IScheduler>();
+        await scheduler.EnqueueAsync<CancellableDrainJob, CancellableDrainInput>(new());
+
+        await jobStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        // Stop the host with a short timeout; active job must observe cancellation
+        await host.StopAsync();
+
+        var wasCancelled = await jobCancelled.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        wasCancelled.Should().BeTrue("in-flight job must receive cancellation when host stops and timeout expires");
+    }
+
+    [Fact]
+    public async Task GracefulShutdown_HostStoppingToken_CancelsActiveJobImmediately()
+    {
+        var jobStarted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var jobCancelled = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        using var host = BuildHost(
+            s => s.AddTransient(_ => new CancellableDrainJob(jobStarted, jobCancelled)),
+            shutdownTimeout: TimeSpan.FromSeconds(10));
+
+        await host.StartAsync();
+
+        var scheduler = host.Services.GetRequiredService<IScheduler>();
+        await scheduler.EnqueueAsync<CancellableDrainJob, CancellableDrainInput>(new());
+
+        await jobStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        // Trigger host shutdown with an explicit cancellation token
+        using var stopCts = new CancellationTokenSource(TimeSpan.FromMilliseconds(50));
+        await host.StopAsync(stopCts.Token);
+
+        var wasCancelled = await jobCancelled.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        wasCancelled.Should().BeTrue("in-flight job must be cancelled when host cancellation token fires");
+    }
 }
 
 // ─── Stub jobs ────────────────────────────────────────────────────────────────
@@ -173,6 +224,32 @@ public sealed class GateableJob(
     {
         startedSignal.TrySetResult(true);
         await gate.WaitAsync(cancellationToken);
+    }
+}
+
+/// <summary>Input for <see cref="CancellableDrainJob"/>.</summary>
+public record CancellableDrainInput;
+
+/// <summary>
+/// A job that observes CancellationToken during execution and signals when cancellation occurs.
+/// </summary>
+public sealed class CancellableDrainJob(
+    TaskCompletionSource<bool> startedSignal,
+    TaskCompletionSource<bool> cancelledSignal) : IJob<CancellableDrainInput>
+{
+    /// <inheritdoc/>
+    public async Task ExecuteAsync(CancellableDrainInput input, CancellationToken cancellationToken)
+    {
+        startedSignal.TrySetResult(true);
+        try
+        {
+            await Task.Delay(Timeout.Infinite, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            cancelledSignal.TrySetResult(true);
+            throw;
+        }
     }
 }
 

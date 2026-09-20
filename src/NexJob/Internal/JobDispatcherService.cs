@@ -3,6 +3,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using NexJob.Configuration;
 using NexJob.Storage;
+using NexJob.Telemetry;
 
 namespace NexJob.Internal;
 
@@ -46,11 +47,19 @@ internal sealed class JobDispatcherService : BackgroundService
             "NexJob shutting down. Waiting for {Count} active job(s) to complete (timeout: {Timeout}s)...",
             _activeJobCount, _options.ShutdownTimeout.TotalSeconds);
 
-        var deadline = Task.Delay(_options.ShutdownTimeout, CancellationToken.None);
+        using var timeoutCts = new CancellationTokenSource(_options.ShutdownTimeout);
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
 
-        while (_activeJobCount > 0 && !deadline.IsCompleted)
+        while (_activeJobCount > 0 && !linkedCts.Token.IsCancellationRequested)
         {
-            await Task.Delay(250, CancellationToken.None).ConfigureAwait(false);
+            try
+            {
+                await Task.Delay(250, linkedCts.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
         }
 
         if (_activeJobCount > 0)
@@ -74,6 +83,9 @@ internal sealed class JobDispatcherService : BackgroundService
             _options.Workers, string.Join(", ", _options.Queues));
 
         using var workerSlots = new SemaphoreSlim(_options.Workers, _options.Workers);
+        NexJobMetrics.SetWorkerMetricsProviders(
+            () => Volatile.Read(ref _activeJobCount),
+            () => _options.Workers);
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -134,7 +146,7 @@ internal sealed class JobDispatcherService : BackgroundService
                 {
                     try
                     {
-                        await _executor.ExecuteJobAsync(job).ConfigureAwait(false);
+                        await _executor.ExecuteJobAsync(job, stoppingToken).ConfigureAwait(false);
                     }
                     finally
                     {
@@ -152,6 +164,7 @@ internal sealed class JobDispatcherService : BackgroundService
             }
         }
 
+        NexJobMetrics.SetWorkerMetricsProviders(null, null);
         _logger.LogInformation("JobDispatcherService stopped.");
     }
 

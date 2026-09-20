@@ -24,13 +24,15 @@ internal sealed class FailedPage : IComponent
     {
         parameters.SetParameterProperties(this);
 
+        // NOTE (Blazor Dispatcher Invariant):
+        // Do NOT use .ConfigureAwait(false) here. Rendering via _handle.Render requires execution on the Dispatcher.
         // Fetch queues for the filter dropdown
-        var queues = await Storage.GetQueueMetricsAsync(CancellationToken.None).ConfigureAwait(false);
+        var queues = await Storage.GetQueueMetricsAsync(CancellationToken.None);
 
         // Default to Failed if no status specified; allow Expired as override
         var status = StatusFilter ?? JobStatus.Failed;
         var filter = new JobFilter { Status = status, Search = Search };
-        var result = await Storage.GetJobsAsync(filter, Page, 25).ConfigureAwait(false);
+        var result = await Storage.GetJobsAsync(filter, Page, 25);
         _handle.Render(b => b.AddMarkupContent(0, BuildHtml(result, status, queues)));
     }
 

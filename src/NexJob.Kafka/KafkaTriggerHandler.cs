@@ -99,7 +99,7 @@ internal sealed class KafkaTriggerHandler : BackgroundService
         return header is not null ? Encoding.UTF8.GetString(header.GetValueBytes()) : null;
     }
 
-    private static string ExtractJobType(Headers headers)
+    private string ExtractJobType(Headers headers)
     {
         var header = headers.FirstOrDefault(h => string.Equals(h.Key, "nexjob.job_type", StringComparison.Ordinal));
         if (header is not null)
@@ -107,7 +107,12 @@ internal sealed class KafkaTriggerHandler : BackgroundService
             return Encoding.UTF8.GetString(header.GetValueBytes());
         }
 
-        throw new InvalidOperationException("Message must contain 'nexjob.job_type' header.");
+        if (!string.IsNullOrWhiteSpace(_options.JobType))
+        {
+            return _options.JobType;
+        }
+
+        throw new InvalidOperationException("Message must contain 'nexjob.job_type' header or JobType must be configured in KafkaTriggerOptions.");
     }
 
     private async Task ProcessMessageAsync(

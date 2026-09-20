@@ -4,6 +4,115 @@ All notable changes to NexJob are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [5.2.0] - 2026-09-20
+
+### Added
+
+- **Storage & Job Retention — Dead-Letter Retention & Batched Chunked Purging**:
+  - Added configurable `RetentionDeadLetter` to `NexJobOptions` and `RetentionPolicy` (default 60 days) to prevent unbounded accumulation of dead-letter jobs (issue #145).
+  - Added configurable `RetentionBatchSize` to `NexJobOptions` and `BatchSize` to `RetentionPolicy` (default 1,000 rows) with runtime override support via `IRuntimeSettingsStore` (issue #145).
+  - Implemented batched/chunked deletion loops in `PurgeJobsAsync` across all storage providers (PostgreSQL, SQL Server, Redis, MongoDB, InMemory) to prevent lock escalation, WAL/transaction log bloat, and replication lag during retention cleanup cycles (issue #145).
+  - Added dead-letter retention configuration card and runtime controls to Dashboard (`SettingsPage`) and API endpoint `/settings/retention` (issue #145).
+  - Added 3N unit testing matrix (positive, negative, boundary/fallback) and integration tests covering dead-letter retention and batched purging (issue #145).
+
+- **Consumer-Driven Triggers & Idempotency Hardening**:
+  - Implemented consumer-driven job mapping across all broker triggers (`NexJob.Kafka`, `NexJob.RabbitMQ`, `NexJob.Trigger.AzureServiceBus`, `NexJob.Trigger.GooglePubSub`, `NexJob.Trigger.AwsSqs`) allowing subscribers to bind explicit job types without requiring publishers to inject `nexjob.job_type` headers (issue #163).
+  - Added generic registration overloads `.Add{Broker}Trigger<TJob>()` on `NexJobBuilder` and `IServiceCollection` across Kafka, RabbitMQ, Azure Service Bus, Google Pub/Sub, and AWS SQS (issue #163).
+  - Implemented configurable `JobType` on `KafkaTriggerOptions`, `RabbitMqTriggerOptions`, `AzureServiceBusTriggerOptions`, and `GooglePubSubTriggerOptions` with strict precedence hierarchy: (1) message header/attribute if present, (2) configured `JobType`, (3) error/dead-letter if neither is present (issue #163).
+  - Hardened `NexJob.RabbitMQ` idempotency key resolution with deterministic SHA-256 payload hashing (`Convert.ToHexString(SHA256.HashData(body))`) when both `CorrelationId` and `MessageId` are omitted by external producers, preventing duplicate executions across broker redeliveries (issue #163).
+  - Added comprehensive 3N unit test coverage across all affected trigger packages (precedence, fallback, invalid input/whitespace, and DI registration) (issue #163).
+
+- **`NexJob.StressTests`**:
+  - Implemented production load and stress testing suite in `tests/NexJob.StressTests` targeting high-concurrency storage and trigger backpressure scenarios (issue #159).
+  - Implemented `PostgresStorageStressTests` executing 3,000 jobs under 20-worker contention against PostgreSQL (`NpgsqlDataSource`), asserting zero deadlocks (`40P01`), connection pool stability, and 100% completion (issue #159).
+  - Implemented `RedisStorageStressTests` executing 3,000 jobs concurrently under Redis multiplexer load, asserting zero connection drops and consistent status transitions (issue #159).
+  - Implemented `TriggerBackpressureStressTests` asserting bounded memory and strict prefetch limit enforcement under artificial storage write slowdown (issue #159).
+  - Created dedicated on-demand GitHub Actions stress testing workflow `.github/workflows/stress-tests.yml` with containerized PostgreSQL and Redis services (issue #159).
+
+- **`NexJob.Benchmarks`**:
+  - Implemented `StorageProviderLatencyBenchmark` comparing enqueue latency across InMemory, Redis, and PostgreSQL providers via `IScheduler` (issue #159).
+  - Parameterized single-enqueue latency benchmarks by payload size (`PayloadBytes: 0, 1024, 10240`) to evaluate serialization scaling with `System.Text.Json` vs `Newtonsoft.Json` (issue #157).
+  - Implemented `ConcurrentEnqueueBenchmark` measuring multi-threaded enqueue throughput and lock contention across varying parallelism levels (`ConcurrencyLevel: 10, 50`) (issue #157).
+  - Implemented `DispatchLatencyBenchmark` isolating and measuring wake-up channel dispatch latency from enqueue to execution (issue #157).
+  - Added comprehensive `benchmarks/NexJob.Benchmarks/README.md` detailing benchmark suites, execution commands, and verified .NET 8 results (issue #157).
+
+- **Samples & Reference Architecture**:
+  - Comprehensive modernization of all existing samples and addition of reference projects for all plugins, brokers, and storage topologies (issue #128):
+    - `NexJob.Sample.MinimalApi`: Modernized to .NET 8 Minimal APIs with deadline enforcement, segregated `IDashboardStorage`, and dead-letter handling.
+    - `NexJob.Sample.WebApi`: Modernized with dual storage (InMemory / PostgreSQL), REST endpoints for job lifecycle management, recurring jobs, and `.http` test definitions.
+    - `NexJob.Sample.WorkerService`: Headless console Worker Service demonstrating embedded standalone HTTP dashboard server and graceful shutdown.
+    - `NexJob.Sample.ConfiguredRecurring`: Clean declarative recurring job schedules from `appsettings.json` with timezone support.
+    - `NexJob.Sample.RabbitMQ`: Production outbox producer and trigger consumer demonstrating the 5 trigger guarantees and automatic acks.
+    - `NexJob.Sample.Kafka`: Partitioned event publishing via Outbox and consumer trigger with offset tracking, plus direct Kafka consumer ingestion pipeline (`SaveCustomerJob`) persisting to Microsoft SQL Server with node telemetry and simulation endpoints.
+    - `NexJob.Sample.Storage`: Enterprise storage topology with PostgreSQL primary write path, isolated PostgreSQL read replica (`UseDashboardReadReplica`), Redis distributed throttle (`UseDistributedThrottle`), OpenTelemetry instrumentation, and custom pipeline filters (`IJobExecutionFilter`).
+    - `NexJob.Sample.CloudTriggers`: Unified cloud consumer triggers covering AWS SQS, Azure Service Bus, Google Cloud Pub/Sub, and Salesforce (gRPC CDC and CometD Streaming), including interactive simulation endpoints.
+    - `samples/docker-compose.yml`: Ready-to-run local infrastructure stack with PostgreSQL 16, Redis 7, RabbitMQ 3.13 Management, Kafka KRaft, and Microsoft SQL Server 2022.
+    - `samples/README.md`: Centralized catalog documentation with architecture matrix, quickstart commands, and scenario guides.
+
+- **`NexJob.Postgres`**:
+  - Implemented `AddNexJobPostgres(this IServiceCollection services, NpgsqlDataSource dataSource)` registration overload enabling reuse of pre-configured application data sources with connection pooling and telemetry (issue #148).
+  - Implemented `IDisposable` and `IAsyncDisposable` on `PostgresStorageProvider` with explicit ownership tracking (`ownsDataSource`), safely managing lifecycle for internal vs externally injected data sources (issue #148).
+
+- **`NexJob.Telemetry`**:
+  - Implemented standard OpenTelemetry `ObservableGauge` instruments: `nexjob.queue.depth` (tagged with `nexjob.queue`), `nexjob.workers.active`, and `nexjob.workers.total` for Kubernetes HPA and Prometheus autoscaling (issue #146, PR #153).
+  - Background asynchronous metric sampling via `ServerHeartbeatService` polling `IDashboardStorage.GetQueueMetricsAsync` without impacting execution hot path.
+  - Thread-safe, non-allocating atomic worker observation in `JobDispatcherService` via `Volatile.Read` and `NexJobMetrics.SyncLock`.
+  - Comprehensive unit test suite with 3N matrix covering gauges, provider registration, exception handling, and tag assertions (`tests/NexJob.Tests/NexJobMetricsTests.cs`).
+  - Documented metric instruments and scrape semantics in `docs/wiki/12-OpenTelemetry.md`.
+
+- **Documentation**:
+  - Added dedicated, comprehensive `README.md` files for all storage provider packages (`NexJob.Postgres`, `NexJob.SqlServer`, `NexJob.MongoDB`, `NexJob.Redis`) and dashboard packages (`NexJob.Dashboard`, `NexJob.Dashboard.Standalone`) (PR #137).
+  - Added dedicated `README.md` for `NexJob.Trigger.GooglePubSub`.
+
+- **Engineering Governance**:
+  - Added disciplined `nexjob-task-cycle` agent skill with technical grooming, 3N test matrix, boundary enforcement, and automated verification gates (commit `eb1b91a`, PR #138).
+  - Added comprehensive 3N unit test suite for Azure Service Bus trigger (`tests/NexJob.Trigger.AzureServiceBus.Tests`).
+
+### Fixed
+
+- **Host Shutdown Cooperative Cancellation Propagation (`NexJob`)**:
+  - Propagated the host stopping token from `JobDispatcherService` to `JobExecutor.ExecuteJobAsync(job, stoppingToken)` so in-flight jobs observe host cancellation during graceful drain (issue #144).
+  - Linked `JobExecutor` internal CTS with the host stopping token via `CancellationTokenSource.CreateLinkedTokenSource(cancellationToken)`, ensuring in-flight jobs observe `cancellationToken.IsCancellationRequested == true` and cooperatively cancel before process termination (issue #144).
+  - Updated `JobDispatcherService.StopAsync` to link the host's `cancellationToken` with `ShutdownTimeout`, guaranteeing immediate cancellation propagation and clean drain if host termination is forced (issue #144).
+  - Added unit and end-to-end tests verifying that triggering host shutdown cancels active jobs cooperatively (`tests/NexJob.Tests/JobExecutorTests.cs`, `tests/NexJob.Tests/GracefulShutdownTests.cs`) (issue #144).
+
+- **`NexJob.StressTests`**:
+  - Configured `AllowAdmin = true` on Redis connection multiplexer for `FlushDatabaseAsync` during test initialization.
+  - Isolated static job execution counters into distinct `PostgresStressJob` and `RedisStressJob` types and added `[Collection("StressTests")]` to prevent state collision under parallel test execution.
+
+- **`NexJob.Dashboard`**:
+  - Resolved `System.InvalidOperationException: The current thread is not associated with the Dispatcher` when rendering Blazor pages with asynchronous network storage providers (PostgreSQL, SQL Server, MongoDB) by preserving Dispatcher execution context during component parameter loading (issue #128).
+
+- **Core Storage Providers**:
+  - Prevented infinite requeue loops for orphaned poison-pill jobs when retry attempts are exhausted in `OrphanedJobWatcherService` across all 5 storage providers (`InMemoryStorageProvider`, `PostgresStorageProvider`, `SqlServerStorageProvider`, `MongoJobStorage`, `RedisJobStorage`) (issue #143, PR #149).
+  - Eliminated banned `.Result` sync-over-async invocations in `InMemoryStorageProvider` (commit `fada371`).
+
+- **`NexJob.Trigger.AwsSqs`**:
+  - Resolved message visibility timeout flakiness and delays on enqueue failures by immediately invoking `ChangeMessageVisibilityAsync(VisibilityTimeout = 0)` (issue #141, PR #150).
+
+- **CI Test Suite**:
+  - Included missing integration test suites (RabbitMQ, Salesforce) and broadened regex filters in `.github/workflows/ci.yml` (issue #139, PR #152).
+
+### Changed
+
+- **Documentation (`README.md`)**:
+  - Synchronized package versions across the entire ecosystem to `v5.1.0` (issue #157).
+  - Added `NexJob.Trigger.SalesforceStreaming` and updated storage provider package identifiers (issue #157).
+  - Updated benchmark table with verified .NET 8 RyuJIT measurements (NexJob 13.35 µs / 2.10 KB vs Hangfire 35.95 µs / 11.20 KB) (issue #157).
+  - Expanded project roadmap through releases v3.0.0, v4.0.0, and v5.1.0 (issue #157).
+  - Added catalog reference table and guide to the modernized `samples/` directory (issue #157).
+
+- **`NexJob.Postgres`**:
+  - `PostgresStorageProvider` now builds and manages an internal `NpgsqlDataSource` by default instead of instantiating raw `NpgsqlConnection` per operation, leveraging Npgsql 7/8+ connection pooling, prepared statement caching, and automatic multi-host failover (issue #148).
+
+- **Health Checks**:
+  - Made health check timeout (`HealthCheckTimeout`, default 3s) and dead-letter failure threshold (`HealthCheckFailedThreshold`, default 10) configurable via `NexJobOptions` and `NexJobSettings` (issue #147, PR #151).
+
+- **`NexJob.Trigger.AwsSqs`**:
+  - Standardized trigger handler and extension naming across SQS packages (commit `107b5bf`).
+
 ## [5.1.0] - 2026-09-17
 
 ### Added
@@ -19,6 +128,11 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - Fluent registration extensions on `IServiceCollection` and `NexJobBuilder` (`AddSalesforceStreamingTrigger<TJob>` and `AddNexJobSalesforceStreamingTrigger`).
   - Comprehensive unit test suite with 3N matrix achieving 90.1% line coverage (`tests/NexJob.Trigger.SalesforceStreaming.Tests`).
   - Complete documentation in `src/NexJob.Trigger.SalesforceStreaming/README.md` and `docs/wiki/19-Triggers.md`.
+
+### Fixed
+
+- **CI/Publishing**:
+  - Included `NexJob.Trigger.SalesforceStreaming` in packaging and NuGet publication workflows (PR #136).
 
 ## [5.0.0] - 2026-09-17
 
@@ -534,7 +648,10 @@ The project has entered an official **Reliability Lock**. Development is focused
 - Recurring concurrency policy: `SkipIfRunning` / `AllowConcurrent`
 - CI/CD pipeline publishing all packages on `v*` tag push
 
-[Unreleased]: https://github.com/oluciano/NexJob/compare/v4.0.0...HEAD
+[Unreleased]: https://github.com/oluciano/NexJob/compare/v5.1.0...HEAD
+[5.1.0]: https://github.com/oluciano/NexJob/compare/v5.0.0...v5.1.0
+[5.0.0]: https://github.com/oluciano/NexJob/compare/v4.0.1...v5.0.0
+[4.0.1]: https://github.com/oluciano/NexJob/compare/v4.0.0...v4.0.1
 [4.0.0]: https://github.com/oluciano/NexJob/compare/v3.0.0...v4.0.0
 [2.0.0]: https://github.com/oluciano/NexJob/compare/v1.0.0...v2.0.0
 [1.0.0]: https://github.com/oluciano/NexJob/compare/v0.8.0...v1.0.0

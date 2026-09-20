@@ -55,8 +55,9 @@ internal sealed class JobExecutor
     /// Executes the job asynchronously.
     /// </summary>
     /// <param name="job">The job.</param>
-    /// <returns>A task.</returns>
-    public async Task ExecuteJobAsync(JobRecord job)
+    /// <param name="cancellationToken">A cancellation token to observe while executing the job.</param>
+    /// <returns>A task representing the asynchronous operation.</returns>
+    public async Task ExecuteJobAsync(JobRecord job, CancellationToken cancellationToken = default)
     {
         if (await TryHandleExpirationAsync(job).ConfigureAwait(false))
         {
@@ -66,7 +67,7 @@ internal sealed class JobExecutor
         _logger.LogDebug("Executing job {JobId} ({JobType}), attempt {Attempt}/{Max}",
             job.Id, job.JobType, job.Attempts, job.MaxAttempts);
 
-        using var cts = new CancellationTokenSource();
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var heartbeatTask = RunHeartbeatAsync(job.Id, cts.Token);
 
         using var logScope = new JobExecutionLogScope(_options.MaxJobLogLines);
