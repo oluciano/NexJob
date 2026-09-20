@@ -300,8 +300,14 @@ public sealed class SalesforceTriggerHandlerTests
         var handler = CreateHandler();
 
         // Act & Assert
-        await handler.StartAsync(CancellationToken.None);
-        Func<Task> act = async () => await handler.ExecuteTask!;
+        Func<Task> act = async () =>
+        {
+            await handler.StartAsync(CancellationToken.None);
+            if (handler.ExecuteTask is not null)
+            {
+                await handler.ExecuteTask;
+            }
+        };
 
         await act.Should().ThrowAsync<RpcException>();
     }
