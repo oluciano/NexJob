@@ -23,6 +23,9 @@ internal sealed class JobDetailPage : IComponent
     async Task IComponent.SetParametersAsync(ParameterView parameters)
     {
         parameters.SetParameterProperties(this);
+
+        // NOTE (Blazor Dispatcher Invariant):
+        // Do NOT use .ConfigureAwait(false) here. Rendering via _handle.Render requires execution on the Dispatcher.
         var job = await Storage.GetJobByIdAsync(JobId);
         _handle.Render(b => b.AddMarkupContent(0, BuildHtml(job)));
     }

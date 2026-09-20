@@ -21,6 +21,9 @@ internal sealed class ServersPage : IComponent
     async Task IComponent.SetParametersAsync(ParameterView parameters)
     {
         parameters.SetParameterProperties(this);
+
+        // NOTE (Blazor Dispatcher Invariant):
+        // Do NOT use .ConfigureAwait(false) here. Rendering via _handle.Render requires execution on the Dispatcher.
         // Default to a 1-minute timeout to consider a server active
         var activeServers = await Storage.GetActiveServersAsync(TimeSpan.FromMinutes(1));
         _handle.Render(b => b.AddMarkupContent(0, BuildHtml(activeServers)));

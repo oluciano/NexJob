@@ -26,6 +26,8 @@ internal sealed class JobsPage : IComponent
     {
         parameters.SetParameterProperties(this);
 
+        // NOTE (Blazor Dispatcher Invariant):
+        // Do NOT use .ConfigureAwait(false) here. Rendering via _handle.Render requires execution on the Dispatcher.
         // Fetch queues for the filter dropdown
         var queues = await Storage.GetQueueMetricsAsync(CancellationToken.None);
 

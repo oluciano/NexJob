@@ -126,6 +126,12 @@ public sealed class DashboardMiddleware
     {
         return await renderer.Dispatcher.InvokeAsync(async () =>
         {
+            // NOTE (Blazor Dispatcher Invariant):
+            // Do NOT use .ConfigureAwait(false) here or in TComponent.SetParametersAsync.
+            // Blazor SSR (HtmlRenderer) requires rendering (_handle.Render) to execute on the
+            // Dispatcher's SynchronizationContext. ConfigureAwait(false) causes continuations
+            // to resume on a ThreadPool worker, causing:
+            // "System.InvalidOperationException: The current thread is not associated with the Dispatcher."
             var output = await renderer.RenderComponentAsync<TComponent>(parameters);
             return output.ToHtmlString();
 #pragma warning restore MA0004

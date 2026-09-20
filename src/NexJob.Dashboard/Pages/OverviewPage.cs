@@ -31,6 +31,10 @@ internal sealed class OverviewPage : IComponent
     {
         parameters.SetParameterProperties(this);
 
+        // NOTE (Blazor Dispatcher Invariant):
+        // Do NOT use .ConfigureAwait(false) in component lifecycle methods. Rendering via _handle.Render
+        // requires the Blazor Dispatcher's SynchronizationContext. ConfigureAwait(false) causes continuations
+        // to resume on a ThreadPool worker, causing InvalidOperationException.
         var ct = CancellationToken.None;
         _fetchedMetrics = await Storage.GetMetricsAsync(ct);
         _recentJobs = await Storage.GetJobsAsync(new JobFilter(), 1, 5, ct);
