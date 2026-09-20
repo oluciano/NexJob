@@ -6,6 +6,8 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [5.2.0] - 2026-09-20
+
 ### Added
 
 - **Storage & Job Retention — Dead-Letter Retention & Batched Chunked Purging**:
