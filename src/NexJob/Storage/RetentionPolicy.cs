@@ -23,4 +23,18 @@ public sealed class RetentionPolicy
     /// Jobs older than this threshold are deleted. <see cref="TimeSpan.Zero"/> disables purging for this status.
     /// </summary>
     public TimeSpan RetainExpired { get; init; } = TimeSpan.FromDays(7);
+
+    /// <summary>
+    /// How long to retain dead-letter jobs before automatic deletion.
+    /// Jobs older than this threshold are deleted. <see cref="TimeSpan.Zero"/> disables purging for this status.
+    /// Defaults to 60 days.
+    /// </summary>
+    public TimeSpan RetainDeadLetter { get; init; } = TimeSpan.FromDays(60);
+
+    /// <summary>
+    /// Maximum number of rows to delete per batch/chunk during retention purge.
+    /// Helps avoid database lock escalation and transaction log bloat.
+    /// Defaults to 1000.
+    /// </summary>
+    public int BatchSize { get; init; } = 1000;
 }

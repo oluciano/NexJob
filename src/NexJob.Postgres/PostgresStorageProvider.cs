@@ -871,39 +871,116 @@ public sealed class PostgresStorageProvider : IStorageProvider, IDisposable, IAs
         await using var conn = Open();
         await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
 
+        var batchSize = policy.BatchSize > 0 ? policy.BatchSize : 1000;
         var deleted = 0;
 
         if (policy.RetainSucceeded > TimeSpan.Zero)
         {
-            deleted += await conn.ExecuteAsync(
-                """
-                DELETE FROM nexjob_jobs
-                WHERE status = 'Succeeded'
-                  AND completed_at < NOW() - @retention::interval
-                """,
-                new { retention = policy.RetainSucceeded, }).ConfigureAwait(false);
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                var rows = await conn.ExecuteAsync(
+                    """
+                    WITH to_delete AS (
+                        SELECT id FROM nexjob_jobs
+                        WHERE status = 'Succeeded'
+                          AND completed_at < NOW() - @retention::interval
+                        LIMIT @batchSize
+                    )
+                    DELETE FROM nexjob_jobs
+                    WHERE id IN (SELECT id FROM to_delete)
+                    """,
+                    new { retention = policy.RetainSucceeded, batchSize, }).ConfigureAwait(false);
+
+                deleted += rows;
+                if (rows < batchSize)
+                {
+                    break;
+                }
+
+                await Task.Yield();
+            }
         }
 
         if (policy.RetainFailed > TimeSpan.Zero)
         {
-            deleted += await conn.ExecuteAsync(
-                """
-                DELETE FROM nexjob_jobs
-                WHERE status = 'Failed'
-                  AND completed_at < NOW() - @retention::interval
-                """,
-                new { retention = policy.RetainFailed, }).ConfigureAwait(false);
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                var rows = await conn.ExecuteAsync(
+                    """
+                    WITH to_delete AS (
+                        SELECT id FROM nexjob_jobs
+                        WHERE status = 'Failed'
+                          AND completed_at < NOW() - @retention::interval
+                        LIMIT @batchSize
+                    )
+                    DELETE FROM nexjob_jobs
+                    WHERE id IN (SELECT id FROM to_delete)
+                    """,
+                    new { retention = policy.RetainFailed, batchSize, }).ConfigureAwait(false);
+
+                deleted += rows;
+                if (rows < batchSize)
+                {
+                    break;
+                }
+
+                await Task.Yield();
+            }
+        }
+
+        if (policy.RetainDeadLetter > TimeSpan.Zero)
+        {
+            var retainFailedIsZero = policy.RetainFailed == TimeSpan.Zero;
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                var rows = await conn.ExecuteAsync(
+                    """
+                    WITH to_delete AS (
+                        SELECT id FROM nexjob_jobs
+                        WHERE (status = 'DeadLetter' OR (status = 'Failed' AND @retainFailedIsZero))
+                          AND COALESCE(completed_at, created_at) < NOW() - @retention::interval
+                        LIMIT @batchSize
+                    )
+                    DELETE FROM nexjob_jobs
+                    WHERE id IN (SELECT id FROM to_delete)
+                    """,
+                    new { retention = policy.RetainDeadLetter, batchSize, retainFailedIsZero, }).ConfigureAwait(false);
+
+                deleted += rows;
+                if (rows < batchSize)
+                {
+                    break;
+                }
+
+                await Task.Yield();
+            }
         }
 
         if (policy.RetainExpired > TimeSpan.Zero)
         {
-            deleted += await conn.ExecuteAsync(
-                """
-                DELETE FROM nexjob_jobs
-                WHERE status = 'Expired'
-                  AND created_at < NOW() - @retention::interval
-                """,
-                new { retention = policy.RetainExpired, }).ConfigureAwait(false);
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                var rows = await conn.ExecuteAsync(
+                    """
+                    WITH to_delete AS (
+                        SELECT id FROM nexjob_jobs
+                        WHERE status = 'Expired'
+                          AND created_at < NOW() - @retention::interval
+                        LIMIT @batchSize
+                    )
+                    DELETE FROM nexjob_jobs
+                    WHERE id IN (SELECT id FROM to_delete)
+                    """,
+                    new { retention = policy.RetainExpired, batchSize, }).ConfigureAwait(false);
+
+                deleted += rows;
+                if (rows < batchSize)
+                {
+                    break;
+                }
+
+                await Task.Yield();
+            }
         }
 
         return deleted;

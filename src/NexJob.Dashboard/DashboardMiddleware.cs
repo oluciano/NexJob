@@ -531,6 +531,11 @@ public sealed class DashboardMiddleware
                 rt.RetentionExpired = expDays == 0 ? TimeSpan.Zero : TimeSpan.FromDays(expDays);
             }
 
+            if (int.TryParse(form["retentionDeadLetterDays"], NumberStyles.Integer, CultureInfo.InvariantCulture, out var dlDays) && dlDays >= 0)
+            {
+                rt.RetentionDeadLetter = dlDays == 0 ? TimeSpan.Zero : TimeSpan.FromDays(dlDays);
+            }
+
             await runtimeStore.SaveAsync(rt, context.RequestAborted).ConfigureAwait(false);
 
             LocalRedirect(context, $"{_pathPrefix}/settings");

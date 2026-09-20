@@ -47,6 +47,7 @@ internal sealed class SettingsPage : ComponentBase
         var effectiveRetentionSucceeded = (int)(Runtime.RetentionSucceeded ?? Options.RetentionSucceeded).TotalDays;
         var effectiveRetentionFailed = (int)(Runtime.RetentionFailed ?? Options.RetentionFailed).TotalDays;
         var effectiveRetentionExpired = (int)(Runtime.RetentionExpired ?? Options.RetentionExpired).TotalDays;
+        var effectiveRetentionDeadLetter = (int)(Runtime.RetentionDeadLetter ?? Options.RetentionDeadLetter).TotalDays;
 
         var effectiveJson = JsonSerializer.Serialize(new
         {
@@ -61,6 +62,7 @@ internal sealed class SettingsPage : ComponentBase
             RetentionSucceededDays = effectiveRetentionSucceeded,
             RetentionFailedDays = effectiveRetentionFailed,
             RetentionExpiredDays = effectiveRetentionExpired,
+            RetentionDeadLetterDays = effectiveRetentionDeadLetter,
             RuntimeOverrides = new
             {
                 Runtime.Workers,
@@ -68,6 +70,8 @@ internal sealed class SettingsPage : ComponentBase
                 Runtime.RetentionSucceeded,
                 Runtime.RetentionFailed,
                 Runtime.RetentionExpired,
+                Runtime.RetentionDeadLetter,
+                Runtime.RetentionBatchSize,
                 Runtime.UpdatedAt,
             },
         }, PrettyPrint);
@@ -77,7 +81,9 @@ internal sealed class SettingsPage : ComponentBase
             || Runtime.PausedQueues.Count > 0
             || Runtime.RetentionSucceeded.HasValue
             || Runtime.RetentionFailed.HasValue
-            || Runtime.RetentionExpired.HasValue;
+            || Runtime.RetentionExpired.HasValue
+            || Runtime.RetentionDeadLetter.HasValue
+            || Runtime.RetentionBatchSize.HasValue;
 
         var body =
             HtmlFragments.Breadcrumbs(PathPrefix, ("Settings", null)) +
@@ -130,11 +136,12 @@ internal sealed class SettingsPage : ComponentBase
             "<div class=\"card-header\"><h3>Retention Policy</h3></div>" +
             "<div style=\"padding:16px\">" +
             "<div style=\"display:flex;flex-direction:column;gap:12px\">" +
-            BuildRetentionRow("Succeeded jobs (days)", "retentionSucceededDays", effectiveRetentionSucceeded, Options.RetentionSucceeded.TotalDays, effectiveRetentionFailed, effectiveRetentionExpired) +
-            BuildRetentionRow("Failed jobs (days)", "retentionFailedDays", effectiveRetentionFailed, Options.RetentionFailed.TotalDays, effectiveRetentionSucceeded, effectiveRetentionExpired) +
-            BuildRetentionRow("Expired jobs (days)", "retentionExpiredDays", effectiveRetentionExpired, Options.RetentionExpired.TotalDays, effectiveRetentionSucceeded, effectiveRetentionFailed) +
+            BuildRetentionRow("Succeeded jobs (days)", "retentionSucceededDays", effectiveRetentionSucceeded, Options.RetentionSucceeded.TotalDays, ("retentionFailedDays", effectiveRetentionFailed), ("retentionExpiredDays", effectiveRetentionExpired), ("retentionDeadLetterDays", effectiveRetentionDeadLetter)) +
+            BuildRetentionRow("Failed jobs (days)", "retentionFailedDays", effectiveRetentionFailed, Options.RetentionFailed.TotalDays, ("retentionSucceededDays", effectiveRetentionSucceeded), ("retentionExpiredDays", effectiveRetentionExpired), ("retentionDeadLetterDays", effectiveRetentionDeadLetter)) +
+            BuildRetentionRow("Expired jobs (days)", "retentionExpiredDays", effectiveRetentionExpired, Options.RetentionExpired.TotalDays, ("retentionSucceededDays", effectiveRetentionSucceeded), ("retentionFailedDays", effectiveRetentionFailed), ("retentionDeadLetterDays", effectiveRetentionDeadLetter)) +
+            BuildRetentionRow("Dead-letter jobs (days)", "retentionDeadLetterDays", effectiveRetentionDeadLetter, Options.RetentionDeadLetter.TotalDays, ("retentionSucceededDays", effectiveRetentionSucceeded), ("retentionFailedDays", effectiveRetentionFailed), ("retentionExpiredDays", effectiveRetentionExpired)) +
             "</div>" +
-            (Runtime.RetentionSucceeded.HasValue || Runtime.RetentionFailed.HasValue || Runtime.RetentionExpired.HasValue
+            (Runtime.RetentionSucceeded.HasValue || Runtime.RetentionFailed.HasValue || Runtime.RetentionExpired.HasValue || Runtime.RetentionDeadLetter.HasValue
                 ? "<div style=\"margin-top:12px\"><div class=\"badge badge-warning\" style=\"width:100%;text-align:center\">Runtime override active</div></div>"
                 : string.Empty) +
             "</div></div>" +
@@ -173,21 +180,16 @@ internal sealed class SettingsPage : ComponentBase
         builder.AddMarkupContent(0, HtmlShell.Wrap(Title, PathPrefix, "settings", body, Counters));
     }
 
-    private string BuildRetentionRow(string label, string fieldName, int value, double baseline, int other1, int other2)
+    private string BuildRetentionRow(string label, string fieldName, int value, double baseline, params (string Name, int Val)[] otherFields)
     {
-        var otherFields = fieldName switch
-        {
-            "retentionSucceededDays" => $"<input type=\"hidden\" name=\"retentionFailedDays\" value=\"{other1}\" /><input type=\"hidden\" name=\"retentionExpiredDays\" value=\"{other2}\" />",
-            "retentionFailedDays" => $"<input type=\"hidden\" name=\"retentionSucceededDays\" value=\"{other1}\" /><input type=\"hidden\" name=\"retentionExpiredDays\" value=\"{other2}\" />",
-            _ => $"<input type=\"hidden\" name=\"retentionSucceededDays\" value=\"{other1}\" /><input type=\"hidden\" name=\"retentionFailedDays\" value=\"{other2}\" />",
-        };
+        var hiddenInputs = string.Join(string.Empty, otherFields.Select(f => $"<input type=\"hidden\" name=\"{f.Name}\" value=\"{f.Val}\" />"));
 
         return
             "<div style=\"display:flex;justify-content:space-between;align-items:center\">" +
             $"<div><div style=\"font-weight:600\">{label}</div>" +
             $"<div style=\"font-size:12px;color:var(--text-tertiary)\">Baseline: {baseline}d</div></div>" +
             $"<form method=\"post\" action=\"{PathPrefix}/settings/retention\" style=\"display:flex;gap:8px;align-items:center\">" +
-            otherFields +
+            hiddenInputs +
             $"<input type=\"number\" name=\"{fieldName}\" value=\"{value}\" min=\"0\" max=\"3650\" style=\"width:80px\"/>" +
             "<button class=\"btn btn-primary btn-sm\" type=\"submit\">Save</button>" +
             "</form></div>";

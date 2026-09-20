@@ -52,6 +52,19 @@ public sealed class RuntimeSettings
     /// </summary>
     public TimeSpan? RetentionExpired { get; set; }
 
+    /// <summary>
+    /// Override retention period for dead-letter jobs.
+    /// <see langword="null"/> = use <see cref="NexJobOptions.RetentionDeadLetter"/> baseline.
+    /// <see cref="TimeSpan.Zero"/> = disable purging for this status.
+    /// </summary>
+    public TimeSpan? RetentionDeadLetter { get; set; }
+
+    /// <summary>
+    /// Override chunk/batch size for retention purge operations.
+    /// <see langword="null"/> = use <see cref="NexJobOptions.RetentionBatchSize"/> baseline.
+    /// </summary>
+    public int? RetentionBatchSize { get; set; }
+
     /// <summary>Timestamp of the last save, set automatically by the store.</summary>
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
 }

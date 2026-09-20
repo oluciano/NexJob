@@ -142,10 +142,23 @@ public sealed class NexJobOptions
     public TimeSpan RetentionExpired { get; set; } = TimeSpan.FromDays(7);
 
     /// <summary>
+    /// How long to retain dead-letter jobs before automatic deletion.
+    /// Defaults to 60 days. Set to <see cref="TimeSpan.Zero"/> to disable purging for this status.
+    /// </summary>
+    public TimeSpan RetentionDeadLetter { get; set; } = TimeSpan.FromDays(60);
+
+    /// <summary>
     /// How often the retention service runs to purge old terminal jobs.
     /// Defaults to 1 hour.
     /// </summary>
     public TimeSpan RetentionInterval { get; set; } = TimeSpan.FromHours(1);
+
+    /// <summary>
+    /// Maximum number of rows to delete per batch/chunk during retention purge operations.
+    /// Helps avoid database lock escalation and transaction log bloat.
+    /// Defaults to 1000.
+    /// </summary>
+    public int RetentionBatchSize { get; set; } = 1000;
 
     /// <summary>
     /// Per-queue settings loaded from <c>appsettings.json</c>, used for execution windows.

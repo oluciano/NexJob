@@ -953,6 +953,8 @@ public sealed class RedisStorageProvider : IStorageProvider
     public async Task<int> PurgeJobsAsync(RetentionPolicy policy, CancellationToken cancellationToken = default)
     {
         var now = DateTimeOffset.UtcNow;
+        var batchSize = policy.BatchSize > 0 ? policy.BatchSize : 1000;
+        var keysToDelete = new List<RedisKey>(batchSize);
         var deleted = 0;
 
         await foreach (var key in ScanJobKeysAsync().WithCancellation(cancellationToken).ConfigureAwait(false))
@@ -965,60 +967,105 @@ public sealed class RedisStorageProvider : IStorageProvider
 
             var dict = ParseHash(hash);
             var status = GetStatusFromHash(hash);
+            var statusStr = dict.GetValueOrDefault("status");
+            var isDeadLetter = string.Equals(statusStr, "DeadLetter", StringComparison.OrdinalIgnoreCase);
 
             DateTimeOffset? cutoff = null;
             TimeSpan retention = TimeSpan.Zero;
 
-            switch (status)
+            if (isDeadLetter && policy.RetainDeadLetter > TimeSpan.Zero)
             {
-                case JobStatus.Succeeded when policy.RetainSucceeded > TimeSpan.Zero:
-                    {
-                        var completedAtStr = dict.GetValueOrDefault("completedAt");
-                        if (completedAtStr != null
-                            && DateTimeOffset.TryParse(completedAtStr, CultureInfo.InvariantCulture,
-                                DateTimeStyles.RoundtripKind, out var dt))
+                var completedAtStr = dict.GetValueOrDefault("completedAt") ?? dict.GetValueOrDefault("createdAt");
+                if (completedAtStr != null
+                    && DateTimeOffset.TryParse(completedAtStr, CultureInfo.InvariantCulture,
+                        DateTimeStyles.RoundtripKind, out var dt))
+                {
+                    cutoff = dt;
+                }
+
+                retention = policy.RetainDeadLetter;
+            }
+            else
+            {
+                switch (status)
+                {
+                    case JobStatus.Succeeded when policy.RetainSucceeded > TimeSpan.Zero:
                         {
-                            cutoff = dt;
+                            var completedAtStr = dict.GetValueOrDefault("completedAt");
+                            if (completedAtStr != null
+                                && DateTimeOffset.TryParse(completedAtStr, CultureInfo.InvariantCulture,
+                                    DateTimeStyles.RoundtripKind, out var dt))
+                            {
+                                cutoff = dt;
+                            }
+
+                            retention = policy.RetainSucceeded;
+                            break;
                         }
 
-                        retention = policy.RetainSucceeded;
-                        break;
-                    }
-
-                case JobStatus.Failed when policy.RetainFailed > TimeSpan.Zero:
-                    {
-                        var completedAtStr = dict.GetValueOrDefault("completedAt");
-                        if (completedAtStr != null
-                            && DateTimeOffset.TryParse(completedAtStr, CultureInfo.InvariantCulture,
-                                DateTimeStyles.RoundtripKind, out var dt))
+                    case JobStatus.Failed:
                         {
-                            cutoff = dt;
+                            if (policy.RetainFailed > TimeSpan.Zero)
+                            {
+                                var completedAtStr = dict.GetValueOrDefault("completedAt");
+                                if (completedAtStr != null
+                                    && DateTimeOffset.TryParse(completedAtStr, CultureInfo.InvariantCulture,
+                                        DateTimeStyles.RoundtripKind, out var dt))
+                                {
+                                    cutoff = dt;
+                                }
+
+                                retention = policy.RetainFailed;
+                            }
+                            else if (policy.RetainDeadLetter > TimeSpan.Zero)
+                            {
+                                var completedAtStr = dict.GetValueOrDefault("completedAt") ?? dict.GetValueOrDefault("createdAt");
+                                if (completedAtStr != null
+                                    && DateTimeOffset.TryParse(completedAtStr, CultureInfo.InvariantCulture,
+                                        DateTimeStyles.RoundtripKind, out var dt))
+                                {
+                                    cutoff = dt;
+                                }
+
+                                retention = policy.RetainDeadLetter;
+                            }
+
+                            break;
                         }
 
-                        retention = policy.RetainFailed;
-                        break;
-                    }
-
-                case JobStatus.Expired when policy.RetainExpired > TimeSpan.Zero:
-                    {
-                        var createdAtStr = dict.GetValueOrDefault("createdAt");
-                        if (createdAtStr != null
-                            && DateTimeOffset.TryParse(createdAtStr, CultureInfo.InvariantCulture,
-                                DateTimeStyles.RoundtripKind, out var dt))
+                    case JobStatus.Expired when policy.RetainExpired > TimeSpan.Zero:
                         {
-                            cutoff = dt;
-                        }
+                            var createdAtStr = dict.GetValueOrDefault("createdAt");
+                            if (createdAtStr != null
+                                && DateTimeOffset.TryParse(createdAtStr, CultureInfo.InvariantCulture,
+                                    DateTimeStyles.RoundtripKind, out var dt))
+                            {
+                                cutoff = dt;
+                            }
 
-                        retention = policy.RetainExpired;
-                        break;
-                    }
+                            retention = policy.RetainExpired;
+                            break;
+                        }
+                }
             }
 
             if (cutoff.HasValue && now - cutoff.Value > retention)
             {
-                await _db.KeyDeleteAsync(key).ConfigureAwait(false);
-                deleted++;
+                keysToDelete.Add(key);
+                if (keysToDelete.Count >= batchSize)
+                {
+                    var count = (int)await _db.KeyDeleteAsync(keysToDelete.ToArray()).ConfigureAwait(false);
+                    deleted += count > 0 ? count : keysToDelete.Count;
+                    keysToDelete.Clear();
+                    await Task.Yield();
+                }
             }
+        }
+
+        if (keysToDelete.Count > 0)
+        {
+            var count = (int)await _db.KeyDeleteAsync(keysToDelete.ToArray()).ConfigureAwait(false);
+            deleted += count > 0 ? count : keysToDelete.Count;
         }
 
         return deleted;
