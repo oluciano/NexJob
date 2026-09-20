@@ -301,4 +301,85 @@ public sealed class AzureServiceBusTriggerHandlerTests
         _scheduler.EnqueueCalls[0].InputJson.Should().Be("{}");
         argsMock.Verify(a => a.CompleteMessageAsync(It.IsAny<ServiceBusReceivedMessage>(), It.IsAny<CancellationToken>()), Times.Once);
     }
+
+    [Fact]
+    public async Task HandleMessageAsync_JobTypeInOptions_FallbackUsed_WhenPropertyMissing()
+    {
+        // Arrange
+        _triggerOptions.JobType = "ConfiguredAsbConsumerJob";
+        var handler = CreateHandler();
+        var (argsMock, message) = CreateMessageArgs(jobType: null);
+
+        // Act
+        await handler.HandleMessageAsync(argsMock.Object);
+
+        // Assert
+        _scheduler.EnqueueCalls.Should().HaveCount(1);
+        _scheduler.EnqueueCalls[0].JobType.Should().Be("ConfiguredAsbConsumerJob");
+        argsMock.Verify(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()), Times.Once);
+        argsMock.Verify(a => a.DeadLetterMessageAsync(It.IsAny<ServiceBusReceivedMessage>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task HandleMessageAsync_HeaderJobType_TakesPrecedence_OverOptionsJobType()
+    {
+        // Arrange
+        _triggerOptions.JobType = "FallbackOptionsAsbJob";
+        var handler = CreateHandler();
+        var (argsMock, message) = CreateMessageArgs(jobType: "HeaderPriorityAsbJob");
+
+        // Act
+        await handler.HandleMessageAsync(argsMock.Object);
+
+        // Assert
+        _scheduler.EnqueueCalls.Should().HaveCount(1);
+        _scheduler.EnqueueCalls[0].JobType.Should().Be("HeaderPriorityAsbJob");
+        argsMock.Verify(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task HandleMessageAsync_WhitespaceJobTypeInOptions_DeadLettersMessage()
+    {
+        // Arrange
+        _triggerOptions.JobType = "   ";
+        var handler = CreateHandler();
+        var (argsMock, message) = CreateMessageArgs(jobType: null);
+
+        // Act
+        await handler.HandleMessageAsync(argsMock.Object);
+
+        // Assert
+        _scheduler.EnqueueCalls.Should().BeEmpty();
+        argsMock.Verify(a => a.CompleteMessageAsync(It.IsAny<ServiceBusReceivedMessage>(), It.IsAny<CancellationToken>()), Times.Never);
+        argsMock.Verify(a => a.DeadLetterMessageAsync(message, "EnqueueFailed", It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public void AddNexJobAzureServiceBusTrigger_Generic_RegistersJobAndConfiguresJobType()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+
+        // Act
+        services.AddNexJobAzureServiceBusTrigger<TestConsumerAsbJob>(opt =>
+        {
+            opt.ConnectionString = "Endpoint=sb://test.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=fakekey";
+            opt.QueueOrTopicName = "test-queue";
+        });
+
+        var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<AzureServiceBusTriggerOptions>>().Value;
+
+        // Assert
+        options.JobType.Should().Be(typeof(TestConsumerAsbJob).AssemblyQualifiedName);
+        services.Any(sd => sd.ServiceType == typeof(TestConsumerAsbJob)).Should().BeTrue();
+    }
+}
+
+/// <summary>
+/// Sample consumer job for Azure Service Bus registration tests.
+/// </summary>
+public sealed class TestConsumerAsbJob : IJob<string>
+{
+    public Task ExecuteAsync(string input, CancellationToken cancellationToken) => Task.CompletedTask;
 }

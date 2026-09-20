@@ -34,4 +34,11 @@ public sealed class GooglePubSubTriggerOptions
     /// When set, connects to the Pub/Sub emulator instead of production.
     /// </summary>
     public string? EmulatorHost { get; set; }
+
+    /// <summary>
+    /// Gets or sets the target job type (assembly-qualified name or type name) to execute for consumed messages.
+    /// When specified, messages do not require the 'nexjob.job_type' attribute.
+    /// If both are present, the message attribute takes precedence.
+    /// </summary>
+    public string? JobType { get; set; }
 }

@@ -1,6 +1,7 @@
 using System.Text;
 using Confluent.Kafka;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Moq;
@@ -374,4 +375,199 @@ public sealed class KafkaTriggerTests
         _consumerMock.Verify(m => m.Commit(It.IsAny<ConsumeResult<string, string>>()), Times.Never,
             "offset must not be committed when job_type is missing");
     }
+
+    /// <summary>
+    /// Verifies that when nexjob.job_type header is absent, the configured JobType from options is used.
+    /// </summary>
+    [Fact]
+    public async Task JobTypeInOptions_FallbackUsed_WhenHeaderMissing()
+    {
+        // Arrange
+        var message = new Message<string, string>
+        {
+            Key = "consumer-driven-key",
+            Value = "{\"payload\":\"customer-data\"}",
+            Headers = new Headers(), // No nexjob.job_type header
+        };
+
+        var consumeResult = new ConsumeResult<string, string>
+        {
+            Message = message,
+            Topic = "test-topic",
+            Partition = 0,
+            Offset = 10,
+        };
+
+        _consumerMock.SetupSequence(m => m.Consume(It.IsAny<TimeSpan>()))
+            .Returns(consumeResult)
+            .Returns((ConsumeResult<string, string>?)null);
+
+        var options = new KafkaTriggerOptions
+        {
+            BootstrapServers = "localhost:9092",
+            Topic = "test-topic",
+            GroupId = "test-group",
+            JobType = "ConfiguredConsumerJob",
+        };
+
+        var handler = new KafkaTriggerHandler(
+            Options.Create(options),
+            _consumerMock.Object,
+            _scheduler,
+            _nexJobOptions,
+            _loggerMock.Object);
+
+        // Act
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await handler.StartAsync(cts.Token);
+        await _scheduler.WaitForEnqueueAsync(cts.Token);
+        await handler.StopAsync(CancellationToken.None);
+
+        // Assert
+        _scheduler.EnqueueCalls.Should().HaveCount(1);
+        _scheduler.EnqueueCalls[0].JobType.Should().Be("ConfiguredConsumerJob");
+        _scheduler.EnqueueCalls[0].IdempotencyKey.Should().Be("consumer-driven-key");
+        _consumerMock.Verify(m => m.Commit(consumeResult), Times.Once);
+    }
+
+    /// <summary>
+    /// Verifies that when both header and options JobType are present, the header takes precedence.
+    /// </summary>
+    [Fact]
+    public async Task HeaderJobType_TakesPrecedence_OverOptionsJobType()
+    {
+        // Arrange
+        var message = new Message<string, string>
+        {
+            Key = "precedence-key",
+            Value = "{\"payload\":\"precedence-test\"}",
+            Headers = new Headers
+            {
+                { "nexjob.job_type", Encoding.UTF8.GetBytes("HeaderPriorityJob") },
+            },
+        };
+
+        var consumeResult = new ConsumeResult<string, string>
+        {
+            Message = message,
+            Topic = "test-topic",
+            Partition = 0,
+            Offset = 11,
+        };
+
+        _consumerMock.SetupSequence(m => m.Consume(It.IsAny<TimeSpan>()))
+            .Returns(consumeResult)
+            .Returns((ConsumeResult<string, string>?)null);
+
+        var options = new KafkaTriggerOptions
+        {
+            BootstrapServers = "localhost:9092",
+            Topic = "test-topic",
+            GroupId = "test-group",
+            JobType = "FallbackOptionsJob",
+        };
+
+        var handler = new KafkaTriggerHandler(
+            Options.Create(options),
+            _consumerMock.Object,
+            _scheduler,
+            _nexJobOptions,
+            _loggerMock.Object);
+
+        // Act
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await handler.StartAsync(cts.Token);
+        await _scheduler.WaitForEnqueueAsync(cts.Token);
+        await handler.StopAsync(CancellationToken.None);
+
+        // Assert
+        _scheduler.EnqueueCalls.Should().HaveCount(1);
+        _scheduler.EnqueueCalls[0].JobType.Should().Be("HeaderPriorityJob");
+        _consumerMock.Verify(m => m.Commit(consumeResult), Times.Once);
+    }
+
+    /// <summary>
+    /// Verifies that whitespace-only JobType in options is treated as missing and message is not enqueued.
+    /// </summary>
+    [Fact]
+    public async Task JobTypeWhitespace_TreatedAsMissing()
+    {
+        // Arrange
+        var message = new Message<string, string>
+        {
+            Key = "whitespace-key",
+            Value = "{}",
+            Headers = new Headers(),
+        };
+
+        var consumeResult = new ConsumeResult<string, string>
+        {
+            Message = message,
+            Topic = "test-topic",
+            Partition = 0,
+            Offset = 12,
+        };
+
+        _consumerMock.SetupSequence(m => m.Consume(It.IsAny<TimeSpan>()))
+            .Returns(consumeResult)
+            .Returns((ConsumeResult<string, string>?)null);
+
+        var options = new KafkaTriggerOptions
+        {
+            BootstrapServers = "localhost:9092",
+            Topic = "test-topic",
+            GroupId = "test-group",
+            JobType = "   ",
+        };
+
+        var handler = new KafkaTriggerHandler(
+            Options.Create(options),
+            _consumerMock.Object,
+            _scheduler,
+            _nexJobOptions,
+            _loggerMock.Object);
+
+        // Act
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await handler.StartAsync(cts.Token);
+        await Task.Delay(300, cts.Token).ContinueWith(_ => { });
+        await handler.StopAsync(CancellationToken.None);
+
+        // Assert
+        _scheduler.EnqueueCalls.Should().BeEmpty();
+        _consumerMock.Verify(m => m.Commit(It.IsAny<ConsumeResult<string, string>>()), Times.Never);
+    }
+
+    /// <summary>
+    /// Verifies that AddNexJobKafkaTrigger generic overload correctly registers the job and configures JobType.
+    /// </summary>
+    [Fact]
+    public void AddNexJobKafkaTrigger_Generic_RegistersJobAndConfiguresJobType()
+    {
+        // Arrange
+        var services = new Microsoft.Extensions.DependencyInjection.ServiceCollection();
+
+        // Act
+        services.AddNexJobKafkaTrigger<TestConsumerKafkaJob>(opt =>
+        {
+            opt.BootstrapServers = "localhost:9092";
+            opt.Topic = "test-topic";
+            opt.GroupId = "test-group";
+        });
+
+        var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<KafkaTriggerOptions>>().Value;
+
+        // Assert
+        options.JobType.Should().Be(typeof(TestConsumerKafkaJob).AssemblyQualifiedName);
+        services.Any(sd => sd.ServiceType == typeof(TestConsumerKafkaJob)).Should().BeTrue();
+    }
+}
+
+/// <summary>
+/// Sample consumer job for registration tests.
+/// </summary>
+public sealed class TestConsumerKafkaJob : IJob<string>
+{
+    public Task ExecuteAsync(string input, CancellationToken cancellationToken) => Task.CompletedTask;
 }

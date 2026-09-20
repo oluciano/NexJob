@@ -1,6 +1,7 @@
 using FluentAssertions;
 using Google.Cloud.PubSub.V1;
 using Google.Protobuf;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Moq;
@@ -229,4 +230,181 @@ public sealed class GooglePubSubTriggerTests
         reply.Should().Be(SubscriberClient.Reply.Nack);
         _scheduler.EnqueueCalls.Should().BeEmpty();
     }
+
+    /// <summary>
+    /// Verifies that when nexjob.job_type attribute is absent, configured JobType from options is used.
+    /// </summary>
+    [Fact]
+    public async Task JobTypeInOptions_FallbackUsed_WhenAttributeMissing()
+    {
+        // Arrange
+        Func<PubsubMessage, CancellationToken, Task<SubscriberClient.Reply>>? capturedHandler = null;
+
+        _subscriberMock
+            .Setup(s => s.StartAsync(It.IsAny<Func<PubsubMessage, CancellationToken, Task<SubscriberClient.Reply>>>(), It.IsAny<CancellationToken>()))
+            .Callback<Func<PubsubMessage, CancellationToken, Task<SubscriberClient.Reply>>, CancellationToken>(
+                (handler, _) => capturedHandler = handler)
+            .Returns(Task.CompletedTask);
+
+        var options = new GooglePubSubTriggerOptions
+        {
+            ProjectId = "test-project",
+            SubscriptionId = "test-sub",
+            TargetQueue = "default",
+            JobType = "ConfiguredPubSubConsumerJob",
+        };
+
+        var handler = new GooglePubSubTriggerHandler(
+            Options.Create(options),
+            _subscriberMock.Object,
+            _scheduler,
+            _nexJobOptions,
+            _loggerMock.Object);
+
+        await handler.StartAsync(CancellationToken.None);
+
+        var message = new PubsubMessage
+        {
+            MessageId = "msg-consumer-driven",
+            Data = ByteString.CopyFromUtf8("{\"payload\":\"test\"}"),
+            Attributes = { }, // No nexjob.job_type
+        };
+
+        // Act
+        var reply = await capturedHandler!(message, CancellationToken.None);
+
+        // Assert
+        reply.Should().Be(SubscriberClient.Reply.Ack);
+        _scheduler.EnqueueCalls.Should().HaveCount(1);
+        _scheduler.EnqueueCalls[0].JobType.Should().Be("ConfiguredPubSubConsumerJob");
+        _scheduler.EnqueueCalls[0].IdempotencyKey.Should().Be("msg-consumer-driven");
+    }
+
+    /// <summary>
+    /// Verifies that when both attribute and options JobType are present, the attribute takes precedence.
+    /// </summary>
+    [Fact]
+    public async Task AttributeJobType_TakesPrecedence_OverOptionsJobType()
+    {
+        // Arrange
+        Func<PubsubMessage, CancellationToken, Task<SubscriberClient.Reply>>? capturedHandler = null;
+
+        _subscriberMock
+            .Setup(s => s.StartAsync(It.IsAny<Func<PubsubMessage, CancellationToken, Task<SubscriberClient.Reply>>>(), It.IsAny<CancellationToken>()))
+            .Callback<Func<PubsubMessage, CancellationToken, Task<SubscriberClient.Reply>>, CancellationToken>(
+                (handler, _) => capturedHandler = handler)
+            .Returns(Task.CompletedTask);
+
+        var options = new GooglePubSubTriggerOptions
+        {
+            ProjectId = "test-project",
+            SubscriptionId = "test-sub",
+            TargetQueue = "default",
+            JobType = "FallbackOptionsPubSubJob",
+        };
+
+        var handler = new GooglePubSubTriggerHandler(
+            Options.Create(options),
+            _subscriberMock.Object,
+            _scheduler,
+            _nexJobOptions,
+            _loggerMock.Object);
+
+        await handler.StartAsync(CancellationToken.None);
+
+        var message = new PubsubMessage
+        {
+            MessageId = "msg-precedence",
+            Data = ByteString.CopyFromUtf8("{\"payload\":\"test\"}"),
+            Attributes = { ["nexjob.job_type"] = "AttributePriorityPubSubJob" },
+        };
+
+        // Act
+        var reply = await capturedHandler!(message, CancellationToken.None);
+
+        // Assert
+        reply.Should().Be(SubscriberClient.Reply.Ack);
+        _scheduler.EnqueueCalls.Should().HaveCount(1);
+        _scheduler.EnqueueCalls[0].JobType.Should().Be("AttributePriorityPubSubJob");
+    }
+
+    /// <summary>
+    /// Verifies that whitespace-only JobType in options is treated as missing and message is nacked.
+    /// </summary>
+    [Fact]
+    public async Task JobTypeWhitespace_TreatedAsMissing()
+    {
+        // Arrange
+        Func<PubsubMessage, CancellationToken, Task<SubscriberClient.Reply>>? capturedHandler = null;
+
+        _subscriberMock
+            .Setup(s => s.StartAsync(It.IsAny<Func<PubsubMessage, CancellationToken, Task<SubscriberClient.Reply>>>(), It.IsAny<CancellationToken>()))
+            .Callback<Func<PubsubMessage, CancellationToken, Task<SubscriberClient.Reply>>, CancellationToken>(
+                (handler, _) => capturedHandler = handler)
+            .Returns(Task.CompletedTask);
+
+        var options = new GooglePubSubTriggerOptions
+        {
+            ProjectId = "test-project",
+            SubscriptionId = "test-sub",
+            TargetQueue = "default",
+            JobType = "   ",
+        };
+
+        var handler = new GooglePubSubTriggerHandler(
+            Options.Create(options),
+            _subscriberMock.Object,
+            _scheduler,
+            _nexJobOptions,
+            _loggerMock.Object);
+
+        await handler.StartAsync(CancellationToken.None);
+
+        var message = new PubsubMessage
+        {
+            MessageId = "msg-whitespace",
+            Data = ByteString.CopyFromUtf8("{}"),
+            Attributes = { },
+        };
+
+        // Act
+        var reply = await capturedHandler!(message, CancellationToken.None);
+
+        // Assert
+        reply.Should().Be(SubscriberClient.Reply.Nack);
+        _scheduler.EnqueueCalls.Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// Verifies that AddNexJobGooglePubSubTrigger generic overload correctly registers the job and configures JobType.
+    /// </summary>
+    [Fact]
+    public void AddNexJobGooglePubSubTrigger_Generic_RegistersJobAndConfiguresJobType()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+
+        // Act
+        services.AddNexJobGooglePubSubTrigger<TestConsumerPubSubJob>(opt =>
+        {
+            opt.ProjectId = "test-project";
+            opt.SubscriptionId = "test-sub";
+        });
+
+        var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<GooglePubSubTriggerOptions>>().Value;
+
+        // Assert
+        options.JobType.Should().Be(typeof(TestConsumerPubSubJob).AssemblyQualifiedName);
+        services.Any(sd => sd.ServiceType == typeof(TestConsumerPubSubJob)).Should().BeTrue();
+    }
+}
+
+/// <summary>
+/// Sample consumer job for Google Pub/Sub registration tests.
+/// </summary>
+public sealed class TestConsumerPubSubJob : IJob<string>
+{
+    /// <inheritdoc />
+    public Task ExecuteAsync(string input, CancellationToken cancellationToken) => Task.CompletedTask;
 }

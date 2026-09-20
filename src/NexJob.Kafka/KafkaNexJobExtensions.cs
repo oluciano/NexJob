@@ -44,4 +44,27 @@ public static class KafkaNexJobExtensions
 
         return services;
     }
+
+    /// <summary>
+    /// Adds a Kafka trigger to NexJob that consumes messages from the configured topic and invokes a specific job.
+    /// </summary>
+    /// <typeparam name="TJob">The job type implementing <see cref="IJob{TInput}"/> with a string input.</typeparam>
+    /// <param name="services">The service collection.</param>
+    /// <param name="configure">An action to configure the <see cref="KafkaTriggerOptions"/>.</param>
+    /// <returns>The service collection for chaining.</returns>
+    public static IServiceCollection AddNexJobKafkaTrigger<TJob>(
+        this IServiceCollection services,
+        Action<KafkaTriggerOptions> configure)
+        where TJob : class, IJob<string>
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configure);
+
+        services.AddTransient<TJob>();
+        return services.AddNexJobKafkaTrigger(options =>
+        {
+            configure(options);
+            options.JobType = typeof(TJob).AssemblyQualifiedName;
+        });
+    }
 }

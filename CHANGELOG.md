@@ -8,6 +8,13 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Consumer-Driven Triggers & Idempotency Hardening**:
+  - Implemented consumer-driven job mapping across all broker triggers (`NexJob.Kafka`, `NexJob.RabbitMQ`, `NexJob.Trigger.AzureServiceBus`, `NexJob.Trigger.GooglePubSub`, `NexJob.Trigger.AwsSqs`) allowing subscribers to bind explicit job types without requiring publishers to inject `nexjob.job_type` headers (issue #163).
+  - Added generic registration overloads `.Add{Broker}Trigger<TJob>()` on `NexJobBuilder` and `IServiceCollection` across Kafka, RabbitMQ, Azure Service Bus, Google Pub/Sub, and AWS SQS (issue #163).
+  - Implemented configurable `JobType` on `KafkaTriggerOptions`, `RabbitMqTriggerOptions`, `AzureServiceBusTriggerOptions`, and `GooglePubSubTriggerOptions` with strict precedence hierarchy: (1) message header/attribute if present, (2) configured `JobType`, (3) error/dead-letter if neither is present (issue #163).
+  - Hardened `NexJob.RabbitMQ` idempotency key resolution with deterministic SHA-256 payload hashing (`Convert.ToHexString(SHA256.HashData(body))`) when both `CorrelationId` and `MessageId` are omitted by external producers, preventing duplicate executions across broker redeliveries (issue #163).
+  - Added comprehensive 3N unit test coverage across all affected trigger packages (precedence, fallback, invalid input/whitespace, and DI registration) (issue #163).
+
 - **`NexJob.StressTests`**:
   - Implemented production load and stress testing suite in `tests/NexJob.StressTests` targeting high-concurrency storage and trigger backpressure scenarios (issue #159).
   - Implemented `PostgresStorageStressTests` executing 3,000 jobs under 20-worker contention against PostgreSQL (`NpgsqlDataSource`), asserting zero deadlocks (`40P01`), connection pool stability, and 100% completion (issue #159).

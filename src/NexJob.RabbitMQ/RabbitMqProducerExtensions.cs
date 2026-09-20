@@ -76,6 +76,25 @@ public static class RabbitMqProducerExtensions
     }
 
     /// <summary>
+    /// Registers the RabbitMQ trigger (consumer) with the NexJob builder targeting a specific job.
+    /// </summary>
+    /// <typeparam name="TJob">The job type implementing <see cref="IJob{TInput}"/> with a string input.</typeparam>
+    /// <param name="builder">The NexJob builder.</param>
+    /// <param name="configure">An action to configure the <see cref="Trigger.RabbitMQ.RabbitMqTriggerOptions"/>.</param>
+    /// <returns>The NexJob builder for chaining.</returns>
+    public static NexJobBuilder AddRabbitMqTrigger<TJob>(
+        this NexJobBuilder builder,
+        Action<Trigger.RabbitMQ.RabbitMqTriggerOptions> configure)
+        where TJob : class, IJob<string>
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        ArgumentNullException.ThrowIfNull(configure);
+
+        builder.Services.AddRabbitMqTrigger<TJob>(configure);
+        return builder;
+    }
+
+    /// <summary>
     /// Registers the RabbitMQ trigger (consumer) with the service collection.
     /// </summary>
     /// <param name="services">The service collection.</param>
@@ -100,6 +119,29 @@ public static class RabbitMqProducerExtensions
 
         services.AddHostedService<Trigger.RabbitMQ.RabbitMqTriggerHandler>();
         return services;
+    }
+
+    /// <summary>
+    /// Registers the RabbitMQ trigger (consumer) with the service collection targeting a specific job.
+    /// </summary>
+    /// <typeparam name="TJob">The job type implementing <see cref="IJob{TInput}"/> with a string input.</typeparam>
+    /// <param name="services">The service collection.</param>
+    /// <param name="configure">An action to configure the <see cref="Trigger.RabbitMQ.RabbitMqTriggerOptions"/>.</param>
+    /// <returns>The service collection for chaining.</returns>
+    public static IServiceCollection AddRabbitMqTrigger<TJob>(
+        this IServiceCollection services,
+        Action<Trigger.RabbitMQ.RabbitMqTriggerOptions> configure)
+        where TJob : class, IJob<string>
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configure);
+
+        services.AddTransient<TJob>();
+        return services.AddRabbitMqTrigger(options =>
+        {
+            configure(options);
+            options.JobType = typeof(TJob).AssemblyQualifiedName;
+        });
     }
 
     /// <summary>

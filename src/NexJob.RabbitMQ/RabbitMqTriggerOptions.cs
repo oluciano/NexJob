@@ -58,4 +58,11 @@ public sealed class RabbitMqTriggerOptions
     /// Gets or sets how long to wait before attempting reconnection after a connection failure. Default: 5 seconds.
     /// </summary>
     public TimeSpan ReconnectDelay { get; set; } = TimeSpan.FromSeconds(5);
+
+    /// <summary>
+    /// Gets or sets the target job type (assembly-qualified name or type name) to execute for consumed messages.
+    /// When specified, messages do not require the 'nexjob.job_type' header.
+    /// If both are present, the message header takes precedence.
+    /// </summary>
+    public string? JobType { get; set; }
 }
