@@ -63,6 +63,12 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Host Shutdown Cooperative Cancellation Propagation (`NexJob`)**:
+  - Propagated the host stopping token from `JobDispatcherService` to `JobExecutor.ExecuteJobAsync(job, stoppingToken)` so in-flight jobs observe host cancellation during graceful drain (issue #144).
+  - Linked `JobExecutor` internal CTS with the host stopping token via `CancellationTokenSource.CreateLinkedTokenSource(cancellationToken)`, ensuring in-flight jobs observe `cancellationToken.IsCancellationRequested == true` and cooperatively cancel before process termination (issue #144).
+  - Updated `JobDispatcherService.StopAsync` to link the host's `cancellationToken` with `ShutdownTimeout`, guaranteeing immediate cancellation propagation and clean drain if host termination is forced (issue #144).
+  - Added unit and end-to-end tests verifying that triggering host shutdown cancels active jobs cooperatively (`tests/NexJob.Tests/JobExecutorTests.cs`, `tests/NexJob.Tests/GracefulShutdownTests.cs`) (issue #144).
+
 - **`NexJob.StressTests`**:
   - Configured `AllowAdmin = true` on Redis connection multiplexer for `FlushDatabaseAsync` during test initialization.
   - Isolated static job execution counters into distinct `PostgresStressJob` and `RedisStressJob` types and added `[Collection("StressTests")]` to prevent state collision under parallel test execution.
