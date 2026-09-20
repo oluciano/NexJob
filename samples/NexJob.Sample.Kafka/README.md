@@ -9,19 +9,20 @@ Demonstrates NexJob's **Resilient Outbox Producer** and **Trigger Consumer** for
 1. **Transactional Outbox Producer (`EnqueueKafkaAsync`)**:
    - Persists events in NexJob storage before publishing to Apache Kafka.
    - Background worker publishes to the topic with idempotence (`EnableIdempotence = true`), full acks (`Acks.All`), and jittered retries.
-2. **Trigger Consumer (`AddKafkaTrigger`)**:
+2. **Trigger Consumer (`AddKafkaTrigger`) & SQL Server Sink**:
    - Long-polling consumer that extracts W3C `traceparent` headers for distributed tracing.
-   - Enqueues consumed messages into NexJob's internal queue with native idempotency.
+   - Enqueues consumed messages into NexJob's internal queue with native idempotency (`TopicPartitionOffset`).
    - Commits consumer offset strictly after the job is safely committed into storage.
+   - Dispatches `SaveCustomerJob` executing atomic upsert (`MERGE`) into Microsoft SQL Server with node telemetry.
 
 ---
 
 ## Quick Start
 
-### 1. Start Kafka via Docker Compose
+### 1. Start Kafka and SQL Server via Docker Compose
 
 ```bash
-docker compose -f samples/docker-compose.yml up -d kafka
+docker compose -f samples/docker-compose.yml up -d kafka sqlserver
 ```
 
 ### 2. Run the Sample
@@ -30,13 +31,25 @@ docker compose -f samples/docker-compose.yml up -d kafka
 dotnet run --project samples/NexJob.Sample.Kafka
 ```
 
-The Web API starts at `http://localhost:5000` and the Dashboard at `http://localhost:5000/dashboard`.
+The Web API starts at `http://localhost:5000` (or `http://localhost:5247`) and the Dashboard at `/dashboard`.
 
 ---
 
-## Testing via cURL
+## Testing Scenarios
 
-### Publish an Event to Kafka via Outbox
+### Scenario A: Ingest Customer Stream Directly from Kafka into SQL Server
+
+Simulate an external CRM/producer writing raw customer records directly to Kafka topic `customer-registrations`:
+
+```bash
+# Produce 10 customer records directly into Kafka
+curl -X POST "http://localhost:5000/customers/bulk?count=10"
+
+# Query persisted records in SQL Server
+curl "http://localhost:5000/customers"
+```
+
+### Scenario B: Publish an Event to Kafka via Outbox Producer
 
 ```bash
 curl -X POST http://localhost:5000/events \
@@ -55,3 +68,4 @@ Watch console logs:
 2. Producer publishes to Kafka topic `user-events`.
 3. Kafka Trigger consumes the message.
 4. `ProcessUserEventJob` executes and logs the event!
+

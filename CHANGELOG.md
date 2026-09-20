@@ -29,10 +29,10 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     - `NexJob.Sample.WorkerService`: Headless console Worker Service demonstrating embedded standalone HTTP dashboard server and graceful shutdown.
     - `NexJob.Sample.ConfiguredRecurring`: Clean declarative recurring job schedules from `appsettings.json` with timezone support.
     - `NexJob.Sample.RabbitMQ`: Production outbox producer and trigger consumer demonstrating the 5 trigger guarantees and automatic acks.
-    - `NexJob.Sample.Kafka`: Partitioned event publishing via Outbox and consumer trigger with offset tracking and consumer groups.
+    - `NexJob.Sample.Kafka`: Partitioned event publishing via Outbox and consumer trigger with offset tracking, plus direct Kafka consumer ingestion pipeline (`SaveCustomerJob`) persisting to Microsoft SQL Server with node telemetry and simulation endpoints.
     - `NexJob.Sample.Storage`: Enterprise storage topology with PostgreSQL primary write path, isolated PostgreSQL read replica (`UseDashboardReadReplica`), Redis distributed throttle (`UseDistributedThrottle`), OpenTelemetry instrumentation, and custom pipeline filters (`IJobExecutionFilter`).
     - `NexJob.Sample.CloudTriggers`: Unified cloud consumer triggers covering AWS SQS, Azure Service Bus, Google Cloud Pub/Sub, and Salesforce (gRPC CDC and CometD Streaming), including interactive simulation endpoints.
-    - `samples/docker-compose.yml`: Ready-to-run local infrastructure stack with PostgreSQL 16, Redis 7, RabbitMQ 3.13 Management, and Kafka KRaft.
+    - `samples/docker-compose.yml`: Ready-to-run local infrastructure stack with PostgreSQL 16, Redis 7, RabbitMQ 3.13 Management, Kafka KRaft, and Microsoft SQL Server 2022.
     - `samples/README.md`: Centralized catalog documentation with architecture matrix, quickstart commands, and scenario guides.
 
 - **`NexJob.Postgres`**:
