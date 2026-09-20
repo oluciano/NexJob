@@ -20,7 +20,7 @@ internal sealed class RecurringPage : IComponent
     async Task IComponent.SetParametersAsync(ParameterView parameters)
     {
         parameters.SetParameterProperties(this);
-        var jobs = await Storage.GetRecurringJobsAsync().ConfigureAwait(false);
+        var jobs = await Storage.GetRecurringJobsAsync();
         _handle.Render(b => b.AddMarkupContent(0, BuildHtml(jobs)));
     }
 

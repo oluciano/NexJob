@@ -184,14 +184,6 @@ public sealed class TimingAndAuditFilter : IJobExecutionFilter
         await next(ct).ConfigureAwait(false);
 
         sw.Stop();
-        if (context.Succeeded)
-        {
-            _logger.LogInformation("✅ [Pipeline Filter] Completed job {JobId} in {ElapsedMilliseconds}ms", context.Job.Id, sw.ElapsedMilliseconds);
-        }
-        else
-        {
-            _logger.LogError(context.Exception, "❌ [Pipeline Filter] Failed job {JobId} in {ElapsedMilliseconds}ms: {ErrorMessage}",
-                context.Job.Id, sw.ElapsedMilliseconds, context.Exception?.Message);
-        }
+        _logger.LogInformation("✅ [Pipeline Filter] Completed job {JobId} in {ElapsedMilliseconds}ms", context.Job.Id, sw.ElapsedMilliseconds);
     }
 }

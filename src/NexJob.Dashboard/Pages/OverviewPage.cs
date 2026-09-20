@@ -32,12 +32,12 @@ internal sealed class OverviewPage : IComponent
         parameters.SetParameterProperties(this);
 
         var ct = CancellationToken.None;
-        _fetchedMetrics = await Storage.GetMetricsAsync(ct).ConfigureAwait(false);
-        _recentJobs = await Storage.GetJobsAsync(new JobFilter(), 1, 5, ct).ConfigureAwait(false);
-        _queueMetrics = await Storage.GetQueueMetricsAsync(ct).ConfigureAwait(false);
-        _activeServers = await JobStorage.GetActiveServersAsync(TimeSpan.FromMinutes(5), ct).ConfigureAwait(false);
+        _fetchedMetrics = await Storage.GetMetricsAsync(ct);
+        _recentJobs = await Storage.GetJobsAsync(new JobFilter(), 1, 5, ct);
+        _queueMetrics = await Storage.GetQueueMetricsAsync(ct);
+        _activeServers = await JobStorage.GetActiveServersAsync(TimeSpan.FromMinutes(5), ct);
 
-        var allRecurring = await RecurringStorage.GetRecurringJobsAsync(ct).ConfigureAwait(false);
+        var allRecurring = await RecurringStorage.GetRecurringJobsAsync(ct);
         _recurringJobsSummary = allRecurring
             .Where(r => r.Enabled && !r.DeletedByUser && r.NextExecution.HasValue)
             .OrderBy(r => r.NextExecution)

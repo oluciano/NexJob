@@ -23,7 +23,7 @@ internal sealed class JobDetailPage : IComponent
     async Task IComponent.SetParametersAsync(ParameterView parameters)
     {
         parameters.SetParameterProperties(this);
-        var job = await Storage.GetJobByIdAsync(JobId).ConfigureAwait(false);
+        var job = await Storage.GetJobByIdAsync(JobId);
         _handle.Render(b => b.AddMarkupContent(0, BuildHtml(job)));
     }
 

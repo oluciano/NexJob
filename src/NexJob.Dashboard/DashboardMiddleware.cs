@@ -126,7 +126,7 @@ public sealed class DashboardMiddleware
     {
         return await renderer.Dispatcher.InvokeAsync(async () =>
         {
-            var output = await renderer.RenderComponentAsync<TComponent>(parameters).ConfigureAwait(false);
+            var output = await renderer.RenderComponentAsync<TComponent>(parameters);
             return output.ToHtmlString();
 #pragma warning restore MA0004
         }).ConfigureAwait(false);

@@ -27,7 +27,7 @@ internal sealed class JobsPage : IComponent
         parameters.SetParameterProperties(this);
 
         // Fetch queues for the filter dropdown
-        var queues = await Storage.GetQueueMetricsAsync(CancellationToken.None).ConfigureAwait(false);
+        var queues = await Storage.GetQueueMetricsAsync(CancellationToken.None);
 
         // Use native storage filter for Status, Search, and Queue — much more efficient
         var filter = new JobFilter
@@ -37,13 +37,13 @@ internal sealed class JobsPage : IComponent
             Queue = QueueFilter,
         };
 
-        var result = await Storage.GetJobsAsync(filter, Page, 50, CancellationToken.None).ConfigureAwait(false);
+        var result = await Storage.GetJobsAsync(filter, Page, 50, CancellationToken.None);
 
         // Apply in-memory tag filter (IStorageProvider doesn't have native Tag support in JobFilter yet,
         // so we still filter the current page client-side)
         if (!string.IsNullOrWhiteSpace(TagFilter))
         {
-            var taggedIds = (await Storage.GetJobsByTagAsync(TagFilter.Trim()).ConfigureAwait(false))
+            var taggedIds = (await Storage.GetJobsByTagAsync(TagFilter.Trim()))
                 .Select(j => j.Id)
                 .ToHashSet();
             result = new PagedResult<JobRecord>

@@ -42,6 +42,9 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`NexJob.Dashboard`**:
+  - Resolved `System.InvalidOperationException: The current thread is not associated with the Dispatcher` when rendering Blazor pages with asynchronous network storage providers (PostgreSQL, SQL Server, MongoDB) by preserving Dispatcher execution context during component parameter loading (issue #128).
+
 - **Core Storage Providers**:
   - Prevented infinite requeue loops for orphaned poison-pill jobs when retry attempts are exhausted in `OrphanedJobWatcherService` across all 5 storage providers (`InMemoryStorageProvider`, `PostgresStorageProvider`, `SqlServerStorageProvider`, `MongoJobStorage`, `RedisJobStorage`) (issue #143, PR #149).
   - Eliminated banned `.Result` sync-over-async invocations in `InMemoryStorageProvider` (commit `fada371`).
