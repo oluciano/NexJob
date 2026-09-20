@@ -1,0 +1,40 @@
+@host = http://localhost:5000
+
+### 1. Enqueue Fire-and-Forget Email
+POST {{host}}/jobs/email
+Content-Type: application/json
+
+{
+  "To": "user@example.com",
+  "Subject": "Welcome to NexJob",
+  "Body": "Background job successfully enqueued!"
+}
+
+### 2. Check Job Status (replace with actual GUID)
+GET {{host}}/jobs/00000000-0000-0000-0000-000000000000/status
+
+### 3. Schedule Delayed Report (10s delay)
+POST {{host}}/jobs/report/schedule
+Content-Type: application/json
+
+{
+  "Report": {
+    "ReportName": "Q1-Sales",
+    "From": "2026-01-01",
+    "To": "2026-03-31"
+  },
+  "DelaySeconds": 10
+}
+
+### 4. Create Job Continuation (Report -> Email)
+POST {{host}}/jobs/chain
+Content-Type: application/json
+
+{
+  "To": "manager@example.com",
+  "Subject": "Quarterly Report Completed",
+  "Body": "The sales summary report has completed."
+}
+
+### 5. Check Due Recurring Jobs
+GET {{host}}/jobs/due-recurring

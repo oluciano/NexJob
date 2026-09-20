@@ -13,7 +13,7 @@ builder.Services.AddNexJob(builder.Configuration, opt =>
 });
 
 // Auto-register all IJob and IJob<T> implementations
-builder.Services.AddNexJobJobs(typeof(TesteOnlyJob).Assembly);
+builder.Services.AddNexJobJobs(typeof(HeartbeatJob).Assembly);
 
 var app = builder.Build();
 
