@@ -675,39 +675,65 @@ public sealed class MongoStorageProvider : IStorageProvider
     public async Task<int> PurgeJobsAsync(RetentionPolicy policy, CancellationToken cancellationToken = default)
     {
         var now = DateTimeOffset.UtcNow;
+        var batchSize = policy.BatchSize > 0 ? policy.BatchSize : 1000;
         var deleted = 0;
 
         if (policy.RetainSucceeded > TimeSpan.Zero)
         {
             var cutoff = now - policy.RetainSucceeded;
-            var result = await _jobs.DeleteManyAsync(
+            deleted += await PurgeChunkedAsync(
                 Builders<JobDocument>.Filter.And(
                     Builders<JobDocument>.Filter.Eq(j => j.Status, JobStatus.Succeeded),
                     Builders<JobDocument>.Filter.Lt(j => j.CompletedAt, cutoff)),
+                batchSize,
                 cancellationToken).ConfigureAwait(false);
-            deleted += (int)result.DeletedCount;
         }
 
         if (policy.RetainFailed > TimeSpan.Zero)
         {
             var cutoff = now - policy.RetainFailed;
-            var result = await _jobs.DeleteManyAsync(
+            deleted += await PurgeChunkedAsync(
                 Builders<JobDocument>.Filter.And(
                     Builders<JobDocument>.Filter.Eq(j => j.Status, JobStatus.Failed),
                     Builders<JobDocument>.Filter.Lt(j => j.CompletedAt, cutoff)),
+                batchSize,
                 cancellationToken).ConfigureAwait(false);
-            deleted += (int)result.DeletedCount;
+        }
+
+        if (policy.RetainDeadLetter > TimeSpan.Zero)
+        {
+            var cutoff = now - policy.RetainDeadLetter;
+            var deadLetterFilter = Builders<JobDocument>.Filter.And(
+                Builders<JobDocument>.Filter.Or(
+                    Builders<JobDocument>.Filter.Eq("Status", "DeadLetter"),
+                    Builders<JobDocument>.Filter.Eq("status", "DeadLetter")),
+                Builders<JobDocument>.Filter.Or(
+                    Builders<JobDocument>.Filter.Lt(j => j.CompletedAt, cutoff),
+                    Builders<JobDocument>.Filter.And(
+                        Builders<JobDocument>.Filter.Eq(j => j.CompletedAt, null),
+                        Builders<JobDocument>.Filter.Lt(j => j.CreatedAt, cutoff))));
+
+            if (policy.RetainFailed == TimeSpan.Zero)
+            {
+                deadLetterFilter = Builders<JobDocument>.Filter.Or(
+                    deadLetterFilter,
+                    Builders<JobDocument>.Filter.And(
+                        Builders<JobDocument>.Filter.Eq(j => j.Status, JobStatus.Failed),
+                        Builders<JobDocument>.Filter.Lt(j => j.CompletedAt, cutoff)));
+            }
+
+            deleted += await PurgeChunkedAsync(deadLetterFilter, batchSize, cancellationToken).ConfigureAwait(false);
         }
 
         if (policy.RetainExpired > TimeSpan.Zero)
         {
             var cutoff = now - policy.RetainExpired;
-            var result = await _jobs.DeleteManyAsync(
+            deleted += await PurgeChunkedAsync(
                 Builders<JobDocument>.Filter.And(
                     Builders<JobDocument>.Filter.Eq(j => j.Status, JobStatus.Expired),
                     Builders<JobDocument>.Filter.Lt(j => j.CreatedAt, cutoff)),
+                batchSize,
                 cancellationToken).ConfigureAwait(false);
-            deleted += (int)result.DeletedCount;
         }
 
         return deleted;
@@ -737,6 +763,39 @@ public sealed class MongoStorageProvider : IStorageProvider
 
     private static FilterDefinition<JobDocument> ById(JobId id) =>
         Builders<JobDocument>.Filter.Eq(d => d.Id, id);
+
+    private async Task<int> PurgeChunkedAsync(FilterDefinition<JobDocument> filter, int batchSize, CancellationToken cancellationToken)
+    {
+        var totalDeleted = 0;
+
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            var ids = await _jobs.Find(filter)
+                .Limit(batchSize)
+                .Project(d => d.Id)
+                .ToListAsync(cancellationToken).ConfigureAwait(false);
+
+            if (ids.Count == 0)
+            {
+                break;
+            }
+
+            var result = await _jobs.DeleteManyAsync(
+                Builders<JobDocument>.Filter.In(d => d.Id, ids),
+                cancellationToken).ConfigureAwait(false);
+
+            totalDeleted += (int)result.DeletedCount;
+
+            if (ids.Count < batchSize)
+            {
+                break;
+            }
+
+            await Task.Yield();
+        }
+
+        return totalDeleted;
+    }
 
     private async Task PromoteDueScheduledJobsAsync(DateTimeOffset now, CancellationToken ct)
     {

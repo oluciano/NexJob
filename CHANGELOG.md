@@ -8,6 +8,13 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Storage & Job Retention — Dead-Letter Retention & Batched Chunked Purging**:
+  - Added configurable `RetentionDeadLetter` to `NexJobOptions` and `RetentionPolicy` (default 60 days) to prevent unbounded accumulation of dead-letter jobs (issue #145).
+  - Added configurable `RetentionBatchSize` to `NexJobOptions` and `BatchSize` to `RetentionPolicy` (default 1,000 rows) with runtime override support via `IRuntimeSettingsStore` (issue #145).
+  - Implemented batched/chunked deletion loops in `PurgeJobsAsync` across all storage providers (PostgreSQL, SQL Server, Redis, MongoDB, InMemory) to prevent lock escalation, WAL/transaction log bloat, and replication lag during retention cleanup cycles (issue #145).
+  - Added dead-letter retention configuration card and runtime controls to Dashboard (`SettingsPage`) and API endpoint `/settings/retention` (issue #145).
+  - Added 3N unit testing matrix (positive, negative, boundary/fallback) and integration tests covering dead-letter retention and batched purging (issue #145).
+
 - **Consumer-Driven Triggers & Idempotency Hardening**:
   - Implemented consumer-driven job mapping across all broker triggers (`NexJob.Kafka`, `NexJob.RabbitMQ`, `NexJob.Trigger.AzureServiceBus`, `NexJob.Trigger.GooglePubSub`, `NexJob.Trigger.AwsSqs`) allowing subscribers to bind explicit job types without requiring publishers to inject `nexjob.job_type` headers (issue #163).
   - Added generic registration overloads `.Add{Broker}Trigger<TJob>()` on `NexJobBuilder` and `IServiceCollection` across Kafka, RabbitMQ, Azure Service Bus, Google Pub/Sub, and AWS SQS (issue #163).

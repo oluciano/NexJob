@@ -898,6 +898,69 @@ public abstract class StorageProviderTestsBase
         remaining.Should().NotBeNull();
     }
 
+    [Fact]
+    public async Task PurgeJobsAsync_DeletesDeadLetterJobsBeyondRetention()
+    {
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
+
+        var policy = new RetentionPolicy
+        {
+            RetainSucceeded = TimeSpan.Zero,
+            RetainFailed = TimeSpan.Zero,
+            RetainExpired = TimeSpan.Zero,
+            RetainDeadLetter = TimeSpan.FromSeconds(1),
+        };
+
+        var record = MakeJob();
+        await storage.EnqueueAsync(record);
+        var fetched = await storage.FetchNextAsync(["default"]);
+        await storage.SetFailedAsync(fetched!.Id, new Exception("Fatal dead-letter error"), retryAt: null);
+
+        // Wait for threshold to pass
+        await Task.Delay(TimeSpan.FromSeconds(2));
+
+        var deleted = await storage.PurgeJobsAsync(policy);
+
+        deleted.Should().Be(1);
+        var remaining = await dashboard.GetJobByIdAsync(record.Id);
+        remaining.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task PurgeJobsAsync_BatchedPurging_DeletesJobsInChunks()
+    {
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
+
+        var policy = new RetentionPolicy
+        {
+            RetainSucceeded = TimeSpan.FromSeconds(1),
+            RetainFailed = TimeSpan.Zero,
+            RetainExpired = TimeSpan.Zero,
+            RetainDeadLetter = TimeSpan.Zero,
+            BatchSize = 2,
+        };
+
+        var ids = new List<JobId>();
+        for (var i = 0; i < 4; i++)
+        {
+            var record = MakeJob();
+            await storage.EnqueueAsync(record);
+            var fetched = await storage.FetchNextAsync(["default"]);
+            await storage.CommitJobResultAsync(fetched!.Id, new JobExecutionResult { Succeeded = true, Logs = [] });
+            ids.Add(record.Id);
+        }
+
+        await Task.Delay(TimeSpan.FromSeconds(2));
+
+        var deleted = await storage.PurgeJobsAsync(policy);
+
+        deleted.Should().Be(4);
+        foreach (var id in ids)
+        {
+            (await dashboard.GetJobByIdAsync(id)).Should().BeNull();
+        }
+    }
+
     // ── DuplicatePolicy concurrency ────────────────────────────────────────────
 
     [Fact]

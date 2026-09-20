@@ -37,11 +37,13 @@ internal sealed class JobRetentionService : BackgroundService
     {
         _logger.LogInformation(
             "JobRetentionService started. Interval: {Interval}. " +
-            "Defaults — Succeeded: {Succeeded}d, Failed: {Failed}d, Expired: {Expired}d.",
+            "Defaults — Succeeded: {Succeeded}d, Failed: {Failed}d, Expired: {Expired}d, DeadLetter: {DeadLetter}d, BatchSize: {BatchSize}.",
             _options.RetentionInterval,
             _options.RetentionSucceeded.TotalDays,
             _options.RetentionFailed.TotalDays,
-            _options.RetentionExpired.TotalDays);
+            _options.RetentionExpired.TotalDays,
+            _options.RetentionDeadLetter.TotalDays,
+            _options.RetentionBatchSize);
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -56,6 +58,8 @@ internal sealed class JobRetentionService : BackgroundService
                     RetainSucceeded = runtime.RetentionSucceeded ?? _options.RetentionSucceeded,
                     RetainFailed = runtime.RetentionFailed ?? _options.RetentionFailed,
                     RetainExpired = runtime.RetentionExpired ?? _options.RetentionExpired,
+                    RetainDeadLetter = runtime.RetentionDeadLetter ?? _options.RetentionDeadLetter,
+                    BatchSize = runtime.RetentionBatchSize ?? _options.RetentionBatchSize,
                 };
 
                 var deleted = await _storage.PurgeJobsAsync(policy, stoppingToken).ConfigureAwait(false);

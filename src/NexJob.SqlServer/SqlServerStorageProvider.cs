@@ -854,39 +854,101 @@ public sealed class SqlServerStorageProvider : IStorageProvider
         await using var conn = Open();
         await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
 
+        var batchSize = policy.BatchSize > 0 ? policy.BatchSize : 1000;
         var deleted = 0;
 
         if (policy.RetainSucceeded > TimeSpan.Zero)
         {
-            deleted += await conn.ExecuteAsync(
-                """
-                DELETE FROM nexjob_jobs
-                WHERE status = 'Succeeded'
-                  AND completed_at < DATEADD(SECOND, @seconds, SYSDATETIMEOFFSET())
-                """,
-                new { seconds = -(long)policy.RetainSucceeded.TotalSeconds, }).ConfigureAwait(false);
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                var rows = await conn.ExecuteAsync(
+                    """
+                    DELETE TOP (@batchSize) FROM nexjob_jobs
+                    WHERE status = 'Succeeded'
+                      AND completed_at < DATEADD(SECOND, @seconds, SYSDATETIMEOFFSET())
+                    """,
+                    new { seconds = -(long)policy.RetainSucceeded.TotalSeconds, batchSize, }).ConfigureAwait(false);
+
+                deleted += rows;
+                if (rows < batchSize)
+                {
+                    break;
+                }
+
+                await Task.Yield();
+            }
         }
 
         if (policy.RetainFailed > TimeSpan.Zero)
         {
-            deleted += await conn.ExecuteAsync(
-                """
-                DELETE FROM nexjob_jobs
-                WHERE status = 'Failed'
-                  AND completed_at < DATEADD(SECOND, @seconds, SYSDATETIMEOFFSET())
-                """,
-                new { seconds = -(long)policy.RetainFailed.TotalSeconds, }).ConfigureAwait(false);
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                var rows = await conn.ExecuteAsync(
+                    """
+                    DELETE TOP (@batchSize) FROM nexjob_jobs
+                    WHERE status = 'Failed'
+                      AND completed_at < DATEADD(SECOND, @seconds, SYSDATETIMEOFFSET())
+                    """,
+                    new { seconds = -(long)policy.RetainFailed.TotalSeconds, batchSize, }).ConfigureAwait(false);
+
+                deleted += rows;
+                if (rows < batchSize)
+                {
+                    break;
+                }
+
+                await Task.Yield();
+            }
+        }
+
+        if (policy.RetainDeadLetter > TimeSpan.Zero)
+        {
+            var retainFailedIsZero = policy.RetainFailed == TimeSpan.Zero ? 1 : 0;
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                var rows = await conn.ExecuteAsync(
+                    """
+                    DELETE TOP (@batchSize) FROM nexjob_jobs
+                    WHERE (status = 'DeadLetter' OR (status = 'Failed' AND @retainFailedIsZero = 1))
+                      AND ISNULL(completed_at, created_at) < DATEADD(SECOND, @seconds, SYSDATETIMEOFFSET())
+                    """,
+                    new
+                    {
+                        seconds = -(long)policy.RetainDeadLetter.TotalSeconds,
+                        batchSize,
+                        retainFailedIsZero,
+                    }).ConfigureAwait(false);
+
+                deleted += rows;
+                if (rows < batchSize)
+                {
+                    break;
+                }
+
+                await Task.Yield();
+            }
         }
 
         if (policy.RetainExpired > TimeSpan.Zero)
         {
-            deleted += await conn.ExecuteAsync(
-                """
-                DELETE FROM nexjob_jobs
-                WHERE status = 'Expired'
-                  AND created_at < DATEADD(SECOND, @seconds, SYSDATETIMEOFFSET())
-                """,
-                new { seconds = -(long)policy.RetainExpired.TotalSeconds, }).ConfigureAwait(false);
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                var rows = await conn.ExecuteAsync(
+                    """
+                    DELETE TOP (@batchSize) FROM nexjob_jobs
+                    WHERE status = 'Expired'
+                      AND created_at < DATEADD(SECOND, @seconds, SYSDATETIMEOFFSET())
+                    """,
+                    new { seconds = -(long)policy.RetainExpired.TotalSeconds, batchSize, }).ConfigureAwait(false);
+
+                deleted += rows;
+                if (rows < batchSize)
+                {
+                    break;
+                }
+
+                await Task.Yield();
+            }
         }
 
         return deleted;
