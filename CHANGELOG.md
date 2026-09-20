@@ -8,7 +8,15 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`NexJob.StressTests`**:
+  - Implemented production load and stress testing suite in `tests/NexJob.StressTests` targeting high-concurrency storage and trigger backpressure scenarios (issue #159).
+  - Implemented `PostgresStorageStressTests` executing 3,000 jobs under 20-worker contention against PostgreSQL (`NpgsqlDataSource`), asserting zero deadlocks (`40P01`), connection pool stability, and 100% completion (issue #159).
+  - Implemented `RedisStorageStressTests` executing 3,000 jobs concurrently under Redis multiplexer load, asserting zero connection drops and consistent status transitions (issue #159).
+  - Implemented `TriggerBackpressureStressTests` asserting bounded memory and strict prefetch limit enforcement under artificial storage write slowdown (issue #159).
+  - Created dedicated on-demand GitHub Actions stress testing workflow `.github/workflows/stress-tests.yml` with containerized PostgreSQL and Redis services (issue #159).
+
 - **`NexJob.Benchmarks`**:
+  - Implemented `StorageProviderLatencyBenchmark` comparing enqueue latency across InMemory, Redis, and PostgreSQL providers via `IScheduler` (issue #159).
   - Parameterized single-enqueue latency benchmarks by payload size (`PayloadBytes: 0, 1024, 10240`) to evaluate serialization scaling with `System.Text.Json` vs `Newtonsoft.Json` (issue #157).
   - Implemented `ConcurrentEnqueueBenchmark` measuring multi-threaded enqueue throughput and lock contention across varying parallelism levels (`ConcurrencyLevel: 10, 50`) (issue #157).
   - Implemented `DispatchLatencyBenchmark` isolating and measuring wake-up channel dispatch latency from enqueue to execution (issue #157).

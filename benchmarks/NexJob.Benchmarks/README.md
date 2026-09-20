@@ -9,6 +9,7 @@ Comparative performance benchmarks between **NexJob** and **Hangfire** powered b
 | Benchmark | Focus | Parameters | Description |
 |---|---|---|---|
 | [`EnqueueLatencyBenchmark`](EnqueueLatencyBenchmark.cs) | Enqueue Latency & Memory | `PayloadBytes: 0, 1024, 10240` | Measures single enqueue latency, memory allocation, and GC collections. |
+| [`StorageProviderLatencyBenchmark`](StorageProviderLatencyBenchmark.cs) | Multi-Storage Comparison | InMemory vs Redis vs PostgreSQL | Compares enqueue latency across storage providers via `IScheduler`. |
 | [`ConcurrentEnqueueBenchmark`](ConcurrentEnqueueBenchmark.cs) | Concurrency & Lock Contention | `ConcurrencyLevel: 10, 50` | Enqueues 1,000 jobs concurrently across parallel worker threads. |
 | [`DispatchLatencyBenchmark`](DispatchLatencyBenchmark.cs) | Wake-up Channel Latency | Baseline | Measures elapsed ticks from `EnqueueAsync` until `ExecuteAsync` starts via `JobWakeUpChannel`. |
 | [`ThroughputBenchmark`](ThroughputBenchmark.cs) | End-to-End Processing | 500 jobs / 20 workers | Measures time to enqueue and process 500 fire-and-forget jobs to completion. |
