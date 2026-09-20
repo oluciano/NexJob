@@ -10,6 +10,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\NexJob\NexJob.csproj" />
     <ProjectReference Include="..\..\src\NexJob.Kafka\NexJob.Kafka.csproj" />
+    <ProjectReference Include="..\..\src\NexJob.SqlServer\NexJob.SqlServer.csproj" />
     <ProjectReference Include="..\..\src\NexJob.Dashboard\NexJob.Dashboard.csproj" />
   </ItemGroup>
 

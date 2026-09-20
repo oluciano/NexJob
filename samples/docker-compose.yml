@@ -73,8 +73,21 @@ services:
     volumes:
       - kafka-data:/var/lib/kafka/data
 
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: nexjob-sample-sqlserver
+    restart: unless-stopped
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "Password123!"
+    ports:
+      - "1433:1433"
+    volumes:
+      - sqlserver-data:/var/opt/mssql
+
 volumes:
   postgres-data:
   redis-data:
   rabbitmq-data:
   kafka-data:
+  sqlserver-data:
