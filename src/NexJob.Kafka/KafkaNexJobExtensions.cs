@@ -34,10 +34,23 @@ public static class KafkaNexJobExtensions
                 BootstrapServers = options.BootstrapServers,
                 GroupId = options.GroupId,
                 AutoOffsetReset = AutoOffsetReset.Earliest,
-                EnableAutoCommit = false, // CRITICAL — manual commit only
             };
+
+            options.ConfigureConsumer?.Invoke(config);
+
+            // Invariant enforcement: BootstrapServers, GroupId, and manual commit only
+            config.BootstrapServers = options.BootstrapServers;
+            config.GroupId = options.GroupId;
+            config.EnableAutoCommit = false;
+
             var consumer = new ConsumerBuilder<string, string>(config).Build();
-            return new ConfluentKafkaConsumer(consumer, options.BootstrapServers);
+
+            var producerConfig = new ProducerConfig(config)
+            {
+                BootstrapServers = options.BootstrapServers,
+            };
+
+            return new ConfluentKafkaConsumer(consumer, producerConfig);
         });
 
         services.AddHostedService<KafkaTriggerHandler>();

@@ -6,6 +6,15 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`NexJob.Kafka` — Custom `ConsumerConfig` and `ProducerConfig` Support**:
+  - Added `ConfigureConsumer` delegate to `KafkaTriggerOptions` (`Action<ConsumerConfig>`), allowing custom SASL/SSL authentication, custom certificates (both file paths via `SslCaLocation`/`SslCertificateLocation` and raw PEM strings via `SslCaPem`/`SslCertificatePem`/`SslKeyPem`), custom timeouts, and advanced Kafka consumer tuning without global environment variables (issue #179).
+  - Added `ConfigureProducer` delegate to `KafkaProducerOptions` (`Action<ProducerConfig>`), allowing identical SASL/SSL credentials, TLS certificates, and broker tuning on the resilient Kafka outbox producer (issue #179).
+  - Propagated consumer security configuration to internal dead-letter producer in `ConfluentKafkaConsumer`, ensuring dead-letter forwarding honors broker TLS/SASL settings (issue #179).
+  - Preserved critical invariants: `EnableAutoCommit` is strictly enforced to `false` on consumer trigger, and options values (`BootstrapServers`, `GroupId`, `Acks`, `EnableIdempotence`) take precedence over delegate overrides (issue #179).
+  - Added 3N testing matrix (Positive/SSL+Certs, Negative/Invariant enforcement, Boundary/Null) in both `KafkaTriggerTests` and `KafkaProducerTests` (issue #179).
+
 ## [5.2.0] - 2026-09-20
 
 ### Added
