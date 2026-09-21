@@ -6,6 +6,17 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [5.3.0] - 2026-09-21
+
+### Added
+
+- **`NexJob.Kafka` — Custom `ConsumerConfig` and `ProducerConfig` Support**:
+  - Added `ConfigureConsumer` delegate to `KafkaTriggerOptions` (`Action<ConsumerConfig>`), allowing custom SASL/SSL authentication, custom certificates (both file paths via `SslCaLocation`/`SslCertificateLocation` and raw PEM strings via `SslCaPem`/`SslCertificatePem`/`SslKeyPem`), custom timeouts, and advanced Kafka consumer tuning without global environment variables (issue #179).
+  - Added `ConfigureProducer` delegate to `KafkaProducerOptions` (`Action<ProducerConfig>`), allowing identical SASL/SSL credentials, TLS certificates, and broker tuning on the resilient Kafka outbox producer (issue #179).
+  - Propagated consumer security configuration to internal dead-letter producer in `ConfluentKafkaConsumer`, ensuring dead-letter forwarding honors broker TLS/SASL settings (issue #179).
+  - Preserved critical invariants: `EnableAutoCommit` is strictly enforced to `false` on consumer trigger, and options values (`BootstrapServers`, `GroupId`, `Acks`, `EnableIdempotence`) take precedence over delegate overrides (issue #179).
+  - Added 3N testing matrix (Positive/SSL+Certs, Negative/Invariant enforcement, Boundary/Null) in both `KafkaTriggerTests` and `KafkaProducerTests` (issue #179).
+
 ## [5.2.0] - 2026-09-20
 
 ### Added
@@ -648,7 +659,13 @@ The project has entered an official **Reliability Lock**. Development is focused
 - Recurring concurrency policy: `SkipIfRunning` / `AllowConcurrent`
 - CI/CD pipeline publishing all packages on `v*` tag push
 
+<<<<<<< HEAD
+[Unreleased]: https://github.com/oluciano/NexJob/compare/v5.3.0...HEAD
+[5.3.0]: https://github.com/oluciano/NexJob/compare/v5.2.0...v5.3.0
+[5.2.0]: https://github.com/oluciano/NexJob/compare/v5.1.0...v5.2.0
+=======
 [Unreleased]: https://github.com/oluciano/NexJob/compare/v5.1.0...HEAD
+>>>>>>> origin/main
 [5.1.0]: https://github.com/oluciano/NexJob/compare/v5.0.0...v5.1.0
 [5.0.0]: https://github.com/oluciano/NexJob/compare/v4.0.1...v5.0.0
 [4.0.1]: https://github.com/oluciano/NexJob/compare/v4.0.0...v4.0.1

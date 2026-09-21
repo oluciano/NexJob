@@ -58,6 +58,13 @@ public static class KafkaProducerExtensions
                 EnableIdempotence = options.EnableIdempotence,
             };
 
+            options.ConfigureProducer?.Invoke(config);
+
+            // Invariant enforcement: BootstrapServers, Acks, and EnableIdempotence from options take precedence
+            config.BootstrapServers = options.BootstrapServers;
+            config.Acks = options.Acks;
+            config.EnableIdempotence = options.EnableIdempotence;
+
             var producer = new ProducerBuilder<string, byte[]>(config).Build();
             return new ConfluentKafkaProducerClient(producer, options.FlushTimeout);
         });

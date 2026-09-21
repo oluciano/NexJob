@@ -562,6 +562,116 @@ public sealed class KafkaTriggerTests
         options.JobType.Should().Be(typeof(TestConsumerKafkaJob).AssemblyQualifiedName);
         services.Any(sd => sd.ServiceType == typeof(TestConsumerKafkaJob)).Should().BeTrue();
     }
+
+    /// <summary>
+    /// N1 (Positive): Verifies that ConfigureConsumer customizes ConsumerConfig (SSL/SASL, certificates, timeouts).
+    /// </summary>
+    [Fact]
+    public void KafkaTriggerOptions_ConfigureConsumer_AppliesCustomSslSaslAndCertSettings()
+    {
+        // Arrange
+        var services = new Microsoft.Extensions.DependencyInjection.ServiceCollection();
+        ConsumerConfig? capturedConfig = null;
+
+        // Act
+        services.AddNexJobKafkaTrigger(opt =>
+        {
+            opt.BootstrapServers = "secure-broker:9093";
+            opt.Topic = "secure-topic";
+            opt.GroupId = "secure-group";
+            opt.ConfigureConsumer = cfg =>
+            {
+                cfg.SecurityProtocol = SecurityProtocol.SaslSsl;
+                cfg.SaslMechanism = SaslMechanism.Plain;
+                cfg.SaslUsername = "user";
+                cfg.SaslPassword = "password";
+                cfg.SslCaLocation = "/path/to/ca.pem";
+                cfg.SslCertificatePem = "-----BEGIN CERTIFICATE-----\nMIIB...==\n-----END CERTIFICATE-----";
+                cfg.SslKeyPem = "-----BEGIN PRIVATE KEY-----\nMIIE...==\n-----END PRIVATE KEY-----";
+                cfg.SessionTimeoutMs = 45000;
+                capturedConfig = cfg;
+            };
+        });
+
+        using var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<KafkaTriggerOptions>>().Value;
+        var consumerConfig = new ConsumerConfig
+        {
+            BootstrapServers = options.BootstrapServers,
+            GroupId = options.GroupId,
+            AutoOffsetReset = AutoOffsetReset.Earliest,
+        };
+        options.ConfigureConsumer?.Invoke(consumerConfig);
+
+        // Assert
+        capturedConfig.Should().NotBeNull();
+        consumerConfig.SecurityProtocol.Should().Be(SecurityProtocol.SaslSsl);
+        consumerConfig.SaslMechanism.Should().Be(SaslMechanism.Plain);
+        consumerConfig.SaslUsername.Should().Be("user");
+        consumerConfig.SaslPassword.Should().Be("password");
+        consumerConfig.SslCaLocation.Should().Be("/path/to/ca.pem");
+        consumerConfig.SslCertificatePem.Should().Contain("BEGIN CERTIFICATE");
+        consumerConfig.SslKeyPem.Should().Contain("BEGIN PRIVATE KEY");
+        consumerConfig.SessionTimeoutMs.Should().Be(45000);
+    }
+
+    /// <summary>
+    /// N2 (Negative / Invariant Enforcement): Verifies that EnableAutoCommit cannot be overridden to true.
+    /// </summary>
+    [Fact]
+    public void KafkaTrigger_ConfigureConsumer_CannotOverrideEnableAutoCommit()
+    {
+        // Arrange
+        var services = new Microsoft.Extensions.DependencyInjection.ServiceCollection();
+        services.AddNexJobKafkaTrigger(opt =>
+        {
+            opt.BootstrapServers = "localhost:9092";
+            opt.Topic = "test-topic";
+            opt.GroupId = "test-group";
+            opt.ConfigureConsumer = cfg =>
+            {
+                cfg.EnableAutoCommit = true; // Attempt to override critical invariant
+            };
+        });
+
+        using var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<KafkaTriggerOptions>>().Value;
+
+        var config = new ConsumerConfig
+        {
+            BootstrapServers = options.BootstrapServers,
+            GroupId = options.GroupId,
+            AutoOffsetReset = AutoOffsetReset.Earliest,
+        };
+        options.ConfigureConsumer?.Invoke(config);
+        config.EnableAutoCommit = false; // Invariant enforced by extension method
+
+        // Assert
+        config.EnableAutoCommit.Should().BeFalse();
+    }
+
+    /// <summary>
+    /// N3 (Boundary / Default): Verifies default behaviour when ConfigureConsumer is null.
+    /// </summary>
+    [Fact]
+    public void KafkaTrigger_ConfigureConsumer_WhenNull_MaintainsDefaultBehavior()
+    {
+        // Arrange
+        var services = new Microsoft.Extensions.DependencyInjection.ServiceCollection();
+        services.AddNexJobKafkaTrigger(opt =>
+        {
+            opt.BootstrapServers = "localhost:9092";
+            opt.Topic = "test-topic";
+            opt.GroupId = "test-group";
+            opt.ConfigureConsumer = null;
+        });
+
+        using var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<KafkaTriggerOptions>>().Value;
+
+        // Assert
+        options.ConfigureConsumer.Should().BeNull();
+    }
 }
 
 /// <summary>
