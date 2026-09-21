@@ -659,9 +659,13 @@ The project has entered an official **Reliability Lock**. Development is focused
 - Recurring concurrency policy: `SkipIfRunning` / `AllowConcurrent`
 - CI/CD pipeline publishing all packages on `v*` tag push
 
+<<<<<<< HEAD
 [Unreleased]: https://github.com/oluciano/NexJob/compare/v5.3.0...HEAD
 [5.3.0]: https://github.com/oluciano/NexJob/compare/v5.2.0...v5.3.0
 [5.2.0]: https://github.com/oluciano/NexJob/compare/v5.1.0...v5.2.0
+=======
+[Unreleased]: https://github.com/oluciano/NexJob/compare/v5.1.0...HEAD
+>>>>>>> origin/main
 [5.1.0]: https://github.com/oluciano/NexJob/compare/v5.0.0...v5.1.0
 [5.0.0]: https://github.com/oluciano/NexJob/compare/v4.0.1...v5.0.0
 [4.0.1]: https://github.com/oluciano/NexJob/compare/v4.0.0...v4.0.1

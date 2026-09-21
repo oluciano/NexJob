@@ -562,6 +562,7 @@ public sealed class KafkaTriggerTests
         options.JobType.Should().Be(typeof(TestConsumerKafkaJob).AssemblyQualifiedName);
         services.Any(sd => sd.ServiceType == typeof(TestConsumerKafkaJob)).Should().BeTrue();
     }
+<<<<<<< HEAD
 
     /// <summary>
     /// N1 (Positive): Verifies that ConfigureConsumer customizes ConsumerConfig (SSL/SASL, certificates, timeouts).
