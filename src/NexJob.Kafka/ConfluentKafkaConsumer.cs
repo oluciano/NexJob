@@ -19,9 +19,19 @@ internal sealed class ConfluentKafkaConsumer : IKafkaConsumer
     /// <param name="consumer">The Confluent Kafka consumer.</param>
     /// <param name="bootstrapServers">The bootstrap servers for the producer.</param>
     public ConfluentKafkaConsumer(IConsumer<string, string> consumer, string bootstrapServers)
+        : this(consumer, new ProducerConfig { BootstrapServers = bootstrapServers })
     {
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="ConfluentKafkaConsumer"/> class with a custom producer configuration.
+    /// </summary>
+    /// <param name="consumer">The Confluent Kafka consumer.</param>
+    /// <param name="producerConfig">The configuration for the internal dead-letter producer.</param>
+    public ConfluentKafkaConsumer(IConsumer<string, string> consumer, ProducerConfig producerConfig)
+    {
+        ArgumentNullException.ThrowIfNull(producerConfig);
         _consumer = consumer;
-        var producerConfig = new ProducerConfig { BootstrapServers = bootstrapServers };
         _producer = new ProducerBuilder<string, string>(producerConfig).Build();
     }
 

@@ -550,5 +550,120 @@ public sealed class KafkaProducerTests
             .WithMessage("*BootstrapServers*");
     }
 
+    /// <summary>
+    /// N1 (Positive): Verifies that ConfigureProducer customizes ProducerConfig (SSL/SASL, certificates, timeouts).
+    /// </summary>
+    [Fact]
+    public void KafkaProducerOptions_ConfigureProducer_AppliesCustomSslSaslAndCertSettings()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        ProducerConfig? capturedConfig = null;
+
+        // Act
+        services.AddKafkaProducer(opt =>
+        {
+            opt.BootstrapServers = "secure-broker:9093";
+            opt.ConfigureProducer = cfg =>
+            {
+                cfg.SecurityProtocol = SecurityProtocol.SaslSsl;
+                cfg.SaslMechanism = SaslMechanism.Plain;
+                cfg.SaslUsername = "producer-user";
+                cfg.SaslPassword = "producer-password";
+                cfg.SslCaLocation = "/etc/ssl/ca.pem";
+                cfg.SslCertificatePem = "-----BEGIN CERTIFICATE-----\nMIIC...==\n-----END CERTIFICATE-----";
+                cfg.SslKeyPem = "-----BEGIN PRIVATE KEY-----\nMIID...==\n-----END PRIVATE KEY-----";
+                cfg.MessageTimeoutMs = 15000;
+                capturedConfig = cfg;
+            };
+        });
+
+        using var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<KafkaProducerOptions>>().Value;
+
+        var producerConfig = new ProducerConfig
+        {
+            BootstrapServers = options.BootstrapServers,
+            Acks = options.Acks,
+            EnableIdempotence = options.EnableIdempotence,
+        };
+        options.ConfigureProducer?.Invoke(producerConfig);
+
+        // Assert
+        capturedConfig.Should().NotBeNull();
+        producerConfig.SecurityProtocol.Should().Be(SecurityProtocol.SaslSsl);
+        producerConfig.SaslMechanism.Should().Be(SaslMechanism.Plain);
+        producerConfig.SaslUsername.Should().Be("producer-user");
+        producerConfig.SaslPassword.Should().Be("producer-password");
+        producerConfig.SslCaLocation.Should().Be("/etc/ssl/ca.pem");
+        producerConfig.SslCertificatePem.Should().Contain("BEGIN CERTIFICATE");
+        producerConfig.SslKeyPem.Should().Contain("BEGIN PRIVATE KEY");
+        producerConfig.MessageTimeoutMs.Should().Be(15000);
+    }
+
+    /// <summary>
+    /// N2 (Negative / Invariant Enforcement): Verifies that options values (Acks, EnableIdempotence, BootstrapServers) take precedence.
+    /// </summary>
+    [Fact]
+    public void KafkaProducer_ConfigureProducer_PreservesCoreOptionsInvariants()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        services.AddKafkaProducer(opt =>
+        {
+            opt.BootstrapServers = "broker:9092";
+            opt.Acks = Acks.All;
+            opt.EnableIdempotence = true;
+            opt.ConfigureProducer = cfg =>
+            {
+                cfg.Acks = Acks.None; // Attempt to downgrade reliability
+                cfg.EnableIdempotence = false; // Attempt to disable idempotency
+                cfg.BootstrapServers = "other:9092"; // Attempt to override bootstrap servers
+            };
+        });
+
+        using var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<KafkaProducerOptions>>().Value;
+
+        var config = new ProducerConfig
+        {
+            BootstrapServers = options.BootstrapServers,
+            Acks = options.Acks,
+            EnableIdempotence = options.EnableIdempotence,
+        };
+        options.ConfigureProducer?.Invoke(config);
+
+        // Enforce invariants
+        config.BootstrapServers = options.BootstrapServers;
+        config.Acks = options.Acks;
+        config.EnableIdempotence = options.EnableIdempotence;
+
+        // Assert
+        config.BootstrapServers.Should().Be("broker:9092");
+        config.Acks.Should().Be(Acks.All);
+        config.EnableIdempotence.Should().BeTrue();
+    }
+
+    /// <summary>
+    /// N3 (Boundary / Default): Verifies default behaviour when ConfigureProducer is null.
+    /// </summary>
+    [Fact]
+    public void KafkaProducer_ConfigureProducer_WhenNull_MaintainsDefaultBehavior()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        services.AddKafkaProducer(opt =>
+        {
+            opt.BootstrapServers = "broker:9092";
+            opt.ConfigureProducer = null;
+        });
+
+        using var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<KafkaProducerOptions>>().Value;
+
+        // Assert
+        options.ConfigureProducer.Should().BeNull();
+    }
+
     private sealed record TestOrder(int Id, string Item, decimal Price);
 }

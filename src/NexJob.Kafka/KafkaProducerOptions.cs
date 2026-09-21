@@ -43,4 +43,10 @@ public sealed class KafkaProducerOptions
     /// Defaults to <see cref="JobPriority.Normal"/>.
     /// </summary>
     public JobPriority DefaultPriority { get; set; } = JobPriority.Normal;
+
+    /// <summary>
+    /// Gets or sets an optional delegate to configure or override the underlying Confluent.Kafka <see cref="ProducerConfig"/>.
+    /// Used for SASL/SSL authentication, custom certificates (file location or PEM string), timeouts, and other advanced settings.
+    /// </summary>
+    public Action<ProducerConfig>? ConfigureProducer { get; set; }
 }

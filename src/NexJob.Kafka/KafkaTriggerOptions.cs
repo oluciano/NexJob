@@ -52,4 +52,11 @@ public sealed class KafkaTriggerOptions
     /// If both are present, the message header takes precedence.
     /// </summary>
     public string? JobType { get; set; }
+
+    /// <summary>
+    /// Gets or sets an optional delegate to configure or override the underlying Confluent.Kafka <see cref="Confluent.Kafka.ConsumerConfig"/>.
+    /// Used for SASL/SSL authentication, custom certificates (file location or PEM string), timeouts, and other advanced settings.
+    /// Note: <see cref="Confluent.Kafka.ConsumerConfig.EnableAutoCommit"/> is strictly enforced to <see langword="false"/> by NexJob and cannot be overridden.
+    /// </summary>
+    public Action<Confluent.Kafka.ConsumerConfig>? ConfigureConsumer { get; set; }
 }
