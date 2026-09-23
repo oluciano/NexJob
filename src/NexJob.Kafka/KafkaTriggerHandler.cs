@@ -17,6 +17,8 @@ internal sealed class KafkaTriggerHandler : BackgroundService
     private readonly IScheduler _scheduler;
     private readonly NexJobOptions _nexJobOptions;
     private readonly ILogger<KafkaTriggerHandler> _logger;
+    private readonly IListenerRegistry? _listenerRegistry;
+    private readonly string _listenerId;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="KafkaTriggerHandler"/> class.
@@ -26,18 +28,30 @@ internal sealed class KafkaTriggerHandler : BackgroundService
     /// <param name="scheduler">The NexJob scheduler.</param>
     /// <param name="nexJobOptions">The NexJob options.</param>
     /// <param name="logger">The logger.</param>
+    /// <param name="listenerRegistry">Optional listener registry for observability.</param>
     public KafkaTriggerHandler(
         IOptions<KafkaTriggerOptions> options,
         IKafkaConsumer consumer,
         IScheduler scheduler,
         NexJobOptions nexJobOptions,
-        ILogger<KafkaTriggerHandler> logger)
+        ILogger<KafkaTriggerHandler> logger,
+        IListenerRegistry? listenerRegistry = null)
     {
         _options = options.Value;
         _consumer = consumer;
         _scheduler = scheduler;
         _nexJobOptions = nexJobOptions;
         _logger = logger;
+        _listenerRegistry = listenerRegistry;
+        _listenerId = $"kafka:{_options.Topic}";
+
+        _listenerRegistry?.Register(new ListenerRegistration(
+            Id: _listenerId,
+            Broker: "Kafka",
+            Endpoint: _options.Topic,
+            TargetJobType: _options.JobType ?? "Dynamic",
+            JobTag: "trigger:kafka",
+            ConsumerGroup: _options.GroupId));
     }
 
     /// <inheritdoc/>
@@ -50,6 +64,7 @@ internal sealed class KafkaTriggerHandler : BackgroundService
             _options.TargetQueue);
 
         _consumer.Subscribe(_options.Topic);
+        _listenerRegistry?.UpdateStatus(_listenerId, ListenerStatus.Listening);
 
         await Task.Yield();
 
@@ -73,15 +88,19 @@ internal sealed class KafkaTriggerHandler : BackgroundService
             }
             catch (ConsumeException ex)
             {
+                _listenerRegistry?.UpdateStatus(_listenerId, ListenerStatus.Reconnecting, ex.Message);
                 _logger.LogWarning(ex, "Kafka consume error on topic {Topic}", _options.Topic);
                 await Task.Delay(TimeSpan.FromSeconds(1), stoppingToken).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
+                _listenerRegistry?.UpdateStatus(_listenerId, ListenerStatus.Faulted, ex.Message);
                 _logger.LogError(ex, "Unexpected error in Kafka trigger polling loop");
                 await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken).ConfigureAwait(false);
             }
         }
+
+        _listenerRegistry?.UpdateStatus(_listenerId, ListenerStatus.Stopped);
 
         try
         {

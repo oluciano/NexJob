@@ -20,6 +20,8 @@ internal sealed class RabbitMqTriggerHandler : IHostedService, IAsyncDisposable
     private readonly IScheduler _scheduler;
     private readonly NexJobOptions _nexJobOptions;
     private readonly ILogger<RabbitMqTriggerHandler> _logger;
+    private readonly IListenerRegistry? _listenerRegistry;
+    private readonly string _listenerId;
 
     private IConnection? _connection;
     private IModel? _channel;
@@ -35,18 +37,29 @@ internal sealed class RabbitMqTriggerHandler : IHostedService, IAsyncDisposable
     /// <param name="scheduler">The NexJob scheduler for enqueueing jobs.</param>
     /// <param name="nexJobOptions">Global NexJob configuration options.</param>
     /// <param name="logger">Logger for diagnostic output.</param>
+    /// <param name="listenerRegistry">Optional listener registry for observability.</param>
     public RabbitMqTriggerHandler(
         IOptions<RabbitMqTriggerOptions> options,
         IConnectionFactory connectionFactory,
         IScheduler scheduler,
         NexJobOptions nexJobOptions,
-        ILogger<RabbitMqTriggerHandler> logger)
+        ILogger<RabbitMqTriggerHandler> logger,
+        IListenerRegistry? listenerRegistry = null)
     {
         _options = options.Value;
         _connectionFactory = connectionFactory;
         _scheduler = scheduler;
         _nexJobOptions = nexJobOptions;
         _logger = logger;
+        _listenerRegistry = listenerRegistry;
+        _listenerId = $"rabbitmq:{_options.QueueName}";
+
+        _listenerRegistry?.Register(new ListenerRegistration(
+            Id: _listenerId,
+            Broker: "RabbitMQ",
+            Endpoint: _options.QueueName,
+            TargetJobType: _options.JobType ?? "Dynamic",
+            JobTag: "trigger:rabbitmq"));
     }
 
     /// <summary>
@@ -59,9 +72,11 @@ internal sealed class RabbitMqTriggerHandler : IHostedService, IAsyncDisposable
         try
         {
             ConnectAndConsume();
+            _listenerRegistry?.UpdateStatus(_listenerId, ListenerStatus.Listening);
         }
         catch (Exception ex)
         {
+            _listenerRegistry?.UpdateStatus(_listenerId, ListenerStatus.Reconnecting, ex.Message);
             _logger.LogWarning(ex, "Initial RabbitMQ connection failed. Starting reconnect loop.");
             _reconnectTask = ReconnectAsync(_stoppingCts.Token);
         }
@@ -80,6 +95,8 @@ internal sealed class RabbitMqTriggerHandler : IHostedService, IAsyncDisposable
     /// </summary>
     public async Task StopAsync(CancellationToken cancellationToken)
     {
+        _listenerRegistry?.UpdateStatus(_listenerId, ListenerStatus.Stopped);
+
         if (_stoppingCts is not null)
         {
             await _stoppingCts.CancelAsync().ConfigureAwait(false);
@@ -171,6 +188,7 @@ internal sealed class RabbitMqTriggerHandler : IHostedService, IAsyncDisposable
 
     private void OnConnectionDropped()
     {
+        _listenerRegistry?.UpdateStatus(_listenerId, ListenerStatus.Reconnecting, "RabbitMQ connection lost or closed.");
         if (_stoppingCts is not null && !_stoppingCts.IsCancellationRequested && (_reconnectTask == null || _reconnectTask.IsCompleted))
         {
             _logger.LogWarning("RabbitMQ connection dropped. Starting reconnect loop.");
@@ -186,10 +204,12 @@ internal sealed class RabbitMqTriggerHandler : IHostedService, IAsyncDisposable
             {
                 TeardownConnection();
                 ConnectAndConsume();
+                _listenerRegistry?.UpdateStatus(_listenerId, ListenerStatus.Listening);
                 return;
             }
             catch (Exception ex)
             {
+                _listenerRegistry?.UpdateStatus(_listenerId, ListenerStatus.Reconnecting, ex.Message);
                 _logger.LogWarning(ex, "RabbitMQ reconnect failed. Retrying in {Delay}...", _options.ReconnectDelay);
                 await Task.Delay(_options.ReconnectDelay, ct).ConfigureAwait(false);
             }

@@ -672,6 +672,45 @@ public sealed class KafkaTriggerTests
         // Assert
         options.ConfigureConsumer.Should().BeNull();
     }
+
+    /// <summary>
+    /// Verifies that KafkaTriggerHandler registers with IListenerRegistry and updates status.
+    /// </summary>
+    [Fact]
+    public async Task ListenerRegistry_Lifecycle_TracksStatusProperly()
+    {
+        // Arrange
+        var registry = new DefaultListenerRegistry();
+        using var cts = new CancellationTokenSource();
+
+        _consumerMock.Setup(m => m.Consume(It.IsAny<TimeSpan>()))
+            .Returns(() =>
+            {
+                cts.Cancel();
+                return null;
+            });
+
+        var handler = new KafkaTriggerHandler(
+            Options.Create(_triggerOptions),
+            _consumerMock.Object,
+            _scheduler,
+            _nexJobOptions,
+            _loggerMock.Object,
+            registry);
+
+        var initial = registry.Get($"kafka:{_triggerOptions.Topic}");
+        initial.Should().NotBeNull();
+        initial!.Status.Should().Be(ListenerStatus.Starting);
+
+        // Act & Assert: ExecuteAsync run
+        await handler.StartAsync(cts.Token);
+        var listening = registry.Get($"kafka:{_triggerOptions.Topic}");
+        listening!.Status.Should().Be(ListenerStatus.Listening);
+
+        await handler.StopAsync(CancellationToken.None);
+        var stopped = registry.Get($"kafka:{_triggerOptions.Topic}");
+        stopped!.Status.Should().Be(ListenerStatus.Stopped);
+    }
 }
 
 /// <summary>

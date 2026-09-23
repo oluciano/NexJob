@@ -221,6 +221,7 @@ internal static class HtmlShell
                     <a href="{{pathPrefix}}" class="nav-item {{Active(activeRoute, "overview")}}">Overview</a>
                     <a href="{{pathPrefix}}/queues" class="nav-item {{Active(activeRoute, "queues")}}"><span>Queues</span> {{NavCounter(counters?.Queues, counters?.QueuesClass)}}</a>
                     <a href="{{pathPrefix}}/servers" class="nav-item {{Active(activeRoute, "servers")}}"><span>Servers</span> {{NavCounter(counters?.Servers, counters?.ServersClass)}}</a>
+                    <a href="{{pathPrefix}}/listeners" class="nav-item {{Active(activeRoute, "listeners")}}"><span>Listeners</span> {{NavCounter(counters?.Listeners, counters?.ListenersClass)}}</a>
                     <a href="{{pathPrefix}}/jobs" class="nav-item {{Active(activeRoute, "jobs")}}"><span>Jobs</span> {{NavCounter(counters?.Jobs, null)}}</a>
                     <a href="{{pathPrefix}}/recurring" class="nav-item {{Active(activeRoute, "recurring")}}"><span>Recurring</span> {{NavCounter(counters?.Recurring, null)}}</a>
                     <a href="{{pathPrefix}}/failed" class="nav-item {{Active(activeRoute, "failed")}}"><span>Failed</span> {{NavCounter(counters?.Failed, counters?.FailedClass)}}</a>

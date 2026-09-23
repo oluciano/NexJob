@@ -41,6 +41,11 @@ public sealed class StandaloneDashboardTests
             var overview = await client.GetAsync("/dashboard");
             overview.StatusCode.Should().Be(HttpStatusCode.OK);
 
+            var listenersPage = await client.GetAsync("/dashboard/listeners");
+            listenersPage.StatusCode.Should().Be(HttpStatusCode.OK);
+            var content = await listenersPage.Content.ReadAsStringAsync();
+            content.Should().Contain("Event Listeners");
+
             using var stream = await client.GetAsync(
                 "/dashboard/stream",
                 HttpCompletionOption.ResponseHeadersRead);
