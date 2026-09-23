@@ -20,6 +20,7 @@ internal sealed class OverviewPage : IComponent
     [Parameter] public IDashboardStorage Storage { get; set; } = default!;
     [Parameter] public IJobStorage JobStorage { get; set; } = default!;
     [Parameter] public IRecurringStorage RecurringStorage { get; set; } = default!;
+    [Parameter] public IReadOnlyList<ListenerSnapshot>? Listeners { get; set; }
     [Parameter] public string PathPrefix { get; set; } = "/dashboard";
     [Parameter] public string Title { get; set; } = "NexJob";
     [Parameter] public NavCounters? Counters { get; set; }
@@ -241,6 +242,34 @@ internal sealed class OverviewPage : IComponent
 
         queueStatsSb.Append("</div></div>");
 
+        // 6. EVENT LISTENERS SUMMARY
+        var listenersSb = new StringBuilder();
+        if (Listeners is { Count: > 0 })
+        {
+            listenersSb.Append("<div class=\"card\"><div class=\"card-header\"><h3>Event Listeners</h3><a href=\"").Append(PathPrefix).Append("/listeners\" class=\"btn btn-secondary btn-sm\">Details</a></div><div style=\"padding:0\">");
+            foreach (var l in Listeners.Take(3))
+            {
+                var dotClass = l.Status switch
+                {
+                    ListenerStatus.Listening => "dot-succeeded",
+                    ListenerStatus.Starting => "dot-enqueued",
+                    ListenerStatus.Reconnecting => "dot-processing",
+                    ListenerStatus.Faulted => "dot-failed",
+                    _ => "dot-enqueued",
+                };
+                listenersSb.Append("<div style=\"padding:12px 20px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border)\">")
+                    .Append("<div style=\"display:flex;align-items:center;gap:12px\">")
+                    .Append("<span class=\"dot ").Append(dotClass).Append("\"></span>")
+                    .Append("<div><div style=\"font-weight:600\">").Append(System.Web.HttpUtility.HtmlEncode(l.Broker)).Append(": ").Append(System.Web.HttpUtility.HtmlEncode(l.Endpoint)).Append("</div>")
+                    .Append("<div style=\"font-size:11px;color:var(--text-tertiary)\">").Append(System.Web.HttpUtility.HtmlEncode(l.TargetJobType)).Append("</div></div>")
+                    .Append("</div>")
+                    .Append("<div>").Append(HtmlFragments.StatusBadge(l.Status.ToString())).Append("</div>")
+                    .Append("</div>");
+            }
+
+            listenersSb.Append("</div></div>");
+        }
+
         var body =
             HtmlFragments.PageHeader("Overview", "Real-time job processing status") +
             topMetricsHtml +
@@ -254,6 +283,7 @@ internal sealed class OverviewPage : IComponent
             "</div>" +
             "<div>" +
             serversSb.ToString() +
+            listenersSb.ToString() +
             recurringSummarySb.ToString() +
             queueStatsSb.ToString() +
             "</div>" +

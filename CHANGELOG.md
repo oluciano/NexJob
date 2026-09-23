@@ -6,7 +6,15 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-## [5.3.0] - 2026-09-21
+### Added
+
+- **`NexJob.Dashboard` & Triggers — Active Event Triggers & Listeners Visibility**:
+  - Implemented `IListenerRegistry` and `DefaultListenerRegistry` in Core to register and track active event triggers and broker listeners in a thread-safe manner (issue #182).
+  - Added connection lifecycle tracking (`Starting`, `Listening`, `Reconnecting`, `Faulted`, `Stopped`) in `RabbitMqTriggerHandler` and `KafkaTriggerHandler` without impacting the hot-path execution pipeline (issue #182).
+  - Added dedicated `/listeners` page in `NexJob.Dashboard` rendering broker types, target queues/topics, consumer groups, mapped job types, uptime, error diagnostic details, and direct filtering links to generated jobs (issue #182).
+  - Added `Listeners` status badge to sidebar navigation and an Event Listeners summary widget to the dashboard Overview page (issue #182).
+  - Added complete 3N unit testing matrix covering positive registration/rendering, negative broker connection failure/reconnection, and invalid input/empty state handling (issue #182).
+
 
 ### Added
 

@@ -11,4 +11,6 @@ internal sealed record NavCounters(
     string? Failed,
     string? FailedClass,
     string? Servers,
-    string? ServersClass);
+    string? ServersClass,
+    string? Listeners = null,
+    string? ListenersClass = null);

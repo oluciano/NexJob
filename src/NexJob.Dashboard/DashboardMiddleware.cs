@@ -580,6 +580,17 @@ public sealed class DashboardMiddleware
 
         var activeQueues = queues.Count(q => q.Processing > 0);
         var totalQueues = nexJobOptions.Queues.Count;
+
+        var listenerRegistry = context.RequestServices.GetService<IListenerRegistry>();
+        var allListeners = listenerRegistry?.GetAll() ?? Array.Empty<ListenerSnapshot>();
+        var listeningCount = allListeners.Count(l => l.Status == ListenerStatus.Listening);
+        var listenersCounter = allListeners.Count > 0 ? $"{listeningCount}/{allListeners.Count}" : null;
+        string? listenersClass = null;
+        if (allListeners.Count > 0)
+        {
+            listenersClass = listeningCount == allListeners.Count ? "ok" : "warn";
+        }
+
         NavCounters counters = new NavCounters(
             Queues: $"{activeQueues}/{totalQueues}",
             QueuesClass: activeQueues < totalQueues ? "warn" : "ok",
@@ -588,7 +599,9 @@ public sealed class DashboardMiddleware
             Failed: metrics.Failed > 0 ? metrics.Failed.ToString(CultureInfo.InvariantCulture) : null,
             FailedClass: metrics.Failed > 0 ? "danger" : null,
             Servers: $"{servers.Count}/{servers.Count}",
-            ServersClass: "ok");
+            ServersClass: "ok",
+            Listeners: listenersCounter,
+            ListenersClass: listenersClass);
 
         ParameterView parameters;
 
@@ -599,6 +612,7 @@ public sealed class DashboardMiddleware
                 ["Storage"] = dashboardStorage,
                 ["JobStorage"] = jobStorage,
                 ["RecurringStorage"] = recurringStorage,
+                ["Listeners"] = allListeners,
                 ["PathPrefix"] = _pathPrefix,
                 ["Title"] = _options.Title,
                 ["Counters"] = counters,
@@ -632,12 +646,39 @@ public sealed class DashboardMiddleware
             return await RenderAsync<ServersPage>(renderer, parameters).ConfigureAwait(false);
         }
 
+        if (string.Equals(subPath, "listeners", StringComparison.Ordinal))
+        {
+            parameters = ParameterView.FromDictionary(new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+                ["Listeners"] = allListeners,
+                ["PathPrefix"] = _pathPrefix,
+                ["Title"] = _options.Title,
+                ["Counters"] = counters,
+            });
+            return await RenderAsync<ListenersPage>(renderer, parameters).ConfigureAwait(false);
+        }
+
         if (string.Equals(subPath, "jobs", StringComparison.Ordinal) || subPath.StartsWith("jobs?", StringComparison.Ordinal))
         {
             var query = context.Request.Query;
             var status = query.TryGetValue("status", out var sv) && Enum.TryParse<JobStatus>(sv, out var s) ? (JobStatus?)s : null;
             var search = query.TryGetValue("search", out var sr) ? (string?)sr : null;
             var tag = query.TryGetValue("tag", out var tg) && !string.IsNullOrWhiteSpace(tg) ? (string?)tg : null;
+
+            if (string.IsNullOrWhiteSpace(tag) && !string.IsNullOrWhiteSpace(search))
+            {
+                if (search.StartsWith("trigger:", StringComparison.OrdinalIgnoreCase))
+                {
+                    tag = search.Trim();
+                    search = null;
+                }
+                else if (search.StartsWith("tag:", StringComparison.OrdinalIgnoreCase))
+                {
+                    tag = search[4..].Trim();
+                    search = null;
+                }
+            }
+
             var page = query.TryGetValue("page", out var pg) && int.TryParse(pg, NumberStyles.Integer, CultureInfo.InvariantCulture, out var p) ? p : 1;
 
             parameters = ParameterView.FromDictionary(new Dictionary<string, object?>(StringComparer.Ordinal)
