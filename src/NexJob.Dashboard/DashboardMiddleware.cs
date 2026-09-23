@@ -664,6 +664,21 @@ public sealed class DashboardMiddleware
             var status = query.TryGetValue("status", out var sv) && Enum.TryParse<JobStatus>(sv, out var s) ? (JobStatus?)s : null;
             var search = query.TryGetValue("search", out var sr) ? (string?)sr : null;
             var tag = query.TryGetValue("tag", out var tg) && !string.IsNullOrWhiteSpace(tg) ? (string?)tg : null;
+
+            if (string.IsNullOrWhiteSpace(tag) && !string.IsNullOrWhiteSpace(search))
+            {
+                if (search.StartsWith("trigger:", StringComparison.OrdinalIgnoreCase))
+                {
+                    tag = search.Trim();
+                    search = null;
+                }
+                else if (search.StartsWith("tag:", StringComparison.OrdinalIgnoreCase))
+                {
+                    tag = search[4..].Trim();
+                    search = null;
+                }
+            }
+
             var page = query.TryGetValue("page", out var pg) && int.TryParse(pg, NumberStyles.Integer, CultureInfo.InvariantCulture, out var p) ? p : 1;
 
             parameters = ParameterView.FromDictionary(new Dictionary<string, object?>(StringComparer.Ordinal)

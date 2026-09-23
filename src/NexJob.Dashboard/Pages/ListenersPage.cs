@@ -73,7 +73,7 @@ internal sealed class ListenersPage : IComponent
             }
 
             var jobTagQuery = !string.IsNullOrWhiteSpace(l.JobTag)
-                ? $"<a href=\"{PathPrefix}/jobs?search={HttpUtility.UrlEncode(l.JobTag)}\" class=\"btn btn-secondary btn-sm\">View Jobs</a>"
+                ? $"<a href=\"{PathPrefix}/jobs?tag={HttpUtility.UrlEncode(l.JobTag)}\" class=\"btn btn-secondary btn-sm\">View Jobs</a>"
                 : "—";
 
             var endpointDisplay = HttpUtility.HtmlEncode(l.Endpoint);

@@ -39,22 +39,44 @@ internal sealed class JobsPage : IComponent
             Queue = QueueFilter,
         };
 
-        var result = await Storage.GetJobsAsync(filter, Page, 50, CancellationToken.None);
-
-        // Apply in-memory tag filter (IStorageProvider doesn't have native Tag support in JobFilter yet,
-        // so we still filter the current page client-side)
+        PagedResult<JobRecord> result;
         if (!string.IsNullOrWhiteSpace(TagFilter))
         {
-            var taggedIds = (await Storage.GetJobsByTagAsync(TagFilter.Trim()))
-                .Select(j => j.Id)
-                .ToHashSet();
+            var taggedJobs = await Storage.GetJobsByTagAsync(TagFilter.Trim(), CancellationToken.None);
+            if (StatusFilter.HasValue)
+            {
+                taggedJobs = taggedJobs.Where(j => j.Status == StatusFilter.Value).ToList();
+            }
+
+            if (!string.IsNullOrWhiteSpace(QueueFilter))
+            {
+                taggedJobs = taggedJobs.Where(j => string.Equals(j.Queue, QueueFilter, StringComparison.OrdinalIgnoreCase)).ToList();
+            }
+
+            if (!string.IsNullOrWhiteSpace(Search))
+            {
+                taggedJobs = taggedJobs.Where(j => j.JobType.Contains(Search, StringComparison.OrdinalIgnoreCase) || j.Id.Value.ToString().Contains(Search, StringComparison.OrdinalIgnoreCase)).ToList();
+            }
+
+            var totalTagged = taggedJobs.Count;
+            var pageSize = 50;
+            var pagedItems = taggedJobs
+                .OrderByDescending(j => j.CreatedAt)
+                .Skip((Page - 1) * pageSize)
+                .Take(pageSize)
+                .ToList();
+
             result = new PagedResult<JobRecord>
             {
-                Items = result.Items.Where(j => taggedIds.Contains(j.Id)).ToList(),
-                TotalCount = result.TotalCount,
-                Page = result.Page,
-                PageSize = result.PageSize,
+                Items = pagedItems,
+                TotalCount = totalTagged,
+                Page = Page,
+                PageSize = pageSize,
             };
+        }
+        else
+        {
+            result = await Storage.GetJobsAsync(filter, Page, 50, CancellationToken.None);
         }
 
         _handle.Render(b => b.AddMarkupContent(0, BuildHtml(result, queues)));
