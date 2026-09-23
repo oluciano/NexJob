@@ -152,7 +152,7 @@ internal sealed class JobDetailPage : IComponent
             "</div>" +
             "<div class=\"terminal-window\">" +
             "<div class=\"terminal-header\"><div class=\"terminal-dots\"><span></span><span></span><span></span></div><span class=\"terminal-title\">payload.json</span><button class=\"copy-btn\" onclick=\"navigator.clipboard.writeText(this.parentElement.nextElementSibling.innerText);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)\">Copy</button></div>" +
-            $"<div class=\"terminal-body\"><pre style=\"margin:0;font-size:12px;color:var(--text-primary);overflow-x:auto;font-family:monospace;white-space:pre-wrap\">{Helpers.FormatJson(job.InputJson)}</pre></div>" +
+            $"<div class=\"terminal-body\"><pre style=\"margin:0;font-size:12px;color:#e2e8f0;overflow-x:auto;font-family:monospace;white-space:pre-wrap\">{Helpers.FormatJson(job.InputJson)}</pre></div>" +
             "</div>" +
             "</div>";
 

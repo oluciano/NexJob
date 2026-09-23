@@ -320,7 +320,7 @@ internal static class HtmlFragments
         var stackTraceHtml = !string.IsNullOrWhiteSpace(stackTrace)
             ? $"<div class=\"terminal-window\" style=\"margin-top:16px\">" +
               $"<div class=\"terminal-header\"><div class=\"terminal-dots\"><span></span><span></span><span></span></div><span class=\"terminal-title\">stack-trace.log</span></div>" +
-              $"<div class=\"terminal-body\"><pre style=\"margin:0;font-size:12px;color:var(--text-primary);overflow-x:auto;font-family:monospace;white-space:pre-wrap\">{HtmlEncode(stackTrace)}</pre></div>" +
+              $"<div class=\"terminal-body\"><pre style=\"margin:0;font-size:12px;color:#e2e8f0;overflow-x:auto;font-family:monospace;white-space:pre-wrap\">{HtmlEncode(stackTrace)}</pre></div>" +
               $"</div>"
             : string.Empty;
 
@@ -358,7 +358,7 @@ internal static class HtmlFragments
             };
             var ts = entry.Timestamp.ToString("HH:mm:ss.fff");
             var msg = HtmlEncode(entry.Message).Replace("\n", "&#10;");
-            return $"<div style=\"display:flex;gap:10px;line-height:1.6\"><span style=\"color:var(--text-tertiary);flex-shrink:0\">[{ts}]</span><span style=\"color:{color};font-weight:600;min-width:70px;flex-shrink:0\">[{entry.Level}]</span><span style=\"color:var(--text-primary);word-break:break-all\">{msg}</span></div>";
+            return $"<div style=\"display:flex;gap:10px;line-height:1.6\"><span style=\"color:#94a3b8;flex-shrink:0\">[{ts}]</span><span style=\"color:{color};font-weight:600;min-width:70px;flex-shrink:0\">[{entry.Level}]</span><span style=\"color:#e2e8f0;word-break:break-all\">{msg}</span></div>";
         }));
 
         return

@@ -237,6 +237,13 @@ internal static class HtmlShell
         .terminal-dots span:nth-child(3) { background: #27c93f; }
         .terminal-title { font-size: 11px; font-family: monospace; color: #94a3b8; font-weight: 600; }
         .terminal-body { padding: 14px 18px; color: #e2e8f0; }
+        .terminal-body pre { color: #e2e8f0 !important; }
+
+        /* JSON Syntax Highlighting Tokens in Terminal */
+        .jk { color: #00cfd5; font-weight: 600; }
+        .js { color: #28c76f; }
+        .jn { color: #ff9f43; font-weight: 500; }
+        .jb { color: #7367f0; font-weight: 600; }
 
         .copy-btn {
             background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15);
@@ -247,19 +254,20 @@ internal static class HtmlShell
 
         /* Theme Customizer Drawer (Offcanvas) */
         .theme-drawer-backdrop {
-            position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1100;
-            display: none; opacity: 0; transition: opacity 0.3s ease;
+            position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 1200;
+            display: none; opacity: 0; transition: opacity 0.25s ease;
         }
-        .theme-drawer-backdrop.active { display: block; opacity: 1; }
+        .theme-drawer-backdrop.active { display: block !important; opacity: 1; }
 
         .theme-drawer {
-            position: fixed; top: 0; right: -320px; width: 320px; height: 100vh;
+            position: fixed; top: 0; right: 0; width: 320px; height: 100vh;
             background: var(--bg-primary); border-left: 1px solid var(--border);
-            z-index: 1200; box-shadow: -5px 0 25px rgba(0,0,0,0.2);
-            transition: right 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            z-index: 1300; box-shadow: -5px 0 25px rgba(0,0,0,0.25);
+            transform: translateX(100%);
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
             display: flex; flex-direction: column;
         }
-        .theme-drawer.active { right: 0; }
+        .theme-drawer.active { transform: translateX(0) !important; }
         .theme-drawer-header {
             padding: 20px 24px; border-bottom: 1px solid var(--border);
             display: flex; align-items: center; justify-content: space-between;
