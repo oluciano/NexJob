@@ -8,6 +8,14 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`NexJob.Dashboard` — Modern Enterprise Layout & Multi-Theme Switcher (Maxton-Inspired)**:
+  - Implemented an executive 64px Top Header with collapsible sidebar toggle (hamburger ☰), global search bar with keyboard shortcut (`Ctrl + K`), real-time cluster health status badge (`HEALTHY`, `DEGRADED`, `INCIDENT`), theme customizer trigger (🎨), and quick external links (issue #184).
+  - Implemented an Offcanvas Theme Customizer drawer supporting 5 distinct themes: `Light`, `Dark`, `Blue Theme` (Midnight), `Semi-Dark` (dark sidebar/header with light content), and `Bordered` (clean 1px high-contrast borders without heavy shadows), fully persisted in `localStorage` (issue #184).
+  - Re-structured sidebar navigation into organized categories (`MONITORING`, `EXECUTION`, `SYSTEM`) with counter badges and responsive collapsed mini-sidebar mode (issue #184).
+  - Modernized job execution logs and payload viewers into terminal-styled code windows with header dots and 1-click clipboard copy buttons (issue #184).
+  - 100% self-contained in native CSS and vanilla JS — zero external NPM or CDN dependencies (issue #184).
+  - Added full 3N testing matrix (Positive/Header & Drawer, Negative/Resilient Shell on 404, Boundary/Null & Empty inputs) in `StandaloneDashboardTests` (issue #184).
+
 - **`NexJob.Dashboard` & Triggers — Active Event Triggers & Listeners Visibility**:
   - Implemented `IListenerRegistry` and `DefaultListenerRegistry` in Core to register and track active event triggers and broker listeners in a thread-safe manner (issue #182).
   - Added connection lifecycle tracking (`Starting`, `Listening`, `Reconnecting`, `Faulted`, `Stopped`) in `RabbitMqTriggerHandler` and `KafkaTriggerHandler` without impacting the hot-path execution pipeline (issue #182).

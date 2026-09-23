@@ -58,6 +58,121 @@ public sealed class StandaloneDashboardTests
         }
     }
 
+    [Fact]
+    public async Task StandaloneDashboard_MaxtonLayout_RendersHeaderThemesAndCategories()
+    {
+        // N1 (Positive): Overview HTML must contain Maxton layout elements (top header, 5 themes, categorized navigation, theme drawer)
+        var port = GetFreeTcpPort();
+        using var host = Host.CreateDefaultBuilder()
+            .ConfigureServices(services =>
+            {
+                services.AddNexJob();
+                services.AddNexJobStandaloneDashboard(options =>
+                {
+                    options.Port = port;
+                    options.Path = "/dashboard";
+                    options.Title = "NexJob Enterprise";
+                    options.LocalhostOnly = true;
+                });
+            })
+            .Build();
+
+        try
+        {
+            await host.StartAsync();
+
+            using var client = new HttpClient
+            {
+                BaseAddress = new Uri($"http://localhost:{port}"),
+                Timeout = TimeSpan.FromSeconds(5),
+            };
+
+            var res = await client.GetAsync("/dashboard");
+            res.StatusCode.Should().Be(HttpStatusCode.OK);
+            var html = await res.Content.ReadAsStringAsync();
+
+            // Header & shortcuts
+            html.Should().Contain("top-header");
+            html.Should().Contain("btn-toggle-sidebar");
+            html.Should().Contain("Ctrl + K");
+            html.Should().Contain("theme-customizer-btn");
+
+            // Categorized navigation
+            html.Should().Contain("MONITORING");
+            html.Should().Contain("EXECUTION");
+            html.Should().Contain("SYSTEM");
+
+            // 5 Maxton Themes in customizer drawer
+            html.Should().Contain("data-theme=\"blue-theme\"");
+            html.Should().Contain("data-theme=\"semi-dark\"");
+            html.Should().Contain("data-theme=\"bordered-theme\"");
+            html.Should().Contain("theme-drawer");
+        }
+        finally
+        {
+            await host.StopAsync();
+        }
+    }
+
+    [Fact]
+    public async Task StandaloneDashboard_NotFound_RendersWithinMaxtonShell()
+    {
+        // N2 (Negative): Unknown route or 404 still renders within resilient Maxton shell without exploding
+        var port = GetFreeTcpPort();
+        using var host = Host.CreateDefaultBuilder()
+            .ConfigureServices(services =>
+            {
+                services.AddNexJob();
+                services.AddNexJobStandaloneDashboard(options =>
+                {
+                    options.Port = port;
+                    options.Path = "/dashboard";
+                    options.LocalhostOnly = true;
+                });
+            })
+            .Build();
+
+        try
+        {
+            await host.StartAsync();
+
+            using var client = new HttpClient
+            {
+                BaseAddress = new Uri($"http://localhost:{port}"),
+                Timeout = TimeSpan.FromSeconds(5),
+            };
+
+            var res = await client.GetAsync("/dashboard/unknown-page-route-404");
+            res.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            var html = await res.Content.ReadAsStringAsync();
+            html.Should().Contain("404 Not Found");
+            html.Should().Contain("top-header");
+        }
+        finally
+        {
+            await host.StopAsync();
+        }
+    }
+
+    [Fact]
+    public void StandaloneDashboard_HtmlShellWrap_HandlesNullAndBoundaryInputsGracefully()
+    {
+        // N3 (Boundary / Inputs): HtmlShell.Wrap with null counters, null metrics, and empty body
+        var output = NexJob.Dashboard.HtmlShell.Wrap(
+            title: "Boundary Dashboard",
+            pathPrefix: "/dashboard",
+            activeRoute: "custom",
+            body: string.Empty,
+            counters: null,
+            metrics: null);
+
+        output.Should().NotBeNullOrWhiteSpace();
+        output.Should().Contain("<title>Boundary Dashboard</title>");
+        output.Should().Contain("HEALTHY");
+        output.Should().Contain("theme-drawer");
+        output.Should().Contain("top-header");
+    }
+
     private static int GetFreeTcpPort()
     {
         var listener = new TcpListener(IPAddress.Loopback, 0);

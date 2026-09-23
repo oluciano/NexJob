@@ -21,22 +21,34 @@ internal static class HtmlShell
             --error: #ea5455;
             --error-light: rgba(234, 84, 85, 0.12);
             --info: #00cfe8;
-            --info-light: rgba(0, 207, 213, 232, 0.12);
+            --info-light: rgba(0, 207, 213, 0.12);
             --bg-primary: #ffffff;
             --bg-secondary: #f8f7fa;
             --bg-tertiary: #f1f0f5;
+            --header-bg: #ffffff;
+            --sidebar-bg: #ffffff;
+            --sidebar-text: #2f2b3d;
+            --sidebar-hover: #f1f0f5;
             --text-primary: #2f2b3d;
             --text-secondary: #6f6b7d;
             --text-tertiary: #b0adba;
             --border: #dbdade;
             --radius: 12px;
-            --transition: all 0.2s ease-in-out;
-            --shadow: 0 4px 18px 0 rgba(75, 70, 92, 0.1);
+            --radius-lg: 14px;
+            --transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            --shadow: 0 4px 18px 0 rgba(75, 70, 92, 0.08);
+            --top-header-height: 64px;
+            --sidebar-width: 260px;
         }
+
         [data-theme="dark"] {
             --bg-primary: #2f3349;
             --bg-secondary: #25293c;
             --bg-tertiary: #161924;
+            --header-bg: #2f3349;
+            --sidebar-bg: #2f3349;
+            --sidebar-text: #cfd3db;
+            --sidebar-hover: #161924;
             --text-primary: #cfd3db;
             --text-secondary: #a5a3ae;
             --text-tertiary: #7983bb;
@@ -44,43 +56,230 @@ internal static class HtmlShell
             --border-light: #43495e;
             --shadow: 0 4px 18px 0 rgba(15, 20, 34, 0.4);
         }
+
+        [data-theme="blue-theme"] {
+            --primary: #00cfd5;
+            --primary-dark: #009ca0;
+            --primary-light: rgba(0, 207, 213, 0.15);
+            --bg-primary: #181f4a;
+            --bg-secondary: #0f1535;
+            --bg-tertiary: #070c29;
+            --header-bg: #181f4a;
+            --sidebar-bg: #070c29;
+            --sidebar-text: #e2e8f0;
+            --sidebar-hover: #181f4a;
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --text-tertiary: #64748b;
+            --border: #232c66;
+            --shadow: 0 4px 20px 0 rgba(0, 0, 0, 0.5);
+        }
+
+        [data-theme="semi-dark"] {
+            --bg-primary: #ffffff;
+            --bg-secondary: #f4f5f7;
+            --bg-tertiary: #ebeef2;
+            --header-bg: #1b1e2e;
+            --sidebar-bg: #131623;
+            --sidebar-text: #cfd3db;
+            --sidebar-hover: #1b1e2e;
+            --text-primary: #1e293b;
+            --text-secondary: #64748b;
+            --text-tertiary: #94a3b8;
+            --border: #e2e8f0;
+            --shadow: 0 4px 18px 0 rgba(75, 70, 92, 0.08);
+        }
+
+        [data-theme="bordered-theme"] {
+            --bg-primary: #ffffff;
+            --bg-secondary: #fbfbfb;
+            --bg-tertiary: #f2f2f4;
+            --header-bg: #ffffff;
+            --sidebar-bg: #ffffff;
+            --sidebar-text: #2f2b3d;
+            --sidebar-hover: #f2f2f4;
+            --text-primary: #2f2b3d;
+            --text-secondary: #6f6b7d;
+            --text-tertiary: #a19fa8;
+            --border: #c8c7ce;
+            --shadow: none;
+        }
+
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             font-family: 'Public Sans', -apple-system, sans-serif;
             background: var(--bg-secondary); color: var(--text-primary);
             line-height: 1.5; -webkit-font-smoothing: antialiased;
         }
-        .container { display: flex; min-height: 100vh; }
+
+        /* Top Header */
+        .top-header {
+            position: fixed; top: 0; left: 0; right: 0; height: var(--top-header-height);
+            background: var(--header-bg); border-bottom: 1px solid var(--border);
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 0 24px; z-index: 1050; box-shadow: var(--shadow);
+            transition: var(--transition);
+        }
+        .header-left { display: flex; align-items: center; gap: 16px; }
+        .header-logo { display: flex; align-items: center; gap: 10px; text-decoration: none; color: inherit; width: calc(var(--sidebar-width) - 40px); }
+        .header-logo h1 { font-size: 20px; font-weight: 700; color: var(--text-primary); letter-spacing: -0.5px; }
+        .logo-badge { font-size: 10px; font-weight: 700; background: var(--primary-light); color: var(--primary); padding: 2px 6px; border-radius: 4px; text-transform: uppercase; }
+
+        .btn-toggle-sidebar {
+            background: none; border: none; color: var(--text-secondary); cursor: pointer;
+            padding: 8px; border-radius: 6px; display: flex; align-items: center; justify-content: center;
+            transition: var(--transition);
+        }
+        .btn-toggle-sidebar:hover { background: var(--bg-tertiary); color: var(--primary); }
+
+        .header-search {
+            display: flex; align-items: center; gap: 8px; background: var(--bg-tertiary);
+            padding: 7px 14px; border-radius: 8px; border: 1px solid var(--border);
+            width: 320px; transition: var(--transition); cursor: text;
+        }
+        .header-search:focus-within { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary-light); }
+        .header-search input {
+            border: none; background: transparent; outline: none; width: 100%;
+            font-size: 13px; color: var(--text-primary); font-family: inherit;
+        }
+        .header-search kbd {
+            font-size: 10px; font-weight: 600; padding: 2px 6px; border-radius: 4px;
+            background: var(--bg-primary); border: 1px solid var(--border);
+            color: var(--text-tertiary); font-family: inherit;
+        }
+
+        .header-right { display: flex; align-items: center; gap: 12px; }
+        .header-btn {
+            background: var(--bg-tertiary); border: 1px solid var(--border); color: var(--text-secondary);
+            cursor: pointer; padding: 8px 12px; border-radius: 8px; display: flex; align-items: center; gap: 6px;
+            font-size: 13px; font-weight: 500; text-decoration: none; transition: var(--transition);
+        }
+        .header-btn:hover { color: var(--primary); border-color: var(--primary); transform: translateY(-1px); }
+
+        /* Container Layout */
+        .app-container { display: flex; min-height: 100vh; padding-top: var(--top-header-height); }
+
+        /* Categorized Sidebar */
         .sidebar {
-            width: 260px; background: var(--bg-primary);
+            width: var(--sidebar-width); background: var(--sidebar-bg);
             border-right: 1px solid var(--border);
             display: flex; flex-direction: column;
-            position: fixed; height: 100vh; z-index: 100;
-            box-shadow: var(--shadow);
+            position: fixed; top: var(--top-header-height); bottom: 0; left: 0;
+            z-index: 100; box-shadow: var(--shadow); transition: var(--transition);
         }
-        [data-theme="dark"] .sidebar { background: #2f3349; }
-        .logo { padding: 24px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-        .logo h1 { font-size: 22px; font-weight: 700; color: var(--text-primary); letter-spacing: -0.5px; }
-        
-        .theme-toggle { cursor: pointer; color: var(--text-tertiary); padding: 4px; border-radius: 4px; }
-        .theme-toggle:hover { color: var(--primary); background: var(--bg-tertiary); }
+        .sidebar.collapsed { width: 72px; }
+        .sidebar.collapsed .nav-category-title,
+        .sidebar.collapsed .nav-counter,
+        .sidebar.collapsed .sidebar-footer span,
+        .sidebar.collapsed .nav-label { display: none; }
+        .sidebar.collapsed .nav-item { justify-content: center; padding: 12px; }
 
-        .nav { flex: 1; padding: 0 12px; display: flex; flex-direction: column; gap: 4px; overflow-y: auto; }
+        .nav-scroller { flex: 1; padding: 16px 12px; display: flex; flex-direction: column; gap: 6px; overflow-y: auto; }
+        .nav-category-title {
+            font-size: 10px; font-weight: 700; color: var(--text-tertiary);
+            padding: 12px 14px 4px 14px; text-transform: uppercase; letter-spacing: 0.8px;
+        }
         .nav-item {
             display: flex; align-items: center; justify-content: space-between;
-            padding: 10px 16px; border-radius: 6px;
-            color: var(--text-secondary); text-decoration: none;
-            font-size: 15px; transition: var(--transition);
+            padding: 9px 14px; border-radius: 8px;
+            color: var(--sidebar-text); text-decoration: none;
+            font-size: 14px; font-weight: 500; transition: var(--transition);
         }
-        .nav-item:hover { background: var(--bg-tertiary); transform: translateX(5px); }
+        .nav-item-left { display: flex; align-items: center; gap: 10px; }
+        .nav-item svg { width: 18px; height: 18px; flex-shrink: 0; opacity: 0.8; }
+        .nav-item:hover { background: var(--sidebar-hover); color: var(--primary); transform: translateX(3px); }
         .nav-item.active {
             background: linear-gradient(72.47deg, var(--primary) 22.16%, rgba(0, 207, 213, 0.7) 76.47%);
-            color: #fff; box-shadow: 0px 2px 6px rgba(0, 207, 213, 0.48);
+            color: #fff; box-shadow: 0px 3px 10px rgba(0, 207, 213, 0.35); font-weight: 600;
         }
-        .nav-counter { font-size: 11px; font-weight: 600; padding: 2px 6px; border-radius: 10px; background: rgba(0,0,0,0.1); color: inherit; }
+        .nav-item.active svg { opacity: 1; }
+
+        .nav-counter { font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 10px; background: rgba(0,0,0,0.12); color: inherit; }
         .nav-counter.alert { background: var(--error); color: #fff; }
 
-        .main-content { flex: 1; margin-left: 260px; padding: 32px; }
+        .sidebar-footer {
+            margin-top: auto; padding: 14px 18px; border-top: 1px solid var(--border);
+            display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: var(--text-secondary);
+        }
+
+        /* Main Content */
+        .main-content {
+            flex: 1; margin-left: var(--sidebar-width); padding: 32px;
+            transition: var(--transition); max-width: calc(100vw - var(--sidebar-width));
+        }
+        .sidebar.collapsed ~ .main-content {
+            margin-left: 72px; max-width: calc(100vw - 72px);
+        }
+
+        /* Health Badge */
+        .health-badge {
+            padding: 5px 12px; border-radius: 20px; font-size: 11px; font-weight: 700;
+            display: inline-flex; align-items: center; gap: 6px; letter-spacing: 0.5px;
+        }
+        .health-badge.healthy { background: var(--success-light); color: var(--success); }
+        .health-badge.incident { background: var(--error-light); color: var(--error); }
+        .health-badge.degraded { background: var(--warning-light); color: var(--warning); }
+        .health-pulse { width: 6px; height: 6px; border-radius: 50%; background: currentColor; animation: pulse 2s infinite; }
+
+        /* Terminal Window Aesthetic */
+        .terminal-window {
+            background: #141724; border: 1px solid #282d47; border-radius: 8px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.3); overflow: hidden;
+        }
+        .terminal-header {
+            background: #1c2136; padding: 8px 14px; display: flex; align-items: center;
+            justify-content: space-between; border-bottom: 1px solid #282d47;
+        }
+        .terminal-dots { display: flex; gap: 6px; align-items: center; }
+        .terminal-dots span { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+        .terminal-dots span:nth-child(1) { background: #ff5f56; }
+        .terminal-dots span:nth-child(2) { background: #ffbd2e; }
+        .terminal-dots span:nth-child(3) { background: #27c93f; }
+        .terminal-title { font-size: 11px; font-family: monospace; color: #94a3b8; font-weight: 600; }
+        .terminal-body { padding: 14px 18px; color: #e2e8f0; }
+
+        .copy-btn {
+            background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15);
+            color: #94a3b8; font-size: 11px; padding: 3px 8px; border-radius: 4px;
+            cursor: pointer; transition: var(--transition);
+        }
+        .copy-btn:hover { background: var(--primary); color: #fff; border-color: var(--primary); }
+
+        /* Theme Customizer Drawer (Offcanvas) */
+        .theme-drawer-backdrop {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1100;
+            display: none; opacity: 0; transition: opacity 0.3s ease;
+        }
+        .theme-drawer-backdrop.active { display: block; opacity: 1; }
+
+        .theme-drawer {
+            position: fixed; top: 0; right: -320px; width: 320px; height: 100vh;
+            background: var(--bg-primary); border-left: 1px solid var(--border);
+            z-index: 1200; box-shadow: -5px 0 25px rgba(0,0,0,0.2);
+            transition: right 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            display: flex; flex-direction: column;
+        }
+        .theme-drawer.active { right: 0; }
+        .theme-drawer-header {
+            padding: 20px 24px; border-bottom: 1px solid var(--border);
+            display: flex; align-items: center; justify-content: space-between;
+        }
+        .theme-drawer-header h3 { font-size: 16px; font-weight: 700; color: var(--text-primary); }
+        .theme-drawer-close { background: none; border: none; font-size: 20px; color: var(--text-secondary); cursor: pointer; }
+        .theme-drawer-body { padding: 24px; flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 20px; }
+        .theme-section-title { font-size: 12px; font-weight: 700; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.5px; }
+
+        .theme-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+        .theme-card {
+            border: 2px solid var(--border); border-radius: 8px; padding: 12px;
+            cursor: pointer; transition: var(--transition); text-align: center;
+        }
+        .theme-card:hover { border-color: var(--primary); transform: translateY(-2px); }
+        .theme-card.active { border-color: var(--primary); background: var(--primary-light); }
+        .theme-preview-box { height: 40px; border-radius: 6px; margin-bottom: 8px; border: 1px solid rgba(0,0,0,0.1); }
+        .theme-label { font-size: 12px; font-weight: 600; color: var(--text-primary); }
+
+        /* Standard Cards & Tables */
         .page-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
         .page-title { font-size: 24px; font-weight: 700; color: var(--text-primary); margin-bottom: 4px; }
         .page-subtitle { font-size: 14px; color: var(--text-secondary); }
@@ -89,9 +288,9 @@ internal static class HtmlShell
         .stat-card {
             background: var(--bg-primary); border-radius: var(--radius); padding: 20px;
             box-shadow: var(--shadow); transition: var(--transition);
-            border: 1px solid transparent; display: flex; gap: 16px; align-items: center;
+            border: 1px solid var(--border); display: flex; gap: 16px; align-items: center;
         }
-        .stat-card:hover { border-color: var(--primary); transform: translateY(-5px); }
+        .stat-card:hover { border-color: var(--primary); transform: translateY(-3px); }
         .stat-icon {
             width: 44px; height: 44px; border-radius: 8px;
             display: flex; align-items: center; justify-content: center; flex-shrink: 0;
@@ -105,7 +304,7 @@ internal static class HtmlShell
         .stat-label { font-size: 14px; color: var(--text-secondary); font-weight: 500; }
         .stat-sublabel { font-size: 11px; color: var(--text-tertiary); }
 
-        .card { background: var(--bg-primary); border-radius: var(--radius); box-shadow: var(--shadow); border: none; overflow: hidden; margin-bottom: 24px; }
+        .card { background: var(--bg-primary); border-radius: var(--radius); box-shadow: var(--shadow); border: 1px solid var(--border); overflow: hidden; margin-bottom: 24px; }
         .card-header { padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
         .card-header h3 { font-size: 16px; font-weight: 600; color: var(--text-primary); }
 
@@ -140,9 +339,6 @@ internal static class HtmlShell
         .job-row-main { font-weight: 600; font-size: 14px; }
         .job-row-sub { font-size: 12px; color: var(--text-secondary); font-family: monospace; }
 
-        .queue-card { background: var(--bg-primary); border-radius: var(--radius); padding: 16px 24px; box-shadow: var(--shadow); margin-bottom: 12px; border: 1px solid transparent; }
-        .queue-card:hover { border-color: var(--primary); }
-
         .btn { padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; transition: var(--transition); border: none; display: inline-flex; align-items: center; gap: 8px; }
         .btn-primary { background: var(--primary); color: white; }
         .btn-primary:hover { background: var(--primary-dark); transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0, 207, 213, 0.3); }
@@ -152,20 +348,14 @@ internal static class HtmlShell
         .btn-danger { background: var(--error-light); color: var(--error); }
         .btn-danger:hover { background: var(--error); color: white; }
         .btn-sm { padding: 4px 10px; font-size: 12px; }
-        
+
         .btn-icon-sm { width: 32px; height: 32px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; background: var(--bg-tertiary); color: var(--text-secondary); cursor: pointer; border: none; transition: var(--transition); }
         .btn-icon-sm:hover { background: var(--primary-light); color: var(--primary); transform: translateY(-1px); }
 
         input[type="text"], input[type="number"], select { background: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; font-size: 14px; outline: none; transition: var(--transition); }
         input[type="text"]:focus, input[type="number"]:focus, select:focus { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary-light); }
 
-        .health-badge { padding: 6px 12px; border-radius: 8px; font-size: 11px; font-weight: 700; display: flex; align-items: center; gap: 8px; margin: 16px; }
-        .health-badge.healthy { background: var(--success-light); color: var(--success); }
-        .health-badge.incident { background: var(--error-light); color: var(--error); }
-        .health-badge.degraded { background: var(--warning-light); color: var(--warning); }
-        .health-pulse { width: 6px; height: 6px; border-radius: 50%; background: currentColor; animation: pulse 2s infinite; }
-        
-        .bulk-toolbar { position: fixed; bottom: 24px; left: 290px; right: 30px; background: var(--bg-primary); border: 1px solid var(--primary); border-radius: var(--radius); padding: 16px 24px; display: none; align-items: center; justify-content: space-between; box-shadow: 0 10px 40px rgba(0,0,0,0.3); z-index: 1000; }
+        .bulk-toolbar { position: fixed; bottom: 24px; left: calc(var(--sidebar-width) + 30px); right: 30px; background: var(--bg-primary); border: 1px solid var(--primary); border-radius: var(--radius); padding: 16px 24px; display: none; align-items: center; justify-content: space-between; box-shadow: 0 10px 40px rgba(0,0,0,0.3); z-index: 1000; }
         .worker-row { display: flex; align-items: center; gap: 16px; margin-bottom: 8px; }
         .worker-id { font-size: 11px; font-weight: 700; color: var(--text-tertiary); min-width: 32px; }
         .worker-track { flex: 1; height: 18px; background: var(--bg-tertiary); border-radius: 4px; overflow: hidden; position: relative; }
@@ -180,11 +370,6 @@ internal static class HtmlShell
         .breadcrumbs a { color: var(--primary); text-decoration: none; }
         .breadcrumbs .separator { color: var(--text-tertiary); }
         .breadcrumbs .current { color: var(--text-secondary); font-weight: 500; }
-
-        .sidebar-footer { margin-top: auto; padding: 16px 20px; border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: var(--text-secondary); }
-        .github-link { font-size: 11px; color: var(--text-secondary); text-decoration: none; transition: var(--transition); display: flex; align-items: center; gap: 4px; }
-        .github-link:hover { color: var(--primary); }
-        [data-theme="light"] .theme-icon-sun, [data-theme="dark"] .theme-icon-moon { display: none; }
 
         .chart { padding: 24px; background: var(--bg-secondary); border-radius: var(--radius); }
         .chart-header { margin-bottom: 24px; }
@@ -211,51 +396,197 @@ internal static class HtmlShell
             <style>{{Css}}</style>
         </head>
         <body>
-        <div class="container">
-            <nav class="sidebar">
-                <div class="logo">
+        <!-- Top Header (Maxton 64px) -->
+        <header class="top-header">
+            <div class="header-left">
+                <a href="{{pathPrefix}}" class="header-logo">
                     <h1>NexJob</h1>
-                </div>
-                {{HealthBadge(metrics)}}
-                <div class="nav">
-                    <a href="{{pathPrefix}}" class="nav-item {{Active(activeRoute, "overview")}}">Overview</a>
-                    <a href="{{pathPrefix}}/queues" class="nav-item {{Active(activeRoute, "queues")}}"><span>Queues</span> {{NavCounter(counters?.Queues, counters?.QueuesClass)}}</a>
-                    <a href="{{pathPrefix}}/servers" class="nav-item {{Active(activeRoute, "servers")}}"><span>Servers</span> {{NavCounter(counters?.Servers, counters?.ServersClass)}}</a>
-                    <a href="{{pathPrefix}}/listeners" class="nav-item {{Active(activeRoute, "listeners")}}"><span>Listeners</span> {{NavCounter(counters?.Listeners, counters?.ListenersClass)}}</a>
-                    <a href="{{pathPrefix}}/jobs" class="nav-item {{Active(activeRoute, "jobs")}}"><span>Jobs</span> {{NavCounter(counters?.Jobs, null)}}</a>
-                    <a href="{{pathPrefix}}/recurring" class="nav-item {{Active(activeRoute, "recurring")}}"><span>Recurring</span> {{NavCounter(counters?.Recurring, null)}}</a>
-                    <a href="{{pathPrefix}}/failed" class="nav-item {{Active(activeRoute, "failed")}}"><span>Failed</span> {{NavCounter(counters?.Failed, counters?.FailedClass)}}</a>
-                    <a href="{{pathPrefix}}/settings" class="nav-item {{Active(activeRoute, "settings")}}">Settings</a>
-                </div>
-                <div class="sidebar-footer">
-                    <span>v3.0.0</span>
-                    <div class="theme-toggle" onclick="nexJobToggleTheme()" title="Toggle Theme">
-                        <svg class="theme-icon-sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
-                        <svg class="theme-icon-moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-                    </div>
-                    <a href="https://github.com/oluciano/NexJob" target="_blank" class="github-link">GitHub ↗</a>
-                </div>
-            </nav>
-            <main class="main-content">{{body}}</main>
-            <div id="bulk-toolbar" class="bulk-toolbar">
-                <div class="bulk-info"><span id="bulk-count">0</span> jobs selected</div>
-                <div class="bulk-actions">
-                    <button id="bulk-requeue-btn" class="btn btn-primary" onclick="nexJobBulkAction('requeue')">↺ Requeue</button>
-                    <button id="bulk-delete-btn" class="btn btn-danger" onclick="nexJobBulkAction('delete')">Delete</button>
-                    <button class="btn btn-secondary" onclick="nexJobClearSelection()">Cancel</button>
+                    <span class="logo-badge">Pro</span>
+                </a>
+                <button type="button" class="btn-toggle-sidebar" onclick="nexJobToggleSidebar()" title="Toggle Sidebar">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+                </button>
+                <div class="header-search" onclick="document.getElementById('header-search-input').focus()">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-tertiary)"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                    <input type="text" id="header-search-input" placeholder="Search jobs, queues, tags..." onkeydown="if(event.key==='Enter'){window.location.href='{{pathPrefix}}/jobs?q='+encodeURIComponent(this.value);}" />
+                    <kbd>Ctrl + K</kbd>
                 </div>
             </div>
+            <div class="header-right">
+                {{HealthBadge(metrics)}}
+                <button type="button" class="header-btn theme-customizer-btn" onclick="nexJobToggleDrawer(true)" title="Theme Customizer">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.563-2.512 5.563-5.563C22 6.5 17.5 2 12 2z"/></svg>
+                    <span>Themes</span>
+                </button>
+                <a href="https://github.com/oluciano/NexJob" target="_blank" class="header-btn" title="GitHub Repository">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg>
+                    <span>Docs ↗</span>
+                </a>
+            </div>
+        </header>
+
+        <!-- Main Wrapper -->
+        <div class="app-container">
+            <!-- Categorized Sidebar Navigation -->
+            <nav class="sidebar" id="sidebar">
+                <div class="nav-scroller">
+                    <div class="nav-category-title">MONITORING</div>
+                    <a href="{{pathPrefix}}" class="nav-item {{Active(activeRoute, "overview")}}" title="Overview">
+                        <div class="nav-item-left">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                            <span class="nav-label">Overview</span>
+                        </div>
+                    </a>
+                    <a href="{{pathPrefix}}/queues" class="nav-item {{Active(activeRoute, "queues")}}" title="Queues">
+                        <div class="nav-item-left">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+                            <span class="nav-label">Queues</span>
+                        </div>
+                        {{NavCounter(counters?.Queues, counters?.QueuesClass)}}
+                    </a>
+                    <a href="{{pathPrefix}}/servers" class="nav-item {{Active(activeRoute, "servers")}}" title="Servers">
+                        <div class="nav-item-left">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
+                            <span class="nav-label">Servers</span>
+                        </div>
+                        {{NavCounter(counters?.Servers, counters?.ServersClass)}}
+                    </a>
+                    <a href="{{pathPrefix}}/listeners" class="nav-item {{Active(activeRoute, "listeners")}}" title="Listeners">
+                        <div class="nav-item-left">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"/><path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5"/><circle cx="12" cy="12" r="2"/><path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"/><path d="M19.1 4.9C23 8.8 23 15.1 19.1 19.1"/></svg>
+                            <span class="nav-label">Listeners</span>
+                        </div>
+                        {{NavCounter(counters?.Listeners, counters?.ListenersClass)}}
+                    </a>
+
+                    <div class="nav-category-title">EXECUTION</div>
+                    <a href="{{pathPrefix}}/jobs" class="nav-item {{Active(activeRoute, "jobs")}}" title="Jobs">
+                        <div class="nav-item-left">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
+                            <span class="nav-label">Jobs</span>
+                        </div>
+                        {{NavCounter(counters?.Jobs, null)}}
+                    </a>
+                    <a href="{{pathPrefix}}/recurring" class="nav-item {{Active(activeRoute, "recurring")}}" title="Recurring">
+                        <div class="nav-item-left">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                            <span class="nav-label">Recurring</span>
+                        </div>
+                        {{NavCounter(counters?.Recurring, null)}}
+                    </a>
+                    <a href="{{pathPrefix}}/failed" class="nav-item {{Active(activeRoute, "failed")}}" title="Failed / DLQ">
+                        <div class="nav-item-left">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+                            <span class="nav-label">Failed / DLQ</span>
+                        </div>
+                        {{NavCounter(counters?.Failed, counters?.FailedClass)}}
+                    </a>
+
+                    <div class="nav-category-title">SYSTEM</div>
+                    <a href="{{pathPrefix}}/settings" class="nav-item {{Active(activeRoute, "settings")}}" title="Settings">
+                        <div class="nav-item-left">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                            <span class="nav-label">Settings</span>
+                        </div>
+                    </a>
+                </div>
+                <div class="sidebar-footer">
+                    <span>NexJob Core v5.2</span>
+                    <a href="https://github.com/oluciano/NexJob/releases" target="_blank" style="color:var(--text-secondary);text-decoration:none;font-weight:600">v3.0.0</a>
+                </div>
+            </nav>
+
+            <!-- Main Page Content -->
+            <main class="main-content">{{body}}</main>
         </div>
+
+        <!-- Bulk Actions Floating Bar -->
+        <div id="bulk-toolbar" class="bulk-toolbar">
+            <div class="bulk-info"><span id="bulk-count">0</span> jobs selected</div>
+            <div class="bulk-actions">
+                <button id="bulk-requeue-btn" class="btn btn-primary" onclick="nexJobBulkAction('requeue')">↺ Requeue</button>
+                <button id="bulk-delete-btn" class="btn btn-danger" onclick="nexJobBulkAction('delete')">Delete</button>
+                <button class="btn btn-secondary" onclick="nexJobClearSelection()">Cancel</button>
+            </div>
+        </div>
+
+        <!-- Theme Customizer Offcanvas Drawer -->
+        <div id="theme-drawer-backdrop" class="theme-drawer-backdrop" onclick="nexJobToggleDrawer(false)"></div>
+        <aside id="theme-drawer" class="theme-drawer">
+            <div class="theme-drawer-header">
+                <h3>Theme Customizer</h3>
+                <button type="button" class="theme-drawer-close" onclick="nexJobToggleDrawer(false)">&times;</button>
+            </div>
+            <div class="theme-drawer-body">
+                <div class="theme-section-title">Color Themes</div>
+                <div class="theme-grid">
+                    <div class="theme-card" data-theme="dark" onclick="nexJobSetTheme('dark')">
+                        <div class="theme-preview-box" style="background:#25293c;border:2px solid #43495e"></div>
+                        <div class="theme-label">Dark</div>
+                    </div>
+                    <div class="theme-card" data-theme="light" onclick="nexJobSetTheme('light')">
+                        <div class="theme-preview-box" style="background:#f8f7fa;border:2px solid #dbdade"></div>
+                        <div class="theme-label">Light</div>
+                    </div>
+                    <div class="theme-card" data-theme="blue-theme" onclick="nexJobSetTheme('blue-theme')">
+                        <div class="theme-preview-box" style="background:#0f1535;border:2px solid #00cfd5"></div>
+                        <div class="theme-label">Blue Theme</div>
+                    </div>
+                    <div class="theme-card" data-theme="semi-dark" onclick="nexJobSetTheme('semi-dark')">
+                        <div class="theme-preview-box" style="background:linear-gradient(90deg,#131623 35%,#ffffff 35%);border:2px solid #e2e8f0"></div>
+                        <div class="theme-label">Semi-Dark</div>
+                    </div>
+                    <div class="theme-card" data-theme="bordered-theme" onclick="nexJobSetTheme('bordered-theme')">
+                        <div class="theme-preview-box" style="background:#ffffff;border:2px solid #c8c7ce"></div>
+                        <div class="theme-label">Bordered</div>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
         <script>
         (function(){
-            var h=document.documentElement,t=localStorage.getItem('nexjob-theme')||'dark';
-            h.setAttribute('data-theme',t);
-            window.nexJobToggleTheme = function() {
-                var current = document.documentElement.getAttribute('data-theme');
-                var next = current === 'dark' ? 'light' : 'dark';
-                document.documentElement.setAttribute('data-theme', next);
-                localStorage.setItem('nexjob-theme', next);
+            var h=document.documentElement, storedTheme=localStorage.getItem('nexjob-theme')||'dark';
+            nexJobSetTheme(storedTheme, false);
+
+            var storedSidebar=localStorage.getItem('nexjob-sidebar');
+            if(storedSidebar==='collapsed'){
+                var s=document.getElementById('sidebar');
+                if(s) s.classList.add('collapsed');
+            }
+
+            window.nexJobToggleSidebar = function() {
+                var s=document.getElementById('sidebar');
+                if(!s) return;
+                s.classList.toggle('collapsed');
+                localStorage.setItem('nexjob-sidebar', s.classList.contains('collapsed') ? 'collapsed' : 'expanded');
             };
+
+            window.nexJobToggleDrawer = function(open) {
+                var d=document.getElementById('theme-drawer');
+                var b=document.getElementById('theme-drawer-backdrop');
+                if(!d||!b) return;
+                if(open){ d.classList.add('active'); b.classList.add('active'); }
+                else { d.classList.remove('active'); b.classList.remove('active'); }
+            };
+
+            window.nexJobSetTheme = function(theme, save) {
+                if(save!==false) localStorage.setItem('nexjob-theme', theme);
+                h.setAttribute('data-theme', theme);
+                document.querySelectorAll('.theme-card').forEach(function(el){
+                    if(el.getAttribute('data-theme')===theme){ el.classList.add('active'); }
+                    else { el.classList.remove('active'); }
+                });
+            };
+
+            window.addEventListener('keydown', function(e){
+                if((e.ctrlKey||e.metaKey) && e.key==='k'){
+                    e.preventDefault();
+                    var inp=document.getElementById('header-search-input');
+                    if(inp){ inp.focus(); inp.select(); }
+                }
+            });
+
             window.nexJobUpdateSelection = function() {
                 var checked = document.querySelectorAll('.job-check:checked');
                 var bar = document.getElementById('bulk-toolbar');
@@ -263,13 +594,16 @@ internal static class HtmlShell
                 if (checked.length > 0) { count.textContent = checked.length; bar.style.display = 'flex'; }
                 else { bar.style.display = 'none'; }
             };
+
             window.nexJobClearSelection = function() { document.querySelectorAll('.job-check:checked').forEach(c => c.checked = false); nexJobUpdateSelection(); };
+            
             window.nexJobBulkAction = async function(action) {
                 var ids = Array.from(document.querySelectorAll('.job-check:checked')).map(c => c.value);
                 if (ids.length === 0) return;
                 var res = await fetch('{{pathPrefix}}/jobs/bulk-' + action, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: ids }) });
                 if (res.ok) location.reload();
             };
+
             async function nexJobPoll() {
                 setTimeout(nexJobPoll, 5000);
                 if (document.querySelectorAll('.job-check:checked').length > 0) return;

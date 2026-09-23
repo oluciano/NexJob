@@ -318,14 +318,19 @@ internal static class HtmlFragments
         }
 
         var stackTraceHtml = !string.IsNullOrWhiteSpace(stackTrace)
-            ? $"<h3 style=\"margin-bottom:8px;color:var(--error);font-size:14px\">Stack Trace</h3>" +
-              $"<pre style=\"padding:16px;background:var(--bg-tertiary);border-radius:8px;font-size:12px;overflow-x:auto;color:var(--text-primary)\">{HtmlEncode(stackTrace)}</pre>"
+            ? $"<div class=\"terminal-window\" style=\"margin-top:16px\">" +
+              $"<div class=\"terminal-header\"><div class=\"terminal-dots\"><span></span><span></span><span></span></div><span class=\"terminal-title\">stack-trace.log</span></div>" +
+              $"<div class=\"terminal-body\"><pre style=\"margin:0;font-size:12px;color:var(--text-primary);overflow-x:auto;font-family:monospace;white-space:pre-wrap\">{HtmlEncode(stackTrace)}</pre></div>" +
+              $"</div>"
             : string.Empty;
 
         return
             $"<div style=\"margin-bottom:24px\">" +
-            $"<h3 style=\"margin-bottom:8px;color:var(--error);font-size:14px\">Last Error</h3>" +
-            $"<pre style=\"padding:16px;background:var(--bg-tertiary);border-radius:8px;font-size:12px;overflow-x:auto;color:var(--text-primary);margin-bottom:16px\">{HtmlEncode(errorMessage)}</pre>" +
+            $"<h3 style=\"margin-bottom:8px;color:var(--error);font-size:14px;font-weight:600\">Last Error</h3>" +
+            $"<div class=\"terminal-window\">" +
+            $"<div class=\"terminal-header\"><div class=\"terminal-dots\"><span></span><span></span><span></span></div><span class=\"terminal-title\">error.log</span></div>" +
+            $"<div class=\"terminal-body\"><pre style=\"margin:0;font-size:12px;color:var(--error);overflow-x:auto;font-family:monospace;white-space:pre-wrap\">{HtmlEncode(errorMessage)}</pre></div>" +
+            $"</div>" +
             stackTraceHtml +
             $"</div>";
     }
@@ -337,7 +342,7 @@ internal static class HtmlFragments
         {
             return
                 $"<div style=\"margin-bottom:24px\">" +
-                $"<h3 style=\"margin-bottom:8px;font-size:14px\">Execution Logs</h3>" +
+                $"<h3 style=\"margin-bottom:8px;font-size:14px;font-weight:600\">Execution Logs</h3>" +
                 $"<p style=\"color:var(--text-tertiary);font-size:13px\">No logs captured for this execution.</p>" +
                 $"</div>";
         }
@@ -353,13 +358,18 @@ internal static class HtmlFragments
             };
             var ts = entry.Timestamp.ToString("HH:mm:ss.fff");
             var msg = HtmlEncode(entry.Message).Replace("\n", "&#10;");
-            return $"<span style=\"color:{color}\">[{ts}] [{entry.Level,-11}] {msg}</span>\n";
+            return $"<div style=\"display:flex;gap:10px;line-height:1.6\"><span style=\"color:var(--text-tertiary);flex-shrink:0\">[{ts}]</span><span style=\"color:{color};font-weight:600;min-width:70px;flex-shrink:0\">[{entry.Level}]</span><span style=\"color:var(--text-primary);word-break:break-all\">{msg}</span></div>";
         }));
 
         return
             $"<div style=\"margin-bottom:24px\">" +
-            $"<h3 style=\"margin-bottom:8px;font-size:14px\">Execution Logs <span style=\"font-weight:400;color:var(--text-tertiary)\">({logs.Count} entries)</span></h3>" +
-            $"<pre style=\"padding:16px;background:var(--bg-tertiary);border-radius:8px;font-size:12px;overflow-x:auto;color:var(--text-primary);white-space:pre-wrap;font-family:monospace\">{logLines}</pre>" +
+            $"<div style=\"display:flex;justify-content:space-between;align-items:center;margin-bottom:8px\">" +
+            $"<h3 style=\"font-size:14px;font-weight:600;margin:0\">Execution Logs <span style=\"font-weight:400;color:var(--text-tertiary)\">({logs.Count} entries)</span></h3>" +
+            $"</div>" +
+            $"<div class=\"terminal-window\">" +
+            $"<div class=\"terminal-header\"><div class=\"terminal-dots\"><span></span><span></span><span></span></div><span class=\"terminal-title\">console.log</span><button class=\"copy-btn\" onclick=\"navigator.clipboard.writeText(this.parentElement.nextElementSibling.innerText);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)\">Copy</button></div>" +
+            $"<div class=\"terminal-body\" style=\"max-height:360px;overflow-y:auto;padding:12px 16px;font-family:monospace;font-size:12px\">{logLines}</div>" +
+            $"</div>" +
             $"</div>";
     }
 

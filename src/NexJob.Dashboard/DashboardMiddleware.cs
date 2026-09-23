@@ -99,6 +99,11 @@ public sealed class DashboardMiddleware
 
         // Render page
         var html = await RenderPageAsync(context, subPath).ConfigureAwait(false);
+        if (string.Equals(html, HtmlShell.NotFound(_options.Title, _pathPrefix), StringComparison.Ordinal))
+        {
+            context.Response.StatusCode = 404;
+        }
+
         context.Response.ContentType = "text/html; charset=utf-8";
         await context.Response.WriteAsync(html).ConfigureAwait(false);
     }
