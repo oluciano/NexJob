@@ -21,7 +21,7 @@ Before executing any task, read:
 
 NexJob is a production-oriented background job processing library for .NET 8.
 MIT licensed. Alternative to Hangfire — storage-pluggable, trigger-ready, OTel-native.
-Current published version: **v5.2.0**. Active development: **develop**.
+Current published version: **v5.4.1**. Active development: **develop**.
 
 ---
 
