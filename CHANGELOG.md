@@ -6,6 +6,8 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [5.4.0] - 2026-09-23
+
 ### Added
 
 - **`NexJob.Dashboard` — Modern Enterprise Layout, Multi-Theme Switcher, Cluster Topology & Real-Time Controls (Maxton-Inspired)**:
@@ -27,6 +29,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - Added `Listeners` status badge to sidebar navigation and an Event Listeners summary widget to the dashboard Overview page (issue #182).
   - Added complete 3N unit testing matrix covering positive registration/rendering, negative broker connection failure/reconnection, and invalid input/empty state handling (issue #182).
 
+## [5.3.0] - 2026-09-21
 
 ### Added
 
