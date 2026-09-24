@@ -12,17 +12,20 @@
 - Release = merge `develop → main` via PR
 
 ### How to release
-1. Update `Directory.Build.props` — bump `VersionPrefix`
-2. Update `CHANGELOG.md` — move `[Unreleased]` to `[x.y.z] — YYYY-MM-DD`
-3. Open PR: `develop → main`, title: `release: vX.Y.Z`
-4. CI must be green
-5. Merge PR
-6. Automation handles: git tag → GitHub Release → NuGet publish
+1. **Auditing & SemVer Detection:** Determine version (Major/Minor/Patch) based on NuGet and git tags, and confirm with user.
+2. **Code vs Documentation Truth Gate:** Audit Wiki (`docs/wiki/`) and package READMEs (`src/*/README.md`). Auto-update any discrepancies and push directly to `develop`. (Never modify production code to match docs).
+3. **Quality & Packaging Gate:** Verify `dotnet build -c Release` (0 warnings), unit tests, and `dotnet pack`.
+4. **Metadata Sync:** Update `Directory.Build.props` (bump `VersionPrefix`) and `CHANGELOG.md` (`[Unreleased]` -> `[x.y.z] — YYYY-MM-DD`).
+5. **Open PR:** `develop → main`, title: `release: vX.Y.Z`.
+6. **Merge PR:** Automation handles: git tag → GitHub Release → NuGet publish.
+
+*Note: For the automated step-by-step workflow, use the `.agents/skills/nexjob-release/SKILL.md` skill.*
 
 ### What you must NOT do
 - Push directly to `main`
 - Create tags manually (automation does this)
 - Merge to `main` outside of a release PR
+- Modify production code (`src/**/*.cs`) to match outdated documentation (always update the docs)
 
 ---
 
