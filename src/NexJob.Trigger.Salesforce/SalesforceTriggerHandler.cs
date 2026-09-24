@@ -21,6 +21,8 @@ public sealed class SalesforceTriggerHandler : BackgroundService
     private readonly ISalesforceSchemaService _schemaService;
     private readonly NexJobOptions _nexJobOptions;
     private readonly ILogger<SalesforceTriggerHandler> _logger;
+    private readonly IListenerRegistry? _listenerRegistry;
+    private readonly string _listenerId;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="SalesforceTriggerHandler"/> class.
@@ -32,6 +34,7 @@ public sealed class SalesforceTriggerHandler : BackgroundService
     /// <param name="schemaService">Schema resolution and Avro decoding service.</param>
     /// <param name="nexJobOptions">NexJob global options.</param>
     /// <param name="logger">Diagnostic logger.</param>
+    /// <param name="listenerRegistry">Optional listener registry for operational visibility.</param>
     public SalesforceTriggerHandler(
         IOptions<SalesforceTriggerOptions> options,
         IScheduler scheduler,
@@ -39,7 +42,8 @@ public sealed class SalesforceTriggerHandler : BackgroundService
         ISalesforcePubSubClient pubSubClient,
         ISalesforceSchemaService schemaService,
         NexJobOptions nexJobOptions,
-        ILogger<SalesforceTriggerHandler> logger)
+        ILogger<SalesforceTriggerHandler> logger,
+        IListenerRegistry? listenerRegistry = null)
     {
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
         _scheduler = scheduler ?? throw new ArgumentNullException(nameof(scheduler));
@@ -48,6 +52,15 @@ public sealed class SalesforceTriggerHandler : BackgroundService
         _schemaService = schemaService ?? throw new ArgumentNullException(nameof(schemaService));
         _nexJobOptions = nexJobOptions ?? throw new ArgumentNullException(nameof(nexJobOptions));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _listenerRegistry = listenerRegistry;
+        _listenerId = $"salesforce:{_options.Topic}";
+
+        _listenerRegistry?.Register(new ListenerRegistration(
+            Id: _listenerId,
+            Broker: "Salesforce (Pub/Sub API)",
+            Endpoint: _options.Topic,
+            TargetJobType: _options.JobType ?? "Dynamic",
+            JobTag: "trigger:salesforce"));
     }
 
     /// <inheritdoc/>
@@ -60,6 +73,8 @@ public sealed class SalesforceTriggerHandler : BackgroundService
             _options.Topic,
             _options.TargetQueue,
             _options.FallbackPolicy);
+
+        _listenerRegistry?.UpdateStatus(_listenerId, ListenerStatus.Listening);
 
         var currentReplayId = await _replayIdStore.GetLastReplayIdAsync(_options.Topic, stoppingToken).ConfigureAwait(false);
         var currentPreset = _options.ReplayPreset;
@@ -104,6 +119,7 @@ public sealed class SalesforceTriggerHandler : BackgroundService
             {
                 if (_options.FallbackPolicy == ReplayFallbackPolicy.FailFast)
                 {
+                    _listenerRegistry?.UpdateStatus(_listenerId, ListenerStatus.Faulted, ex.Message);
                     _logger.LogCritical(
                         ex,
                         "FATAL: Expired or rejected Replay ID encountered for topic {Topic}. ReplayFallbackPolicy.FailFast active. Terminating service.",
@@ -111,6 +127,7 @@ public sealed class SalesforceTriggerHandler : BackgroundService
                     throw;
                 }
 
+                _listenerRegistry?.UpdateStatus(_listenerId, ListenerStatus.Reconnecting, ex.Message);
                 if (_options.FallbackPolicy == ReplayFallbackPolicy.ResetToLatest)
                 {
                     _logger.LogWarning(
@@ -134,6 +151,7 @@ public sealed class SalesforceTriggerHandler : BackgroundService
             }
             catch (Exception ex)
             {
+                _listenerRegistry?.UpdateStatus(_listenerId, ListenerStatus.Reconnecting, ex.Message);
                 _logger.LogWarning(ex, "Salesforce Pub/Sub stream error on topic {Topic}. Reconnecting in {Delay}s...", _options.Topic, backoffSeconds);
                 await Task.Delay(TimeSpan.FromSeconds(backoffSeconds), stoppingToken).ConfigureAwait(false);
 
@@ -142,6 +160,7 @@ public sealed class SalesforceTriggerHandler : BackgroundService
             }
         }
 
+        _listenerRegistry?.UpdateStatus(_listenerId, ListenerStatus.Stopped);
         _logger.LogInformation("Salesforce trigger stopped for topic {Topic}.", _options.Topic);
     }
 

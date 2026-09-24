@@ -44,12 +44,40 @@ jobs:
           git tag "${{ steps.version.outputs.tag }}"
           git push origin "${{ steps.version.outputs.tag }}"
 
+      - name: Extract release notes from CHANGELOG.md
+        id: changelog
+        if: steps.tag_check.outputs.skip == 'false'
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          python3 -c "
+          import re, os
+          with open('CHANGELOG.md', 'r') as f:
+              content = f.read()
+          pattern = rf'## \[{re.escape(\"$VERSION\")}].*?\n(.*?)(?=\n## \[|$)'
+          match = re.search(pattern, content, re.DOTALL)
+          notes = match.group(1).strip() if match else ''
+          with open('release_notes.md', 'w') as out:
+              out.write(notes)
+          "
+          if [ -s release_notes.md ]; then
+            echo "has_notes=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_notes=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Create or update GitHub Release
         if: steps.tag_check.outputs.skip == 'false'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "${{ steps.version.outputs.tag }}" \
-            --title "${{ steps.version.outputs.tag }}" \
-            --generate-notes \
-            --prerelease=${{ contains(steps.version.outputs.tag, '-') }}
+          if [ "${{ steps.changelog.outputs.has_notes }}" = "true" ]; then
+            gh release create "${{ steps.version.outputs.tag }}" \
+              --title "${{ steps.version.outputs.tag }}" \
+              --notes-file release_notes.md \
+              --prerelease=${{ contains(steps.version.outputs.tag, '-') }}
+          else
+            gh release create "${{ steps.version.outputs.tag }}" \
+              --title "${{ steps.version.outputs.tag }}" \
+              --generate-notes \
+              --prerelease=${{ contains(steps.version.outputs.tag, '-') }}
+          fi

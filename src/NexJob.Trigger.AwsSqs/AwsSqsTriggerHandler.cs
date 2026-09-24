@@ -18,6 +18,8 @@ internal sealed class AwsSqsTriggerHandler : IHostedService
     private readonly IScheduler _scheduler;
     private readonly NexJobOptions _nexJobOptions;
     private readonly ILogger<AwsSqsTriggerHandler> _logger;
+    private readonly IListenerRegistry? _listenerRegistry;
+    private readonly string _listenerId;
 
     private CancellationTokenSource? _stoppingCts;
     private Task? _pollingTask;
@@ -30,18 +32,29 @@ internal sealed class AwsSqsTriggerHandler : IHostedService
     /// <param name="scheduler">The NexJob scheduler for enqueueing jobs.</param>
     /// <param name="nexJobOptions">Global NexJob configuration options.</param>
     /// <param name="logger">Logger for diagnostic output.</param>
+    /// <param name="listenerRegistry">Optional listener registry for operational visibility.</param>
     public AwsSqsTriggerHandler(
         IOptions<AwsSqsTriggerOptions> options,
         ISqsClient sqsClient,
         IScheduler scheduler,
         NexJobOptions nexJobOptions,
-        ILogger<AwsSqsTriggerHandler> logger)
+        ILogger<AwsSqsTriggerHandler> logger,
+        IListenerRegistry? listenerRegistry = null)
     {
         _options = options.Value;
         _sqsClient = sqsClient;
         _scheduler = scheduler;
         _nexJobOptions = nexJobOptions;
         _logger = logger;
+        _listenerRegistry = listenerRegistry;
+        _listenerId = $"sqs:{_options.QueueUrl}";
+
+        _listenerRegistry?.Register(new ListenerRegistration(
+            Id: _listenerId,
+            Broker: "AwsSqs",
+            Endpoint: _options.QueueUrl,
+            TargetJobType: _options.JobName ?? "Dynamic",
+            JobTag: "trigger:aws-sqs"));
     }
 
     /// <summary>
@@ -50,6 +63,8 @@ internal sealed class AwsSqsTriggerHandler : IHostedService
     public async Task StartAsync(CancellationToken cancellationToken)
     {
         _stoppingCts = new CancellationTokenSource();
+
+        _listenerRegistry?.UpdateStatus(_listenerId, ListenerStatus.Listening);
 
         // Use CancellationToken.None so the polling loop is not cancelled when the
         // startup token expires — shutdown is controlled by _stoppingCts instead.
@@ -63,6 +78,7 @@ internal sealed class AwsSqsTriggerHandler : IHostedService
         // before the host considers startup successful.
         if (_pollingTask.IsFaulted)
         {
+            _listenerRegistry?.UpdateStatus(_listenerId, ListenerStatus.Faulted, _pollingTask.Exception?.GetBaseException().Message ?? "Immediate startup fault");
             await _pollingTask.ConfigureAwait(false);
         }
 
@@ -77,6 +93,8 @@ internal sealed class AwsSqsTriggerHandler : IHostedService
     /// </summary>
     public async Task StopAsync(CancellationToken cancellationToken)
     {
+        _listenerRegistry?.UpdateStatus(_listenerId, ListenerStatus.Stopped);
+
         if (_stoppingCts is not null)
         {
             await _stoppingCts.CancelAsync().ConfigureAwait(false);
@@ -97,6 +115,7 @@ internal sealed class AwsSqsTriggerHandler : IHostedService
                 }
                 catch (Exception ex)
                 {
+                    _listenerRegistry?.UpdateStatus(_listenerId, ListenerStatus.Faulted, ex.Message);
                     _logger.LogError(ex, "AWS SQS polling task faulted.");
                 }
             }
@@ -157,6 +176,7 @@ internal sealed class AwsSqsTriggerHandler : IHostedService
             }
             catch (Exception ex)
             {
+                _listenerRegistry?.UpdateStatus(_listenerId, ListenerStatus.Reconnecting, ex.Message);
                 _logger.LogWarning(ex, "Error receiving messages from SQS queue {QueueUrl}", _options.QueueUrl);
 
                 // Avoid tight loop on persistent errors

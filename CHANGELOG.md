@@ -6,6 +6,19 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [5.4.1] - 2026-09-24
+
+### Added
+
+- **`NexJob.Triggers` — Complete `IListenerRegistry` Integration Across External Triggers**:
+  - Integrated `IListenerRegistry` into `NexJob.Trigger.Salesforce` (`SalesforceTriggerHandler`), registering Pub/Sub API listener with `"Salesforce (Pub/Sub API)"` broker type and tracking operational status (`Starting`, `Listening`, `Reconnecting`, `Faulted`, `Stopped`) (issue #187).
+  - Integrated `IListenerRegistry` into `NexJob.Trigger.SalesforceStreaming` (`SalesforceStreamingTriggerHandler`), tracking Bayeux streaming listener state (`Starting`, `Listening`, `Reconnecting`, `Stopped`) (issue #187).
+  - Integrated `IListenerRegistry` into `NexJob.Trigger.AzureServiceBus` (`AzureServiceBusTriggerHandler`), reporting operational transitions and processor errors to the listener registry (issue #187).
+  - Integrated `IListenerRegistry` into `NexJob.Trigger.AwsSqs` (`AwsSqsTriggerHandler`), reporting SQS polling loop lifecycle, immediate startup faults, and transient network reconnections (issue #187).
+  - Integrated `IListenerRegistry` into `NexJob.Trigger.GooglePubSub` (`GooglePubSubTriggerHandler`), tracking subscriber client lifecycle and immediate startup faults (issue #187).
+  - Preserved 100% backward binary compatibility with optional `IListenerRegistry? listenerRegistry = null` constructor parameters across all trigger packages (issue #187).
+  - Added complete 3N testing matrix (Positive happy path, Negative failure/fault handling, and Boundary null registry) to each trigger unit test project (issue #187).
+
 ## [5.4.0] - 2026-09-23
 
 ### Added

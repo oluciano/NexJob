@@ -287,4 +287,146 @@ public sealed class SalesforceStreamingTriggerHandlerTests
         _mockAuthService.Verify(a => a.InvalidateToken(), Times.Once);
         _mockBayeuxClient.Verify(b => b.HandshakeAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.AtLeast(2));
     }
+
+    // ─── 3N Testing Matrix: ListenerRegistry ─────────────────────────────────
+
+    [Fact]
+    public async Task ListenerRegistry_Lifecycle_TracksStatusProperly_Positive()
+    {
+        // N1: Positive - registers as Starting, updates to Listening on successful handshake/subscribe, and Stopped on stop.
+        var registry = new DefaultListenerRegistry();
+        var options = new SalesforceStreamingTriggerOptions
+        {
+            Channel = "/data/Order__ChangeEvent",
+            TargetQueue = "salesforce-queue",
+            Authentication = new SalesforceStreamingAuthOptions
+            {
+                AuthType = SalesforceStreamingAuthType.SessionId,
+                InstanceUrl = "https://test.salesforce.com",
+                AccessToken = "tok123",
+            },
+        };
+
+        _mockAuthService.Setup(a => a.GetTokenAsync(It.IsAny<SalesforceStreamingAuthOptions>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SalesforceStreamingTokenResult("tok123", "https://test.salesforce.com"));
+
+        _mockBayeuxClient.Setup(b => b.HandshakeAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync("client-123");
+
+        _mockBayeuxClient.Setup(b => b.SubscribeAsync(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                options.Channel,
+                It.IsAny<long>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        _mockBayeuxClient.Setup(b => b.ConnectAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns(async () =>
+            {
+                await Task.Delay(100);
+                return (IReadOnlyList<SalesforceStreamingEventInput>)Array.Empty<SalesforceStreamingEventInput>();
+            });
+
+        var handler = new SalesforceStreamingTriggerHandler(
+            _mockScheduler.Object,
+            _mockAuthService.Object,
+            _mockBayeuxClient.Object,
+            Microsoft.Extensions.Options.Options.Create(options),
+            _nexJobOptions,
+            NullLogger<SalesforceStreamingTriggerHandler>.Instance,
+            _store,
+            registry);
+
+        var initial = registry.Get($"salesforce-streaming:{options.Channel}");
+        initial.Should().NotBeNull();
+        initial!.Status.Should().Be(ListenerStatus.Starting);
+        initial.Broker.Should().Be("Salesforce (Streaming)");
+
+        await handler.StartAsync(CancellationToken.None);
+        await Task.Delay(50);
+
+        var listening = registry.Get($"salesforce-streaming:{options.Channel}");
+        listening!.Status.Should().Be(ListenerStatus.Listening);
+
+        await handler.StopAsync(CancellationToken.None);
+
+        var stopped = registry.Get($"salesforce-streaming:{options.Channel}");
+        stopped!.Status.Should().Be(ListenerStatus.Stopped);
+    }
+
+    [Fact]
+    public async Task ListenerRegistry_Lifecycle_TracksStatusProperly_Negative()
+    {
+        // N2: Negative - on handshake failure and retry, updates status to Reconnecting.
+        var registry = new DefaultListenerRegistry();
+        var options = new SalesforceStreamingTriggerOptions
+        {
+            Channel = "/data/Order__ChangeEvent",
+            TargetQueue = "salesforce-queue",
+            ReconnectDelay = TimeSpan.FromMilliseconds(50),
+            Authentication = new SalesforceStreamingAuthOptions
+            {
+                AuthType = SalesforceStreamingAuthType.SessionId,
+                InstanceUrl = "https://test.salesforce.com",
+                AccessToken = "tok123",
+            },
+        };
+
+        _mockAuthService.Setup(a => a.GetTokenAsync(It.IsAny<SalesforceStreamingAuthOptions>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SalesforceStreamingTokenResult("tok123", "https://test.salesforce.com"));
+
+        _mockBayeuxClient.Setup(b => b.HandshakeAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Throws(new InvalidOperationException("Handshake error"));
+
+        var handler = new SalesforceStreamingTriggerHandler(
+            _mockScheduler.Object,
+            _mockAuthService.Object,
+            _mockBayeuxClient.Object,
+            Microsoft.Extensions.Options.Options.Create(options),
+            _nexJobOptions,
+            NullLogger<SalesforceStreamingTriggerHandler>.Instance,
+            _store,
+            registry);
+
+        using var cts = new CancellationTokenSource();
+        await handler.StartAsync(cts.Token);
+        await Task.Delay(100);
+
+        var reconnecting = registry.Get($"salesforce-streaming:{options.Channel}");
+        reconnecting!.Status.Should().Be(ListenerStatus.Reconnecting);
+
+        await handler.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public void ListenerRegistry_NullRegistry_BoundaryHandledGracefully()
+    {
+        // N3: Invalid input / Boundary - passing null registry does not throw.
+        var options = new SalesforceStreamingTriggerOptions
+        {
+            Channel = "/data/Order__ChangeEvent",
+            TargetQueue = "salesforce-queue",
+            Authentication = new SalesforceStreamingAuthOptions
+            {
+                AuthType = SalesforceStreamingAuthType.SessionId,
+                InstanceUrl = "https://test.salesforce.com",
+                AccessToken = "tok123",
+            },
+        };
+
+        var act = () => new SalesforceStreamingTriggerHandler(
+            _mockScheduler.Object,
+            _mockAuthService.Object,
+            _mockBayeuxClient.Object,
+            Microsoft.Extensions.Options.Options.Create(options),
+            _nexJobOptions,
+            NullLogger<SalesforceStreamingTriggerHandler>.Instance,
+            _store,
+            listenerRegistry: null);
+
+        act.Should().NotThrow();
+    }
 }
