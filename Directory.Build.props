@@ -13,7 +13,7 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <MinVerDefaultPreReleaseIdentifiers>alpha.0</MinVerDefaultPreReleaseIdentifiers>
     <MinVerTagPrefix>v</MinVerTagPrefix>
-    <VersionPrefix>5.4.0</VersionPrefix>
+    <VersionPrefix>5.4.1</VersionPrefix>
     <VersionSuffix></VersionSuffix>
     <PackageProjectUrl>https://github.com/oluciano/NexJob</PackageProjectUrl>
     <RepositoryType>git</RepositoryType>

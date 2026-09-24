@@ -6,6 +6,8 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [5.4.1] - 2026-09-24
+
 ### Added
 
 - **`NexJob.Triggers` — Complete `IListenerRegistry` Integration Across External Triggers**:
