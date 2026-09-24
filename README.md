@@ -251,6 +251,12 @@ Benchmarks can be parameterized by payload size (`PayloadBytes: 0, 1024, 10240`)
 
 ---
 
+## Ecosystem & Companion Projects
+
+- **[qKafka](https://github.com/oluciano/QKafka)**: If you need event-driven choreographies, distributed sagas with compensating transactions, and native Kafka stream state machines, check out qKafka. NexJob focuses on background job scheduling and resilient outbox dispatch, seamlessly bridging events to and from Kafka.
+
+---
+
 ## Roadmap
 
 ```

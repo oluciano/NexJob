@@ -178,3 +178,9 @@ builder.Services.AddNexJob()
 2. **Dead-Letter Handling:** Permanent publishing failures trigger NexJob's dead-letter pipeline (`IDeadLetterHandler`) and surface in the dashboard.
 3. **Trace Propagation:** Injects W3C `traceparent` headers into outgoing messages and extracts them on consumer triggers.
 4. **Graceful Shutdown:** Unflushed in-flight messages are flushed before the application process exits.
+
+---
+
+## 6. Sagas & Event-Driven Choreographies
+
+Need distributed state machines or sagas with compensating transactions over Kafka? See **[qKafka](https://github.com/oluciano/QKafka)** — the companion event-driven framework that pairs with NexJob.

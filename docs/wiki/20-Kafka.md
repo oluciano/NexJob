@@ -257,3 +257,11 @@ When producing via NexJob:
 | **Retries Exhausted** | The message is dispatched to the Dead-Letter pipeline (`IDeadLetterHandler`) and surfaced on the Dashboard. |
 | **Host Shutdown** | The registered `IKafkaProducerClient` automatically invokes `Flush()` to ensure all in-flight messages are delivered before exit. |
 | **Serialization Error** | Serialization errors fail fast and route to dead-letter without crashing the worker host. |
++
++---
++
++## 6. Sagas & Advanced Stream Orchestration (qKafka)
++
++NexJob is designed for background job processing, resilient polling/wake-up loops, and reliable transactional outbox publishing.
++
++If your architecture requires complex **Event-Driven Choreographies**, **Distributed Sagas with Compensating Transactions**, and state-machine transitions over Kafka topics, consider pairing NexJob with **[qKafka](https://github.com/oluciano/QKafka)**. NexJob and qKafka complement each other naturally: NexJob manages local task deadlines, retries, and persistence, while qKafka handles distributed stream correlations and compensations.
