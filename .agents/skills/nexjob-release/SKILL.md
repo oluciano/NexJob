@@ -24,7 +24,7 @@ It guarantees that code and documentation (Wiki + Package READMEs) are strictly 
 
 ---
 
-## The 5-Phase Release Flow
+## The 6-Phase Release Flow
 
 ```
 [Phase 1: Version Auditing & SemVer Detection]
@@ -40,6 +40,9 @@ It guarantees that code and documentation (Wiki + Package READMEs) are strictly 
                      │
                      ▼
 [Phase 5: Version Bump, Changelog & Release PR to main]
+                     │
+                     ▼
+[Phase 6: Post-Release Sync-Back (main ➔ develop)]
 ```
 
 ---
@@ -150,3 +153,19 @@ If any check fails: **STOP**. Fix the issue, verify again, and only continue whe
    - [x] NuGet package creation verified"
    ```
 5. **Handoff:** Notify the user that the Release PR is open and ready to merge. Once merged to `main`, GitHub Actions automatically creates the git tag, GitHub Release, and publishes to NuGet.org.
+
+---
+
+## Phase 6: Post-Release Sync-Back (`main` ➔ `develop`)
+
+Since release PRs are merged into `main` using **Squash and Merge** (resulting in a single release commit on `main`), the release commit and git tag must be synced back into `develop` to prevent branch divergence:
+
+1. **Pull and Sync Back:**
+   ```bash
+   git checkout develop
+   git pull origin develop
+   git fetch origin --tags
+   git merge origin/main --no-ff -m "chore: sync release vX.Y.Z from main into develop"
+   git push origin develop
+   ```
+2. **Verification:** Confirm `develop` contains the release tag and is strictly even/ahead of `origin/main`.
