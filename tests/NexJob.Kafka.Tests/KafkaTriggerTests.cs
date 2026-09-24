@@ -682,10 +682,12 @@ public sealed class KafkaTriggerTests
         // Arrange
         var registry = new DefaultListenerRegistry();
         using var cts = new CancellationTokenSource();
+        var listeningSignal = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         _consumerMock.Setup(m => m.Consume(It.IsAny<TimeSpan>()))
             .Returns(() =>
             {
+                listeningSignal.TrySetResult(true);
                 cts.Cancel();
                 return null;
             });
@@ -702,11 +704,13 @@ public sealed class KafkaTriggerTests
         initial.Should().NotBeNull();
         initial!.Status.Should().Be(ListenerStatus.Starting);
 
-        // Act & Assert: ExecuteAsync run
-        await handler.StartAsync(cts.Token);
+        // Act: Start handler
+        await handler.StartAsync(CancellationToken.None);
+
         var listening = registry.Get($"kafka:{_triggerOptions.Topic}");
         listening!.Status.Should().Be(ListenerStatus.Listening);
 
+        // Act & Assert 2: Stop
         await handler.StopAsync(CancellationToken.None);
         var stopped = registry.Get($"kafka:{_triggerOptions.Topic}");
         stopped!.Status.Should().Be(ListenerStatus.Stopped);

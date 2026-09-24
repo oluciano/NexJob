@@ -49,8 +49,31 @@ internal static class Helpers
 
     internal static string FormatJson(string json)
     {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return "—";
+        }
+
         try
         {
+            // If the JSON is a serialized string containing JSON (e.g. "\"{\\u0022...\}\""), unwrap it first
+            var trimmed = json.Trim();
+            if (trimmed.Length >= 2 && trimmed.StartsWith('"') && trimmed.EndsWith('"'))
+            {
+                try
+                {
+                    var unescaped = System.Text.Json.JsonSerializer.Deserialize<string>(trimmed);
+                    if (!string.IsNullOrWhiteSpace(unescaped) && (unescaped.TrimStart().StartsWith('{') || unescaped.TrimStart().StartsWith('[')))
+                    {
+                        json = unescaped;
+                    }
+                }
+                catch
+                {
+                    // keep original json if unwrap fails
+                }
+            }
+
             var doc = System.Text.Json.JsonDocument.Parse(json);
             var pretty = System.Text.Json.JsonSerializer.Serialize(doc,
                 new System.Text.Json.JsonSerializerOptions { WriteIndented = true });

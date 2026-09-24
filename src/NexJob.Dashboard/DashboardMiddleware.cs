@@ -99,6 +99,11 @@ public sealed class DashboardMiddleware
 
         // Render page
         var html = await RenderPageAsync(context, subPath).ConfigureAwait(false);
+        if (string.Equals(html, HtmlShell.NotFound(_options.Title, _pathPrefix), StringComparison.Ordinal))
+        {
+            context.Response.StatusCode = 404;
+        }
+
         context.Response.ContentType = "text/html; charset=utf-8";
         await context.Response.WriteAsync(html).ConfigureAwait(false);
     }
@@ -546,7 +551,11 @@ public sealed class DashboardMiddleware
         {
             var queueName = Uri.UnescapeDataString(subPath.Split('/')[1]);
             await controlService.PauseQueueAsync(queueName, context.RequestAborted).ConfigureAwait(false);
-            LocalRedirect(context, $"{_pathPrefix}/settings");
+            var referer = context.Request.Headers.Referer.ToString();
+            var target = !string.IsNullOrEmpty(referer) && referer.Contains("/queues", StringComparison.Ordinal)
+                ? $"{_pathPrefix}/queues"
+                : $"{_pathPrefix}/settings";
+            LocalRedirect(context, target);
             return true;
         }
 
@@ -554,7 +563,11 @@ public sealed class DashboardMiddleware
         {
             var queueName = Uri.UnescapeDataString(subPath.Split('/')[1]);
             await controlService.ResumeQueueAsync(queueName, context.RequestAborted).ConfigureAwait(false);
-            LocalRedirect(context, $"{_pathPrefix}/settings");
+            var referer = context.Request.Headers.Referer.ToString();
+            var target = !string.IsNullOrEmpty(referer) && referer.Contains("/queues", StringComparison.Ordinal)
+                ? $"{_pathPrefix}/queues"
+                : $"{_pathPrefix}/settings";
+            LocalRedirect(context, target);
             return true;
         }
 
@@ -623,6 +636,7 @@ public sealed class DashboardMiddleware
 
         if (string.Equals(subPath, "queues", StringComparison.Ordinal))
         {
+            var runtimeStore = context.RequestServices.GetService<IRuntimeSettingsStore>();
             parameters = ParameterView.FromDictionary(new Dictionary<string, object?>(StringComparer.Ordinal)
             {
                 ["Storage"] = dashboardStorage,
@@ -630,6 +644,7 @@ public sealed class DashboardMiddleware
                 ["Title"] = _options.Title,
                 ["Counters"] = counters,
                 ["Options"] = nexJobOptions,
+                ["RuntimeStore"] = runtimeStore,
             });
             return await RenderAsync<QueuesPage>(renderer, parameters).ConfigureAwait(false);
         }
@@ -663,6 +678,13 @@ public sealed class DashboardMiddleware
             var query = context.Request.Query;
             var status = query.TryGetValue("status", out var sv) && Enum.TryParse<JobStatus>(sv, out var s) ? (JobStatus?)s : null;
             var search = query.TryGetValue("search", out var sr) ? (string?)sr : null;
+            if (string.IsNullOrWhiteSpace(search) && query.TryGetValue("q", out var qv))
+            {
+                search = (string?)qv;
+            }
+
+            var queue = query.TryGetValue("queue", out var qu) && !string.IsNullOrWhiteSpace(qu) ? (string?)qu : null;
+            var period = query.TryGetValue("period", out var pr) && !string.IsNullOrWhiteSpace(pr) ? (string?)pr : null;
             var tag = query.TryGetValue("tag", out var tg) && !string.IsNullOrWhiteSpace(tg) ? (string?)tg : null;
 
             if (string.IsNullOrWhiteSpace(tag) && !string.IsNullOrWhiteSpace(search))
@@ -689,6 +711,8 @@ public sealed class DashboardMiddleware
                 ["StatusFilter"] = status,
                 ["Search"] = search,
                 ["TagFilter"] = tag,
+                ["QueueFilter"] = queue,
+                ["Period"] = period,
                 ["Page"] = page,
                 ["Counters"] = counters,
             });
