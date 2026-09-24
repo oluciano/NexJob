@@ -173,6 +173,104 @@ public sealed class StandaloneDashboardTests
         output.Should().Contain("top-header");
     }
 
+    [Fact]
+    public async Task StandaloneDashboard_Overview_RendersClusterTopologyMap()
+    {
+        // N1 (Positive): Overview HTML renders visual cluster topology flowchart
+        var port = GetFreeTcpPort();
+        using var host = Host.CreateDefaultBuilder()
+            .ConfigureServices(services =>
+            {
+                services.AddNexJob();
+                services.AddNexJobStandaloneDashboard(options =>
+                {
+                    options.Port = port;
+                    options.Path = "/dashboard";
+                    options.LocalhostOnly = true;
+                });
+            })
+            .Build();
+
+        try
+        {
+            await host.StartAsync();
+
+            using var client = new HttpClient
+            {
+                BaseAddress = new Uri($"http://localhost:{port}"),
+                Timeout = TimeSpan.FromSeconds(5),
+            };
+
+            var res = await client.GetAsync("/dashboard");
+            res.StatusCode.Should().Be(HttpStatusCode.OK);
+            var html = await res.Content.ReadAsStringAsync();
+
+            html.Should().Contain("Cluster Pipeline Topology");
+            html.Should().Contain("topology-diagram");
+            html.Should().Contain("Ingress & Triggers");
+            html.Should().Contain("Queue Buffers");
+            html.Should().Contain("Processing Workers");
+        }
+        finally
+        {
+            await host.StopAsync();
+        }
+    }
+
+    [Fact]
+    public async Task StandaloneDashboard_JobsPage_AcceptsPeriodAndQueueFilters()
+    {
+        // N2 (Positive/Inputs): Jobs page accepts period (1h, 6h, 24h, 7d) and queue query parameters
+        var port = GetFreeTcpPort();
+        using var host = Host.CreateDefaultBuilder()
+            .ConfigureServices(services =>
+            {
+                services.AddNexJob();
+                services.AddNexJobStandaloneDashboard(options =>
+                {
+                    options.Port = port;
+                    options.Path = "/dashboard";
+                    options.LocalhostOnly = true;
+                });
+            })
+            .Build();
+
+        try
+        {
+            await host.StartAsync();
+
+            using var client = new HttpClient
+            {
+                BaseAddress = new Uri($"http://localhost:{port}"),
+                Timeout = TimeSpan.FromSeconds(5),
+            };
+
+            var res = await client.GetAsync("/dashboard/jobs?period=24h&queue=default");
+            res.StatusCode.Should().Be(HttpStatusCode.OK);
+            var html = await res.Content.ReadAsStringAsync();
+
+            html.Should().Contain("Last 24 hours");
+            html.Should().Contain("value=\"24h\" selected");
+        }
+        finally
+        {
+            await host.StopAsync();
+        }
+    }
+
+    [Fact]
+    public void StandaloneDashboard_HtmlFragments_TopologyMap_HandlesNullAndEmptySafely()
+    {
+        // N3 (Boundary): TopologyMap renders gracefully with null listeners, null queues, and null servers
+        var html = NexJob.Dashboard.Pages.HtmlFragments.TopologyMap(null, null, null, "/dashboard");
+
+        html.Should().NotBeNullOrWhiteSpace();
+        html.Should().Contain("Cluster Pipeline Topology");
+        html.Should().Contain("Direct Enqueue / Cron");
+        html.Should().Contain("Queue: default");
+        html.Should().Contain("Worker Nodes");
+    }
+
     private static int GetFreeTcpPort()
     {
         var listener = new TcpListener(IPAddress.Loopback, 0);

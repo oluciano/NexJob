@@ -11,8 +11,8 @@ internal static class HtmlShell
         """
         :root {
             --primary: #00cfd5;
-            --primary-dark: #00b8bc;
-            --primary-light: rgba(0, 207, 213, 0.12);
+            --primary-dark: #009ca0;
+            --primary-light: rgba(0, 207, 213, 0.15);
             --secondary: #7367f0;
             --success: #28c76f;
             --success-light: rgba(40, 199, 111, 0.12);
@@ -22,6 +22,27 @@ internal static class HtmlShell
             --error-light: rgba(234, 84, 85, 0.12);
             --info: #00cfe8;
             --info-light: rgba(0, 207, 213, 0.12);
+            --bg-primary: #181f4a;
+            --bg-secondary: #0f1535;
+            --bg-tertiary: #070c29;
+            --header-bg: #181f4a;
+            --sidebar-bg: #070c29;
+            --sidebar-text: #e2e8f0;
+            --sidebar-hover: #181f4a;
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --text-tertiary: #64748b;
+            --border: #232c66;
+            --border-light: #232c66;
+            --radius: 12px;
+            --radius-lg: 14px;
+            --transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            --shadow: 0 4px 20px 0 rgba(0, 0, 0, 0.5);
+            --top-header-height: 64px;
+            --sidebar-width: 260px;
+        }
+
+        [data-theme="light"] {
             --bg-primary: #ffffff;
             --bg-secondary: #f8f7fa;
             --bg-tertiary: #f1f0f5;
@@ -33,12 +54,8 @@ internal static class HtmlShell
             --text-secondary: #6f6b7d;
             --text-tertiary: #b0adba;
             --border: #dbdade;
-            --radius: 12px;
-            --radius-lg: 14px;
-            --transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            --border-light: #eae9ec;
             --shadow: 0 4px 18px 0 rgba(75, 70, 92, 0.08);
-            --top-header-height: 64px;
-            --sidebar-width: 260px;
         }
 
         [data-theme="dark"] {
@@ -391,13 +408,28 @@ internal static class HtmlShell
         .chart-tooltip { position: fixed; background: #2f3349; color: #fff; padding: 6px 12px; border-radius: 4px; font-size: 12px; pointer-events: none; display: none; z-index: 1000; box-shadow: 0 4px 12px rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); }
         .avg-line { position: absolute; left: 0; right: 0; border-top: 1px dashed var(--text-tertiary); opacity: 0.4; pointer-events: none; z-index: 1; }
         .anomaly-note { font-size: 12px; color: var(--error); margin-top: 16px; font-weight: 500; display: flex; align-items: center; gap: 6px; }
+
+        /* Cluster Topology Map */
+        .topology-card { margin-bottom: 24px; padding: 20px; background: var(--bg-primary); border-radius: var(--radius); border: 1px solid var(--border); box-shadow: var(--shadow); }
+        .topology-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+        .topology-diagram { display: grid; grid-template-columns: 1fr 40px 1fr 40px 1fr; align-items: center; gap: 8px; overflow-x: auto; padding: 10px 0; }
+        .topo-col { display: flex; flex-direction: column; gap: 10px; }
+        .topo-arrow { display: flex; align-items: center; justify-content: center; color: var(--primary); }
+        .topo-arrow svg { animation: pulseArrow 2s infinite ease-in-out; }
+        @keyframes pulseArrow { 0%, 100% { transform: translateX(0); opacity: 0.6; } 50% { transform: translateX(4px); opacity: 1; } }
+        .topo-box { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; transition: var(--transition); }
+        .topo-box:hover { border-color: var(--primary); transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+        .topo-title { font-size: 11px; font-weight: 700; color: var(--text-tertiary); text-transform: uppercase; margin-bottom: 4px; display: flex; align-items: center; justify-content: space-between; }
+        .topo-val { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+        .topo-sub { font-size: 11px; color: var(--text-secondary); margin-top: 2px; }
+        .pulse-live { width: 6px; height: 6px; border-radius: 50%; background: var(--success); display: inline-block; box-shadow: 0 0 8px var(--success); }
         """;
 
     /// <summary>Wraps the content in the standard HTML shell.</summary>
     internal static string Wrap(string title, string pathPrefix, string activeRoute, string body, NavCounters? counters = null, JobMetrics? metrics = null) =>
         $$"""
         <!DOCTYPE html>
-        <html lang="en">
+        <html lang="en" data-theme="blue-theme">
         <head>
             <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>{{title}}</title>
             <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&display=swap">
@@ -554,14 +586,16 @@ internal static class HtmlShell
 
         <script>
         (function(){
-            var h=document.documentElement, storedTheme=localStorage.getItem('nexjob-theme')||'dark';
-            nexJobSetTheme(storedTheme, false);
+            var h = document.documentElement;
 
-            var storedSidebar=localStorage.getItem('nexjob-sidebar');
-            if(storedSidebar==='collapsed'){
-                var s=document.getElementById('sidebar');
-                if(s) s.classList.add('collapsed');
-            }
+            window.nexJobSetTheme = function(theme, save) {
+                if(save!==false) localStorage.setItem('nexjob-theme', theme);
+                h.setAttribute('data-theme', theme);
+                document.querySelectorAll('.theme-card').forEach(function(el){
+                    if(el.getAttribute('data-theme')===theme){ el.classList.add('active'); }
+                    else { el.classList.remove('active'); }
+                });
+            };
 
             window.nexJobToggleSidebar = function() {
                 var s=document.getElementById('sidebar');
@@ -578,14 +612,14 @@ internal static class HtmlShell
                 else { d.classList.remove('active'); b.classList.remove('active'); }
             };
 
-            window.nexJobSetTheme = function(theme, save) {
-                if(save!==false) localStorage.setItem('nexjob-theme', theme);
-                h.setAttribute('data-theme', theme);
-                document.querySelectorAll('.theme-card').forEach(function(el){
-                    if(el.getAttribute('data-theme')===theme){ el.classList.add('active'); }
-                    else { el.classList.remove('active'); }
-                });
-            };
+            var storedTheme=localStorage.getItem('nexjob-theme')||'blue-theme';
+            nexJobSetTheme(storedTheme, false);
+
+            var storedSidebar=localStorage.getItem('nexjob-sidebar');
+            if(storedSidebar==='collapsed'){
+                var s=document.getElementById('sidebar');
+                if(s) s.classList.add('collapsed');
+            }
 
             window.addEventListener('keydown', function(e){
                 if((e.ctrlKey||e.metaKey) && e.key==='k'){

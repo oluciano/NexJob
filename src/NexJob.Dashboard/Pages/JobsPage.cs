@@ -18,6 +18,7 @@ internal sealed class JobsPage : IComponent
     [Parameter] public string? Search { get; set; }
     [Parameter] public string? TagFilter { get; set; }
     [Parameter] public string? QueueFilter { get; set; }
+    [Parameter] public string? Period { get; set; }
     [Parameter] public int Page { get; set; } = 1;
 
     void IComponent.Attach(RenderHandle renderHandle) => _handle = renderHandle;
@@ -30,6 +31,15 @@ internal sealed class JobsPage : IComponent
         // Do NOT use .ConfigureAwait(false) here. Rendering via _handle.Render requires execution on the Dispatcher.
         // Fetch queues for the filter dropdown
         var queues = await Storage.GetQueueMetricsAsync(CancellationToken.None);
+
+        DateTimeOffset? createdAfter = Period switch
+        {
+            "1h" => DateTimeOffset.UtcNow.AddHours(-1),
+            "6h" => DateTimeOffset.UtcNow.AddHours(-6),
+            "24h" => DateTimeOffset.UtcNow.AddHours(-24),
+            "7d" => DateTimeOffset.UtcNow.AddDays(-7),
+            _ => null,
+        };
 
         // Use native storage filter for Status, Search, and Queue — much more efficient
         var filter = new JobFilter
@@ -58,6 +68,11 @@ internal sealed class JobsPage : IComponent
                 taggedJobs = taggedJobs.Where(j => j.JobType.Contains(Search, StringComparison.OrdinalIgnoreCase) || j.Id.Value.ToString().Contains(Search, StringComparison.OrdinalIgnoreCase)).ToList();
             }
 
+            if (createdAfter.HasValue)
+            {
+                taggedJobs = taggedJobs.Where(j => j.CreatedAt >= createdAfter.Value).ToList();
+            }
+
             var totalTagged = taggedJobs.Count;
             var pageSize = 50;
             var pagedItems = taggedJobs
@@ -77,6 +92,17 @@ internal sealed class JobsPage : IComponent
         else
         {
             result = await Storage.GetJobsAsync(filter, Page, 50, CancellationToken.None);
+            if (createdAfter.HasValue)
+            {
+                var filteredItems = result.Items.Where(j => j.CreatedAt >= createdAfter.Value).ToList();
+                result = new PagedResult<JobRecord>
+                {
+                    Items = filteredItems,
+                    TotalCount = filteredItems.Count,
+                    Page = Page,
+                    PageSize = 50,
+                };
+            }
         }
 
         _handle.Render(b => b.AddMarkupContent(0, BuildHtml(result, queues)));
@@ -91,14 +117,14 @@ internal sealed class JobsPage : IComponent
             ? HtmlFragments.EmptyState("0 0 24 24", "No jobs found matching your filters.")
             : $"<div class=\"job-list\">{string.Join(string.Empty, result.Items.Select(j => HtmlFragments.JobRow(j, PathPrefix, now)))}</div>";
 
-        var baseUrl = $"{PathPrefix}/jobs?status={Uri.EscapeDataString(currentStatus)}&search={Uri.EscapeDataString(Search ?? string.Empty)}&tag={Uri.EscapeDataString(TagFilter ?? string.Empty)}&queue={Uri.EscapeDataString(QueueFilter ?? string.Empty)}";
+        var baseUrl = $"{PathPrefix}/jobs?status={Uri.EscapeDataString(currentStatus)}&search={Uri.EscapeDataString(Search ?? string.Empty)}&tag={Uri.EscapeDataString(TagFilter ?? string.Empty)}&queue={Uri.EscapeDataString(QueueFilter ?? string.Empty)}&period={Uri.EscapeDataString(Period ?? string.Empty)}";
         var pagination = HtmlFragments.Pagination(result, baseUrl);
 
         var body =
             $"<div id=\"jobs-page-content\" data-refresh=\"true\">" +
             HtmlFragments.Breadcrumbs(PathPrefix, ("Jobs", null)) +
             HtmlFragments.PageHeader("Jobs", "Browse and search all background jobs") +
-            HtmlFragments.FilterBar(PathPrefix, currentStatus, Search, TagFilter, QueueFilter, queues) +
+            HtmlFragments.FilterBar(PathPrefix, currentStatus, Search, TagFilter, QueueFilter, queues, Period) +
             $"<div class=\"card\">" +
             $"<div class=\"card-header\"><h3>{result.TotalCount} job{(result.TotalCount == 1 ? string.Empty : "s")} found</h3></div>" +
             $"<div style=\"padding:24px\">" +

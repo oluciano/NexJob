@@ -16,6 +16,7 @@ internal sealed class QueuesPage : IComponent
     [Parameter] public string Title { get; set; } = "NexJob";
     [Parameter] public NavCounters? Counters { get; set; }
     [Parameter] public NexJobOptions Options { get; set; } = default!;
+    [Parameter] public IRuntimeSettingsStore? RuntimeStore { get; set; }
 
     void IComponent.Attach(RenderHandle renderHandle) => _handle = renderHandle;
 
@@ -30,7 +31,18 @@ internal sealed class QueuesPage : IComponent
             filter: new JobFilter { Status = JobStatus.Processing },
             page: 1,
             pageSize: 50);
-        _handle.Render(b => b.AddMarkupContent(0, BuildHtml(queues, processingJobs.Items)));
+
+        var pausedQueues = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (RuntimeStore != null)
+        {
+            var rt = await RuntimeStore.GetAsync(CancellationToken.None);
+            foreach (var pq in rt.PausedQueues)
+            {
+                pausedQueues.Add(pq);
+            }
+        }
+
+        _handle.Render(b => b.AddMarkupContent(0, BuildHtml(queues, processingJobs.Items, pausedQueues)));
     }
 
     private static string FormatElapsed(TimeSpan elapsed)
@@ -53,7 +65,7 @@ internal sealed class QueuesPage : IComponent
         return $"{elapsed.TotalHours:F1}h";
     }
 
-    private string BuildHtml(IReadOnlyList<QueueMetrics> queues, IReadOnlyList<JobRecord> processingJobs)
+    private string BuildHtml(IReadOnlyList<QueueMetrics> queues, IReadOnlyList<JobRecord> processingJobs, HashSet<string> pausedQueues)
     {
         if (queues.Count == 0)
         {
@@ -71,7 +83,7 @@ internal sealed class QueuesPage : IComponent
             .ThenBy(q => q.Queue, StringComparer.Ordinal)
             .ToList();
 
-        var cards = string.Join(string.Empty, sortedQueues.Select(q => HtmlFragments.QueueCard(q, PathPrefix)));
+        var cards = string.Join(string.Empty, sortedQueues.Select(q => HtmlFragments.QueueCard(q, PathPrefix, pausedQueues.Contains(q.Queue))));
 
         var heatmap = BuildWorkerHeatmap(processingJobs);
 

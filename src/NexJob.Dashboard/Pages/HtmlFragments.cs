@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Text;
 using System.Web;
 using NexJob.Storage;
 
@@ -199,12 +200,13 @@ internal static class HtmlFragments
         return $"<div style=\"display:flex;gap:4px;margin-bottom:16px\">{pills}</div>";
     }
 
-    /// <summary>Renders the filter bar for the Jobs page with search, tag, queue, and status pills.</summary>
-    internal static string FilterBar(string pathPrefix, string currentStatus, string? search, string? tag, string? queue = null, IReadOnlyList<QueueMetrics>? queues = null)
+    /// <summary>Renders the filter bar for the Jobs page with search, tag, queue, status, and period filters.</summary>
+    internal static string FilterBar(string pathPrefix, string currentStatus, string? search, string? tag, string? queue = null, IReadOnlyList<QueueMetrics>? queues = null, string? period = null)
     {
         var searchVal = HttpUtility.HtmlAttributeEncode(search ?? string.Empty);
         var tagVal = HttpUtility.HtmlAttributeEncode(tag ?? string.Empty);
         var queueVal = queue ?? string.Empty;
+        var periodVal = period ?? string.Empty;
 
         var statusOptions = string.Join(string.Empty, new[]
         {
@@ -233,18 +235,32 @@ internal static class HtmlFragments
             }));
         }
 
+        var periodOptions = string.Join(string.Empty, new[]
+        {
+            (string.Empty, "All Time"),
+            ("1h", "Last 1 hour"),
+            ("6h", "Last 6 hours"),
+            ("24h", "Last 24 hours"),
+            ("7d", "Last 7 days"),
+        }.Select(o =>
+        {
+            var selected = string.Equals(periodVal, o.Item1, StringComparison.OrdinalIgnoreCase) ? " selected" : string.Empty;
+            return $"<option value=\"{HttpUtility.HtmlAttributeEncode(o.Item1)}\"{selected}>{o.Item2}</option>";
+        }));
+
         return
             $"<div class=\"filters\">" +
             $"<form method=\"get\" action=\"{pathPrefix}/jobs\" style=\"display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;width:100%\">" +
             $"<div style=\"display:flex;gap:4px;flex:1;min-width:200px\">" +
             $"<input type=\"text\" name=\"search\" placeholder=\"Search type or ID…\" value=\"{searchVal}\" style=\"flex:1\" />" +
             $"</div>" +
-            $"<select name=\"status\" style=\"width:150px\">{statusOptions}</select>" +
-            $"<select name=\"queue\" style=\"width:150px\">{queueOptions}</select>" +
-            $"<input type=\"text\" name=\"tag\" placeholder=\"Tag…\" value=\"{tagVal}\" style=\"width:120px\" />" +
+            $"<select name=\"status\" style=\"width:140px\">{statusOptions}</select>" +
+            $"<select name=\"queue\" style=\"width:140px\">{queueOptions}</select>" +
+            $"<select name=\"period\" style=\"width:130px\">{periodOptions}</select>" +
+            $"<input type=\"text\" name=\"tag\" placeholder=\"Tag…\" value=\"{tagVal}\" style=\"width:110px\" />" +
             $"<div style=\"display:flex;gap:4px\">" +
             $"<button type=\"submit\" class=\"btn btn-primary\">Filter</button>" +
-            (searchVal.Length > 0 || tagVal.Length > 0 || queueVal.Length > 0 || currentStatus.Length > 0
+            (searchVal.Length > 0 || tagVal.Length > 0 || queueVal.Length > 0 || currentStatus.Length > 0 || periodVal.Length > 0
                 ? $"<a href=\"{pathPrefix}/jobs\" class=\"btn btn-secondary\">Clear</a>"
                 : string.Empty) +
             $"</div>" +
@@ -394,8 +410,8 @@ internal static class HtmlFragments
         return $"<a href=\"{url}\" style=\"text-decoration:none;color:inherit\">{content}</a>";
     }
 
-    /// <summary>Renders a compact queue row for high-density monitoring.</summary>
-    internal static string QueueCard(QueueMetrics queue, string pathPrefix)
+    /// <summary>Renders a compact queue row for high-density monitoring with control actions.</summary>
+    internal static string QueueCard(QueueMetrics queue, string pathPrefix, bool isPaused = false)
     {
         var total = queue.Enqueued + queue.Processing;
         var utilPct = total > 0 ? (int)(queue.Processing * 100.0 / total) : 0;
@@ -407,9 +423,20 @@ internal static class HtmlFragments
             _ => "var(--success)",
         };
 
+        var pauseForm = isPaused
+            ? $"<form method=\"post\" action=\"{pathPrefix}/queues/{Uri.EscapeDataString(queue.Queue)}/resume\" style=\"display:inline\">" +
+              $"<button type=\"submit\" class=\"btn btn-primary btn-sm\" title=\"Resume Queue\">▶ Resume</button></form>"
+            : $"<form method=\"post\" action=\"{pathPrefix}/queues/{Uri.EscapeDataString(queue.Queue)}/pause\" style=\"display:inline\" onclick=\"return confirm('Pause queue {HtmlEncode(queue.Queue)}?')\">" +
+              $"<button type=\"submit\" class=\"btn btn-secondary btn-sm\" title=\"Pause Queue\">⏸ Pause</button></form>";
+
+        var statusBadge = isPaused
+            ? " <span class=\"badge badge-warning\" style=\"font-size:10px;margin-left:6px\">PAUSED</span>"
+            : string.Empty;
+
         return
             $"<div style=\"padding:16px 24px;display:flex;align-items:center;gap:24px;border-bottom:1px solid var(--border)\">" +
-            $"<div style=\"width:200px;font-weight:600;font-size:15px;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap\">{HtmlEncode(queue.Queue)}</div>" +
+            $"<div style=\"width:220px;font-weight:600;font-size:15px;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap\">" +
+            $"{HtmlEncode(queue.Queue)}{statusBadge}</div>" +
             $"<div style=\"flex:1;display:flex;gap:40px;align-items:center\">" +
                 $"<div style=\"width:150px;display:flex;align-items:baseline;gap:8px\"><div style=\"font-size:10px;color:var(--text-tertiary);font-weight:700\">ENQUEUED</div><div style=\"font-weight:700;color:var(--info);font-size:18px\">{queue.Enqueued}</div></div>" +
                 $"<div style=\"width:150px;display:flex;align-items:baseline;gap:8px\"><div style=\"font-size:10px;color:var(--text-tertiary);font-weight:700\">PROCESSING</div><div style=\"font-weight:700;color:var(--warning);font-size:18px\">{queue.Processing}</div></div>" +
@@ -418,7 +445,8 @@ internal static class HtmlFragments
                     $"<div style=\"height:6px;background:var(--bg-tertiary);border-radius:3px;overflow:hidden\"><div style=\"width:{utilPct}%;background:{utilColor};height:100%;transition:width 0.3s ease\"></div></div>" +
                 $"</div>" +
             $"</div>" +
-            $"<div style=\"width:120px;text-align:right\">" +
+            $"<div style=\"display:flex;gap:8px;align-items:center;justify-content:flex-end\">" +
+                pauseForm +
                 $"<a href=\"{pathPrefix}/jobs?queue={Uri.EscapeDataString(queue.Queue)}\" class=\"btn btn-secondary btn-sm\">View Jobs</a>" +
             $"</div>" +
             $"</div>";
@@ -638,6 +666,113 @@ internal static class HtmlFragments
         {
             yield return new TimelineEvent(job.ExpiresAt.Value, "Expired", "expired", "deadline passed before execution", null);
         }
+    }
+
+    /// <summary>Renders the visual cluster topology flowchart (Listeners -> Queues -> Workers).</summary>
+    internal static string TopologyMap(
+        IReadOnlyList<ListenerSnapshot>? listeners,
+        IReadOnlyList<QueueMetrics>? queues,
+        IReadOnlyList<ServerRecord>? servers,
+        string pathPrefix)
+    {
+        var listenersCount = listeners?.Count ?? 0;
+        var queuesCount = queues?.Count ?? 0;
+        var workersCount = servers?.Sum(s => s.WorkerCount) ?? 0;
+
+        var listenersHtml = new StringBuilder();
+        if (listeners != null && listeners.Count > 0)
+        {
+            foreach (var l in listeners.Take(3))
+            {
+                listenersHtml.Append("<div class=\"topo-box\">")
+                    .Append("<div class=\"topo-title\"><span>").Append(HtmlEncode(l.Broker)).Append("</span><span class=\"pulse-live\"></span></div>")
+                    .Append("<div class=\"topo-val\">").Append(HtmlEncode(l.Endpoint)).Append("</div>")
+                    .Append("<div class=\"topo-sub\">➔ ").Append(HtmlEncode(Helpers.ShortType(l.TargetJobType))).Append("</div>")
+                    .Append("</div>");
+            }
+        }
+        else
+        {
+            listenersHtml.Append("<div class=\"topo-box\"><div class=\"topo-title\">Triggers / Brokers</div><div class=\"topo-val\">Direct Enqueue / Cron</div><div class=\"topo-sub\">No external listeners</div></div>");
+        }
+
+        var queuesHtml = new StringBuilder();
+        if (queues != null && queues.Count > 0)
+        {
+            foreach (var q in queues.Take(3))
+            {
+                var count = q.Enqueued + q.Processing;
+                queuesHtml.Append("<div class=\"topo-box\">")
+                    .Append("<div class=\"topo-title\">Queue: ").Append(HtmlEncode(q.Queue)).Append("</div>")
+                    .Append("<div class=\"topo-val\">").Append(count).Append(" active</div>")
+                    .Append("<div class=\"topo-sub\">").Append(q.Enqueued).Append(" waiting · ").Append(q.Processing).Append(" running</div>")
+                    .Append("</div>");
+            }
+        }
+        else
+        {
+            queuesHtml.Append("<div class=\"topo-box\"><div class=\"topo-title\">Queue: default</div><div class=\"topo-val\">Idle</div><div class=\"topo-sub\">0 waiting · 0 running</div></div>");
+        }
+
+        var workersHtml = new StringBuilder();
+        if (servers != null && servers.Count > 0)
+        {
+            foreach (var s in servers.Take(3))
+            {
+                workersHtml.Append("<div class=\"topo-box\">")
+                    .Append("<div class=\"topo-title\"><span>Worker Node</span><span class=\"pulse-live\"></span></div>")
+                    .Append("<div class=\"topo-val\">").Append(HtmlEncode(s.Id)).Append("</div>")
+                    .Append("<div class=\"topo-sub\">").Append(s.WorkerCount).Append(" slots active</div>")
+                    .Append("</div>");
+            }
+        }
+        else
+        {
+            workersHtml.Append("<div class=\"topo-box\"><div class=\"topo-title\">Worker Nodes</div><div class=\"topo-val\">Offline</div><div class=\"topo-sub\">No active workers</div></div>");
+        }
+
+        const string ArrowSvg =
+            """
+            <div class="topo-arrow">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                    <polyline points="12 5 19 12 12 19"></polyline>
+                </svg>
+            </div>
+            """;
+
+        return
+            $$"""
+            <div class="topology-card">
+                <div class="topology-header">
+                    <div>
+                        <h3 style="font-size:16px;font-weight:600;margin:0 0 4px 0">Cluster Pipeline Topology</h3>
+                        <p style="font-size:12px;color:var(--text-secondary);margin:0">Live event flow from external broker triggers through buffer queues to background worker executors</p>
+                    </div>
+                    <div style="display:flex;gap:8px">
+                        <a href="{{pathPrefix}}/listeners" class="btn btn-secondary btn-sm">{{listenersCount}} Triggers</a>
+                        <a href="{{pathPrefix}}/queues" class="btn btn-secondary btn-sm">{{queuesCount}} Queues</a>
+                        <a href="{{pathPrefix}}/servers" class="btn btn-secondary btn-sm">{{workersCount}} Workers</a>
+                    </div>
+                </div>
+                <div class="topology-diagram">
+                    <div class="topo-col">
+                        <div style="font-size:11px;font-weight:700;color:var(--text-tertiary);text-transform:uppercase;margin-bottom:2px">1. Ingress & Triggers</div>
+                        {{listenersHtml}}
+                    </div>
+                    {{ArrowSvg}}
+                    <div class="topo-col">
+                        <div style="font-size:11px;font-weight:700;color:var(--text-tertiary);text-transform:uppercase;margin-bottom:2px">2. Queue Buffers</div>
+                        {{queuesHtml}}
+                    </div>
+                    {{ArrowSvg}}
+                    <div class="topo-col">
+                        <div style="font-size:11px;font-weight:700;color:var(--text-tertiary);text-transform:uppercase;margin-bottom:2px">3. Processing Workers</div>
+                        {{workersHtml}}
+                    </div>
+                </div>
+            </div>
+            """;
     }
 
     private static string HtmlEncode(string? text) => HttpUtility.HtmlEncode(text ?? string.Empty);

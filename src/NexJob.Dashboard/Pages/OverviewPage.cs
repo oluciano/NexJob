@@ -273,6 +273,7 @@ internal sealed class OverviewPage : IComponent
         var body =
             HtmlFragments.PageHeader("Overview", "Real-time job processing status") +
             topMetricsHtml +
+            HtmlFragments.TopologyMap(Listeners, _queueMetrics, _activeServers, PathPrefix) +
             "<div style=\"display:grid;grid-template-columns: 2fr 1fr; gap:24px\">" +
             "<div>" +
             "<div class=\"chart\" style=\"margin-bottom:24px\">" +
