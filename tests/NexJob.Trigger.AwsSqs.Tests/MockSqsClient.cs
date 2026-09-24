@@ -12,6 +12,7 @@ internal sealed class MockSqsClient : ISqsClient
 
     public TimeSpan SimulateProcessingDelay { get; set; } = TimeSpan.Zero;
     public bool BlockOnReceive { get; set; }
+    public Exception? ThrowOnReceive { get; set; }
 
     public List<string> DeleteCalls { get; } = new();
     public int VisibilityExtensionCalls { get; private set; }
@@ -34,6 +35,11 @@ internal sealed class MockSqsClient : ISqsClient
         ReceiveMessageRequest request,
         CancellationToken cancellationToken = default)
     {
+        if (ThrowOnReceive is not null)
+        {
+            throw ThrowOnReceive;
+        }
+
         if (BlockOnReceive)
         {
             var tcs = new TaskCompletionSource<ReceiveMessageResponse>();

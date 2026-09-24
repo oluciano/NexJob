@@ -17,6 +17,8 @@ internal sealed class GooglePubSubTriggerHandler : IHostedService
     private readonly IScheduler _scheduler;
     private readonly NexJobOptions _nexJobOptions;
     private readonly ILogger<GooglePubSubTriggerHandler> _logger;
+    private readonly IListenerRegistry? _listenerRegistry;
+    private readonly string _listenerId;
     private Task _runTask = Task.CompletedTask;
 
     /// <summary>
@@ -27,18 +29,29 @@ internal sealed class GooglePubSubTriggerHandler : IHostedService
     /// <param name="scheduler">The NexJob scheduler.</param>
     /// <param name="nexJobOptions">The NexJob options.</param>
     /// <param name="logger">The logger.</param>
+    /// <param name="listenerRegistry">Optional listener registry for operational visibility.</param>
     public GooglePubSubTriggerHandler(
         IOptions<GooglePubSubTriggerOptions> options,
         IPubSubSubscriber subscriber,
         IScheduler scheduler,
         NexJobOptions nexJobOptions,
-        ILogger<GooglePubSubTriggerHandler> logger)
+        ILogger<GooglePubSubTriggerHandler> logger,
+        IListenerRegistry? listenerRegistry = null)
     {
         _options = options.Value;
         _subscriber = subscriber;
         _scheduler = scheduler;
         _nexJobOptions = nexJobOptions;
         _logger = logger;
+        _listenerRegistry = listenerRegistry;
+        _listenerId = $"google-pubsub:{_options.SubscriptionId}";
+
+        _listenerRegistry?.Register(new ListenerRegistration(
+            Id: _listenerId,
+            Broker: "GooglePubSub",
+            Endpoint: _options.SubscriptionId,
+            TargetJobType: _options.JobType ?? "Dynamic",
+            JobTag: "trigger:google-pubsub"));
     }
 
     /// <inheritdoc/>
@@ -56,8 +69,11 @@ internal sealed class GooglePubSubTriggerHandler : IHostedService
         // before the host considers startup successful.
         if (_runTask.IsFaulted)
         {
+            _listenerRegistry?.UpdateStatus(_listenerId, ListenerStatus.Faulted, _runTask.Exception?.GetBaseException().Message ?? "Immediate startup fault");
             await _runTask.ConfigureAwait(false);
         }
+
+        _listenerRegistry?.UpdateStatus(_listenerId, ListenerStatus.Listening);
 
         _logger.LogInformation(
             "Google Pub/Sub trigger started. Project: {Project}, Subscription: {Subscription}, Target queue: {TargetQueue}",
@@ -69,6 +85,8 @@ internal sealed class GooglePubSubTriggerHandler : IHostedService
     /// <inheritdoc/>
     public async Task StopAsync(CancellationToken cancellationToken)
     {
+        _listenerRegistry?.UpdateStatus(_listenerId, ListenerStatus.Stopped);
+
         await _subscriber.StopAsync(cancellationToken).ConfigureAwait(false);
 
         // Await the run task so any startup failure surfaces here rather than

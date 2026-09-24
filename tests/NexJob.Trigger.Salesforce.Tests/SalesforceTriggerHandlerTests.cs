@@ -446,4 +446,105 @@ public sealed class SalesforceTriggerHandlerTests
             _ = ex;
         }
     }
+
+    // ─── 3N Testing Matrix: ListenerRegistry ─────────────────────────────────
+
+    [Fact]
+    public async Task ListenerRegistry_Lifecycle_TracksStatusProperly_Positive()
+    {
+        // N1: Positive - registers as Starting, updates to Listening on start, and Stopped on stop.
+        var registry = new DefaultListenerRegistry();
+        var handler = new SalesforceTriggerHandler(
+            Options.Create(_options),
+            _schedulerMock.Object,
+            _replayStoreMock.Object,
+            _pubSubClientMock.Object,
+            _schemaServiceMock.Object,
+            _nexJobOptions,
+            NullLogger<SalesforceTriggerHandler>.Instance,
+            registry);
+
+        var initial = registry.Get($"salesforce:{_options.Topic}");
+        initial.Should().NotBeNull();
+        initial!.Status.Should().Be(ListenerStatus.Starting);
+        initial.Broker.Should().Be("Salesforce (Pub/Sub API)");
+
+        _pubSubClientMock.Setup(c => c.SubscribeAsync(It.IsAny<string>(), It.IsAny<byte[]?>(), It.IsAny<SalesforceReplayPreset>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .Returns(ToAsyncEnumerable(Array.Empty<ConsumerEvent>()));
+
+        await handler.StartAsync(CancellationToken.None);
+        await Task.Delay(100);
+
+        var listening = registry.Get($"salesforce:{_options.Topic}");
+        listening!.Status.Should().Be(ListenerStatus.Listening);
+
+        await handler.StopAsync(CancellationToken.None);
+
+        var stopped = registry.Get($"salesforce:{_options.Topic}");
+        stopped!.Status.Should().Be(ListenerStatus.Stopped);
+    }
+
+    [Fact]
+    public async Task ListenerRegistry_Lifecycle_TracksStatusProperly_Negative()
+    {
+        // N2: Negative - on FailFast RpcException, updates status to Faulted.
+        var registry = new DefaultListenerRegistry();
+        _options.FallbackPolicy = ReplayFallbackPolicy.FailFast;
+        byte[] staleReplay = [0x99, 0x99];
+
+        _replayStoreMock.Setup(s => s.GetLastReplayIdAsync(_options.Topic, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(staleReplay);
+
+        var rpcException = new RpcException(new Status(StatusCode.InvalidArgument, "400: The replayId is too old"));
+        _pubSubClientMock.Setup(c => c.SubscribeAsync(
+                _options.Topic,
+                staleReplay,
+                SalesforceReplayPreset.Latest,
+                _options.BatchSize,
+                It.IsAny<CancellationToken>()))
+            .Throws(rpcException);
+
+        var handler = new SalesforceTriggerHandler(
+            Options.Create(_options),
+            _schedulerMock.Object,
+            _replayStoreMock.Object,
+            _pubSubClientMock.Object,
+            _schemaServiceMock.Object,
+            _nexJobOptions,
+            NullLogger<SalesforceTriggerHandler>.Instance,
+            registry);
+
+        try
+        {
+            await handler.StartAsync(CancellationToken.None);
+            if (handler.ExecuteTask is not null)
+            {
+                await handler.ExecuteTask;
+            }
+        }
+        catch (RpcException)
+        {
+            // Expected under FailFast
+        }
+
+        var faulted = registry.Get($"salesforce:{_options.Topic}");
+        faulted!.Status.Should().Be(ListenerStatus.Faulted);
+    }
+
+    [Fact]
+    public void ListenerRegistry_NullRegistry_BoundaryHandledGracefully()
+    {
+        // N3: Invalid input / Boundary - passing null for IListenerRegistry does not throw and works normally.
+        var act = () => new SalesforceTriggerHandler(
+            Options.Create(_options),
+            _schedulerMock.Object,
+            _replayStoreMock.Object,
+            _pubSubClientMock.Object,
+            _schemaServiceMock.Object,
+            _nexJobOptions,
+            NullLogger<SalesforceTriggerHandler>.Instance,
+            listenerRegistry: null);
+
+        act.Should().NotThrow();
+    }
 }

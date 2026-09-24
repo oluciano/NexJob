@@ -17,6 +17,8 @@ internal sealed class AzureServiceBusTriggerHandler : IHostedService
     private readonly IScheduler _scheduler;
     private readonly NexJobOptions _nexJobOptions;
     private readonly ILogger<AzureServiceBusTriggerHandler> _logger;
+    private readonly IListenerRegistry? _listenerRegistry;
+    private readonly string _listenerId;
 
     private ServiceBusClient? _client;
     private ServiceBusProcessor? _processor;
@@ -28,16 +30,28 @@ internal sealed class AzureServiceBusTriggerHandler : IHostedService
     /// <param name="scheduler">The NexJob scheduler for enqueueing jobs.</param>
     /// <param name="nexJobOptions">Global NexJob configuration options.</param>
     /// <param name="logger">Logger for diagnostic output.</param>
+    /// <param name="listenerRegistry">Optional listener registry for operational visibility.</param>
     public AzureServiceBusTriggerHandler(
         IOptions<AzureServiceBusTriggerOptions> options,
         IScheduler scheduler,
         NexJobOptions nexJobOptions,
-        ILogger<AzureServiceBusTriggerHandler> logger)
+        ILogger<AzureServiceBusTriggerHandler> logger,
+        IListenerRegistry? listenerRegistry = null)
     {
         _options = options.Value;
         _scheduler = scheduler;
         _nexJobOptions = nexJobOptions;
         _logger = logger;
+        _listenerRegistry = listenerRegistry;
+        _listenerId = $"asb:{_options.QueueOrTopicName}";
+
+        _listenerRegistry?.Register(new ListenerRegistration(
+            Id: _listenerId,
+            Broker: "AzureServiceBus",
+            Endpoint: _options.QueueOrTopicName,
+            TargetJobType: _options.JobType ?? "Dynamic",
+            JobTag: "trigger:azuresb",
+            ConsumerGroup: _options.SubscriptionName));
     }
 
     /// <summary>
@@ -61,6 +75,7 @@ internal sealed class AzureServiceBusTriggerHandler : IHostedService
         _processor.ProcessErrorAsync += HandleErrorAsync;
 
         await _processor.StartProcessingAsync(cancellationToken).ConfigureAwait(false);
+        _listenerRegistry?.UpdateStatus(_listenerId, ListenerStatus.Listening);
 
         _logger.LogInformation(
             "Azure Service Bus trigger started. Queue/Topic: {QueueOrTopic}, Subscription: {Subscription}, Target queue: {TargetQueue}",
@@ -74,6 +89,8 @@ internal sealed class AzureServiceBusTriggerHandler : IHostedService
     /// </summary>
     public async Task StopAsync(CancellationToken cancellationToken)
     {
+        _listenerRegistry?.UpdateStatus(_listenerId, ListenerStatus.Stopped);
+
         if (_processor is not null)
         {
             await _processor.StopProcessingAsync(cancellationToken).ConfigureAwait(false);
@@ -163,6 +180,8 @@ internal sealed class AzureServiceBusTriggerHandler : IHostedService
     /// </summary>
     internal Task HandleErrorAsync(ProcessErrorEventArgs args)
     {
+        _listenerRegistry?.UpdateStatus(_listenerId, ListenerStatus.Reconnecting, args.Exception?.Message ?? "Service Bus error");
+
         _logger.LogError(
             args.Exception,
             "Azure Service Bus processor error. Operation: {Operation}",
