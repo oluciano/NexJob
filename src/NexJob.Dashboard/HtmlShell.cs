@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Reflection;
 using NexJob.Storage;
 
 namespace NexJob.Dashboard;
@@ -425,6 +426,9 @@ internal static class HtmlShell
         .pulse-live { width: 6px; height: 6px; border-radius: 50%; background: var(--success); display: inline-block; box-shadow: 0 0 8px var(--success); }
         """;
 
+    private static readonly string CoreVersion = GetAssemblyVersion(typeof(JobRecord).Assembly);
+    private static readonly string DashboardVersion = GetAssemblyVersion(typeof(HtmlShell).Assembly);
+
     /// <summary>Wraps the content in the standard HTML shell.</summary>
     internal static string Wrap(string title, string pathPrefix, string activeRoute, string body, NavCounters? counters = null, JobMetrics? metrics = null) =>
         $$"""
@@ -531,8 +535,8 @@ internal static class HtmlShell
                     </a>
                 </div>
                 <div class="sidebar-footer">
-                    <span>NexJob Core v5.2</span>
-                    <a href="https://github.com/oluciano/NexJob/releases" target="_blank" style="color:var(--text-secondary);text-decoration:none;font-weight:600">v3.0.0</a>
+                    <span>NexJob Core v{{CoreVersion}}</span>
+                    <a href="https://github.com/oluciano/NexJob/releases/tag/v{{DashboardVersion}}" target="_blank" style="color:var(--text-secondary);text-decoration:none;font-weight:600">v{{DashboardVersion}}</a>
                 </div>
             </nav>
 
@@ -700,4 +704,16 @@ internal static class HtmlShell
     }
 
     private static string Active(string route, string page) => string.Equals(route, page, StringComparison.Ordinal) ? "active" : string.Empty;
+
+    private static string GetAssemblyVersion(Assembly assembly)
+    {
+        var infoVer = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
+        if (!string.IsNullOrWhiteSpace(infoVer))
+        {
+            var plusIdx = infoVer.IndexOf('+', StringComparison.Ordinal);
+            return plusIdx > 0 ? infoVer[..plusIdx] : infoVer;
+        }
+
+        return assembly.GetName().Version?.ToString(3) ?? "5.3.0";
+    }
 }
