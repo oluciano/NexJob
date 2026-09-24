@@ -262,6 +262,111 @@ public sealed class AwsSqsTriggerTests
         services.Any(sd => sd.ServiceType == typeof(TestConsumerSqsJob)).Should().BeTrue();
     }
 
+    // ─── 3N Testing Matrix: ListenerRegistry ─────────────────────────────────
+
+    [Fact]
+    public async Task ListenerRegistry_Lifecycle_TracksStatusProperly_Positive()
+    {
+        // N1: Positive - registers as Starting, transitions to Listening on StartAsync, and Stopped on StopAsync.
+        var registry = new DefaultListenerRegistry();
+        var sqsClient = new MockSqsClient();
+        var scheduler = new MockScheduler();
+        var options = Options.Create(new AwsSqsTriggerOptions
+        {
+            QueueUrl = "https://sqs.us-east-1.amazonaws.com/123456789/test-queue",
+            JobName = typeof(TestJob).AssemblyQualifiedName!,
+            WaitTimeSeconds = 1,
+        });
+        var nexJobOptions = new NexJobOptions { MaxAttempts = 3 };
+        var logger = new MockLogger<AwsSqsTriggerHandler>();
+
+        var trigger = new AwsSqsTriggerHandler(
+            options,
+            sqsClient,
+            scheduler,
+            nexJobOptions,
+            logger,
+            registry);
+
+        var initial = registry.Get($"sqs:{options.Value.QueueUrl}");
+        initial.Should().NotBeNull();
+        initial!.Status.Should().Be(ListenerStatus.Starting);
+        initial.Broker.Should().Be("AwsSqs");
+        initial.Endpoint.Should().Be(options.Value.QueueUrl);
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await trigger.StartAsync(cts.Token);
+
+        var listening = registry.Get($"sqs:{options.Value.QueueUrl}");
+        listening!.Status.Should().Be(ListenerStatus.Listening);
+
+        await trigger.StopAsync(cts.Token);
+
+        var stopped = registry.Get($"sqs:{options.Value.QueueUrl}");
+        stopped!.Status.Should().Be(ListenerStatus.Stopped);
+    }
+
+    [Fact]
+    public async Task ListenerRegistry_Lifecycle_TracksStatusProperly_Negative()
+    {
+        // N2: Negative - on PollLoop error, updates status to Reconnecting.
+        var registry = new DefaultListenerRegistry();
+        var sqsClient = new MockSqsClient();
+        var scheduler = new MockScheduler();
+        var options = Options.Create(new AwsSqsTriggerOptions
+        {
+            QueueUrl = "https://sqs.us-east-1.amazonaws.com/123456789/test-queue",
+            JobName = typeof(TestJob).AssemblyQualifiedName!,
+            WaitTimeSeconds = 1,
+        });
+        var nexJobOptions = new NexJobOptions { MaxAttempts = 3 };
+        var logger = new MockLogger<AwsSqsTriggerHandler>();
+
+        var trigger = new AwsSqsTriggerHandler(
+            options,
+            sqsClient,
+            scheduler,
+            nexJobOptions,
+            logger,
+            registry);
+
+        sqsClient.ThrowOnReceive = new Amazon.SQS.AmazonSQSException("Service unavailable");
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await trigger.StartAsync(cts.Token);
+        await Task.Delay(100);
+
+        var reconnecting = registry.Get($"sqs:{options.Value.QueueUrl}");
+        reconnecting!.Status.Should().Be(ListenerStatus.Reconnecting);
+
+        await trigger.StopAsync(cts.Token);
+    }
+
+    [Fact]
+    public void ListenerRegistry_NullRegistry_BoundaryHandledGracefully()
+    {
+        // N3: Invalid input / Boundary - passing null for IListenerRegistry does not throw.
+        var sqsClient = new MockSqsClient();
+        var scheduler = new MockScheduler();
+        var options = Options.Create(new AwsSqsTriggerOptions
+        {
+            QueueUrl = "https://sqs.us-east-1.amazonaws.com/123456789/test-queue",
+            JobName = typeof(TestJob).AssemblyQualifiedName!,
+        });
+        var nexJobOptions = new NexJobOptions { MaxAttempts = 3 };
+        var logger = new MockLogger<AwsSqsTriggerHandler>();
+
+        var act = () => new AwsSqsTriggerHandler(
+            options,
+            sqsClient,
+            scheduler,
+            nexJobOptions,
+            logger,
+            listenerRegistry: null);
+
+        act.Should().NotThrow();
+    }
+
     // ─── Test job type ───────────────────────────────────────────────────────
 
     private sealed class TestJob : IJob

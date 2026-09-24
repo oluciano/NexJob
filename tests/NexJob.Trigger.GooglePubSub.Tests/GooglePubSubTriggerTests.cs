@@ -398,6 +398,91 @@ public sealed class GooglePubSubTriggerTests
         options.JobType.Should().Be(typeof(TestConsumerPubSubJob).AssemblyQualifiedName);
         services.Any(sd => sd.ServiceType == typeof(TestConsumerPubSubJob)).Should().BeTrue();
     }
+
+    // ─── 3N Testing Matrix: ListenerRegistry ─────────────────────────────────
+
+    /// <summary>
+    /// N1: Positive - registers as Starting, updates to Listening on StartAsync, and Stopped on StopAsync.
+    /// </summary>
+    [Fact]
+    public async Task ListenerRegistry_Lifecycle_TracksStatusProperly_Positive()
+    {
+        var registry = new DefaultListenerRegistry();
+        _subscriberMock
+            .Setup(s => s.StartAsync(It.IsAny<Func<PubsubMessage, CancellationToken, Task<SubscriberClient.Reply>>>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        _subscriberMock
+            .Setup(s => s.StopAsync(It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var handler = new GooglePubSubTriggerHandler(
+            Options.Create(_triggerOptions),
+            _subscriberMock.Object,
+            _scheduler,
+            _nexJobOptions,
+            _loggerMock.Object,
+            registry);
+
+        var initial = registry.Get($"google-pubsub:{_triggerOptions.SubscriptionId}");
+        initial.Should().NotBeNull();
+        initial!.Status.Should().Be(ListenerStatus.Starting);
+        initial.Broker.Should().Be("GooglePubSub");
+        initial.Endpoint.Should().Be(_triggerOptions.SubscriptionId);
+
+        await handler.StartAsync(CancellationToken.None);
+
+        var listening = registry.Get($"google-pubsub:{_triggerOptions.SubscriptionId}");
+        listening!.Status.Should().Be(ListenerStatus.Listening);
+
+        await handler.StopAsync(CancellationToken.None);
+
+        var stopped = registry.Get($"google-pubsub:{_triggerOptions.SubscriptionId}");
+        stopped!.Status.Should().Be(ListenerStatus.Stopped);
+    }
+
+    /// <summary>
+    /// N2: Negative - on immediate startup fault, updates status to Faulted.
+    /// </summary>
+    [Fact]
+    public async Task ListenerRegistry_Lifecycle_TracksStatusProperly_Negative()
+    {
+        var registry = new DefaultListenerRegistry();
+        _subscriberMock
+            .Setup(s => s.StartAsync(It.IsAny<Func<PubsubMessage, CancellationToken, Task<SubscriberClient.Reply>>>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.FromException(new InvalidOperationException("Invalid project or credentials")));
+
+        var handler = new GooglePubSubTriggerHandler(
+            Options.Create(_triggerOptions),
+            _subscriberMock.Object,
+            _scheduler,
+            _nexJobOptions,
+            _loggerMock.Object,
+            registry);
+
+        var act = () => handler.StartAsync(CancellationToken.None);
+        await act.Should().ThrowAsync<InvalidOperationException>();
+
+        var faulted = registry.Get($"google-pubsub:{_triggerOptions.SubscriptionId}");
+        faulted!.Status.Should().Be(ListenerStatus.Faulted);
+        faulted.StatusDescription.Should().Contain("Invalid project or credentials");
+    }
+
+    /// <summary>
+    /// N3: Invalid input / Boundary - passing null for IListenerRegistry does not throw.
+    /// </summary>
+    [Fact]
+    public void ListenerRegistry_NullRegistry_BoundaryHandledGracefully()
+    {
+        var act = () => new GooglePubSubTriggerHandler(
+            Options.Create(_triggerOptions),
+            _subscriberMock.Object,
+            _scheduler,
+            _nexJobOptions,
+            _loggerMock.Object,
+            listenerRegistry: null);
+
+        act.Should().NotThrow();
+    }
 }
 
 /// <summary>
