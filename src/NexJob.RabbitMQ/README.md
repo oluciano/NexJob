@@ -98,9 +98,14 @@ Consumes incoming messages from RabbitMQ queues and automatically enqueues them 
 
 ### Registration
 
+There are two ways to register which job is triggered when a message arrives:
+
+#### Option A: Strongly-Typed Consumer (Recommended)
+Bind a queue directly to a job handler class (`IJob<string>`). The job is automatically registered in DI as `Transient`:
+
 ```csharp
 builder.Services.AddNexJob()
-    .AddRabbitMqTrigger(options =>
+    .AddNexJobRabbitMqTrigger<ProcessOrderJob>(options =>
     {
         options.HostName = builder.Configuration["RABBITMQ_HOST"] ?? "localhost";
         options.Port = 5672;
@@ -109,6 +114,19 @@ builder.Services.AddNexJob()
         options.QueueName = "incoming-orders";
         options.TargetQueue = "orders";
         options.PrefetchCount = 10;
+    });
+```
+
+#### Option B: Dynamic Message Header (`nexjob.job_type`)
+If multiple job types share the same queue, omit the generic argument. The incoming RabbitMQ message must include the `nexjob.job_type` header (or have `options.JobType` configured as a default):
+
+```csharp
+builder.Services.AddNexJob()
+    .AddRabbitMqTrigger(options =>
+    {
+        options.HostName = "localhost";
+        options.QueueName = "incoming-events";
+        // options.JobType = typeof(DefaultEventJob).AssemblyQualifiedName;
     });
 ```
 
