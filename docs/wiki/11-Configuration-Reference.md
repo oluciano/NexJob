@@ -31,10 +31,12 @@ builder.Services.AddNexJob(options =>
     options.Queues = new[] { "default", "emails", "reports" }; // Default: ["default"]
 
     // Retention policies (auto-purge old jobs)
-    options.RetentionSucceeded = TimeSpan.FromDays(7);  // Default: 7 days
-    options.RetentionFailed = TimeSpan.FromDays(30);    // Default: 30 days
-    options.RetentionExpired = TimeSpan.FromDays(7);    // Default: 7 days
-    options.RetentionInterval = TimeSpan.FromHours(1);  // How often to purge
+    options.RetentionSucceeded = TimeSpan.FromDays(7);   // Default: 7 days
+    options.RetentionFailed = TimeSpan.FromDays(30);     // Default: 30 days
+    options.RetentionExpired = TimeSpan.FromDays(7);     // Default: 7 days
+    options.RetentionDeadLetter = TimeSpan.FromDays(60); // Default: 60 days
+    options.RetentionInterval = TimeSpan.FromHours(1);   // How often to purge
+    options.RetentionBatchSize = 1000;                   // Chunk size to prevent DB lock contention
 
     // TTL for distributed throttle slots in Redis.
     // Must exceed your longest expected job execution time.
@@ -83,6 +85,8 @@ Jobs enqueued to a queue outside its execution window will wait until the window
     "RetentionSucceeded": "7.00:00:00",
     "RetentionFailed": "30.00:00:00",
     "RetentionExpired": "7.00:00:00",
+    "RetentionDeadLetter": "60.00:00:00",
+    "RetentionBatchSize": 1000,
     "Dashboard": {
       "Enabled": true
     },
@@ -184,6 +188,8 @@ Modifiable at runtime via dashboard or API. Persisted in storage.
 | `RetentionSucceeded` | Adjust retention for succeeded jobs |
 | `RetentionFailed` | Adjust retention for failed jobs |
 | `RetentionExpired` | Adjust retention for expired jobs |
+| `RetentionDeadLetter` | Adjust retention for dead-letter jobs |
+| `RetentionBatchSize` | Maximum rows deleted per batch during purge |
 
 Changes apply on the next dispatcher cycle.
 

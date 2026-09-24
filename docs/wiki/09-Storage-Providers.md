@@ -43,18 +43,39 @@ dotnet add package NexJob.Postgres
 ```
 
 ```csharp
+// 1. Register PostgreSQL storage
+builder.Services.AddNexJobPostgres(
+    builder.Configuration.GetConnectionString("NexJobConnection")!);
+
+// 2. Register NexJob core services
 builder.Services.AddNexJob(options =>
 {
-    options.UsePostgres("Host=localhost;Database=nexjob;Username=postgres;Password=secret");
+    options.Workers = 10;
+    options.Queues = ["default", "critical"];
 });
+```
+
+### Dashboard Read Replica Support
+
+Offload read-heavy dashboard and telemetry queries to a secondary database replica using `UseDashboardReadReplica`:
+
+```csharp
+builder.Services.AddNexJobPostgres(primaryConnectionString);
+
+builder.Services.AddNexJob(options =>
+{
+    options.Workers = 10;
+})
+.UseDashboardReadReplica(readReplicaConnectionString);
 ```
 
 ### Features
 
 - Full ACID guarantees
 - Distributed lock via advisory locks
-- Dashboard queries optimized
-- Automatic table creation on first use
+- Concurrency-safe job fetching via `FOR UPDATE SKIP LOCKED`
+- Dashboard Read Replica offloading
+- Automatic table creation and schema migrations on startup
 
 ---
 
@@ -65,17 +86,39 @@ dotnet add package NexJob.SqlServer
 ```
 
 ```csharp
+// 1. Register SQL Server storage
+builder.Services.AddNexJobSqlServer(
+    builder.Configuration.GetConnectionString("NexJobConnection")!);
+
+// 2. Register NexJob core services
 builder.Services.AddNexJob(options =>
 {
-    options.UseSqlServer("Server=localhost;Database=NexJob;Trusted_Connection=True;TrustServerCertificate=True;");
+    options.Workers = 10;
+    options.Queues = ["default", "critical"];
 });
+```
+
+### Dashboard Read Replica Support
+
+Route dashboard metrics and monitoring queries to an Azure SQL / SQL Server read-scale replica:
+
+```csharp
+builder.Services.AddNexJobSqlServer(primaryConnectionString);
+
+builder.Services.AddNexJob(options =>
+{
+    options.Workers = 10;
+})
+.UseDashboardReadReplica(readReplicaConnectionString);
 ```
 
 ### Features
 
 - Full ACID guarantees
 - Distributed lock via `sp_getapplock`
-- Automatic table creation on first use
+- Concurrency-safe job fetching via `WITH (UPDLOCK, READPAST, ROWLOCK)`
+- Dashboard Read Replica offloading
+- Automatic table creation and schema migrations on startup
 
 ---
 
@@ -86,18 +129,33 @@ dotnet add package NexJob.Redis
 ```
 
 ```csharp
+// 1. Register Redis storage
+builder.Services.AddNexJobRedis("localhost:6379,abortConnect=false");
+
+// 2. Register NexJob core services
 builder.Services.AddNexJob(options =>
 {
-    options.UseRedis("localhost:6379,password=secret");
+    options.Workers = 10;
+    options.Queues = ["default", "critical"];
 });
+```
+
+### Distributed Throttling
+
+Enable global, cluster-wide rate limiting across multiple worker nodes or containers:
+
+```csharp
+builder.Services.AddNexJobRedis("localhost:6379")
+    .AddNexJobDistributedThrottle();
 ```
 
 ### Features
 
-- Lowest latency of all providers
+- Lowest latency of all providers (microsecond dispatch)
+- Atomic state transitions via server-side Lua scripts
+- Global distributed sliding-window throttling
 - Distributed lock via `SET NX` with expiry
-- Data persisted in Redis data structures
-- Automatic key initialization
+- Priority queues via Redis Sorted Sets (`ZSET`)
 
 ---
 
@@ -108,18 +166,25 @@ dotnet add package NexJob.MongoDB
 ```
 
 ```csharp
+// 1. Register MongoDB storage
+builder.Services.AddNexJobMongoDB(
+    connectionString: builder.Configuration.GetConnectionString("MongoConnection")!,
+    databaseName: "nexjob");
+
+// 2. Register NexJob core services
 builder.Services.AddNexJob(options =>
 {
-    options.UseMongoDB("mongodb://localhost:27017", "nexjob");
+    options.Workers = 10;
+    options.Queues = ["default", "critical"];
 });
 ```
 
 ### Features
 
 - Document model matches job JSON naturally
-- Distributed lock via `findAndModify`
-- Automatic collection creation
-- Indexes created on first use
+- Atomic state transitions via `FindOneAndUpdate` with optimistic filter criteria
+- Distributed recurring locks via atomic collections
+- Automatic index creation on first use
 
 ---
 

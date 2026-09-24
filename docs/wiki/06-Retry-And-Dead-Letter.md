@@ -150,6 +150,31 @@ The `JobRecord` passed to dead-letter handlers contains:
 
 ---
 
+## Dead-Letter Retention & Chunked Purging
+
+Failed and dead-lettered jobs are retained in storage for troubleshooting and manual re-queuing before being automatically purged by `JobRetentionService`.
+
+Configure retention thresholds and batch sizing in `NexJobOptions`:
+
+```csharp
+builder.Services.AddNexJob(options =>
+{
+    // Keep dead-lettered jobs for 60 days (default)
+    options.RetentionDeadLetter = TimeSpan.FromDays(60);
+
+    // Run the retention purge loop every hour (default)
+    options.RetentionInterval = TimeSpan.FromHours(1);
+
+    // Delete in chunks of 1000 to avoid table locks and WAL / log bloat
+    options.RetentionBatchSize = 1000;
+});
+```
+
+To retain dead-letter jobs indefinitely, set `options.RetentionDeadLetter = TimeSpan.Zero`.
+Chunked purging runs across all persistent storage providers (PostgreSQL, SQL Server, Redis, MongoDB).
+
+---
+
 ## Next Steps
 
 - [Throttling](07-Throttling.md) — Limit concurrent executions
