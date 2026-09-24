@@ -125,7 +125,9 @@ builder.Services.AddNexJob()
 
 ---
 
-## 4. Producer Configuration Options
+## 4. Configuration Options
+
+### Producer Options (`KafkaProducerOptions`)
 
 | Option | Description | Default |
 |---|---|---|
@@ -135,6 +137,18 @@ builder.Services.AddNexJob()
 | `FlushTimeout` | Timeout for flushing messages on application shutdown | `10 seconds` |
 | `Queue` | NexJob queue name used for publishing jobs | `"kafka-producer"` |
 | `DefaultPriority` | Default execution priority for publishing jobs | `JobPriority.Normal` |
+| `ConfigureProducer` | Delegate (`Action<ProducerConfig>`) to customize SASL/SSL credentials, TLS certificates, and timeouts | `null` |
+
+### Trigger Options (`KafkaTriggerOptions`)
+
+| Option | Description | Default |
+|---|---|---|
+| `BootstrapServers` | Comma-separated list of Kafka broker endpoints (required) | `""` |
+| `Topic` | Kafka topic to consume messages from | `""` |
+| `GroupId` | Kafka consumer group identifier | `""` |
+| `TargetQueue` | Target NexJob queue name for enqueued jobs | `"default"` |
+| `ConsumeTimeout` | Polling timeout for `IConsumer.Consume` | `1 second` |
+| `ConfigureConsumer` | Delegate (`Action<ConsumerConfig>`) to customize SASL/SSL credentials, TLS certificates, and timeouts | `null` |
 
 ---
 

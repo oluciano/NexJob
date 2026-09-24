@@ -170,6 +170,7 @@ public static class NexJobServiceCollectionExtensions
         services.TryAddSingleton<IDashboardStorage>(sp => sp.GetRequiredService<InMemoryStorageProvider>());
 
         services.TryAddSingleton<IRuntimeSettingsStore, InMemoryRuntimeSettingsStore>();
+        services.TryAddSingleton<IListenerRegistry, DefaultListenerRegistry>();
         GetOrCreateRegistry(services);  // Ensure registry is registered
         services.AddSingleton<JobWakeUpChannel>();
         services.AddSingleton<IScheduler, DefaultScheduler>();

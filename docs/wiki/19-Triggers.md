@@ -271,6 +271,22 @@ duplicate jobs even under partial failures.
 
 ---
 
+## Active Triggers & Listener Registry (`IListenerRegistry`)
+
+NexJob includes a centralized, thread-safe registry (`IListenerRegistry`) that tracks the real-time operational status of all registered broker consumers and triggers.
+
+Each trigger registers its endpoint, broker type, consumer group, and dynamically updates its status throughout its lifecycle:
+- **`Starting`**: Initializing broker connection and subscribing.
+- **`Listening`**: Successfully connected and actively polling/consuming messages.
+- **`Reconnecting`**: Transient connection loss or broker error; undergoing automatic reconnect/retry.
+- **`Faulted`**: Fatal unrecoverable broker error (includes error message).
+- **`Stopped`**: Host shutdown or graceful deregistration.
+
+### Dashboard Visibility
+All registered triggers and their live connection states, endpoints, target queues, and uptimes are rendered in the dashboard at the **`/listeners`** route and summarized in the **Cluster Pipeline Topology Map** on the Overview page.
+
+---
+
 ## Next Steps
 
 - [Idempotency](17-Idempotency.md) — Learn about `DuplicatePolicy`

@@ -264,6 +264,8 @@ v4.0.0  ✅ Reliability hardening, crash recovery, orphaned job watcher, fault i
 v5.0.0  ✅ Resilient Outbox producers & triggers for RabbitMQ and Apache Kafka
 v5.1.0  ✅ Salesforce triggers (gRPC Pub/Sub API + CometD Bayeux Streaming API)
 v5.2.0  ✅ Dead-letter retention & chunked purging, consumer-driven triggers, OTel HPA gauges
+v5.3.0  ✅ Kafka security delegates (ConfigureConsumer, ConfigureProducer, SASL/SSL PEM)
+v5.4.0  ✅ Dashboard Maxton layout (5 themes), Cluster Topology, SSE log stream & Event Listeners
 ```
 
 ---

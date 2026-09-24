@@ -591,6 +591,40 @@ public sealed class RabbitMqTriggerTests
         options.JobType.Should().Be(typeof(TestConsumerRabbitJob).AssemblyQualifiedName);
         services.Any(sd => sd.ServiceType == typeof(TestConsumerRabbitJob)).Should().BeTrue();
     }
+
+    /// <summary>
+    /// Verifies that RabbitMqTriggerHandler registers with IListenerRegistry and updates status.
+    /// </summary>
+    [Fact]
+    public async Task ListenerRegistry_Lifecycle_TracksStatusProperly()
+    {
+        // Arrange
+        var registry = new DefaultListenerRegistry();
+        _channelMock.Setup(m => m.BasicConsume(It.IsAny<string>(), false, It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<IDictionary<string, object>>(), It.IsAny<IBasicConsumer>()))
+            .Returns("consumer-tag");
+
+        var handler = new RabbitMqTriggerHandler(
+            Options.Create(_triggerOptions),
+            _connectionFactoryMock.Object,
+            _scheduler,
+            _nexJobOptions,
+            _loggerMock.Object,
+            registry);
+
+        var initial = registry.Get($"rabbitmq:{_triggerOptions.QueueName}");
+        initial.Should().NotBeNull();
+        initial!.Status.Should().Be(ListenerStatus.Starting);
+
+        // Act & Assert 1: Start
+        await handler.StartAsync(CancellationToken.None);
+        var started = registry.Get($"rabbitmq:{_triggerOptions.QueueName}");
+        started!.Status.Should().Be(ListenerStatus.Listening);
+
+        // Act & Assert 2: Stop
+        await handler.StopAsync(CancellationToken.None);
+        var stopped = registry.Get($"rabbitmq:{_triggerOptions.QueueName}");
+        stopped!.Status.Should().Be(ListenerStatus.Stopped);
+    }
 }
 
 /// <summary>

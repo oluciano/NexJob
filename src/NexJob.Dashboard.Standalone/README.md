@@ -2,7 +2,7 @@
 
 Self-hosted embedded monitoring dashboard for **NexJob** in **Worker Services** and **Console Applications**.
 
-Enables monitoring and queue management in headless background services without requiring a full ASP.NET Core web host or external web server.
+Enables complete operational monitoring, cluster topology visualization, and queue management in headless background services without requiring a full ASP.NET Core web host or external web server. Features the enterprise **Maxton Design System** with 5 switchable themes (persisted in `localStorage`), 64px Top Header with shortcut search (`Ctrl + K`), Cluster Pipeline Topology Map, real-time SSE live log streaming, and Event Triggers / Listeners visibility.
 
 ---
 
