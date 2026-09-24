@@ -67,6 +67,48 @@ Input is serialized to JSON and stored in the `JobRecord`. Requirements:
 
 ---
 
+## Dependency Injection, Scopes & DbContext
+
+A common question is: *"How does NexJob handle scoped services, Entity Framework Core, or DbContext?"*
+
+### Execution Lifecycle
+When the dispatcher picks up a job for execution:
+1. **Isolated `IServiceScope`**: NexJob creates a new DI scope via `IServiceProvider.CreateScope()` specifically for that job execution.
+2. **Transient Job Resolution**: The job class (e.g. `ProcessOrderJob`) is resolved from this new scope.
+3. **Scoped Services (EF Core / DbContext)**: Any `Scoped` dependency injected into the job's constructor (like `AppDbContext`, repositories, or `IJobContext`) belongs strictly to that execution's scope.
+4. **Automatic Clean Disposal**: When execution finishes (whether successful or failed), the `IServiceScope` is disposed, safely committing or closing database connections and releasing memory.
+
+```csharp
+public sealed class ProcessOrderJob : IJob<ProcessOrderInput>
+{
+    private readonly AppDbContext _db; // Scoped EF Core DbContext
+    private readonly ILogger<ProcessOrderJob> _logger;
+
+    public ProcessOrderJob(AppDbContext db, ILogger<ProcessOrderJob> logger)
+    {
+        _db = db;
+        _logger = logger;
+    }
+
+    public async Task ExecuteAsync(ProcessOrderInput input, CancellationToken ct)
+    {
+        // Safe: _db is completely isolated to this single job execution.
+        // Multiple concurrent workers will never share or conflict on this DbContext instance.
+        var order = await _db.Orders.FindAsync([input.OrderId], ct);
+        if (order is not null)
+        {
+            order.Status = "Processed";
+            await _db.SaveChangesAsync(ct);
+        }
+    }
+}
+```
+
+> [!TIP]
+> You do **not** need to manually call `using var scope = serviceProvider.CreateScope()`. NexJob guarantees scope isolation out of the box.
+
+---
+
 ## Dead-Letter Handlers
 
 When a job exhausts all retries, NexJob invokes its dead-letter handler. This is optional — jobs without handlers are simply marked as `Failed`.

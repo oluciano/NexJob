@@ -144,9 +144,20 @@ Hello at 2026-04-08T12:00:00Z
 
 ---
 
+## Runnable Reference Samples
+
+If you prefer learning by inspecting a live, working project, the repository includes ready-to-run samples in [`samples/`](https://github.com/oluciano/NexJob/tree/develop/samples):
+
+- **[NexJob.Sample.MinimalApi](https://github.com/oluciano/NexJob/tree/develop/samples/NexJob.Sample.MinimalApi)**: Complete ASP.NET Core API with dashboard, dead-letter handler, and deadline enforcement.
+- **[NexJob.Sample.WebApi](https://github.com/oluciano/NexJob/tree/develop/samples/NexJob.Sample.WebApi)**: Web API with PostgreSQL storage and `.http` test files.
+- **[NexJob.Sample.WorkerService](https://github.com/oluciano/NexJob/tree/develop/samples/NexJob.Sample.WorkerService)**: Headless console background worker with standalone embedded HTTP dashboard.
+- **[NexJob.Sample.CloudTriggers](https://github.com/oluciano/NexJob/tree/develop/samples/NexJob.Sample.CloudTriggers)**: Event-driven cloud consumers for AWS SQS, Azure Service Bus, GCP Pub/Sub, and Salesforce.
+
+---
+
 ## Next Steps
 
 - [Mental Model](00-Mental-Model.md) — Understand how NexJob works
-- [Job Types](02-Job-Types.md) — `IJob` vs `IJob<T>` in detail
-- [Scheduling](03-Scheduling.md) — Delay, schedule, priority, deadline
-- [Storage Providers](09-Storage-Providers.md) — Configure PostgreSQL, Redis, etc.
+- [Job Types & Dependency Injection](02-Job-Types.md) — `IJob`, `IJob<T>`, Scopes and DbContext lifecycle
+- [Scheduling](03-Scheduling.md) — `IScheduler` cheat sheet, delay, priority, deadline
+- [Storage Providers](09-Storage-Providers.md) — Configure PostgreSQL, SQL Server, Redis, MongoDB
