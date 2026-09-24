@@ -21,7 +21,10 @@ Thumbs.db
 # dotnet coverage
 *.coverage
 *.coveragexml
+*.cobertura.xml
 coverage.*
+coverage/
+coverage-report*/
 TestResults/
 
 # BenchmarkDotNet
