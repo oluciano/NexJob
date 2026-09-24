@@ -20,6 +20,8 @@
 
 <br/>
 
+[![NexJob Enterprise Dashboard](docs/assets/dashboard-overview.png)](docs/assets/dashboard-overview.png)
+
 </div>
 
 ---
@@ -145,8 +147,14 @@ All providers implement `IRuntimeSettingsStore` — runtime configuration persis
 
 ## Dashboard
 
-The dashboard provides a visual timeline of every job's lifecycle — no log reconstruction needed.
-See failures, retries, expired jobs, and execution timing at a glance.
+The dashboard provides real-time operational visibility into your background jobs, worker nodes, and message broker listeners — with zero external dependencies.
+
+[![NexJob Live Broker Listeners & Event Triggers](docs/assets/dashboard-listeners.png)](docs/assets/dashboard-listeners.png)
+
+- **Maxton Design System:** Modern 64px header, live cluster status indicator, and `Ctrl + K` instant job search.
+- **Cluster Pipeline Topology Map:** Native SVG & CSS flow diagram showing Ingress Triggers ➔ Queue Buffers ➔ Worker Nodes.
+- **Live Event Listeners:** Dedicated `/listeners` page monitoring connected message brokers (RabbitMQ, Kafka, AWS SQS, Azure Service Bus, Salesforce).
+- **Server-Sent Events (SSE):** Streaming logs and real-time execution progress bars without page reloads.
 
 ### ASP.NET Core Web App
 

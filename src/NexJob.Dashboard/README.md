@@ -4,6 +4,8 @@ Embedded real-time monitoring dashboard middleware for **NexJob** in ASP.NET Cor
 
 Provides a lightweight, zero-dependency web interface for monitoring background jobs, active worker nodes, queue throughput, and recurring cron schedules with live updates.
 
+[![NexJob Dashboard Overview](https://raw.githubusercontent.com/oluciano/NexJob/develop/docs/assets/dashboard-overview.png)](https://raw.githubusercontent.com/oluciano/NexJob/develop/docs/assets/dashboard-overview.png)
+
 ---
 
 ## Installation
