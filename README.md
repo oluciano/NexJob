@@ -157,16 +157,13 @@ dotnet add package NexJob.Dashboard
 
 Configure in `Program.cs`:
 ```csharp
+using NexJob;
 using NexJob.Dashboard;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Required: memory cache for dashboard metrics
-builder.Services.AddMemoryCache();
-
-// Register NexJob + Storage provider
-builder.Services.AddNexJob()
-    .UseInMemoryStorage();
+// Register NexJob (InMemory storage by default, or your chosen provider)
+builder.Services.AddNexJob();
 
 var app = builder.Build();
 
@@ -187,8 +184,7 @@ Configure in `Program.cs`:
 ```csharp
 using NexJob.Dashboard.Standalone;
 
-builder.Services.AddNexJob()
-    .UseInMemoryStorage();
+builder.Services.AddNexJob();
 
 // Starts an embedded HTTP server at http://localhost:5005/dashboard
 builder.Services.AddNexJobStandaloneDashboard(options =>

@@ -32,10 +32,10 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddNexJob()
                .AddNexJobJobs(typeof(Program).Assembly);
 
-// Or with a specific storage provider
+// Or with a persistent storage provider (e.g. PostgreSQL)
+builder.Services.AddNexJobPostgres("Host=localhost;Database=nexjob;Username=postgres;Password=secret");
 builder.Services.AddNexJob(options =>
 {
-    options.UsePostgres("Host=localhost;Database=nexjob;Username=postgres;Password=secret");
     options.Workers = 20;
     options.MaxAttempts = 5;
 })
