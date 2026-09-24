@@ -113,7 +113,7 @@ See [Getting Started](01-Getting-Started.md) for a complete walkthrough.
 | [Recurring Jobs](04-Recurring-Jobs.md) | Cron-based recurring execution |
 | [Continuations](05-Continuations.md) | Chain jobs together |
 | [Job Filters](02-Job-Types.md#job-execution-filters) | Cross-cutting middleware for job execution |
-| [External Triggers](19-Triggers.md) | Enqueue jobs from message brokers |
+| [External Triggers](19-Triggers.md) | Enqueue jobs from message brokers (AWS SQS, Azure Service Bus, GCP Pub/Sub, Salesforce) |
 | [Kafka Integration](20-Kafka.md) | Kafka Triggers & Resilient Outbox Producer |
 | [RabbitMQ Integration](21-RabbitMQ.md) | RabbitMQ Triggers & Resilient Outbox Producer |
 
@@ -122,10 +122,10 @@ See [Getting Started](01-Getting-Started.md) for a complete walkthrough.
 | Page | Purpose |
 |---|---|
 | [Retry & Dead Letter](06-Retry-And-Dead-Letter.md) | Retry policies and fallback handlers |
-| [Throttling](07-Throttling.md) | Concurrency limits per resource |
+| [Throttling](07-Throttling.md) | Concurrency limits per resource (local & distributed via Redis) |
 | [IJobContext](08-IJobContext.md) | Access runtime context inside jobs |
-| [Storage Providers](09-Storage-Providers.md) | PostgreSQL, SQL Server, Redis, MongoDB |
-| [Dashboard](10-Dashboard.md) | Monitor and debug jobs |
+| [Storage Providers](09-Storage-Providers.md) | PostgreSQL, SQL Server, Redis, MongoDB, InMemory |
+| [Dashboard](10-Dashboard.md) | Maxton modern UI, 5 themes, Cluster Topology, SSE live logs, Listeners |
 | [Configuration Reference](11-Configuration-Reference.md) | All options and settings |
 | [OpenTelemetry](12-OpenTelemetry.md) | Traces and metrics |
 | [Best Practices](13-Best-Practices.md) | Production guidelines |
@@ -149,4 +149,4 @@ See [Getting Started](01-Getting-Started.md) for a complete walkthrough.
 
 ---
 
-**v2.0.0** · [Changelog](../../CHANGELOG.md) · [GitHub](https://github.com/oluciano/NexJob)
+**v5.4.1** · [Changelog](../../CHANGELOG.md) · [GitHub](https://github.com/oluciano/NexJob)

@@ -146,30 +146,39 @@ All persistent providers implement `IRuntimeSettingsStore`. This stores dashboar
 
 ---
 
-## Selecting Providers
-
-**Development:** InMemory
-**Production:** PostgreSQL or SQL Server for ACID, Redis for lowest latency, MongoDB if already in stack
-
 ---
 
-## Next Steps
+## Programmatic Control with `IJobControlService`
 
-- [Dashboard](10-Dashboard.md) — Monitor jobs in storage
-- [Configuration Reference](11-Configuration-Reference.md) — Provider-specific options
-- [Migration](18-Migration.md) — Switch between providers
- // Delete a job
-    await control.DeleteJobAsync(jobId);
+To pause/resume queues or delete/requeue jobs programmatically outside of the dashboard UI, inject `IJobControlService`:
 
-    // Pause a queue
-    await control.PauseQueueAsync("reports");
+```csharp
+public sealed class MaintenanceService(IJobControlService control)
+{
+    public async Task PerformMaintenanceAsync(JobId jobId, CancellationToken ct)
+    {
+        // Pause a queue to prevent new workers from dequeuing
+        await control.PauseQueueAsync("reports", ct);
 
-    // Resume a queue
-    await control.ResumeQueueAsync("reports");
+        // Requeue or delete specific jobs
+        await control.DeleteJobAsync(jobId, ct);
+
+        // Resume processing
+        await control.ResumeQueueAsync("reports", ct);
+    }
 }
 ```
 
-Registered automatically by `AddNexJob`. No additional setup needed.
+`IJobControlService` is registered automatically as a singleton by `AddNexJob()`.
+
+---
+
+## Selecting Providers
+
+- **Development & Testing:** `InMemory` (zero infrastructure required)
+- **Production (Relational):** `PostgreSQL` or `SQL Server` for full ACID transactions and Read Replica offloading
+- **Production (High-Throughput):** `Redis` for sub-millisecond dispatching latencies and distributed throttling
+- **Production (Document):** `MongoDB` if already in your application stack
 
 ---
 
@@ -177,4 +186,4 @@ Registered automatically by `AddNexJob`. No additional setup needed.
 
 - [Dashboard](10-Dashboard.md) — Monitor jobs in storage
 - [Configuration Reference](11-Configuration-Reference.md) — Provider-specific options
-- [Migration](18-Migration.md) — Switch between providers
+- [Migration](18-Migration.md) — Switch between providers and handle schema migrations

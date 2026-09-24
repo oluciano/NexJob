@@ -2,6 +2,16 @@
 
 Breaking changes, API updates, and schema migration between NexJob versions.
 
+## v5.4.0 → v5.4.1
+ 
+### Highlights & Bug Fixes
+
+- **`IListenerRegistry` Integration Across All External Triggers:** Added unified connection state tracking (`Starting`, `Listening`, `Reconnecting`, `Faulted`, `Stopped`) to `NexJob.Trigger.Salesforce`, `NexJob.Trigger.SalesforceStreaming`, `NexJob.Trigger.AzureServiceBus`, `NexJob.Trigger.AwsSqs`, and `NexJob.Trigger.GooglePubSub`.
+- **Dashboard Visibility:** All external triggers now report their status directly to the Dashboard `/listeners` page and the Cluster Pipeline Topology Map.
+- **Breaking Changes:** None. 100% backwards compatible (optional `IListenerRegistry? = null` parameter in constructors).
+
+---
+
 ## v5.3.0 → v5.4.0
 
 ### Highlights & New Features

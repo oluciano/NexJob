@@ -78,9 +78,27 @@ await sqsClient.SendMessageAsync(new SendMessageRequest
     },
 });
 ```
+### Strongly-Typed Consumer Registration
+
+You can bind a strongly-typed job consumer directly using the generic overload:
+
+```csharp
+builder.Services.AddNexJobAwsSqsTrigger<ProcessOrderSqsJob>(options =>
+{
+    options.QueueUrl = "https://sqs.us-east-1.amazonaws.com/.../orders";
+    options.TargetQueue = "orders";
+});
+```
+
+---
+
+## Operational Visibility
+
+This trigger registers with `IListenerRegistry` to report live connection states (`Starting`, `Listening`, `Reconnecting`, `Faulted`, `Stopped`) directly to the Dashboard `/listeners` page and the Cluster Pipeline Topology Map.
+
+---
 
 ## Known Limitations
 
-- **Fixed input type:** The `inputType` is fixed to `string` because broker triggers receive the message body as text (JSON, XML or plain text). Deserializing to a concrete type is the responsibility of the job handler. Support for custom `inputType` is planned for v2.2.
 - **SQS FIFO queues:** Deduplication relies on SQS `MessageId`. For FIFO queues, `MessageDeduplicationId` can also be used — this is not yet exposed as an option.
 - **No batching:** Messages are processed one at a time to ensure visibility extension and proper ordering.
