@@ -47,12 +47,19 @@ app.Run();
 
 ## Features
 
+- **Enterprise Maxton Design System:** Complete visual overhaul inspired by the modern Maxton UI layout, featuring an executive 64px Top Header with responsive sidebar toggle (☰), global keyboard search (`Ctrl + K`), live cluster health status badge (`HEALTHY`, `DEGRADED`, `INCIDENT`), and docs shortcuts.
+- **Multi-Theme Switcher (5 Themes):** Instant 1-click theme customizer offcanvas drawer supporting `Blue Theme` (Midnight - default), `Dark`, `Light`, `Semi-Dark` (dark sidebar/header with light content), and `Bordered` (clean 1px high-contrast borders without heavy shadows), fully persisted in `localStorage`.
+- **Cluster Pipeline Topology Map:** Native SVG & animated CSS flowchart connecting Ingress & Triggers ➔ Queue Buffers ➔ Processing Workers with live activity pulse indicators.
+- **Real-Time Live Log Streaming (SSE):** Streaming log viewer on `/jobs/{id}` dynamically appending execution console logs in real-time.
+- **Event Triggers & Listeners Visibility:** Dedicated `/listeners` page rendering active broker connections (RabbitMQ, Kafka, Azure Service Bus, SQS, etc.), consumer groups, target queues/topics, uptime, and real-time status transitions (`Starting`, `Listening`, `Reconnecting`, `Faulted`, `Stopped`).
+- **Time-Window Filtering & Queue Controls:** Quick period filters (`1h`, `6h`, `24h`, `7d`, `All Time`) on `/jobs` and interactive `Pause` / `Resume` buttons on `/queues`.
+- **Modernized Terminal & JSON Viewers:** Execution logs and payload viewers formatted into dark terminal-styled code windows with header dots, syntax color tokens, and 1-click clipboard copy buttons.
 - **Live Overview:** Real-time counters for `Enqueued`, `Processing`, `Succeeded`, `Failed`, `Expired`, `Retrying`, and `Dead-Letter` jobs via Server-Sent Events (SSE).
 - **Job Details & Inspection:** View serialized input arguments, execution history, exception stack traces, and captured console logs.
-- **Queue Management:** Inspect active queues, monitor worker capacity, and dynamically pause/resume processing per queue.
 - **Recurring Jobs:** Monitor cron schedules, last execution timestamp, next scheduled run, and manually trigger recurring jobs on demand.
 - **Worker Nodes & Heartbeats:** Live view of registered worker instances, process IDs, and health status.
 - **Read Replica Isolation:** Compatible with `UseDashboardReadReplica()` to ensure monitoring traffic does not impact primary database write performance.
+- **Zero External Dependencies:** 100% self-contained in native CSS and vanilla JS — zero external NPM, Webpack, or CDN dependencies.
 
 ---
 

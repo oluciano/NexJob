@@ -141,6 +141,47 @@ builder.Services.AddNexJob()
     });
 ```
 
+### Advanced Security & Tuning (`ConfigureConsumer` and `ConfigureProducer`)
+
+You can customize the underlying Confluent.Kafka `ConsumerConfig` and `ProducerConfig` delegates for SASL/SCRAM, SSL/TLS certificates (via file path or raw PEM strings), and custom broker timeouts without relying on global environment variables:
+
+```csharp
+// Consumer configuration
+builder.Services.AddNexJob()
+    .AddKafkaTrigger(options =>
+    {
+        options.BootstrapServers = "kafka.prod:9092";
+        options.Topic = "incoming-orders";
+        options.GroupId = "order-consumers";
+
+        options.ConfigureConsumer = config =>
+        {
+            config.SecurityProtocol = SecurityProtocol.SaslSsl;
+            config.SaslMechanism = SaslMechanism.ScramSha512;
+            config.SaslUsername = "kafka-user";
+            config.SaslPassword = "vault-secret-password";
+            config.SslCaPem = "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----";
+            config.SessionTimeoutMs = 45000;
+        };
+    });
+
+// Producer configuration
+builder.Services.AddNexJob()
+    .AddKafkaProducer(options =>
+    {
+        options.BootstrapServers = "kafka.prod:9092";
+
+        options.ConfigureProducer = config =>
+        {
+            config.SecurityProtocol = SecurityProtocol.SaslSsl;
+            config.SaslMechanism = SaslMechanism.Plain;
+            config.SaslUsername = "producer-user";
+            config.SaslPassword = "producer-password";
+            config.LingerMs = 20;
+        };
+    });
+```
+
 ### Option B: Direct `Environment.GetEnvironmentVariable`
 ```csharp
 builder.Services.AddNexJob()

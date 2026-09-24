@@ -2,6 +2,17 @@
 
 Breaking changes, API updates, and schema migration between NexJob versions.
 
+## v5.3.0 → v5.4.0
+
+### Highlights & New Features
+
+- **Enterprise Maxton Dashboard Layout:** Complete UI redesign with 64px Top Header, responsive sidebar toggle (☰), shortcut search (`Ctrl + K`), live cluster health indicator, and 5 instant-switch themes (`Blue Theme` default, `Dark`, `Light`, `Semi-Dark`, `Bordered`) persisted in `localStorage`.
+- **Cluster Pipeline Topology Map:** Native SVG & CSS interactive topology visualization connecting Ingress/Triggers ➔ Queue Buffers ➔ Workers with live activity pulses.
+- **Real-Time SSE Live Log Streaming:** Dynamic execution log streaming on `/jobs/{id}` via Server-Sent Events.
+- **Active Event Triggers & Listeners Visibility:** Dedicated `/listeners` page in dashboard driven by Core `IListenerRegistry`, tracking real-time broker connection status (`Listening`, `Reconnecting`, `Faulted`).
+- **Kafka Custom Security Configurations:** Support for `ConfigureConsumer` and `ConfigureProducer` delegates in `NexJob.Kafka` for SASL/SSL credentials, raw PEM certificate strings, and custom client tuning.
+- **Breaking Changes:** None. Fully backwards compatible.
+
 ---
 
 ## v2.x → v3.0

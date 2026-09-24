@@ -1,6 +1,18 @@
 # Dashboard
 
-Monitor, debug, and manage jobs through a built-in dark UI.
+Monitor, debug, and manage jobs through the enterprise Maxton-inspired UI.
+
+---
+
+## Features
+
+- **Maxton Design System:** Complete visual modernization with a 64px Top Header, responsive collapsible sidebar toggle (☰), live cluster health indicator (`HEALTHY`, `DEGRADED`, `INCIDENT`), and keyboard shortcut search (`Ctrl + K`).
+- **5 Built-In Themes:** Instant 1-click theme customizer offcanvas drawer supporting `Blue Theme` (Midnight - default), `Dark`, `Light`, `Semi-Dark`, and `Bordered`, fully persisted in `localStorage`.
+- **Cluster Pipeline Topology Map:** Native animated SVG & CSS flowchart connecting Ingress & Triggers ➔ Queue Buffers ➔ Processing Workers with live activity pulses.
+- **Real-Time Live Log Streaming (SSE):** Streaming log viewer on `/jobs/{id}` displaying logs line-by-line via Server-Sent Events as the job executes.
+- **Active Event Triggers & Listeners:** Dedicated `/listeners` page monitoring connected message brokers (RabbitMQ, Kafka, SQS, Azure Service Bus, etc.), consumer groups, target queues, and status (`Listening`, `Reconnecting`, `Faulted`).
+- **Interactive Controls & Time Filters:** Pause and Resume queues with 1 click; filter jobs by time periods (`1h`, `6h`, `24h`, `7d`).
+- **Zero External Dependencies:** 100% self-contained in native CSS and vanilla JS — no external NPM, Webpack, or CDN downloads required.
 
 ---
 
@@ -26,30 +38,27 @@ dotnet add package NexJob.Dashboard
 ### 2. Configure `Program.cs`
 
 > [!IMPORTANT]
-> `builder.Services.AddMemoryCache()` is **mandatory**. The dashboard caches aggregated metrics for real-time performance and will throw an `InvalidOperationException` if memory cache is not registered.
+> `builder.Services.AddMemoryCache()` is registered automatically by `AddNexJob()`. You can configure dashboard options via delegate or `appsettings.json`.
 
 ```csharp
+using NexJob;
 using NexJob.Dashboard;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// 1. Mandatory for dashboard metrics cache
-builder.Services.AddMemoryCache();
-
-// 2. Register NexJob and your storage provider
-builder.Services.AddNexJob()
-    .UseInMemoryStorage(); // or .UsePostgreSqlStorage(...)
+// Register NexJob (registers in-memory storage by default, or your preferred provider)
+builder.Services.AddNexJob();
 
 var app = builder.Build();
 
-// 3. Mount dashboard middleware (default: /dashboard)
+// Mount dashboard middleware (default: /dashboard)
 app.UseNexJobDashboard();
 
 // Or custom path and options:
-// app.UseNexJobDashboard("/jobs", options =>
+// app.UseNexJobDashboard("/dashboard", options =>
 // {
-//     options.Title = "My Jobs";
-//     options.PollIntervalSeconds = 5;
+//     options.Title = "Enterprise NexJob Console";
+//     options.MetricsCacheTtl = TimeSpan.FromSeconds(3);
 // });
 
 app.Run();
@@ -70,12 +79,13 @@ dotnet add package NexJob.Dashboard.Standalone
 ### 2. Configure `Program.cs`
 
 ```csharp
+using NexJob;
 using NexJob.Dashboard.Standalone;
 
 var builder = Host.CreateApplicationBuilder(args);
 
-builder.Services.AddNexJob()
-    .UseInMemoryStorage();
+// Register NexJob
+builder.Services.AddNexJob();
 
 // Registers embedded HTTP server (default: http://localhost:5005/dashboard)
 builder.Services.AddNexJobStandaloneDashboard();
@@ -83,9 +93,10 @@ builder.Services.AddNexJobStandaloneDashboard();
 // Or customize host and port:
 // builder.Services.AddNexJobStandaloneDashboard(options =>
 // {
-//     options.Port = 8080;
-//     options.Host = "0.0.0.0";
+//     options.Port = 5005;
 //     options.Path = "/dashboard";
+//     options.Title = "Worker Dashboard";
+//     options.LocalhostOnly = true;
 // });
 
 var host = builder.Build();
