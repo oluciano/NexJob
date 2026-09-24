@@ -374,6 +374,72 @@ public sealed class AzureServiceBusTriggerHandlerTests
         options.JobType.Should().Be(typeof(TestConsumerAsbJob).AssemblyQualifiedName);
         services.Any(sd => sd.ServiceType == typeof(TestConsumerAsbJob)).Should().BeTrue();
     }
+
+    // ─── 3N Testing Matrix: ListenerRegistry ─────────────────────────────────
+
+    [Fact]
+    public async Task ListenerRegistry_Lifecycle_TracksStatusProperly_Positive()
+    {
+        // N1: Positive - registers as Starting and updates to Stopped on StopAsync.
+        var registry = new DefaultListenerRegistry();
+        var handler = new AzureServiceBusTriggerHandler(
+            Options.Create(_triggerOptions),
+            _scheduler,
+            _nexJobOptions,
+            _loggerMock.Object,
+            registry);
+
+        var initial = registry.Get($"asb:{_triggerOptions.QueueOrTopicName}");
+        initial.Should().NotBeNull();
+        initial!.Status.Should().Be(ListenerStatus.Starting);
+        initial.Broker.Should().Be("AzureServiceBus");
+        initial.Endpoint.Should().Be(_triggerOptions.QueueOrTopicName);
+
+        await handler.StopAsync(CancellationToken.None);
+
+        var stopped = registry.Get($"asb:{_triggerOptions.QueueOrTopicName}");
+        stopped!.Status.Should().Be(ListenerStatus.Stopped);
+    }
+
+    [Fact]
+    public async Task ListenerRegistry_Lifecycle_TracksStatusProperly_Negative()
+    {
+        // N2: Negative - on ProcessErrorEventArgs, updates status to Reconnecting.
+        var registry = new DefaultListenerRegistry();
+        var handler = new AzureServiceBusTriggerHandler(
+            Options.Create(_triggerOptions),
+            _scheduler,
+            _nexJobOptions,
+            _loggerMock.Object,
+            registry);
+
+        var errorArgs = new ProcessErrorEventArgs(
+            new InvalidOperationException("Connection lost"),
+            ServiceBusErrorSource.Receive,
+            "ns.servicebus.windows.net",
+            _triggerOptions.QueueOrTopicName,
+            CancellationToken.None);
+
+        await handler.HandleErrorAsync(errorArgs);
+
+        var reconnecting = registry.Get($"asb:{_triggerOptions.QueueOrTopicName}");
+        reconnecting!.Status.Should().Be(ListenerStatus.Reconnecting);
+        reconnecting.StatusDescription.Should().Contain("Connection lost");
+    }
+
+    [Fact]
+    public void ListenerRegistry_NullRegistry_BoundaryHandledGracefully()
+    {
+        // N3: Invalid input / Boundary - passing null for IListenerRegistry does not throw.
+        var act = () => new AzureServiceBusTriggerHandler(
+            Options.Create(_triggerOptions),
+            _scheduler,
+            _nexJobOptions,
+            _loggerMock.Object,
+            listenerRegistry: null);
+
+        act.Should().NotThrow();
+    }
 }
 
 /// <summary>

@@ -20,6 +20,8 @@ public sealed class SalesforceStreamingTriggerHandler : BackgroundService
     private readonly NexJobOptions _nexJobOptions;
     private readonly ILogger<SalesforceStreamingTriggerHandler> _logger;
     private readonly IStreamingReplayIdStore _replayIdStore;
+    private readonly IListenerRegistry? _listenerRegistry;
+    private readonly string _listenerId;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="SalesforceStreamingTriggerHandler"/> class.
@@ -31,6 +33,7 @@ public sealed class SalesforceStreamingTriggerHandler : BackgroundService
     /// <param name="nexJobOptions">Global NexJob options.</param>
     /// <param name="logger">Logger instance.</param>
     /// <param name="customReplayIdStore">Optional custom Replay ID store injected via DI.</param>
+    /// <param name="listenerRegistry">Optional listener registry for operational visibility.</param>
     public SalesforceStreamingTriggerHandler(
         IScheduler scheduler,
         ISalesforceStreamingAuthService authService,
@@ -38,7 +41,8 @@ public sealed class SalesforceStreamingTriggerHandler : BackgroundService
         IOptions<SalesforceStreamingTriggerOptions> options,
         IOptions<NexJobOptions> nexJobOptions,
         ILogger<SalesforceStreamingTriggerHandler> logger,
-        IStreamingReplayIdStore? customReplayIdStore = null)
+        IStreamingReplayIdStore? customReplayIdStore = null,
+        IListenerRegistry? listenerRegistry = null)
     {
         ArgumentNullException.ThrowIfNull(scheduler);
         ArgumentNullException.ThrowIfNull(authService);
@@ -54,6 +58,15 @@ public sealed class SalesforceStreamingTriggerHandler : BackgroundService
         _nexJobOptions = nexJobOptions.Value;
         _logger = logger;
         _replayIdStore = customReplayIdStore ?? _options.ReplayIdStore ?? new FileStreamingReplayIdStore(_options.ReplayStoreDirectory);
+        _listenerRegistry = listenerRegistry;
+        _listenerId = $"salesforce-streaming:{_options.Channel}";
+
+        _listenerRegistry?.Register(new ListenerRegistration(
+            Id: _listenerId,
+            Broker: "Salesforce (Streaming)",
+            Endpoint: _options.Channel,
+            TargetJobType: _options.JobType?.Name ?? "Dynamic",
+            JobTag: "trigger:salesforce-streaming"));
     }
 
     /// <inheritdoc/>
@@ -99,6 +112,7 @@ public sealed class SalesforceStreamingTriggerHandler : BackgroundService
                     startingReplayId,
                     stoppingToken).ConfigureAwait(false);
 
+                _listenerRegistry?.UpdateStatus(_listenerId, ListenerStatus.Listening);
                 _logger.LogInformation(
                     "Connected and listening to Salesforce Streaming channel '{Channel}' with starting Replay ID {ReplayId}",
                     _options.Channel,
@@ -127,6 +141,7 @@ public sealed class SalesforceStreamingTriggerHandler : BackgroundService
             }
             catch (SalesforceBayeuxException ex) when (ex.ShouldRehandshake)
             {
+                _listenerRegistry?.UpdateStatus(_listenerId, ListenerStatus.Reconnecting, ex.Message);
                 _logger.LogWarning(
                     ex,
                     "Salesforce Bayeux session expired or requires re-handshake on channel '{Channel}'. Invalidate token and reconnecting...",
@@ -137,6 +152,7 @@ public sealed class SalesforceStreamingTriggerHandler : BackgroundService
             }
             catch (Exception ex)
             {
+                _listenerRegistry?.UpdateStatus(_listenerId, ListenerStatus.Reconnecting, ex.Message);
                 _logger.LogWarning(
                     ex,
                     "Salesforce Streaming connection error on channel '{Channel}'. Reconnecting in {Delay}s...",
@@ -155,6 +171,7 @@ public sealed class SalesforceStreamingTriggerHandler : BackgroundService
             }
         }
 
+        _listenerRegistry?.UpdateStatus(_listenerId, ListenerStatus.Stopped);
         _logger.LogInformation("Salesforce Streaming trigger stopped for channel '{Channel}'", _options.Channel);
     }
 
