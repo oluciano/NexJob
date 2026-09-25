@@ -181,17 +181,22 @@ public sealed class SqlServerStorageProvider : IStorageProvider
         await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var tx = await conn.BeginTransactionAsync(cancellationToken);
 
-        // Promote due scheduled/retry jobs first
+        // Promote due scheduled/retry jobs first (guarded by non-blocking app lock so concurrent workers don't deadlock)
         await conn.ExecuteAsync(
             """
-            UPDATE nexjob_jobs
-            SET status = 'Enqueued'
-            WHERE status = 'Scheduled'
-              AND (
-                    (retry_at IS NOT NULL AND retry_at <= SYSUTCDATETIME())
-                 OR (retry_at IS NULL AND scheduled_at IS NOT NULL AND scheduled_at <= SYSUTCDATETIME())
-              )
-            """, transaction: tx);
+            DECLARE @lockResult INT;
+            EXEC @lockResult = sp_getapplock @Resource = 'nexjob_promote_scheduled', @LockMode = 'Exclusive', @LockOwner = 'Transaction', @LockTimeout = 0;
+            IF @lockResult >= 0
+            BEGIN
+                UPDATE nexjob_jobs WITH (ROWLOCK, READPAST)
+                SET status = 'Enqueued'
+                WHERE status = 'Scheduled'
+                  AND (
+                        (retry_at IS NOT NULL AND retry_at <= SYSUTCDATETIME())
+                     OR (retry_at IS NULL AND scheduled_at IS NOT NULL AND scheduled_at <= SYSUTCDATETIME())
+                  );
+            END
+            """, transaction: tx).ConfigureAwait(false);
 
         // Build queue priority list for ordering
         var queueList = string.Join(",", queues.Select((q, i) => $"('{q.Replace("'", "''")}',{i})"));
@@ -233,17 +238,22 @@ public sealed class SqlServerStorageProvider : IStorageProvider
         await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var tx = await conn.BeginTransactionAsync(cancellationToken);
 
-        // Promote due scheduled/retry jobs first
+        // Promote due scheduled/retry jobs first (guarded by non-blocking app lock so concurrent workers don't deadlock)
         await conn.ExecuteAsync(
             """
-            UPDATE nexjob_jobs
-            SET status = 'Enqueued'
-            WHERE status = 'Scheduled'
-              AND (
-                    (retry_at IS NOT NULL AND retry_at <= SYSUTCDATETIME())
-                 OR (retry_at IS NULL AND scheduled_at IS NOT NULL AND scheduled_at <= SYSUTCDATETIME())
-              )
-            """, transaction: tx);
+            DECLARE @lockResult INT;
+            EXEC @lockResult = sp_getapplock @Resource = 'nexjob_promote_scheduled', @LockMode = 'Exclusive', @LockOwner = 'Transaction', @LockTimeout = 0;
+            IF @lockResult >= 0
+            BEGIN
+                UPDATE nexjob_jobs WITH (ROWLOCK, READPAST)
+                SET status = 'Enqueued'
+                WHERE status = 'Scheduled'
+                  AND (
+                        (retry_at IS NOT NULL AND retry_at <= SYSUTCDATETIME())
+                     OR (retry_at IS NULL AND scheduled_at IS NOT NULL AND scheduled_at <= SYSUTCDATETIME())
+                  );
+            END
+            """, transaction: tx).ConfigureAwait(false);
 
         // Build queue priority list for ordering
         var queueList = string.Join(",", queues.Select((q, i) => $"('{q.Replace("'", "''")}',{i})"));
