@@ -10,7 +10,7 @@ namespace NexJob.Internal;
 /// Orchestrates the execution of a single NexJob job, including deadline enforcement,
 /// DI scope management, input deserialization, throttling, and failure handling.
 /// </summary>
-internal sealed class JobExecutor : IAsyncDisposable
+internal sealed class JobExecutor : IDisposable, IAsyncDisposable
 {
     private readonly IJobStorage _storage;
     private readonly IJobInvokerFactory _invokerFactory;
@@ -57,6 +57,14 @@ internal sealed class JobExecutor : IAsyncDisposable
         _ackChannel = Channel.CreateUnbounded<JobId>(new UnboundedChannelOptions { SingleReader = true });
         _ackCts = new CancellationTokenSource();
         _ackFlusherTask = Task.Run(RunBatchAckFlusherAsync);
+    }
+
+    /// <inheritdoc/>
+    public void Dispose()
+    {
+        _ackChannel.Writer.TryComplete();
+        _ackCts.Cancel();
+        _ackCts.Dispose();
     }
 
     /// <inheritdoc/>
