@@ -147,6 +147,67 @@ public sealed class InMemoryStorageProviderTests
         fetched.CompletedAt.Should().NotBeNull();
     }
 
+    // ─── FetchBatchAsync & AcknowledgeBatchAsync ──────────────────────────────
+
+    [Fact]
+    public async Task FetchBatchAsync_FetchesUpToRequestedBatchSize()
+    {
+        for (var i = 0; i < 5; i++)
+        {
+            await _sut.EnqueueAsync(MakeJob());
+        }
+
+        var batch = await _sut.FetchBatchAsync(["default"], 3);
+
+        batch.Should().HaveCount(3);
+        batch.All(j => j.Status == JobStatus.Processing).Should().BeTrue();
+
+        var remaining = await _sut.FetchBatchAsync(["default"], 3);
+        remaining.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task FetchBatchAsync_WithInvalidOrEmptyArgs_ReturnsEmpty()
+    {
+        var emptyQueues = await _sut.FetchBatchAsync([], 5);
+        emptyQueues.Should().BeEmpty();
+
+        var zeroBatch = await _sut.FetchBatchAsync(["default"], 0);
+        zeroBatch.Should().BeEmpty();
+
+        var negativeBatch = await _sut.FetchBatchAsync(["default"], -1);
+        negativeBatch.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task AcknowledgeBatchAsync_MarksAllJobsAsSucceeded()
+    {
+        var job1 = MakeJob();
+        var job2 = MakeJob();
+        await _sut.EnqueueAsync(job1);
+        await _sut.EnqueueAsync(job2);
+
+        var batch = await _sut.FetchBatchAsync(["default"], 2);
+        batch.Should().HaveCount(2);
+
+        await _sut.AcknowledgeBatchAsync([job1.Id, job2.Id]);
+
+        var job1FromDb = await _sut.GetJobByIdAsync(job1.Id);
+        var job2FromDb = await _sut.GetJobByIdAsync(job2.Id);
+
+        job1FromDb!.Status.Should().Be(JobStatus.Succeeded);
+        job1FromDb.CompletedAt.Should().NotBeNull();
+        job2FromDb!.Status.Should().Be(JobStatus.Succeeded);
+        job2FromDb.CompletedAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task AcknowledgeBatchAsync_WithEmptyList_DoesNotThrow()
+    {
+        var act = async () => await _sut.AcknowledgeBatchAsync([]);
+        await act.Should().NotThrowAsync();
+    }
+
     // ─── SetFailedAsync ───────────────────────────────────────────────────────
 
     [Fact]

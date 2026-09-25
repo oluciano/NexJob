@@ -170,6 +170,7 @@ builder.Services.AddNexJobRedis("localhost:6379")
 ### Features
 
 - Lowest latency of all providers (microsecond dispatch)
+- High-throughput batch fetching and acknowledgment via optimized server-side Lua scripts (`FetchBatchScript`, `AcknowledgeBatchScript`)
 - Atomic state transitions via server-side Lua scripts
 - Global distributed sliding-window throttling
 - Distributed lock via `SET NX` with expiry
@@ -200,6 +201,7 @@ builder.Services.AddNexJob(options =>
 ### Features
 
 - Document model matches job JSON naturally
+- High-throughput batch claim and vectorized acknowledgment (`UpdateManyAsync` by ID set)
 - Atomic state transitions via `FindOneAndUpdate` with optimistic filter criteria
 - Distributed recurring locks via atomic collections
 - Automatic index creation on first use
@@ -212,6 +214,7 @@ builder.Services.AddNexJob(options =>
 |---|---|---|---|---|---|
 | Production-ready | No | Yes | Yes | Yes | Yes |
 | ACID | N/A | Yes | Yes | Partial | Partial |
+| High-Throughput Batching | Native | Native (`FOR UPDATE SKIP LOCKED`) | Native (`UPDLOCK, READPAST`) | Native (Lua Scripts) | Native (`UpdateMany`) |
 | Distributed lock | N/A | Yes | Yes | Yes | Yes |
 | Auto-create schema | N/A | Yes | Yes | Yes | Yes |
 | Dashboard support | Yes | Yes | Yes | Yes | Yes |

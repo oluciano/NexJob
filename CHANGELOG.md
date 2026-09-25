@@ -15,6 +15,12 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - Added opt-in `EnableBatchAcknowledgment` in `NexJobOptions` using an asynchronous `Channel<JobId>` flusher to commit successful completions in batches, reducing SQL Server write roundtrips and log flushes by over 90% (issue #192).
   - Validated in a real-world load test with Apache Kafka + SQL Server (150,000 jobs): throughput increased from ~30 jobs/s to ~320-470 jobs/s (~10x to 15x speedup) with zero duplicate records and zero deadlocks (issues #191, #192).
 
+- **`NexJob.Storage` — Native Batch Processing for MongoDB, Redis, and InMemory Providers**:
+  - Implemented atomic `FetchBatchAsync` and `AcknowledgeBatchAsync` in `InMemoryStorageProvider` with locked collection processing and zero allocations (issue #195).
+  - Implemented high-throughput batching in `MongoStorageProvider` with atomic batch claims and vectorized `AcknowledgeBatchAsync` via `UpdateManyAsync` (issue #195).
+  - Implemented server-side Lua scripts `FetchBatchScript` and `AcknowledgeBatchScript` in `RedisStorageProvider` allowing sub-millisecond atomic batch claims and single-roundtrip acknowledgments (issue #195).
+  - Added full 3N unit and contract integration test coverage across all storage providers (issue #195).
+
 
 ## [5.4.1] - 2026-09-24
 
