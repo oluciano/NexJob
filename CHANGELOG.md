@@ -15,6 +15,10 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - Added opt-in `EnableBatchAcknowledgment` in `NexJobOptions` using an asynchronous `Channel<JobId>` flusher to commit successful completions in batches, reducing SQL Server write roundtrips and log flushes by over 90% (issue #192).
   - Validated in a real-world load test with Apache Kafka + SQL Server (150,000 jobs): throughput increased from ~30 jobs/s to ~320-470 jobs/s (~10x to 15x speedup) with zero duplicate records and zero deadlocks (issues #191, #192).
 
+- **`NexJob.Postgres` — High-Throughput Dynamic Batch Fetching & Batch Acknowledgment**:
+  - Implemented atomic `FetchBatchAsync` in `PostgresStorageProvider` using `SELECT ... FOR UPDATE SKIP LOCKED LIMIT @maxBatchSize` and `RETURNING *` (issue #191).
+  - Implemented vectorized `AcknowledgeBatchAsync` in `PostgresStorageProvider` using `WHERE id = ANY(@Ids)` to eliminate per-job WAL transaction log overhead (issue #192).
+
 
 ## [5.4.1] - 2026-09-24
 
