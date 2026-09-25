@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
 using NexJob.Storage;
 using NexJob.Telemetry;
@@ -9,7 +10,7 @@ namespace NexJob.Internal;
 /// Orchestrates the execution of a single NexJob job, including deadline enforcement,
 /// DI scope management, input deserialization, throttling, and failure handling.
 /// </summary>
-internal sealed class JobExecutor
+internal sealed class JobExecutor : IAsyncDisposable
 {
     private readonly IJobStorage _storage;
     private readonly IJobInvokerFactory _invokerFactory;
@@ -19,6 +20,9 @@ internal sealed class JobExecutor
     private readonly NexJobOptions _options;
     private readonly ILogger<JobExecutor> _logger;
     private readonly IReadOnlyList<IJobExecutionFilter> _filters;
+    private readonly Channel<JobId> _ackChannel;
+    private readonly CancellationTokenSource _ackCts;
+    private readonly Task _ackFlusherTask;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="JobExecutor"/> class.
@@ -49,6 +53,27 @@ internal sealed class JobExecutor
         _options = options;
         _logger = logger;
         _filters = filters.ToList().AsReadOnly();
+
+        _ackChannel = Channel.CreateUnbounded<JobId>(new UnboundedChannelOptions { SingleReader = true });
+        _ackCts = new CancellationTokenSource();
+        _ackFlusherTask = Task.Run(RunBatchAckFlusherAsync);
+    }
+
+    /// <inheritdoc/>
+    public async ValueTask DisposeAsync()
+    {
+        _ackChannel.Writer.Complete();
+        await _ackCts.CancelAsync().ConfigureAwait(false);
+        try
+        {
+            await _ackFlusherTask.ConfigureAwait(false);
+        }
+        catch
+        {
+            // Ignore cancel exceptions during shutdown
+        }
+
+        _ackCts.Dispose();
     }
 
     /// <summary>
@@ -85,12 +110,19 @@ internal sealed class JobExecutor
             RecordSuccessMetrics(job.JobType, sw.Elapsed);
             activity?.SetStatus(ActivityStatusCode.Ok);
 
-            await _storage.CommitJobResultAsync(job.Id, new JobExecutionResult
+            if (_options.EnableBatchAcknowledgment && job.RecurringJobId is null && job.ParentJobId is null && logScope.Entries.Count == 0)
             {
-                Succeeded = true,
-                Logs = logScope.Entries,
-                RecurringJobId = job.RecurringJobId,
-            }, CancellationToken.None).ConfigureAwait(false);
+                _ackChannel.Writer.TryWrite(job.Id);
+            }
+            else
+            {
+                await _storage.CommitJobResultAsync(job.Id, new JobExecutionResult
+                {
+                    Succeeded = true,
+                    Logs = logScope.Entries,
+                    RecurringJobId = job.RecurringJobId,
+                }, CancellationToken.None).ConfigureAwait(false);
+            }
 
             _logger.LogDebug("Job {JobId} completed successfully", job.Id);
         }
@@ -254,6 +286,50 @@ internal sealed class JobExecutor
         catch (OperationCanceledException)
         {
             // Expected on job completion
+        }
+    }
+
+    private async Task RunBatchAckFlusherAsync()
+    {
+        var buffer = new List<JobId>(100);
+        while (!_ackCts.Token.IsCancellationRequested)
+        {
+            try
+            {
+                if (await _ackChannel.Reader.WaitToReadAsync(_ackCts.Token).ConfigureAwait(false))
+                {
+                    while (buffer.Count < 100 && _ackChannel.Reader.TryRead(out var id))
+                    {
+                        buffer.Add(id);
+                    }
+
+                    if (buffer.Count > 0)
+                    {
+                        await _storage.AcknowledgeBatchAsync(buffer, CancellationToken.None).ConfigureAwait(false);
+                        buffer.Clear();
+                    }
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error flushing batch acknowledgments to storage");
+                await Task.Delay(50, CancellationToken.None).ConfigureAwait(false);
+            }
+        }
+
+        // Drain any leftovers
+        while (_ackChannel.Reader.TryRead(out var leftoverId))
+        {
+            buffer.Add(leftoverId);
+        }
+
+        if (buffer.Count > 0)
+        {
+            await _storage.AcknowledgeBatchAsync(buffer, CancellationToken.None).ConfigureAwait(false);
         }
     }
 }

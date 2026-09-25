@@ -25,9 +25,9 @@ if (!string.IsNullOrWhiteSpace(sqlServerConn))
 // 2. Configure NexJob Engine with Kafka Producer & Consumer Trigger
 builder.Services.AddNexJob(opt =>
     {
-        opt.Workers = 5;
+        opt.Workers = 30;
         opt.Queues = ["default", "customers-queue"];
-        opt.PollingInterval = TimeSpan.FromMilliseconds(50);
+        opt.PollingInterval = TimeSpan.FromMilliseconds(20);
     })
     .AddKafkaProducer(opt =>
     {

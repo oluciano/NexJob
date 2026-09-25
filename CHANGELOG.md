@@ -6,6 +6,16 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`NexJob` Core & `NexJob.SqlServer` — High-Throughput Dynamic Batch Fetching & Batch Acknowledgment**:
+  - Implemented dynamic batch fetching in `JobDispatcherService` based on currently available worker capacity (`availableSlots = 1 + workerSlots.CurrentCount`), eliminating single-job roundtrip bottlenecks during high queue backlogs (issues #191, #192).
+  - Extended `IJobStorage` with `FetchBatchAsync` and `AcknowledgeBatchAsync` with default interface implementations for 100% backward compatibility with external providers (issues #191, #192).
+  - Implemented atomic `FetchBatchAsync` in `SqlServerStorageProvider` using `SELECT TOP (@maxBatchSize) ... WITH (UPDLOCK, READPAST)` (issue #191).
+  - Added opt-in `EnableBatchAcknowledgment` in `NexJobOptions` using an asynchronous `Channel<JobId>` flusher to commit successful completions in batches, reducing SQL Server write roundtrips and log flushes by over 90% (issue #192).
+  - Validated in a real-world load test with Apache Kafka + SQL Server (150,000 jobs): throughput increased from ~30 jobs/s to ~320-470 jobs/s (~10x to 15x speedup) with zero duplicate records and zero deadlocks (issues #191, #192).
+
+
 ## [5.4.1] - 2026-09-24
 
 ### Added
