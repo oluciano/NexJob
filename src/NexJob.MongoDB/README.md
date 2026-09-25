@@ -48,8 +48,31 @@ builder.Services.AddNexJobMongoDB(database);
 
 ---
 
+## High-Throughput Batch Processing
+
+For heavy ingestion workloads, enable batch processing to group job reservations and vectorized acknowledgments using `UpdateManyAsync`:
+
+```csharp
+builder.Services.AddNexJobMongoDB(
+    connectionString: builder.Configuration.GetConnectionString("MongoConnection")!,
+    databaseName: "nexjob");
+
+builder.Services.AddNexJob(options =>
+{
+    // Workers dynamically batch fetches to keep all idle slots busy
+    options.Workers = 30;
+    options.PollingInterval = TimeSpan.FromMilliseconds(20);
+
+    // Commit successful jobs in asynchronous batches via UpdateManyAsync ($in: [ids])
+    options.EnableBatchAcknowledgment = true;
+});
+```
+
+---
+
 ## Features
 
+- **High-Throughput Batching:** Atomic batch claim and vectorized batch acknowledgment (`UpdateManyAsync` by ID set).
 - **Atomic State Transitions:** Uses MongoDB `FindOneAndUpdate` with optimistic filter criteria (`status: Enqueued`) to prevent race conditions across multiple nodes without global locks.
 - **Automatic Index Creation:** Automatically builds compound and unique indexes on initialization for queues, priority, idempotency keys, and scheduled timestamps.
 - **Document-Oriented Storage:** Flexible document schema for job arguments, execution metadata, and logs.

@@ -42,6 +42,53 @@ public sealed class RedisStorageProvider : IStorageProvider
         return false
         """);
 
+    private static readonly LuaScript FetchBatchScript = LuaScript.Prepare(
+        """
+        local maxBatch = tonumber(ARGV[1])
+        local now = ARGV[2]
+        local fetched = {}
+
+        for i = 1, #KEYS do
+          local zkey = KEYS[i]
+          local remaining = maxBatch - #fetched
+          if remaining <= 0 then
+            break
+          end
+
+          local members = redis.call('ZRANGE', zkey, 0, remaining - 1)
+          for j = 1, #members do
+            local id = members[j]
+            redis.call('ZREM', zkey, id)
+            local jobKey = 'nexjob:jobs:' .. id
+            redis.call('HSET', jobKey,
+              'status', 'Processing',
+              'processingStartedAt', now,
+              'heartbeatAt', now)
+            redis.call('HINCRBY', jobKey, 'attempts', 1)
+            redis.call('HSET', 'nexjob:processing', id, now)
+            table.insert(fetched, redis.call('HGETALL', jobKey))
+          end
+        end
+
+        return fetched
+        """);
+
+    private static readonly LuaScript AcknowledgeBatchScript = LuaScript.Prepare(
+        """
+        local nowIso = ARGV[1]
+        local nowMs = tonumber(ARGV[2])
+
+        for i = 3, #ARGV do
+          local id = ARGV[i]
+          local jobKey = 'nexjob:jobs:' .. id
+          redis.call('HSET', jobKey, 'status', 'Succeeded', 'completedAt', nowIso, 'heartbeatAt', '')
+          redis.call('HDEL', 'nexjob:processing', id)
+          redis.call('ZADD', 'nexjob:throughput', nowMs, id)
+        end
+
+        return 1
+        """);
+
     private static readonly LuaScript CommitJobResultScript = LuaScript.Prepare(
         """
         local jobKey = 'nexjob:jobs:' .. ARGV[1]
@@ -250,6 +297,54 @@ public sealed class RedisStorageProvider : IStorageProvider
     }
 
     /// <inheritdoc/>
+    public async Task<IReadOnlyList<JobRecord>> FetchBatchAsync(
+        IReadOnlyList<string> queues,
+        int maxBatchSize,
+        CancellationToken cancellationToken = default)
+    {
+        if (queues.Count == 0 || maxBatchSize <= 0)
+        {
+            return Array.Empty<JobRecord>();
+        }
+
+        if (maxBatchSize == 1)
+        {
+            var single = await FetchNextAsync(queues, cancellationToken).ConfigureAwait(false);
+            return single is not null ? new[] { single } : Array.Empty<JobRecord>();
+        }
+
+        await PromoteScheduledJobsAsync().ConfigureAwait(false);
+
+        var now = DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture);
+        var keys = queues.Select(q => (RedisKey)QueueKey(q)).ToArray();
+        var args = new RedisValue[] { maxBatchSize.ToString(CultureInfo.InvariantCulture), now };
+
+        var rawResult = await _db.ScriptEvaluateAsync(FetchBatchScript.ExecutableScript, keys, args).ConfigureAwait(false);
+        if (rawResult.IsNull)
+        {
+            return Array.Empty<JobRecord>();
+        }
+
+        var resultArrays = (RedisResult[])rawResult!;
+        if (resultArrays.Length == 0)
+        {
+            return Array.Empty<JobRecord>();
+        }
+
+        var list = new List<JobRecord>(resultArrays.Length);
+        for (var i = 0; i < resultArrays.Length; i++)
+        {
+            var items = (RedisValue[])resultArrays[i]!;
+            if (items.Length > 0)
+            {
+                list.Add(HashToRecord(ParseFlatArray(items)));
+            }
+        }
+
+        return list;
+    }
+
+    /// <inheritdoc/>
     public async Task AcknowledgeAsync(JobId jobId, CancellationToken cancellationToken = default)
     {
         var id = jobId.Value.ToString();
@@ -264,6 +359,35 @@ public sealed class RedisStorageProvider : IStorageProvider
 
         await _db.HashDeleteAsync(ProcessingKey, id).ConfigureAwait(false);
         await _db.SortedSetAddAsync(ThroughputKey, id, now.ToUnixTimeMilliseconds()).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc/>
+    public async Task AcknowledgeBatchAsync(IReadOnlyList<JobId> jobIds, CancellationToken cancellationToken = default)
+    {
+        if (jobIds.Count == 0)
+        {
+            return;
+        }
+
+        if (jobIds.Count == 1)
+        {
+            await AcknowledgeAsync(jobIds[0], cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        var nowIso = now.ToString("O", CultureInfo.InvariantCulture);
+        var nowMs = now.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture);
+
+        var args = new RedisValue[2 + jobIds.Count];
+        args[0] = nowIso;
+        args[1] = nowMs;
+        for (var i = 0; i < jobIds.Count; i++)
+        {
+            args[2 + i] = jobIds[i].Value.ToString();
+        }
+
+        await _db.ScriptEvaluateAsync(AcknowledgeBatchScript.ExecutableScript, Array.Empty<RedisKey>(), args).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>

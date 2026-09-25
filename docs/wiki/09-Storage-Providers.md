@@ -185,9 +185,28 @@ builder.Services.AddNexJobRedis("localhost:6379")
     .AddNexJobDistributedThrottle();
 ```
 
+### High-Throughput Batch Processing Example
+
+For extreme ingestion workloads (e.g. consuming tens of thousands of messages from Kafka/RabbitMQ into Redis), enable batch processing to leverage server-side Lua scripts and vectorized acknowledgments:
+
+```csharp
+builder.Services.AddNexJobRedis("localhost:6379,abortConnect=false");
+
+builder.Services.AddNexJob(options =>
+{
+    // Workers dynamically batch fetches to keep all idle slots busy (FetchBatchScript in 1 RTT)
+    options.Workers = 30;
+    options.PollingInterval = TimeSpan.FromMilliseconds(20);
+
+    // Commit successful jobs in asynchronous batches via AcknowledgeBatchScript
+    options.EnableBatchAcknowledgment = true;
+});
+```
+
 ### Features
 
 - Lowest latency of all providers (microsecond dispatch)
+- High-throughput batch fetching and acknowledgment via optimized server-side Lua scripts (`FetchBatchScript`, `AcknowledgeBatchScript`)
 - Atomic state transitions via server-side Lua scripts
 - Global distributed sliding-window throttling
 - Distributed lock via `SET NX` with expiry
@@ -215,9 +234,30 @@ builder.Services.AddNexJob(options =>
 });
 ```
 
+### High-Throughput Batch Processing Example
+
+For extreme workloads on MongoDB, batching groups job reservations and vectorized acknowledgments using `UpdateManyAsync`:
+
+```csharp
+builder.Services.AddNexJobMongoDB(
+    connectionString: builder.Configuration.GetConnectionString("MongoConnection")!,
+    databaseName: "nexjob");
+
+builder.Services.AddNexJob(options =>
+{
+    // Workers dynamically batch fetches to keep all idle slots busy
+    options.Workers = 30;
+    options.PollingInterval = TimeSpan.FromMilliseconds(20);
+
+    // Commit successful jobs in asynchronous batches via UpdateManyAsync ($in: [ids])
+    options.EnableBatchAcknowledgment = true;
+});
+```
+
 ### Features
 
 - Document model matches job JSON naturally
+- High-throughput batch claim and vectorized acknowledgment (`UpdateManyAsync` by ID set)
 - Atomic state transitions via `FindOneAndUpdate` with optimistic filter criteria
 - Distributed recurring locks via atomic collections
 - Automatic index creation on first use
@@ -230,6 +270,7 @@ builder.Services.AddNexJob(options =>
 |---|---|---|---|---|---|
 | Production-ready | No | Yes | Yes | Yes | Yes |
 | ACID | N/A | Yes | Yes | Partial | Partial |
+| High-Throughput Batching | Native | Native (`FOR UPDATE SKIP LOCKED`) | Native (`UPDLOCK, READPAST`) | Native (Lua Scripts) | Native (`UpdateMany`) |
 | Distributed lock | N/A | Yes | Yes | Yes | Yes |
 | Auto-create schema | N/A | Yes | Yes | Yes | Yes |
 | Dashboard support | Yes | Yes | Yes | Yes | Yes |
