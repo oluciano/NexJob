@@ -197,6 +197,36 @@ See [Idempotency](17-Idempotency.md) for all duplicate policies.
 
 ---
 
+## High-Throughput Stream Ingestion (Kafka / SQS / Bus)
+
+When consuming large event streams into a relational database storage (e.g. SQL Server, PostgreSQL), configure **dynamic batch processing** to achieve hundreds of operations per second:
+
+```csharp
+var builder = WebApplication.CreateBuilder(args);
+
+// 1. Configure relational storage provider
+builder.Services.AddNexJobSqlServer(builder.Configuration.GetConnectionString("NexJobConnection")!);
+
+// 2. Configure engine with batch optimizations
+builder.Services.AddNexJob(options =>
+{
+    // Workers dynamically batch fetches to keep all idle slots busy
+    options.Workers = 30;
+    options.PollingInterval = TimeSpan.FromMilliseconds(20);
+
+    // Turn on async batch acknowledgment to cut DB commit roundtrips by 90%+
+    options.EnableBatchAcknowledgment = true;
+})
+.AddKafkaTrigger(opt =>
+{
+    opt.BootstrapServers = "kafka:9092";
+    opt.Topic = "high-volume-events";
+    opt.GroupId = "event-processing-group";
+});
+```
+
+---
+
 ## Next Steps
 
 - [Idempotency](17-Idempotency.md) — Deep dive on duplicate prevention
