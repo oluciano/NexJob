@@ -6,6 +6,12 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **`NexJob.SqlServer` — Non-blocking application lock for scheduled job promotion during concurrent batch polling**:
+  - Guarded scheduled/retry job promotion in `FetchNextAsync` and `FetchBatchAsync` with non-blocking `sp_getapplock @Resource = 'nexjob_promote_scheduled', @LockTimeout = 0` and `ROWLOCK, READPAST`.
+  - Prevents transaction lock contention and 1205 deadlock victim errors across parallel workers during intense concurrent bursts.
+
 ### Added
 
 - **`NexJob` Core & `NexJob.SqlServer` — High-Throughput Dynamic Batch Fetching & Batch Acknowledgment**:
