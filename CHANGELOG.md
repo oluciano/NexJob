@@ -19,7 +19,6 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - Implemented atomic `FetchBatchAsync` in `PostgresStorageProvider` using `SELECT ... FOR UPDATE SKIP LOCKED LIMIT @maxBatchSize` and `RETURNING *` (issue #191).
   - Implemented vectorized `AcknowledgeBatchAsync` in `PostgresStorageProvider` using `WHERE id = ANY(@Ids)` to eliminate per-job WAL transaction log overhead (issue #192).
 
-
 ## [5.4.1] - 2026-09-24
 
 ### Added
