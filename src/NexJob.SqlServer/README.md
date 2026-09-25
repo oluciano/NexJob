@@ -41,12 +41,32 @@ builder.Services.AddNexJob(options =>
 ## Features
 
 - **Atomic Job Dispatching:** Employs `WITH (UPDLOCK, READPAST, ROWLOCK)` locking hints to allow multiple workers to concurrently dequeue jobs without blocking each other or causing deadlocks.
+- **High-Throughput Batch Processing:** Dynamic batch dequeue (`FetchBatchAsync`) based on worker idle slots and vectorized batch acknowledgment (`AcknowledgeBatchAsync`).
+- **Non-blocking Scheduled Promotion:** Guarded with `sp_getapplock` and `READPAST` to eliminate deadlock 1205 contention under high concurrency.
 - **Automatic Schema Migration:** Applies database schema migrations automatically on startup using `sp_getapplock`, guaranteeing safe concurrent execution in clustered environments.
 - **Idempotency Enforcement:** Enforces strict and conditional deduplication policies (`DuplicatePolicy`) indexed on `idempotency_key`.
 - **Runtime Settings Store:** Persists queue concurrency rules and runtime settings in `nexjob_settings`.
 - **Dashboard Read Replica Support:** Route dashboard metrics and monitoring queries to an Azure SQL / SQL Server read-scale replica.
 
 ---
+
+## High-Throughput Batch Processing
+
+For heavy ingestion workloads (e.g. streaming hundreds of thousands of events from Kafka/RabbitMQ into SQL Server), enable batch processing:
+
+```csharp
+builder.Services.AddNexJobSqlServer(connectionString);
+
+builder.Services.AddNexJob(options =>
+{
+    // Workers fetch jobs in atomic batches up to current idle capacity (TOP availableWorkers)
+    options.Workers = 30;
+    options.PollingInterval = TimeSpan.FromMilliseconds(20);
+
+    // Commit successful jobs in asynchronous batches, eliminating per-job write roundtrips
+    options.EnableBatchAcknowledgment = true;
+});
+```
 
 ## Read Replica Configuration
 

@@ -41,12 +41,31 @@ builder.Services.AddNexJob(options =>
 ## Features
 
 - **Atomic Job Dispatching:** Leverages PostgreSQL `FOR UPDATE SKIP LOCKED` to ensure zero lock contention and no double-execution across multiple server instances.
+- **High-Throughput Batch Processing:** Dynamic batch dequeue (`FetchBatchAsync`) and vectorized batch acknowledgment (`AcknowledgeBatchAsync`) with native array operations (`WHERE id = ANY(@Ids)`).
 - **Automatic Schema Migration:** Applies database migrations automatically on startup using PostgreSQL advisory locks (`pg_advisory_lock`), ensuring safe concurrent migrations in multi-node clusters.
 - **Idempotency Enforcement:** Supports strict and conditional deduplication policies (`DuplicatePolicy`) indexed on `idempotency_key`.
 - **Runtime Settings Store:** Persists dynamic queue throttling and runtime configuration in `nexjob_settings`.
 - **Dashboard Read Replica Support:** Offload read-heavy dashboard and telemetry queries to a secondary database replica.
 
 ---
+
+## High-Throughput Batch Processing
+
+For heavy ingestion workloads, enable batch processing to eliminate per-job WAL transaction log flushes:
+
+```csharp
+builder.Services.AddNexJobPostgres(connectionString);
+
+builder.Services.AddNexJob(options =>
+{
+    // Workers dynamically batch fetches to keep all idle slots busy (LIMIT availableWorkers)
+    options.Workers = 30;
+    options.PollingInterval = TimeSpan.FromMilliseconds(20);
+
+    // Commit successful jobs in asynchronous batches via WHERE id = ANY(@Ids)
+    options.EnableBatchAcknowledgment = true;
+});
+```
 
 ## Read Replica Configuration
 
