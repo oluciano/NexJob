@@ -112,13 +112,31 @@ builder.Services.AddNexJob(options =>
 .UseDashboardReadReplica(readReplicaConnectionString);
 ```
 
-### Features
-
 - Full ACID guarantees
 - Distributed lock via `sp_getapplock`
 - Concurrency-safe job fetching via `WITH (UPDLOCK, READPAST, ROWLOCK)`
+- Dynamic batch dequeue (`FetchBatchAsync`) based on idle worker capacity
+- Vectorized batch acknowledgment (`AcknowledgeBatchAsync`) for ultra-high throughput
 - Dashboard Read Replica offloading
 - Automatic table creation and schema migrations on startup
+
+### High-Throughput Batch Processing Example
+
+For extreme workloads (e.g. streaming hundreds of thousands of events from Kafka/RabbitMQ into SQL Server), enable batch processing:
+
+```csharp
+builder.Services.AddNexJobSqlServer(connectionString);
+
+builder.Services.AddNexJob(options =>
+{
+    // Workers will fetch jobs in atomic batches up to current idle capacity (TOP availableWorkers)
+    options.Workers = 30;
+    options.PollingInterval = TimeSpan.FromMilliseconds(20);
+
+    // Commit successful jobs in asynchronous batches, eliminating per-job write roundtrips
+    options.EnableBatchAcknowledgment = true;
+});
+```
 
 ---
 

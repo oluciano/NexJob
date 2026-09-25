@@ -25,10 +25,52 @@ public interface IJobStorage
         IReadOnlyList<string> queues,
         CancellationToken cancellationToken = default);
 
+    /// <summary>Fetches up to maxBatchSize available jobs from the specified queues.</summary>
+    /// <param name="queues">List of queue names to poll, in priority order.</param>
+    /// <param name="maxBatchSize">The maximum number of jobs to fetch in this batch.</param>
+    /// <param name="cancellationToken">Token to cancel the operation.</param>
+    /// <returns>A list of job records fetched.</returns>
+    async Task<IReadOnlyList<JobRecord>> FetchBatchAsync(
+        IReadOnlyList<string> queues,
+        int maxBatchSize,
+        CancellationToken cancellationToken = default)
+    {
+        if (maxBatchSize <= 1)
+        {
+            var single = await FetchNextAsync(queues, cancellationToken).ConfigureAwait(false);
+            return single is not null ? new[] { single } : Array.Empty<JobRecord>();
+        }
+
+        var results = new List<JobRecord>();
+        for (var i = 0; i < maxBatchSize; i++)
+        {
+            var job = await FetchNextAsync(queues, cancellationToken).ConfigureAwait(false);
+            if (job is null)
+            {
+                break;
+            }
+
+            results.Add(job);
+        }
+
+        return results;
+    }
+
     /// <summary>Marks a job as successfully completed.</summary>
     /// <param name="jobId">The unique identifier of the job.</param>
     /// <param name="cancellationToken">Token to cancel the operation.</param>
     Task AcknowledgeAsync(JobId jobId, CancellationToken cancellationToken = default);
+
+    /// <summary>Marks a batch of jobs as successfully completed.</summary>
+    /// <param name="jobIds">The unique identifiers of the jobs.</param>
+    /// <param name="cancellationToken">Token to cancel the operation.</param>
+    async Task AcknowledgeBatchAsync(IReadOnlyList<JobId> jobIds, CancellationToken cancellationToken = default)
+    {
+        for (var i = 0; i < jobIds.Count; i++)
+        {
+            await AcknowledgeAsync(jobIds[i], cancellationToken).ConfigureAwait(false);
+        }
+    }
 
     /// <summary>Marks a job as failed, potentially scheduling it for retry.</summary>
     /// <param name="jobId">The unique identifier of the job.</param>

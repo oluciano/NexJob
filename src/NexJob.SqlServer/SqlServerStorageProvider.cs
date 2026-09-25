@@ -218,6 +218,58 @@ public sealed class SqlServerStorageProvider : IStorageProvider
         return row?.ToRecord();
     }
 
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<JobRecord>> FetchBatchAsync(
+        IReadOnlyList<string> queues,
+        int maxBatchSize,
+        CancellationToken cancellationToken = default)
+    {
+        if (queues.Count == 0 || maxBatchSize <= 0)
+        {
+            return Array.Empty<JobRecord>();
+        }
+
+        await using var conn = Open();
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var tx = await conn.BeginTransactionAsync(cancellationToken);
+
+        // Promote due scheduled/retry jobs first
+        await conn.ExecuteAsync(
+            """
+            UPDATE nexjob_jobs
+            SET status = 'Enqueued'
+            WHERE status = 'Scheduled'
+              AND (
+                    (retry_at IS NOT NULL AND retry_at <= SYSUTCDATETIME())
+                 OR (retry_at IS NULL AND scheduled_at IS NOT NULL AND scheduled_at <= SYSUTCDATETIME())
+              )
+            """, transaction: tx);
+
+        // Build queue priority list for ordering
+        var queueList = string.Join(",", queues.Select((q, i) => $"('{q.Replace("'", "''")}',{i})"));
+
+        var rows = await conn.QueryAsync<JobRow>(
+            $"""
+            UPDATE nexjob_jobs
+            SET status                = 'Processing',
+                processing_started_at = SYSUTCDATETIME(),
+                heartbeat_at          = SYSUTCDATETIME(),
+                attempts              = attempts + 1
+            OUTPUT INSERTED.*
+            WHERE id IN (
+                SELECT TOP ({maxBatchSize}) j.id
+                FROM nexjob_jobs j WITH (UPDLOCK, READPAST)
+                INNER JOIN (VALUES {queueList}) AS q(name, ord) ON j.queue = q.name
+                WHERE j.status = 'Enqueued'
+                ORDER BY q.ord ASC, j.priority ASC, j.created_at ASC
+            )
+            """,
+            transaction: tx);
+
+        await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
+        return rows.Select(r => r.ToRecord()).ToList();
+    }
+
     // ── AcknowledgeAsync ──────────────────────────────────────────────────────
 
     /// <inheritdoc/>
@@ -232,6 +284,33 @@ public sealed class SqlServerStorageProvider : IStorageProvider
             WHERE id = @id
             """,
             new { id = jobId.Value });
+    }
+
+    /// <inheritdoc/>
+    public async Task AcknowledgeBatchAsync(IReadOnlyList<JobId> jobIds, CancellationToken cancellationToken = default)
+    {
+        if (jobIds.Count == 0)
+        {
+            return;
+        }
+
+        if (jobIds.Count == 1)
+        {
+            await AcknowledgeAsync(jobIds[0], cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        await using var conn = Open();
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+        var idList = jobIds.Select(j => j.Value).ToArray();
+
+        await conn.ExecuteAsync(
+            """
+            UPDATE nexjob_jobs
+            SET status = 'Succeeded', completed_at = SYSUTCDATETIME(), heartbeat_at = NULL
+            WHERE id IN @Ids
+            """,
+            new { Ids = idList });
     }
 
     // ── SetFailedAsync ────────────────────────────────────────────────────────

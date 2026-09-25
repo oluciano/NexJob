@@ -91,7 +91,10 @@ internal sealed class JobDispatcherService : BackgroundService
         {
             await workerSlots.WaitAsync(stoppingToken).ConfigureAwait(false);
 
-            var slotTransferred = false;
+            // Determine how many extra idle workers we can fill right now in a single batch
+            var availableSlots = 1 + workerSlots.CurrentCount;
+
+            var slotsAcquired = 1;
             try
             {
                 // Filter out paused queues and queues outside their execution window
@@ -116,10 +119,10 @@ internal sealed class JobDispatcherService : BackgroundService
                     continue;
                 }
 
-                JobRecord? job;
+                IReadOnlyList<JobRecord> jobs;
                 try
                 {
-                    job = await _storage.FetchNextAsync(activeQueues, stoppingToken).ConfigureAwait(false);
+                    jobs = await _storage.FetchBatchAsync(activeQueues, availableSlots, stoppingToken).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException)
                 {
@@ -127,39 +130,61 @@ internal sealed class JobDispatcherService : BackgroundService
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Error fetching next job from storage");
+                    _logger.LogError(ex, "Error fetching next jobs from storage");
                     await Task.Delay(_options.PollingInterval, stoppingToken).ConfigureAwait(false);
                     continue;
                 }
 
-                if (job is null)
+                if (jobs.Count == 0)
                 {
                     var pollingInterval = runtime.PollingInterval ?? _options.PollingInterval;
                     await _wakeUp.WaitAsync(pollingInterval, stoppingToken).ConfigureAwait(false);
                     continue;
                 }
 
-                // Transfer slot ownership to the worker task
-                slotTransferred = true;
-                Interlocked.Increment(ref _activeJobCount);
-                _ = Task.Run(async () =>
+                // Acquire the additional semaphore slots for the jobs actually retrieved (beyond the first one already acquired)
+                for (var i = 1; i < jobs.Count; i++)
                 {
-                    try
+                    if (await workerSlots.WaitAsync(TimeSpan.Zero, stoppingToken).ConfigureAwait(false))
                     {
-                        await _executor.ExecuteJobAsync(job, stoppingToken).ConfigureAwait(false);
+                        slotsAcquired++;
                     }
-                    finally
+                }
+
+                // Dispatch all fetched jobs concurrently to worker pool
+                for (var i = 0; i < jobs.Count; i++)
+                {
+                    var job = jobs[i];
+                    Interlocked.Increment(ref _activeJobCount);
+                    _ = Task.Run(async () =>
                     {
-                        workerSlots.Release();
-                        Interlocked.Decrement(ref _activeJobCount);
-                    }
-                }, CancellationToken.None);
+                        try
+                        {
+                            await _executor.ExecuteJobAsync(job, stoppingToken).ConfigureAwait(false);
+                        }
+                        finally
+                        {
+                            workerSlots.Release();
+                            Interlocked.Decrement(ref _activeJobCount);
+                        }
+                    }, CancellationToken.None);
+                }
+
+                // If we acquired more semaphore slots than actual jobs returned, release the excess
+                if (slotsAcquired > jobs.Count)
+                {
+                    workerSlots.Release(slotsAcquired - jobs.Count);
+                }
+
+                // Since we successfully handed off the jobs to background worker tasks with their own release(),
+                // we set slotsAcquired = 0 so finally doesn't release them again.
+                slotsAcquired = 0;
             }
             finally
             {
-                if (!slotTransferred)
+                if (slotsAcquired > 0)
                 {
-                    workerSlots.Release();
+                    workerSlots.Release(slotsAcquired);
                 }
             }
         }

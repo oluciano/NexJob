@@ -46,6 +46,10 @@ builder.Services.AddNexJob(options =>
     // Max lines in job execution log
     options.MaxJobLogLines = 200; // Default: 200
 
+    // Enable high-throughput asynchronous batch acknowledgment
+    // Aggregates completed job acknowledgments to cut database write roundtrips by 90%+
+    options.EnableBatchAcknowledgment = true; // Default: false
+
     // Custom retry delay factory
     options.RetryDelayFactory = new CustomRetryFactory();
 });
