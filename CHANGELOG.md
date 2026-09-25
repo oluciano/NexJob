@@ -6,6 +6,32 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [5.5.0] - 2026-09-25
+
+### Fixed
+
+- **`NexJob.SqlServer` — Non-blocking application lock for scheduled job promotion during concurrent batch polling**:
+  - Guarded scheduled/retry job promotion in `FetchNextAsync` and `FetchBatchAsync` with non-blocking `sp_getapplock @Resource = 'nexjob_promote_scheduled', @LockTimeout = 0` and `ROWLOCK, READPAST`.
+  - Prevents transaction lock contention and 1205 deadlock victim errors across parallel workers during intense concurrent bursts.
+
+### Added
+
+- **`NexJob` Core & `NexJob.SqlServer` — High-Throughput Dynamic Batch Fetching & Batch Acknowledgment**:
+  - Implemented dynamic batch fetching in `JobDispatcherService` based on currently available worker capacity (`availableSlots = 1 + workerSlots.CurrentCount`), eliminating single-job roundtrip bottlenecks during high queue backlogs (issues #191, #192).
+  - Extended `IJobStorage` with `FetchBatchAsync` and `AcknowledgeBatchAsync` with default interface implementations for 100% backward compatibility with external providers (issues #191, #192).
+  - Implemented atomic `FetchBatchAsync` in `SqlServerStorageProvider` using `SELECT TOP (@maxBatchSize) ... WITH (UPDLOCK, READPAST)` (issue #191).
+  - Added opt-in `EnableBatchAcknowledgment` in `NexJobOptions` using an asynchronous `Channel<JobId>` flusher to commit successful completions in batches, reducing SQL Server write roundtrips and log flushes by over 90% (issue #192).
+  - Validated in a real-world load test with Apache Kafka + SQL Server (150,000 jobs): throughput increased from ~30 jobs/s to ~320-470 jobs/s (~10x to 15x speedup) with zero duplicate records and zero deadlocks (issues #191, #192).
+- **`NexJob.Postgres` — High-Throughput Dynamic Batch Fetching & Batch Acknowledgment**:
+  - Implemented atomic `FetchBatchAsync` in `PostgresStorageProvider` using `SELECT ... FOR UPDATE SKIP LOCKED LIMIT @maxBatchSize` and `RETURNING *` (issue #191).
+  - Implemented vectorized `AcknowledgeBatchAsync` in `PostgresStorageProvider` using `WHERE id = ANY(@Ids)` to eliminate per-job WAL transaction log overhead (issue #192).
+
+- **`NexJob.Storage` — Native Batch Processing for MongoDB, Redis, and InMemory Providers**:
+  - Implemented atomic `FetchBatchAsync` and `AcknowledgeBatchAsync` in `InMemoryStorageProvider` with locked collection processing and zero allocations (issue #195).
+  - Implemented high-throughput batching in `MongoStorageProvider` with atomic batch claims and vectorized `AcknowledgeBatchAsync` via `UpdateManyAsync` (issue #195).
+  - Implemented server-side Lua scripts `FetchBatchScript` and `AcknowledgeBatchScript` in `RedisStorageProvider` allowing sub-millisecond atomic batch claims and single-roundtrip acknowledgments (issue #195).
+  - Added full 3N unit and contract integration test coverage across all storage providers (issue #195).
+
 ## [5.4.1] - 2026-09-24
 
 ### Added

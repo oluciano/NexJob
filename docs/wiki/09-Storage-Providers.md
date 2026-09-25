@@ -43,18 +43,57 @@ dotnet add package NexJob.Postgres
 ```
 
 ```csharp
+// 1. Register PostgreSQL storage
+builder.Services.AddNexJobPostgres(
+    builder.Configuration.GetConnectionString("NexJobConnection")!);
+
+// 2. Register NexJob core services
 builder.Services.AddNexJob(options =>
 {
-    options.UsePostgres("Host=localhost;Database=nexjob;Username=postgres;Password=secret");
+    options.Workers = 10;
+    options.Queues = ["default", "critical"];
 });
 ```
 
-### Features
+### Dashboard Read Replica Support
+
+Offload read-heavy dashboard and telemetry queries to a secondary database replica using `UseDashboardReadReplica`:
+
+```csharp
+builder.Services.AddNexJobPostgres(primaryConnectionString);
+
+builder.Services.AddNexJob(options =>
+{
+    options.Workers = 10;
+})
+.UseDashboardReadReplica(readReplicaConnectionString);
+```
 
 - Full ACID guarantees
 - Distributed lock via advisory locks
-- Dashboard queries optimized
-- Automatic table creation on first use
+- Concurrency-safe job fetching via `FOR UPDATE SKIP LOCKED`
+- Dynamic batch dequeue (`FetchBatchAsync`) based on idle worker capacity
+- Vectorized batch acknowledgment (`AcknowledgeBatchAsync`) using native PostgreSQL array operations (`WHERE id = ANY(@Ids)`)
+- Dashboard Read Replica offloading
+- Automatic table creation and schema migrations on startup
+
+### High-Throughput Batch Processing Example
+
+For extreme workloads on PostgreSQL, enable batch processing:
+
+```csharp
+builder.Services.AddNexJobPostgres(connectionString);
+
+builder.Services.AddNexJob(options =>
+{
+    // Workers dynamically batch fetches to keep all idle slots busy (LIMIT availableWorkers)
+    options.Workers = 30;
+    options.PollingInterval = TimeSpan.FromMilliseconds(20);
+
+    // Commit successful jobs in asynchronous batches, eliminating per-job WAL transaction log flushes
+    options.EnableBatchAcknowledgment = true;
+});
+```
 
 ---
 
@@ -65,17 +104,57 @@ dotnet add package NexJob.SqlServer
 ```
 
 ```csharp
+// 1. Register SQL Server storage
+builder.Services.AddNexJobSqlServer(
+    builder.Configuration.GetConnectionString("NexJobConnection")!);
+
+// 2. Register NexJob core services
 builder.Services.AddNexJob(options =>
 {
-    options.UseSqlServer("Server=localhost;Database=NexJob;Trusted_Connection=True;TrustServerCertificate=True;");
+    options.Workers = 10;
+    options.Queues = ["default", "critical"];
 });
 ```
 
-### Features
+### Dashboard Read Replica Support
+
+Route dashboard metrics and monitoring queries to an Azure SQL / SQL Server read-scale replica:
+
+```csharp
+builder.Services.AddNexJobSqlServer(primaryConnectionString);
+
+builder.Services.AddNexJob(options =>
+{
+    options.Workers = 10;
+})
+.UseDashboardReadReplica(readReplicaConnectionString);
+```
 
 - Full ACID guarantees
 - Distributed lock via `sp_getapplock`
-- Automatic table creation on first use
+- Concurrency-safe job fetching via `WITH (UPDLOCK, READPAST, ROWLOCK)`
+- Dynamic batch dequeue (`FetchBatchAsync`) based on idle worker capacity
+- Vectorized batch acknowledgment (`AcknowledgeBatchAsync`) for ultra-high throughput
+- Dashboard Read Replica offloading
+- Automatic table creation and schema migrations on startup
+
+### High-Throughput Batch Processing Example
+
+For extreme workloads (e.g. streaming hundreds of thousands of events from Kafka/RabbitMQ into SQL Server), enable batch processing:
+
+```csharp
+builder.Services.AddNexJobSqlServer(connectionString);
+
+builder.Services.AddNexJob(options =>
+{
+    // Workers will fetch jobs in atomic batches up to current idle capacity (TOP availableWorkers)
+    options.Workers = 30;
+    options.PollingInterval = TimeSpan.FromMilliseconds(20);
+
+    // Commit successful jobs in asynchronous batches, eliminating per-job write roundtrips
+    options.EnableBatchAcknowledgment = true;
+});
+```
 
 ---
 
@@ -86,18 +165,52 @@ dotnet add package NexJob.Redis
 ```
 
 ```csharp
+// 1. Register Redis storage
+builder.Services.AddNexJobRedis("localhost:6379,abortConnect=false");
+
+// 2. Register NexJob core services
 builder.Services.AddNexJob(options =>
 {
-    options.UseRedis("localhost:6379,password=secret");
+    options.Workers = 10;
+    options.Queues = ["default", "critical"];
+});
+```
+
+### Distributed Throttling
+
+Enable global, cluster-wide rate limiting across multiple worker nodes or containers:
+
+```csharp
+builder.Services.AddNexJobRedis("localhost:6379")
+    .AddNexJobDistributedThrottle();
+```
+
+### High-Throughput Batch Processing Example
+
+For extreme ingestion workloads (e.g. consuming tens of thousands of messages from Kafka/RabbitMQ into Redis), enable batch processing to leverage server-side Lua scripts and vectorized acknowledgments:
+
+```csharp
+builder.Services.AddNexJobRedis("localhost:6379,abortConnect=false");
+
+builder.Services.AddNexJob(options =>
+{
+    // Workers dynamically batch fetches to keep all idle slots busy (FetchBatchScript in 1 RTT)
+    options.Workers = 30;
+    options.PollingInterval = TimeSpan.FromMilliseconds(20);
+
+    // Commit successful jobs in asynchronous batches via AcknowledgeBatchScript
+    options.EnableBatchAcknowledgment = true;
 });
 ```
 
 ### Features
 
-- Lowest latency of all providers
+- Lowest latency of all providers (microsecond dispatch)
+- High-throughput batch fetching and acknowledgment via optimized server-side Lua scripts (`FetchBatchScript`, `AcknowledgeBatchScript`)
+- Atomic state transitions via server-side Lua scripts
+- Global distributed sliding-window throttling
 - Distributed lock via `SET NX` with expiry
-- Data persisted in Redis data structures
-- Automatic key initialization
+- Priority queues via Redis Sorted Sets (`ZSET`)
 
 ---
 
@@ -108,18 +221,46 @@ dotnet add package NexJob.MongoDB
 ```
 
 ```csharp
+// 1. Register MongoDB storage
+builder.Services.AddNexJobMongoDB(
+    connectionString: builder.Configuration.GetConnectionString("MongoConnection")!,
+    databaseName: "nexjob");
+
+// 2. Register NexJob core services
 builder.Services.AddNexJob(options =>
 {
-    options.UseMongoDB("mongodb://localhost:27017", "nexjob");
+    options.Workers = 10;
+    options.Queues = ["default", "critical"];
+});
+```
+
+### High-Throughput Batch Processing Example
+
+For extreme workloads on MongoDB, batching groups job reservations and vectorized acknowledgments using `UpdateManyAsync`:
+
+```csharp
+builder.Services.AddNexJobMongoDB(
+    connectionString: builder.Configuration.GetConnectionString("MongoConnection")!,
+    databaseName: "nexjob");
+
+builder.Services.AddNexJob(options =>
+{
+    // Workers dynamically batch fetches to keep all idle slots busy
+    options.Workers = 30;
+    options.PollingInterval = TimeSpan.FromMilliseconds(20);
+
+    // Commit successful jobs in asynchronous batches via UpdateManyAsync ($in: [ids])
+    options.EnableBatchAcknowledgment = true;
 });
 ```
 
 ### Features
 
 - Document model matches job JSON naturally
-- Distributed lock via `findAndModify`
-- Automatic collection creation
-- Indexes created on first use
+- High-throughput batch claim and vectorized acknowledgment (`UpdateManyAsync` by ID set)
+- Atomic state transitions via `FindOneAndUpdate` with optimistic filter criteria
+- Distributed recurring locks via atomic collections
+- Automatic index creation on first use
 
 ---
 
@@ -129,6 +270,7 @@ builder.Services.AddNexJob(options =>
 |---|---|---|---|---|---|
 | Production-ready | No | Yes | Yes | Yes | Yes |
 | ACID | N/A | Yes | Yes | Partial | Partial |
+| High-Throughput Batching | Native | Native (`FOR UPDATE SKIP LOCKED`) | Native (`UPDLOCK, READPAST`) | Native (Lua Scripts) | Native (`UpdateMany`) |
 | Distributed lock | N/A | Yes | Yes | Yes | Yes |
 | Auto-create schema | N/A | Yes | Yes | Yes | Yes |
 | Dashboard support | Yes | Yes | Yes | Yes | Yes |
@@ -146,30 +288,39 @@ All persistent providers implement `IRuntimeSettingsStore`. This stores dashboar
 
 ---
 
-## Selecting Providers
-
-**Development:** InMemory
-**Production:** PostgreSQL or SQL Server for ACID, Redis for lowest latency, MongoDB if already in stack
-
 ---
 
-## Next Steps
+## Programmatic Control with `IJobControlService`
 
-- [Dashboard](10-Dashboard.md) — Monitor jobs in storage
-- [Configuration Reference](11-Configuration-Reference.md) — Provider-specific options
-- [Migration](18-Migration.md) — Switch between providers
- // Delete a job
-    await control.DeleteJobAsync(jobId);
+To pause/resume queues or delete/requeue jobs programmatically outside of the dashboard UI, inject `IJobControlService`:
 
-    // Pause a queue
-    await control.PauseQueueAsync("reports");
+```csharp
+public sealed class MaintenanceService(IJobControlService control)
+{
+    public async Task PerformMaintenanceAsync(JobId jobId, CancellationToken ct)
+    {
+        // Pause a queue to prevent new workers from dequeuing
+        await control.PauseQueueAsync("reports", ct);
 
-    // Resume a queue
-    await control.ResumeQueueAsync("reports");
+        // Requeue or delete specific jobs
+        await control.DeleteJobAsync(jobId, ct);
+
+        // Resume processing
+        await control.ResumeQueueAsync("reports", ct);
+    }
 }
 ```
 
-Registered automatically by `AddNexJob`. No additional setup needed.
+`IJobControlService` is registered automatically as a singleton by `AddNexJob()`.
+
+---
+
+## Selecting Providers
+
+- **Development & Testing:** `InMemory` (zero infrastructure required)
+- **Production (Relational):** `PostgreSQL` or `SQL Server` for full ACID transactions and Read Replica offloading
+- **Production (High-Throughput):** `Redis` for sub-millisecond dispatching latencies and distributed throttling
+- **Production (Document):** `MongoDB` if already in your application stack
 
 ---
 
@@ -177,4 +328,4 @@ Registered automatically by `AddNexJob`. No additional setup needed.
 
 - [Dashboard](10-Dashboard.md) — Monitor jobs in storage
 - [Configuration Reference](11-Configuration-Reference.md) — Provider-specific options
-- [Migration](18-Migration.md) — Switch between providers
+- [Migration](18-Migration.md) — Switch between providers and handle schema migrations

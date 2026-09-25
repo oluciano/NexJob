@@ -25,11 +25,16 @@ The RabbitMQ Trigger listens to a configured queue and transforms incoming messa
 
 ### Registration
 
+There are two ways to register which job is triggered when a message arrives:
+
+#### Option A: Strongly-Typed Consumer (Recommended)
+Bind a queue directly to a job handler class (`IJob<string>`). The job is automatically registered in DI as `Transient`:
+
 ```csharp
 // Program.cs
 builder.Services.AddNexJob()
     .UsePostgreSqlStorage(...)
-    .AddRabbitMqTrigger(options =>
+    .AddNexJobRabbitMqTrigger<ProcessOrderJob>(options =>
     {
         options.HostName = builder.Configuration["RABBITMQ_HOST"] ?? "localhost";
         options.Port = 5672;
@@ -38,6 +43,30 @@ builder.Services.AddNexJob()
         options.QueueName = "incoming-orders";
         options.TargetQueue = "orders";
         options.PrefetchCount = 10;
+    });
+
+// Job Handler
+public sealed class ProcessOrderJob : IJob<string>
+{
+    public async Task ExecuteAsync(string messagePayload, CancellationToken ct)
+    {
+        // messagePayload contains raw string/JSON from the RabbitMQ queue
+        var order = JsonSerializer.Deserialize<OrderDto>(messagePayload);
+        // Process order...
+    }
+}
+```
+
+#### Option B: Dynamic Message Header (`nexjob.job_type`)
+If multiple job types share the same queue, register the trigger without generic arguments. Each message must include the `nexjob.job_type` header (or have `options.JobType` configured):
+
+```csharp
+builder.Services.AddNexJob()
+    .AddRabbitMqTrigger(options =>
+    {
+        options.HostName = "localhost";
+        options.QueueName = "incoming-events";
+        // options.JobType = typeof(DefaultEventJob).AssemblyQualifiedName;
     });
 ```
 

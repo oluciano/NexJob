@@ -16,6 +16,7 @@ Salesforce Streaming API (CometD/Bayeux protocol) trigger for NexJob. Connects t
   - `SalesforceStreamingReplayPreset.Custom`: Starts from a specific historic Replay ID.
 - **Automatic Session Recovery & Exponential Backoff**: Automatically detects Bayeux session expirations (`403::Unknown client`), invalidates cached tokens, and executes fresh handshakes.
 - **W3C Distributed Tracing**: Extracted traceparent headers mapped directly to `JobRecord.TraceParent`.
+- **Operational Visibility**: Integrates with `IListenerRegistry` to report connection status (`Starting`, `Listening`, `Reconnecting`, `Stopped`) directly to Dashboard `/listeners` and Cluster Topology Map.
 - **All 5 Trigger Guarantees**:
   1. *Never silently drop*: Enqueue failure routes to dead-letter queue if configured.
   2. *Idempotency*: Broker-native event keys (`{channel}:{eventId}` or `{channel}:{replayId}`).

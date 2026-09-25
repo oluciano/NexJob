@@ -10,6 +10,7 @@ Salesforce Pub/Sub API trigger for NexJob. Consumes Salesforce Change Data Captu
 - **Configurable Fallback Policies**: `ReplayFallbackPolicy.FailFast`, `ResetToLatest`, and `ResetToEarliest` handle expired offsets gracefully.
 - **OAuth2 Token Caching**: Automatic Client Credentials flow with thread-safe token caching and refresh ahead of expiration.
 - **W3C Distributed Tracing**: Automatic extraction of `traceparent` headers mapped directly to `JobRecord.TraceParent`.
+- **Operational Visibility**: Integrates with `IListenerRegistry` to report connection status (`Starting`, `Listening`, `Reconnecting`, `Faulted`, `Stopped`) directly to Dashboard `/listeners` and Cluster Topology Map.
 - **All 5 Trigger Guarantees**: Guaranteed at-least-once processing, offset commit only after enqueue, idempotency via native event IDs, and dead-letter routing.
 
 ---

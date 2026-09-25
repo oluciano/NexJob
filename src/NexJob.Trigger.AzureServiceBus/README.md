@@ -34,6 +34,24 @@ builder.Services.AddNexJobAzureServiceBusTrigger(options =>
 });
 ```
 
+### Strongly-Typed Consumer Registration
+
+```csharp
+builder.Services.AddNexJobAzureServiceBusTrigger<ProcessOrderAsbJob>(options =>
+{
+    options.ConnectionString = "Endpoint=sb://...";
+    options.QueueOrTopicName = "my-queue";
+});
+```
+
+---
+
+## Operational Visibility
+
+This trigger registers with `IListenerRegistry` to report live connection states (`Starting`, `Listening`, `Reconnecting`, `Stopped`) directly to the Dashboard `/listeners` page and the Cluster Pipeline Topology Map.
+
+---
+
 ## Configuration Options
 
 | Option | Description | Default |

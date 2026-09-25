@@ -25,16 +25,47 @@ The Kafka Trigger listens to a configured topic and transforms incoming messages
 
 ### Registration
 
+There are two ways to register which job is triggered when a message arrives:
+
+#### Option A: Strongly-Typed Consumer (Recommended)
+Bind a specific topic directly to a job handler class (`IJob<string>`). The job is automatically registered in DI as `Transient`:
+
 ```csharp
 // Program.cs
 builder.Services.AddNexJob()
     .UsePostgreSqlStorage(...)
-    .AddKafkaTrigger(options =>
+    .AddNexJobKafkaTrigger<ProcessOrderJob>(options =>
     {
-        options.BootstrapServers = builder.Configuration["KAFKA_BOOTSTRAP_SERVERS"] 
-            ?? "localhost:9092";
+        options.BootstrapServers = builder.Configuration["KAFKA_BOOTSTRAP_SERVERS"] ?? "localhost:9092";
         options.Topic = "incoming-orders";
         options.GroupId = "nexjob-order-consumer";
+        options.TargetQueue = "orders";
+    });
+
+// Job Handler
+public sealed class ProcessOrderJob : IJob<string>
+{
+    public async Task ExecuteAsync(string messagePayload, CancellationToken ct)
+    {
+        // messagePayload contains the raw message body (e.g. JSON)
+        var order = JsonSerializer.Deserialize<OrderDto>(messagePayload);
+        // Process order...
+    }
+}
+```
+
+#### Option B: Dynamic Message Header (`nexjob.job_type`)
+If multiple job types share the same topic, register the trigger without generic arguments. Each incoming Kafka message must include the `nexjob.job_type` header containing the assembly-qualified name of the target job:
+
+```csharp
+builder.Services.AddNexJob()
+    .AddKafkaTrigger(options =>
+    {
+        options.BootstrapServers = "localhost:9092";
+        options.Topic = "incoming-events";
+        options.GroupId = "events-consumer";
+        // Or specify a fallback JobType:
+        // options.JobType = typeof(DefaultEventJob).AssemblyQualifiedName;
     });
 ```
 
@@ -226,3 +257,11 @@ When producing via NexJob:
 | **Retries Exhausted** | The message is dispatched to the Dead-Letter pipeline (`IDeadLetterHandler`) and surfaced on the Dashboard. |
 | **Host Shutdown** | The registered `IKafkaProducerClient` automatically invokes `Flush()` to ensure all in-flight messages are delivered before exit. |
 | **Serialization Error** | Serialization errors fail fast and route to dead-letter without crashing the worker host. |
++
++---
++
++## 6. Sagas & Advanced Stream Orchestration (qKafka)
++
++NexJob is designed for background job processing, resilient polling/wake-up loops, and reliable transactional outbox publishing.
++
++If your architecture requires complex **Event-Driven Choreographies**, **Distributed Sagas with Compensating Transactions**, and state-machine transitions over Kafka topics, consider pairing NexJob with **[qKafka](https://github.com/oluciano/QKafka)**. NexJob and qKafka complement each other naturally: NexJob manages local task deadlines, retries, and persistence, while qKafka handles distributed stream correlations and compensations.

@@ -80,16 +80,20 @@ Always ask the user explicitly before proceeding:
 
 > **CRITICAL RULE:** **NEVER alter production code (`src/**/*.cs`) to match docs.** Always update the docs to match the real code!
 
-1. **Audit Package READMEs (`src/*/README.md`):**
+1. **Audit Root `README.md` & `GEMINI.md`:**
+   - **Packages Table:** Update all version badges in the Packages table to the new version `vX.Y.Z` (`img.shields.io/badge/nuget-vX.Y.Z-blue`).
+   - **Roadmap:** Add the new version line with `✅` and summary of features delivered in `vX.Y.Z`.
+   - **`GEMINI.md`:** Update `Current published version: **vX.Y.Z**`.
+2. **Audit Package READMEs (`src/*/README.md`):**
    - Identify packages with code changes in this release (e.g. `src/NexJob.Dashboard/README.md`, `src/NexJob.Kafka/README.md`).
    - Check if options, methods, endpoints, themes, or UI features are accurately described.
    - If outdated or missing info, **edit the README immediately**.
-2. **Audit Wiki (`docs/wiki/`):**
+3. **Audit Wiki (`docs/wiki/`):**
    - Check relevant wiki pages (e.g. `10-Dashboard.md`, `19-Triggers.md`, `20-Kafka.md`, `Home.md`).
    - Check for obsolete signatures, missing screenshots/explanations of new UI screens, or omitted configuration parameters.
    - If outdated, **edit the Wiki pages immediately**.
-3. **Commit & Push Docs Direct to `develop`:**
-   - Commit all doc and wiki updates with message: `docs: synchronize wiki and package readmes for vX.Y.Z release`.
+4. **Commit & Push Docs Direct to `develop`:**
+   - Commit all doc and wiki updates with message: `docs: synchronize wiki, root readme and package readmes for vX.Y.Z release`.
    - Push directly to `origin/develop`.
 
 ---

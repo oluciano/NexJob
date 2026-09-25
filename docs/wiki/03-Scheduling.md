@@ -158,6 +158,31 @@ var orderJobs = await scheduler.GetJobsByTagAsync(orderId.ToString(), ct);
 
 ---
 
+## `IScheduler` Method Reference & Cheat Sheet
+
+The table below summarizes all scheduling methods and available optional parameters:
+
+| Method | Purpose | Key Arguments |
+|---|---|---|
+| `EnqueueAsync<TJob>(...)` | Run immediately (no input) | `queue`, `priority`, `idempotencyKey`, `duplicatePolicy`, `tags`, `deadlineAfter`, `ct` |
+| `EnqueueAsync<TJob, TInput>(input, ...)` | Run immediately with typed input | `input`, `queue`, `priority`, `idempotencyKey`, `duplicatePolicy`, `tags`, `deadlineAfter`, `ct` |
+| `ScheduleAsync<TJob>(delay, ...)` | Run after a relative time delay | `delay` (`TimeSpan`), `queue`, `idempotencyKey`, `ct` |
+| `ScheduleAsync<TJob, TInput>(input, delay, ...)` | Run with input after a time delay | `input`, `delay` (`TimeSpan`), `queue`, `idempotencyKey`, `ct` |
+| `ScheduleAtAsync<TJob>(runAt, ...)` | Run at a fixed UTC timestamp | `runAt` (`DateTimeOffset`), `queue`, `idempotencyKey`, `ct` |
+| `ScheduleAtAsync<TJob, TInput>(input, runAt, ...)` | Run with input at a fixed UTC timestamp | `input`, `runAt` (`DateTimeOffset`), `queue`, `idempotencyKey`, `ct` |
+| `AddOrUpdateRecurringJobAsync<TJob>(...)` | Schedule a recurring cron job | `recurringJobId`, `cron`, `timeZone`, `queue`, `concurrencyPolicy`, `ct` |
+| `AddOrUpdateRecurringJobAsync<TJob, TInput>(...)`| Recurring cron job with typed payload | `recurringJobId`, `input`, `cron`, `timeZone`, `queue`, `concurrencyPolicy`, `ct` |
+
+### Parameter Quick Reference
+- **`queue`** *(string?)*: Queue name. Defaults to `"default"`.
+- **`priority`** *(JobPriority)*: `JobPriority.Critical` (1), `High` (2), `Normal` (3 - default), `Low` (4).
+- **`idempotencyKey`** *(string?)*: Unique deduplication key. Returns existing `JobId` if active.
+- **`duplicatePolicy`** *(DuplicatePolicy)*: `AllowAfterFailed` (default), `AllowAfterTerminal`, `RejectAlways`.
+- **`deadlineAfter`** *(TimeSpan?)*: Maximum time before job expires if not picked up by a worker.
+- **`tags`** *(IReadOnlyList&lt;string&gt;?)*: Searchable metadata tags for dashboard and querying.
+
+---
+
 ## Next Steps
 
 - [Recurring Jobs](04-Recurring-Jobs.md) — Cron-based recurring execution

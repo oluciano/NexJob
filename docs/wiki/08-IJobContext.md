@@ -121,6 +121,26 @@ Fire-and-forget progress for synchronous collections.
 
 ---
 
+## Accessing Context Outside the Job (`IJobContextAccessor`)
+
+When building cross-cutting infrastructure services, telemetry enrichers, or database interceptors executed within the job scope, inject `IJobContextAccessor` instead of `IJobContext` directly:
+
+```csharp
+public sealed class CurrentJobAuditEnricher(IJobContextAccessor contextAccessor)
+{
+    public string? GetCurrentJobCorrelationId()
+    {
+        // Safe even if invoked outside an active job scope (returns null)
+        return contextAccessor.Context?.JobId.Value;
+    }
+}
+```
+
+- `IJobContextAccessor` is registered as `Scoped` and exposes `.Context` which holds the active `IJobContext` (or `null` if resolved outside an execution scope).
+- Injecting `IJobContext` directly outside a job's `ExecuteAsync` invocation will throw an `InvalidOperationException`. Use `IJobContextAccessor` whenever context resolution may be optional.
+
+---
+
 ## Next Steps
 
 - [Dashboard](10-Dashboard.md) — See progress updates in the UI

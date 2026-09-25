@@ -139,6 +139,61 @@ public sealed class MongoStorageProvider : IStorageProvider
         return doc?.ToRecord();
     }
 
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<JobRecord>> FetchBatchAsync(
+        IReadOnlyList<string> queues,
+        int maxBatchSize,
+        CancellationToken cancellationToken = default)
+    {
+        if (queues.Count == 0 || maxBatchSize <= 0)
+        {
+            return Array.Empty<JobRecord>();
+        }
+
+        if (maxBatchSize == 1)
+        {
+            var single = await FetchNextAsync(queues, cancellationToken).ConfigureAwait(false);
+            return single is not null ? new[] { single } : Array.Empty<JobRecord>();
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        await PromoteDueScheduledJobsAsync(now, cancellationToken).ConfigureAwait(false);
+
+        var filter = Builders<JobDocument>.Filter.And(
+            Builders<JobDocument>.Filter.In(d => d.Queue, queues),
+            Builders<JobDocument>.Filter.Eq(d => d.Status, JobStatus.Enqueued));
+
+        var sort = Builders<JobDocument>.Sort
+            .Ascending(d => d.Priority)
+            .Ascending(d => d.CreatedAt);
+
+        var update = Builders<JobDocument>.Update
+            .Set(d => d.Status, JobStatus.Processing)
+            .Set(d => d.ProcessingStartedAt, now)
+            .Set(d => d.HeartbeatAt, now)
+            .Inc(d => d.Attempts, 1);
+
+        var options = new FindOneAndUpdateOptions<JobDocument>
+        {
+            Sort = sort,
+            ReturnDocument = ReturnDocument.After,
+        };
+
+        var batch = new List<JobRecord>(maxBatchSize);
+        for (var i = 0; i < maxBatchSize; i++)
+        {
+            var doc = await _jobs.FindOneAndUpdateAsync(filter, update, options, cancellationToken).ConfigureAwait(false);
+            if (doc is null)
+            {
+                break;
+            }
+
+            batch.Add(doc.ToRecord());
+        }
+
+        return batch;
+    }
+
     // ── AcknowledgeAsync ─────────────────────────────────────────────────────
 
     /// <inheritdoc/>
@@ -150,6 +205,29 @@ public sealed class MongoStorageProvider : IStorageProvider
             .Unset(d => d.HeartbeatAt);
 
         await _jobs.UpdateOneAsync(ById(jobId), update, cancellationToken: cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc/>
+    public async Task AcknowledgeBatchAsync(IReadOnlyList<JobId> jobIds, CancellationToken cancellationToken = default)
+    {
+        if (jobIds.Count == 0)
+        {
+            return;
+        }
+
+        if (jobIds.Count == 1)
+        {
+            await AcknowledgeAsync(jobIds[0], cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        var filter = Builders<JobDocument>.Filter.In(d => d.Id, jobIds);
+        var update = Builders<JobDocument>.Update
+            .Set(d => d.Status, JobStatus.Succeeded)
+            .Set(d => d.CompletedAt, DateTimeOffset.UtcNow)
+            .Unset(d => d.HeartbeatAt);
+
+        await _jobs.UpdateManyAsync(filter, update, cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
     // ── SetFailedAsync ────────────────────────────────────────────────────────

@@ -34,6 +34,24 @@ builder.Services.AddNexJobGooglePubSubTrigger(options =>
 });
 ```
 
+### Strongly-Typed Consumer Registration
+
+```csharp
+builder.Services.AddNexJobGooglePubSubTrigger<ProcessPubSubJob>(options =>
+{
+    options.ProjectId = "my-gcp-project";
+    options.SubscriptionId = "my-subscription";
+});
+```
+
+---
+
+## Operational Visibility
+
+This trigger registers with `IListenerRegistry` to report live connection states (`Starting`, `Listening`, `Faulted`, `Stopped`) directly to the Dashboard `/listeners` page and the Cluster Pipeline Topology Map.
+
+---
+
 ## Configuration Options
 
 | Option | Description | Default |

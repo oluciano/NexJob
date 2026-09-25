@@ -148,6 +148,46 @@ public abstract class StorageProviderTestsBase
     }
 
     [Fact]
+    public async Task FetchBatchAsync_fetches_multiple_jobs_in_batch()
+    {
+        var (storage, _, _, _) = await CreateStorageAsync();
+        for (var i = 0; i < 5; i++)
+        {
+            await storage.EnqueueAsync(MakeJob());
+        }
+
+        var batch = await storage.FetchBatchAsync(["default"], 3);
+        batch.Should().HaveCount(3);
+        batch.All(j => j.Status == JobStatus.Processing).Should().BeTrue();
+
+        var remaining = await storage.FetchBatchAsync(["default"], 3);
+        remaining.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task AcknowledgeBatchAsync_marks_all_jobs_as_Succeeded()
+    {
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
+        var job1 = MakeJob();
+        var job2 = MakeJob();
+        await storage.EnqueueAsync(job1);
+        await storage.EnqueueAsync(job2);
+
+        var batch = await storage.FetchBatchAsync(["default"], 2);
+        batch.Should().HaveCount(2);
+
+        await storage.AcknowledgeBatchAsync([job1.Id, job2.Id]);
+
+        var updated1 = await dashboard.GetJobByIdAsync(job1.Id);
+        var updated2 = await dashboard.GetJobByIdAsync(job2.Id);
+
+        updated1!.Status.Should().Be(JobStatus.Succeeded);
+        updated1.CompletedAt.Should().NotBeNull();
+        updated2!.Status.Should().Be(JobStatus.Succeeded);
+        updated2.CompletedAt.Should().NotBeNull();
+    }
+
+    [Fact]
     public async Task SetFailedAsync_with_retryAt_re_enqueues_job()
     {
         var (storage, _, dashboard, _) = await CreateStorageAsync();

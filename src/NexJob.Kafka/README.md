@@ -82,9 +82,14 @@ Consumes incoming messages from Kafka topics and automatically enqueues them as 
 
 ### Registration
 
+There are two ways to register which job is triggered when a message arrives:
+
+#### Option A: Strongly-Typed Consumer (Recommended)
+Bind a topic directly to a job handler class (`IJob<string>`). The job is automatically registered in DI as `Transient`:
+
 ```csharp
 builder.Services.AddNexJob()
-    .AddKafkaTrigger(options =>
+    .AddNexJobKafkaTrigger<ProcessOrderJob>(options =>
     {
         options.BootstrapServers = builder.Configuration["KAFKA_BOOTSTRAP_SERVERS"] ?? "localhost:9092";
         options.Topic = "incoming-orders";
@@ -93,10 +98,25 @@ builder.Services.AddNexJob()
     });
 ```
 
+#### Option B: Dynamic Message Header (`nexjob.job_type`)
+If multiple job types share the same topic, omit the generic argument. The incoming Kafka message must include the `nexjob.job_type` header (or have `options.JobType` set as a default):
+
+```csharp
+builder.Services.AddNexJob()
+    .AddKafkaTrigger(options =>
+    {
+        options.BootstrapServers = builder.Configuration["KAFKA_BOOTSTRAP_SERVERS"] ?? "localhost:9092";
+        options.Topic = "incoming-orders";
+        options.GroupId = "nexjob-consumer-group";
+        options.TargetQueue = "orders";
+        // options.JobType = typeof(DefaultOrderJob).AssemblyQualifiedName;
+    });
+```
+
 ### Inbound Message Contract
 
-Messages consumed by the trigger expect the following headers:
-- `nexjob.job_type`: Assembly-qualified name of the `IJob<string>` to execute (required).
+For dynamic triggers (Option B), messages consumed expect the following headers:
+- `nexjob.job_type`: Assembly-qualified name of the `IJob<string>` to execute (required unless `options.JobType` is configured).
 - `traceparent`: W3C distributed trace header (optional).
 
 The message value is passed as the string input to the resolved job.
@@ -158,3 +178,9 @@ builder.Services.AddNexJob()
 2. **Dead-Letter Handling:** Permanent publishing failures trigger NexJob's dead-letter pipeline (`IDeadLetterHandler`) and surface in the dashboard.
 3. **Trace Propagation:** Injects W3C `traceparent` headers into outgoing messages and extracts them on consumer triggers.
 4. **Graceful Shutdown:** Unflushed in-flight messages are flushed before the application process exits.
+
+---
+
+## 6. Sagas & Event-Driven Choreographies
+
+Need distributed state machines or sagas with compensating transactions over Kafka? See **[qKafka](https://github.com/oluciano/QKafka)** — the companion event-driven framework that pairs with NexJob.

@@ -78,6 +78,29 @@ NexJob uses `Meter` named `"NexJob"`.
 
 All counter and histogram metrics include `job.type` and `job.queue` as dimensions. The `nexjob.queue.depth` gauge is tagged with `nexjob.queue`.
 
+### Kubernetes Horizontal Pod Autoscaler (HPA)
+
+The `nexjob.queue.depth` gauge allows autoscaling NexJob worker pods directly from queue backlog using Prometheus and KEDA (Kubernetes Event-driven Autoscaling) or custom metrics:
+
+```yaml
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: nexjob-worker-scaler
+spec:
+  scaleTargetRef:
+    name: nexjob-worker-deployment
+  minReplicaCount: 2
+  maxReplicaCount: 20
+  triggers:
+    - type: prometheus
+      metadata:
+        serverAddress: http://prometheus-k8s.monitoring.svc:9090
+        metricName: nexjob_queue_depth
+        query: sum(nexjob_queue_depth{nexjob_queue="critical"})
+        threshold: '50'
+```
+
 ---
 
 ## Compatibility

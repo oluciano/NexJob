@@ -115,6 +115,72 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
     }
 
     /// <inheritdoc/>
+    public async Task<IReadOnlyList<JobRecord>> FetchBatchAsync(
+        IReadOnlyList<string> queues,
+        int maxBatchSize,
+        CancellationToken cancellationToken = default)
+    {
+        if (queues.Count == 0 || maxBatchSize <= 0)
+        {
+            return Array.Empty<JobRecord>();
+        }
+
+        // Promote any due scheduled/retry jobs before attempting to dequeue
+        PromoteDueScheduledJobs();
+
+        var batch = new List<JobRecord>(maxBatchSize);
+
+        foreach (var queue in queues)
+        {
+            var channels = GetOrCreateQueueChannels(queue);
+
+            for (var i = 0; i < channels.Length; i++)
+            {
+                while (batch.Count < maxBatchSize && channels[i].Reader.TryRead(out var jobId))
+                {
+                    if (!_jobs.TryGetValue(jobId, out var job))
+                    {
+                        continue;
+                    }
+
+                    // Atomic claim: lock on the job instance to prevent double-processing
+                    lock (job)
+                    {
+                        if (job.Status != JobStatus.Enqueued)
+                        {
+                            continue;
+                        }
+
+                        job.Status = JobStatus.Processing;
+                        job.ProcessingStartedAt = DateTimeOffset.UtcNow;
+                        job.HeartbeatAt = DateTimeOffset.UtcNow;
+                        job.Attempts++;
+                        batch.Add(job);
+                    }
+                }
+
+                if (batch.Count >= maxBatchSize)
+                {
+                    break;
+                }
+            }
+
+            if (batch.Count >= maxBatchSize)
+            {
+                break;
+            }
+        }
+
+        if (batch.Count == 0)
+        {
+            // No job available — yield briefly so callers can back off
+            await Task.Delay(100, cancellationToken).ConfigureAwait(false);
+        }
+
+        return batch;
+    }
+
+    /// <inheritdoc/>
     public Task AcknowledgeAsync(JobId jobId, CancellationToken cancellationToken = default)
     {
         if (_jobs.TryGetValue(jobId.Value, out var job))
@@ -123,6 +189,25 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
             {
                 job.Status = JobStatus.Succeeded;
                 job.CompletedAt = DateTimeOffset.UtcNow;
+            }
+        }
+
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc/>
+    public Task AcknowledgeBatchAsync(IReadOnlyList<JobId> jobIds, CancellationToken cancellationToken = default)
+    {
+        var now = DateTimeOffset.UtcNow;
+        for (var i = 0; i < jobIds.Count; i++)
+        {
+            if (_jobs.TryGetValue(jobIds[i].Value, out var job))
+            {
+                lock (job)
+                {
+                    job.Status = JobStatus.Succeeded;
+                    job.CompletedAt = now;
+                }
             }
         }
 

@@ -119,6 +119,12 @@ public sealed class NexJobOptions
     public DashboardSettings Dashboard { get; set; } = new();
 
     /// <summary>
+    /// When enabled, completed jobs are acknowledged in asynchronous batches to reduce database write roundtrips.
+    /// Defaults to <c>false</c> (synchronous commit on job completion).
+    /// </summary>
+    public bool EnableBatchAcknowledgment { get; set; }
+
+    /// <summary>
     /// Maximum number of log lines captured per job execution. Defaults to <c>200</c>.
     /// </summary>
     public int MaxJobLogLines { get; set; } = 200;

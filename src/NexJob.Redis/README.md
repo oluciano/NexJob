@@ -57,7 +57,28 @@ Any job decorated with `[Throttle("external-api", 50, ThrottleWindow.PerMinute)]
 
 ---
 
+## High-Throughput Batch Processing
+
+For heavy ingestion workloads, enable batch processing to leverage server-side Lua scripts and vectorized acknowledgments:
+
+```csharp
+builder.Services.AddNexJobRedis("localhost:6379,abortConnect=false");
+
+builder.Services.AddNexJob(options =>
+{
+    // Workers dynamically batch fetches to keep all idle slots busy (FetchBatchScript in 1 RTT)
+    options.Workers = 30;
+    options.PollingInterval = TimeSpan.FromMilliseconds(20);
+
+    // Commit successful jobs in asynchronous batches via AcknowledgeBatchScript
+    options.EnableBatchAcknowledgment = true;
+});
+```
+
+---
+
 ## Features
+- **High-Throughput Batch Processing:** Atomic batch claims and single-roundtrip acknowledgments via `FetchBatchScript` and `AcknowledgeBatchScript`.
 
 - **Microsecond Latency:** Ultra-fast job enqueue and dispatch leveraging in-memory data structures.
 - **Server-Side Lua Scripts:** All complex state transitions (dequeuing, state commits, retry rescheduling) run atomically inside Redis, preventing race conditions.

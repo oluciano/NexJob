@@ -2,6 +2,8 @@
 
 Monitor, debug, and manage jobs through the enterprise Maxton-inspired UI.
 
+[![NexJob Enterprise Dashboard Overview](../assets/dashboard-overview.png)](../assets/dashboard-overview.png)
+
 ---
 
 ## Features

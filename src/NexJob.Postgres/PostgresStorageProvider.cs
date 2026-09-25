@@ -251,6 +251,60 @@ public sealed class PostgresStorageProvider : IStorageProvider, IDisposable, IAs
         return row?.ToRecord();
     }
 
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<JobRecord>> FetchBatchAsync(
+        IReadOnlyList<string> queues,
+        int maxBatchSize,
+        CancellationToken cancellationToken = default)
+    {
+        if (queues.Count == 0 || maxBatchSize <= 0)
+        {
+            return Array.Empty<JobRecord>();
+        }
+
+        await using var conn = Open();
+        await conn.OpenAsync(cancellationToken);
+        await using var tx = await conn.BeginTransactionAsync(cancellationToken);
+
+        // Promote due scheduled/retry jobs first
+        await conn.ExecuteAsync(
+            """
+            UPDATE nexjob_jobs
+            SET status = 'Enqueued'
+            WHERE status = 'Scheduled'
+              AND (
+                    (retry_at IS NOT NULL AND retry_at <= NOW())
+                 OR (retry_at IS NULL AND scheduled_at IS NOT NULL AND scheduled_at <= NOW())
+              )
+            """, transaction: tx);
+
+        var rows = await conn.QueryAsync<JobRow>(
+            $"""
+            UPDATE nexjob_jobs
+            SET status                = 'Processing',
+                processing_started_at = NOW(),
+                heartbeat_at          = NOW(),
+                attempts              = attempts + 1
+            WHERE id IN (
+                SELECT id FROM nexjob_jobs
+                WHERE status = 'Enqueued'
+                  AND queue = ANY(@queues)
+                ORDER BY
+                    array_position(@queues, queue),
+                    priority ASC,
+                    created_at ASC
+                LIMIT {maxBatchSize}
+                FOR UPDATE SKIP LOCKED
+            )
+            RETURNING *
+            """,
+            new { queues = queues.ToArray() },
+            transaction: tx);
+
+        await tx.CommitAsync(cancellationToken);
+        return rows.Select(r => r.ToRecord()).ToList();
+    }
+
     // ── AcknowledgeAsync ──────────────────────────────────────────────────────
 
     /// <inheritdoc/>
@@ -265,6 +319,33 @@ public sealed class PostgresStorageProvider : IStorageProvider, IDisposable, IAs
             WHERE id = @id
             """,
             new { id = jobId.Value });
+    }
+
+    /// <inheritdoc/>
+    public async Task AcknowledgeBatchAsync(IReadOnlyList<JobId> jobIds, CancellationToken cancellationToken = default)
+    {
+        if (jobIds.Count == 0)
+        {
+            return;
+        }
+
+        if (jobIds.Count == 1)
+        {
+            await AcknowledgeAsync(jobIds[0], cancellationToken);
+            return;
+        }
+
+        await using var conn = Open();
+        await conn.OpenAsync(cancellationToken);
+        var idList = jobIds.Select(j => j.Value).ToArray();
+
+        await conn.ExecuteAsync(
+            """
+            UPDATE nexjob_jobs
+            SET status = 'Succeeded', completed_at = NOW(), heartbeat_at = NULL
+            WHERE id = ANY(@Ids)
+            """,
+            new { Ids = idList });
     }
 
     // ── SetFailedAsync ────────────────────────────────────────────────────────
