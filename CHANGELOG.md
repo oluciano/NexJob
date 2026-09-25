@@ -6,6 +6,8 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [5.5.0] - 2026-09-25
+
 ### Fixed
 
 - **`NexJob.SqlServer` — Non-blocking application lock for scheduled job promotion during concurrent batch polling**:
