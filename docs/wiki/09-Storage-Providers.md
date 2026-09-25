@@ -69,13 +69,31 @@ builder.Services.AddNexJob(options =>
 .UseDashboardReadReplica(readReplicaConnectionString);
 ```
 
-### Features
-
 - Full ACID guarantees
 - Distributed lock via advisory locks
 - Concurrency-safe job fetching via `FOR UPDATE SKIP LOCKED`
+- Dynamic batch dequeue (`FetchBatchAsync`) based on idle worker capacity
+- Vectorized batch acknowledgment (`AcknowledgeBatchAsync`) using native PostgreSQL array operations (`WHERE id = ANY(@Ids)`)
 - Dashboard Read Replica offloading
 - Automatic table creation and schema migrations on startup
+
+### High-Throughput Batch Processing Example
+
+For extreme workloads on PostgreSQL, enable batch processing:
+
+```csharp
+builder.Services.AddNexJobPostgres(connectionString);
+
+builder.Services.AddNexJob(options =>
+{
+    // Workers dynamically batch fetches to keep all idle slots busy (LIMIT availableWorkers)
+    options.Workers = 30;
+    options.PollingInterval = TimeSpan.FromMilliseconds(20);
+
+    // Commit successful jobs in asynchronous batches, eliminating per-job WAL transaction log flushes
+    options.EnableBatchAcknowledgment = true;
+});
+```
 
 ---
 
