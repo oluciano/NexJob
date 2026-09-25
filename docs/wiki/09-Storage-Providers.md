@@ -185,6 +185,24 @@ builder.Services.AddNexJobRedis("localhost:6379")
     .AddNexJobDistributedThrottle();
 ```
 
+### High-Throughput Batch Processing Example
+
+For extreme ingestion workloads (e.g. consuming tens of thousands of messages from Kafka/RabbitMQ into Redis), enable batch processing to leverage server-side Lua scripts and vectorized acknowledgments:
+
+```csharp
+builder.Services.AddNexJobRedis("localhost:6379,abortConnect=false");
+
+builder.Services.AddNexJob(options =>
+{
+    // Workers dynamically batch fetches to keep all idle slots busy (FetchBatchScript in 1 RTT)
+    options.Workers = 30;
+    options.PollingInterval = TimeSpan.FromMilliseconds(20);
+
+    // Commit successful jobs in asynchronous batches via AcknowledgeBatchScript
+    options.EnableBatchAcknowledgment = true;
+});
+```
+
 ### Features
 
 - Lowest latency of all providers (microsecond dispatch)
@@ -213,6 +231,26 @@ builder.Services.AddNexJob(options =>
 {
     options.Workers = 10;
     options.Queues = ["default", "critical"];
+});
+```
+
+### High-Throughput Batch Processing Example
+
+For extreme workloads on MongoDB, batching groups job reservations and vectorized acknowledgments using `UpdateManyAsync`:
+
+```csharp
+builder.Services.AddNexJobMongoDB(
+    connectionString: builder.Configuration.GetConnectionString("MongoConnection")!,
+    databaseName: "nexjob");
+
+builder.Services.AddNexJob(options =>
+{
+    // Workers dynamically batch fetches to keep all idle slots busy
+    options.Workers = 30;
+    options.PollingInterval = TimeSpan.FromMilliseconds(20);
+
+    // Commit successful jobs in asynchronous batches via UpdateManyAsync ($in: [ids])
+    options.EnableBatchAcknowledgment = true;
 });
 ```
 
