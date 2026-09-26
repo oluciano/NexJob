@@ -3,6 +3,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Moq;
+using NexJob.Exceptions;
 using NexJob.Storage;
 using Xunit;
 
@@ -40,10 +41,10 @@ public sealed class DefaultJobInvokerFactoryHardeningTests
 
     // ─── PrepareAsync Branches ─────────────────────────────────────────────
 
-    /// <summary>Tests that PrepareAsync throws when job type cannot be resolved.</summary>
+    /// <summary>Tests that PrepareAsync throws ForeignJobTypeException when job type cannot be resolved.</summary>
     /// <returns>A task.</returns>
     [Fact]
-    public async Task PrepareAsync_InvalidJobType_ThrowsInvalidOperationException()
+    public async Task PrepareAsync_InvalidJobType_ThrowsForeignJobTypeException()
     {
         var sut = CreateSut();
         var job = new JobRecord
@@ -54,13 +55,14 @@ public sealed class DefaultJobInvokerFactoryHardeningTests
 
         Func<Task> act = () => sut.PrepareAsync(job);
 
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*Cannot load job type*");
+        var ex = await act.Should().ThrowAsync<ForeignJobTypeException>().WithMessage("*Cannot load job type*");
+        ex.Which.TypeName.Should().Be("InvalidType");
     }
 
-    /// <summary>Tests that PrepareAsync throws when input type cannot be resolved.</summary>
+    /// <summary>Tests that PrepareAsync throws ForeignJobTypeException when input type cannot be resolved.</summary>
     /// <returns>A task.</returns>
     [Fact]
-    public async Task PrepareAsync_InvalidInputType_ThrowsInvalidOperationException()
+    public async Task PrepareAsync_InvalidInputType_ThrowsForeignJobTypeException()
     {
         var sut = CreateSut();
         var job = new JobRecord
@@ -71,7 +73,8 @@ public sealed class DefaultJobInvokerFactoryHardeningTests
 
         Func<Task> act = () => sut.PrepareAsync(job);
 
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*Cannot load input type*");
+        var ex = await act.Should().ThrowAsync<ForeignJobTypeException>().WithMessage("*Cannot load input type*");
+        ex.Which.TypeName.Should().Be("InvalidType");
     }
 
     /// <summary>Tests that PrepareAsync uses schema version from attribute if present.</summary>

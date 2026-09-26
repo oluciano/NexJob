@@ -22,6 +22,9 @@ public sealed class NexJobSettingsTests
         settings.HeartbeatTimeout.Should().Be(TimeSpan.FromMinutes(5));
         settings.DefaultQueue.Should().Be("default");
         settings.Queues.Should().BeEmpty();
+
+        var options = new NexJobOptions();
+        options.ForeignJobRetryDelay.Should().Be(TimeSpan.FromSeconds(5));
     }
 
     // ─── ApplySettings ────────────────────────────────────────────────────────

@@ -51,6 +51,14 @@ public sealed class NexJobOptions
     public TimeSpan PollingInterval { get; set; } = TimeSpan.FromSeconds(15);
 
     /// <summary>
+    /// Delay applied when deferring a foreign job (a job whose type or input type is not loaded
+    /// in the current application runtime). This releases the job back to storage so another node
+    /// that owns the job type can execute it, while preventing immediate hot-loop re-fetching.
+    /// Defaults to <c>5 seconds</c>.
+    /// </summary>
+    public TimeSpan ForeignJobRetryDelay { get; set; } = TimeSpan.FromSeconds(5);
+
+    /// <summary>
     /// How often active workers refresh their heartbeat timestamp.
     /// Defaults to <c>30 seconds</c>.
     /// </summary>
