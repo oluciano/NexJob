@@ -28,8 +28,8 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - Extended `IDashboardStorage` with `GetJobCatalogAsync` featuring a default interface implementation for backward compatibility with external providers (with deprecation notice for v6.0).
   - Implemented high-performance native aggregated queries (`GROUP BY job_type, queue`) in `InMemoryStorageProvider`, `PostgresStorageProvider`, and `SqlServerStorageProvider`.
   - Added `/catalog` page in `NexJob.Dashboard` rendering an interactive table under the `MONITORING` sidebar section with instant search filtering, queue filtering, failure rate badges, average duration calculations, and deep-linking to filtered execution history in `/jobs`.
-  - Added on-demand ad-hoc execution (`POST /catalog/{jobType}/trigger`) for parameterless `IJob` implementations directly from the catalog table, adhering to multi-cluster active selection (`?cluster={id}`) and `IsReadOnly` safety guards.
-  - Distinguish parameterless `IJob` from parameterized `IJob<T>` in Catalog UI: parameterless jobs display an active "Trigger" button, while parameterized jobs display a disabled "Requires Input" button with an informative tooltip explaining payload requirements.
+  - Added on-demand ad-hoc execution (`POST /catalog/{jobType}/trigger`) for jobs directly from the catalog table, adhering to multi-cluster active selection (`?cluster={id}`) and `IsReadOnly` safety guards.
+  - Added Swagger-style interactive Trigger modal for parameterized jobs (`IJob<T>`): clicking "Trigger" opens a dialog pre-filled with an automatically generated sample JSON schema for the input type (and target queue), allowing operators to edit the payload or reset to sample before triggering. Parameterless `IJob`s trigger immediately with 1 click.
   - Added 3N testing matrix (Positive, Negative, Boundary) in `tests/NexJob.Tests/InMemoryStorageProviderTests.cs` and `tests/NexJob.Tests/StandaloneDashboardTests.cs`.
   - Updated documentation in `docs/wiki/10-Dashboard.md`, root `README.md`, `src/NexJob.Dashboard/README.md`, and `samples/NexJob.Sample.WorkerService`.
 

@@ -627,6 +627,7 @@ public sealed class DashboardMiddleware
 
         var rawType = Uri.UnescapeDataString(parts[1]);
         string? queue = null;
+        string? payloadJson = null;
         if (context.Request.HasFormContentType)
         {
             var form = await context.Request.ReadFormAsync(context.RequestAborted).ConfigureAwait(false);
@@ -635,29 +636,70 @@ public sealed class DashboardMiddleware
             {
                 queue = formQueue.Trim();
             }
+
+            var formPayload = form["inputJson"].ToString();
+            if (!string.IsNullOrWhiteSpace(formPayload))
+            {
+                payloadJson = formPayload.Trim();
+            }
         }
 
         var jobType = Pages.Helpers.ResolveType(rawType);
-        if (jobType is not null && typeof(IJob).IsAssignableFrom(jobType))
+        if (jobType is not null)
         {
             var scheduler = context.RequestServices.GetService<IScheduler>();
             if (scheduler is not null)
             {
                 var options = context.RequestServices.GetRequiredService<NexJobOptions>();
-                var jobRecord = new JobRecord
-                {
-                    Id = JobId.New(),
-                    JobType = jobType.AssemblyQualifiedName ?? rawType,
-                    InputType = typeof(NoInput).AssemblyQualifiedName!,
-                    InputJson = "{}",
-                    Queue = queue ?? "default",
-                    Priority = JobPriority.Normal,
-                    Status = JobStatus.Enqueued,
-                    CreatedAt = DateTimeOffset.UtcNow,
-                    MaxAttempts = options.MaxAttempts,
-                };
+                var inputType = Pages.Helpers.ResolveJobInputType(rawType);
 
-                await scheduler.EnqueueAsync(jobRecord, DuplicatePolicy.AllowAfterFailed, context.RequestAborted).ConfigureAwait(false);
+                if (typeof(IJob).IsAssignableFrom(jobType))
+                {
+                    var jobRecord = new JobRecord
+                    {
+                        Id = JobId.New(),
+                        JobType = jobType.AssemblyQualifiedName ?? rawType,
+                        InputType = typeof(NoInput).AssemblyQualifiedName!,
+                        InputJson = "{}",
+                        Queue = queue ?? "default",
+                        Priority = JobPriority.Normal,
+                        Status = JobStatus.Enqueued,
+                        CreatedAt = DateTimeOffset.UtcNow,
+                        MaxAttempts = options.MaxAttempts,
+                    };
+
+                    await scheduler.EnqueueAsync(jobRecord, DuplicatePolicy.AllowAfterFailed, context.RequestAborted).ConfigureAwait(false);
+                }
+                else if (inputType is not null && !string.IsNullOrWhiteSpace(payloadJson))
+                {
+                    // Validate JSON against inputType
+                    try
+                    {
+                        var deserialized = System.Text.Json.JsonSerializer.Deserialize(payloadJson, inputType);
+                        if (deserialized is not null)
+                        {
+                            var normalizedJson = System.Text.Json.JsonSerializer.Serialize(deserialized);
+                            var jobRecord = new JobRecord
+                            {
+                                Id = JobId.New(),
+                                JobType = jobType.AssemblyQualifiedName ?? rawType,
+                                InputType = inputType.AssemblyQualifiedName!,
+                                InputJson = normalizedJson,
+                                Queue = queue ?? "default",
+                                Priority = JobPriority.Normal,
+                                Status = JobStatus.Enqueued,
+                                CreatedAt = DateTimeOffset.UtcNow,
+                                MaxAttempts = options.MaxAttempts,
+                            };
+
+                            await scheduler.EnqueueAsync(jobRecord, DuplicatePolicy.AllowAfterFailed, context.RequestAborted).ConfigureAwait(false);
+                        }
+                    }
+                    catch
+                    {
+                        // Invalid JSON payload — skip enqueue and redirect back
+                    }
+                }
             }
         }
 

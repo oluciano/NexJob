@@ -804,7 +804,7 @@ public sealed class StandaloneDashboardTests
     }
 
     [Fact]
-    public async Task StandaloneDashboard_Catalog_ParameterizedJob_RendersRequiresInputDisabled()
+    public async Task StandaloneDashboard_Catalog_ParameterizedJob_RendersTriggerModalButtonAndEnqueuesWithPayload()
     {
         var port = GetFreeTcpPort();
         using var host = Host.CreateDefaultBuilder()
@@ -830,23 +830,47 @@ public sealed class StandaloneDashboardTests
             {
                 Id = JobId.New(),
                 JobType = typeof(StubParameterizedJob).AssemblyQualifiedName!,
+                InputType = typeof(string).AssemblyQualifiedName!,
+                InputJson = "\"initial-test\"",
                 Queue = "default",
                 Status = JobStatus.Succeeded,
             });
 
-            using var client = new HttpClient
+            using var handler = new HttpClientHandler { AllowAutoRedirect = false };
+            using var client = new HttpClient(handler)
             {
                 BaseAddress = new Uri($"http://localhost:{port}"),
                 Timeout = TimeSpan.FromSeconds(5),
             };
 
+            // 1. Verify Catalog renders Trigger button that calls openTriggerModal
             var res = await client.GetAsync("/dashboard/catalog");
             res.StatusCode.Should().Be(HttpStatusCode.OK);
             var html = await res.Content.ReadAsStringAsync();
 
             html.Should().Contain("StubParameterizedJob");
-            html.Should().Contain("Requires Input");
-            html.Should().Contain("disabled");
+            html.Should().Contain("openTriggerModal");
+            html.Should().Contain("triggerModal");
+
+            // 2. Post to trigger parameterized job with custom inputJson payload
+            var postContent = new FormUrlEncodedContent(new[]
+            {
+                new KeyValuePair<string, string>("queue", "custom-payload-queue"),
+                new KeyValuePair<string, string>("inputJson", "\"hello-from-catalog\""),
+            });
+
+            var jobTypeArg = Uri.EscapeDataString(typeof(StubParameterizedJob).AssemblyQualifiedName!);
+            var triggerRes = await client.PostAsync($"/dashboard/catalog/{jobTypeArg}/trigger", postContent);
+
+            triggerRes.StatusCode.Should().Be(HttpStatusCode.Redirect);
+            triggerRes.Headers.Location?.ToString().Should().Be("/dashboard/catalog");
+
+            // 3. Verify enqueued job record contains the supplied payload
+            var dashboardStorage = host.Services.GetRequiredService<NexJob.Storage.IDashboardStorage>();
+            var paged = await dashboardStorage.GetJobsAsync(new JobFilter { Queue = "custom-payload-queue" }, page: 1, pageSize: 10);
+            paged.Items.Should().ContainSingle(j => j.JobType == typeof(StubParameterizedJob).AssemblyQualifiedName);
+            var enqueued = paged.Items.First(j => j.JobType == typeof(StubParameterizedJob).AssemblyQualifiedName);
+            enqueued.InputJson.Should().Be("\"hello-from-catalog\"");
         }
         finally
         {

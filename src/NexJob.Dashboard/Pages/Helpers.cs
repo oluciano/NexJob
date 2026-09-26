@@ -39,6 +39,99 @@ internal static class Helpers
         return type is not null && typeof(IJob).IsAssignableFrom(type);
     }
 
+    internal static Type? ResolveJobInputType(string typeName)
+    {
+        var type = ResolveType(typeName);
+        if (type is null)
+        {
+            return null;
+        }
+
+        var jobInterface = Array.Find(
+            type.GetInterfaces(),
+            i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IJob<>));
+        return jobInterface?.GetGenericArguments()[0];
+    }
+
+    internal static string GenerateDefaultJsonSchema(Type inputType)
+    {
+        try
+        {
+            var obj = CreateSampleInstance(inputType);
+            return System.Text.Json.JsonSerializer.Serialize(obj, new System.Text.Json.JsonSerializerOptions
+            {
+                WriteIndented = true,
+            });
+        }
+        catch
+        {
+            return "{}";
+        }
+    }
+
+    private static object? CreateSampleInstance(Type type)
+    {
+        if (type == typeof(string))
+        {
+            return "string";
+        }
+
+        if (type == typeof(int) || type == typeof(long) || type == typeof(short) || type == typeof(byte))
+        {
+            return 0;
+        }
+
+        if (type == typeof(double) || type == typeof(float) || type == typeof(decimal))
+        {
+            return 0.0;
+        }
+
+        if (type == typeof(bool))
+        {
+            return true;
+        }
+
+        if (type == typeof(Guid))
+        {
+            return Guid.NewGuid();
+        }
+
+        if (type == typeof(DateTime))
+        {
+            return DateTime.UtcNow;
+        }
+
+        if (type == typeof(DateTimeOffset))
+        {
+            return DateTimeOffset.UtcNow;
+        }
+
+        if (type.IsEnum)
+        {
+            return Enum.GetValues(type).GetValue(0);
+        }
+
+        // Check constructors (e.g. records or classes)
+        var ctors = type.GetConstructors();
+        if (ctors.Length > 0)
+        {
+            var ctor = ctors.OrderByDescending(c => c.GetParameters().Length).First();
+            var parameters = ctor.GetParameters();
+            if (parameters.Length > 0)
+            {
+                var args = new object?[parameters.Length];
+                for (int i = 0; i < parameters.Length; i++)
+                {
+                    args[i] = CreateSampleInstance(parameters[i].ParameterType);
+                }
+
+                return ctor.Invoke(args);
+            }
+        }
+
+        return Activator.CreateInstance(type);
+    }
+
     internal static string BadgeHtml(JobStatus s) => s switch
     {
         JobStatus.Enqueued => "<span class=\"badge badge-enqueued\">Enqueued</span>",

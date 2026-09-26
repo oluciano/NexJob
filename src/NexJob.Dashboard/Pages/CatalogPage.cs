@@ -102,6 +102,9 @@ internal sealed class CatalogPage : IComponent
             var historyUrl = $"{PathPrefix}/jobs?search={Uri.EscapeDataString(shortName)}&queue={Uri.EscapeDataString(item.Queue)}{clusterParam}";
 
             var isParameterless = Helpers.IsParameterlessJob(item.JobType);
+            var inputType = Helpers.ResolveJobInputType(item.JobType);
+            var sampleJson = inputType is not null ? Helpers.GenerateDefaultJsonSchema(inputType) : "{}";
+            var inputTypeName = inputType is not null ? inputType.Name : "NoInput";
 
             string triggerAction;
             if (isReadOnly)
@@ -111,20 +114,28 @@ internal sealed class CatalogPage : IComponent
             else if (isParameterless)
             {
                 triggerAction =
-                    $"<form method=\"post\" action=\"{PathPrefix}/catalog/{Uri.EscapeDataString(item.JobType)}/trigger{clusterQuery}\" style=\"display:inline\">" +
+                    $"<form method=\"post\" action=\"{PathPrefix}/catalog/{Uri.EscapeDataString(item.JobType)}/trigger{clusterQuery}\" style=\"display:inline;margin:0\">" +
                     $"<input type=\"hidden\" name=\"queue\" value=\"{HttpUtility.HtmlAttributeEncode(item.Queue)}\" />" +
-                    "<button type=\"submit\" class=\"btn btn-primary btn-sm\" title=\"Enqueue ad-hoc execution (parameterless IJob)\">Trigger</button>" +
+                    "<button type=\"submit\" class=\"btn btn-primary btn-sm\" style=\"min-width:76px;justify-content:center\" title=\"Enqueue ad-hoc execution (parameterless IJob)\">Trigger</button>" +
                     "</form>";
             }
             else
             {
+                var encodedJobType = HttpUtility.JavaScriptStringEncode(item.JobType);
+                var encodedShortName = HttpUtility.JavaScriptStringEncode(shortName);
+                var encodedQueue = HttpUtility.JavaScriptStringEncode(item.Queue);
+                var encodedInputType = HttpUtility.JavaScriptStringEncode(inputTypeName);
+                var encodedSample = HttpUtility.JavaScriptStringEncode(sampleJson);
+
                 triggerAction =
-                    "<button type=\"button\" class=\"btn btn-secondary btn-sm\" disabled style=\"opacity:0.6;cursor:not-allowed\" title=\"Parameterized job (IJob&lt;T&gt;) requires an input payload and cannot be triggered ad-hoc\">Requires Input</button>";
+                    $"<button type=\"button\" class=\"btn btn-primary btn-sm\" style=\"min-width:76px;justify-content:center\" " +
+                    $"onclick=\"openTriggerModal('{encodedJobType}', '{encodedShortName}', '{encodedQueue}', '{encodedInputType}', '{encodedSample}')\" " +
+                    "title=\"Trigger execution with custom input payload (IJob&lt;T&gt;)\">Trigger</button>";
             }
 
             var actionsHtml =
                 $"<div style=\"display:flex;gap:8px;justify-content:flex-end;align-items:center\">" +
-                $"<a href=\"{historyUrl}\" class=\"btn btn-secondary btn-sm\" title=\"View execution history in Jobs log\">History</a>" +
+                $"<a href=\"{historyUrl}\" class=\"btn btn-secondary btn-sm\" style=\"min-width:68px;justify-content:center\" title=\"View execution history in Jobs log\">History</a>" +
                 triggerAction +
                 "</div>";
 
@@ -147,6 +158,70 @@ internal sealed class CatalogPage : IComponent
                 </tr>
                 """;
         }));
+
+        var modalHtml =
+            """
+            <style>
+                #triggerModal{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);margin:0}
+                #triggerModal::backdrop{background:rgba(0,0,0,.65)}
+            </style>
+            <dialog id="triggerModal" style="background:#111827;color:#e5e7eb;border:1px solid #374151;border-radius:8px;padding:0;max-width:650px;width:90vw;box-shadow:0 20px 25px -5px rgba(0,0,0,0.5)">
+                <form id="triggerModalForm" method="post" action="">
+                    <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid #374151">
+                        <div>
+                            <h3 id="triggerModalTitle" style="margin:0;font-size:16px;color:#f9fafb;font-weight:600">Trigger Job</h3>
+                            <div id="triggerModalSubtitle" style="font-size:12px;color:#9ca3af;margin-top:2px">Configure input payload and target queue</div>
+                        </div>
+                        <button type="button" onclick="document.getElementById('triggerModal').close()" style="background:none;border:none;color:#9ca3af;cursor:pointer;font-size:20px;line-height:1">&#x00D7;</button>
+                    </div>
+                    <div style="padding:20px;display:flex;flex-direction:column;gap:16px">
+                        <div>
+                            <label style="display:block;font-size:12px;font-weight:600;color:#9ca3af;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px">Queue</label>
+                            <input type="text" id="triggerModalQueue" name="queue" style="width:100%;box-sizing:border-box" required />
+                        </div>
+                        <div>
+                            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+                                <label style="font-size:12px;font-weight:600;color:#9ca3af;text-transform:uppercase;letter-spacing:0.5px">Payload (<span id="triggerModalInputType">JSON</span>)</label>
+                                <button type="button" id="triggerModalResetBtn" class="btn btn-secondary btn-sm" style="font-size:11px;padding:2px 8px">Reset Sample</button>
+                            </div>
+                            <textarea id="triggerModalPayload" name="inputJson" rows="8" style="width:100%;box-sizing:border-box;font-family:monospace;font-size:13px;background:#0f172a;color:#e2e8f0;border:1px solid #374151;border-radius:6px;padding:12px;line-height:1.5;resize:vertical"></textarea>
+                        </div>
+                    </div>
+                    <div style="padding:14px 20px;border-top:1px solid #374151;display:flex;justify-content:flex-end;gap:10px;background:rgba(0,0,0,0.15)">
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('triggerModal').close()">Cancel</button>
+                        <button type="submit" class="btn btn-primary btn-sm">Enqueue Job</button>
+                    </div>
+                </form>
+            </dialog>
+            """;
+
+        var scriptHtml =
+            $$"""
+            <script>
+                var defaultSampleJson = '{}';
+                function openTriggerModal(jobType, shortName, queue, inputType, sampleJson) {
+                    var modal = document.getElementById('triggerModal');
+                    var form = document.getElementById('triggerModalForm');
+                    var title = document.getElementById('triggerModalTitle');
+                    var queueInput = document.getElementById('triggerModalQueue');
+                    var payloadInput = document.getElementById('triggerModalPayload');
+                    var inputTypeSpan = document.getElementById('triggerModalInputType');
+
+                    defaultSampleJson = sampleJson;
+                    form.action = '{{PathPrefix}}/catalog/' + encodeURIComponent(jobType) + '/trigger{{clusterQuery}}';
+                    title.textContent = 'Trigger ' + shortName;
+                    queueInput.value = queue;
+                    payloadInput.value = sampleJson;
+                    inputTypeSpan.textContent = inputType;
+
+                    modal.showModal();
+                }
+
+                document.getElementById('triggerModalResetBtn').addEventListener('click', function() {
+                    document.getElementById('triggerModalPayload').value = defaultSampleJson;
+                });
+            </script>
+            """;
 
         var body =
             "<div id=\"catalog-page-content\" data-refresh=\"true\">" +
@@ -173,6 +248,8 @@ internal sealed class CatalogPage : IComponent
             "</table>" +
             "</div>" +
             "</div>" +
+            modalHtml +
+            scriptHtml +
             "</div>";
 
         return HtmlShell.Wrap(Title, PathPrefix, "catalog", body, Counters, clusters: Clusters, activeCluster: ActiveCluster);
