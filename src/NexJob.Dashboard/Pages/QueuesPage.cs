@@ -99,12 +99,14 @@ internal sealed class QueuesPage : IComponent
             .ThenBy(q => q.Queue, StringComparer.Ordinal)
             .ToList();
 
-        var cards = string.Join(string.Empty, sortedQueues.Select(q => HtmlFragments.QueueCard(q, PathPrefix, pausedQueues.Contains(q.Queue))));
+        var isReadOnly = ActiveCluster?.IsReadOnly == true;
+        var cards = string.Join(string.Empty, sortedQueues.Select(q => HtmlFragments.QueueCard(q, PathPrefix, pausedQueues.Contains(q.Queue), ActiveCluster)));
 
         var heatmap = BuildWorkerHeatmap(processingJobs);
 
         var body =
             "<div id=\"queues-page-content\" data-refresh=\"true\">" +
+            (isReadOnly ? HtmlFragments.ReadOnlyBanner() : string.Empty) +
             HtmlFragments.Breadcrumbs(PathPrefix, ("Queues", null)) +
             HtmlFragments.PageHeader("Queues", "Monitor and manage job processing queues") +
             $"<div class=\"card\">" +

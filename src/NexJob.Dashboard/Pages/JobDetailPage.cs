@@ -46,6 +46,8 @@ internal sealed class JobDetailPage : IComponent
         var now = DateTimeOffset.UtcNow;
         var vm = new JobDetailViewModel { Job = job, PathPrefix = PathPrefix, Now = now };
 
+        var clusterSuffix = ActiveCluster is not null ? $"?cluster={Uri.EscapeDataString(ActiveCluster.Id)}" : string.Empty;
+
         // Action buttons
         var actions = string.Empty;
         if (!IsReadOnly)
@@ -53,16 +55,16 @@ internal sealed class JobDetailPage : IComponent
             if (job.Status == JobStatus.Scheduled)
             {
                 actions +=
-                    $"<form method=\"post\" action=\"{PathPrefix}/jobs/{job.Id.Value}/runnow\" style=\"display:inline\">" +
+                    $"<form method=\"post\" action=\"{PathPrefix}/jobs/{job.Id.Value}/runnow{clusterSuffix}\" style=\"display:inline\">" +
                     "<button type=\"submit\" class=\"btn btn-primary btn-sm\">▶ Run Now</button></form> ";
             }
 
             if (job.Status == JobStatus.Failed)
             {
                 actions +=
-                    $"<form method=\"post\" action=\"{PathPrefix}/jobs/{job.Id.Value}/requeue\" style=\"display:inline\">" +
+                    $"<form method=\"post\" action=\"{PathPrefix}/jobs/{job.Id.Value}/requeue{clusterSuffix}\" style=\"display:inline\">" +
                     "<button type=\"submit\" class=\"btn btn-primary btn-sm\" onclick=\"return confirm('Requeue this job?')\">↺ Requeue</button></form> " +
-                    $"<form method=\"post\" action=\"{PathPrefix}/jobs/{job.Id.Value}/delete\" style=\"display:inline\">" +
+                    $"<form method=\"post\" action=\"{PathPrefix}/jobs/{job.Id.Value}/delete{clusterSuffix}\" style=\"display:inline\">" +
                     "<button type=\"submit\" class=\"btn btn-danger btn-sm\" onclick=\"return confirm('Delete this job?')\">Delete</button></form>";
             }
         }
@@ -201,7 +203,7 @@ internal sealed class JobDetailPage : IComponent
             $"var logsBadge=document.getElementById('logs-count-badge');" +
             $"var isRunning={(job.Status == JobStatus.Processing ? "true" : "false")};" +
             $"var lastLogsCount={job.ExecutionLogs.Count};" +
-            $"var es=new EventSource('{PathPrefix}/stream');" +
+            $"var es=new EventSource('{PathPrefix}/stream{clusterSuffix}');" +
             $"es.onmessage=function(e){{" +
             $"var d=JSON.parse(e.data);" +
             $"var jobs=d.activeJobs||[];" +
@@ -212,7 +214,7 @@ internal sealed class JobDetailPage : IComponent
             $"if(msgEl&&j.progressMessage)msgEl.textContent=j.progressMessage;" +
             $"}}" +
             $"if(isRunning){{" +
-            $"fetch('{PathPrefix}/jobs/'+jobId+'/logs').then(r=>r.json()).then(logs=>{{" +
+            $"fetch('{PathPrefix}/jobs/'+jobId+'/logs{clusterSuffix}').then(r=>r.json()).then(logs=>{{" +
             $"if(Array.isArray(logs)&&logs.length>lastLogsCount&&logsBody){{" +
             $"lastLogsCount=logs.length;" +
             $"if(logsBadge)logsBadge.textContent='('+logs.length+' entries)';" +

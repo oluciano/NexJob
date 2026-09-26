@@ -666,7 +666,8 @@ internal static class HtmlShell
             window.nexJobBulkAction = async function(action) {
                 var ids = Array.from(document.querySelectorAll('.job-check:checked')).map(c => c.value);
                 if (ids.length === 0) return;
-                var res = await fetch('{{pathPrefix}}/jobs/bulk-' + action, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: ids }) });
+                var clusterParam = '{{(activeCluster is not null ? $"?cluster={Uri.EscapeDataString(activeCluster.Id)}" : string.Empty)}}';
+                var res = await fetch('{{pathPrefix}}/jobs/bulk-' + action + clusterParam, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: ids }) });
                 if (res.ok) location.reload();
             };
 

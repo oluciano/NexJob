@@ -102,33 +102,41 @@ internal sealed class RecurringJobDetailPage : IComponent
 
         // ── Action buttons ────────────────────────────────────────────────────
 
+        var clusterSuffix = ActiveCluster is not null ? $"?cluster={Uri.EscapeDataString(ActiveCluster.Id)}" : string.Empty;
+        var clusterParam = ActiveCluster is not null ? $"&cluster={Uri.EscapeDataString(ActiveCluster.Id)}" : string.Empty;
+        var isReadOnly = ActiveCluster?.IsReadOnly == true;
+
         string actionsHtml;
-        if (job.DeletedByUser)
+        if (isReadOnly)
+        {
+            actionsHtml = string.Empty;
+        }
+        else if (job.DeletedByUser)
         {
             actionsHtml =
-                $"<form method=\"post\" action=\"{PathPrefix}/recurring/{encodedIdUrl}/restore\" style=\"display:inline\">" +
+                $"<form method=\"post\" action=\"{PathPrefix}/recurring/{encodedIdUrl}/restore{clusterSuffix}\" style=\"display:inline\">" +
                 "<button type=\"submit\" class=\"btn btn-primary btn-sm\">↩ Restore</button></form>";
         }
         else
         {
             var triggerButton =
-                $"<form method=\"post\" action=\"{PathPrefix}/recurring/{encodedIdUrl}/trigger\" style=\"display:inline\">" +
+                $"<form method=\"post\" action=\"{PathPrefix}/recurring/{encodedIdUrl}/trigger{clusterSuffix}\" style=\"display:inline\">" +
                 "<button type=\"submit\" class=\"btn btn-primary btn-sm\">▶ Trigger Now</button></form>";
 
             var pauseResumeButton = job.Enabled
-                ? $"<form method=\"post\" action=\"{PathPrefix}/recurring/{encodedIdUrl}/pause\" style=\"display:inline\">" +
+                ? $"<form method=\"post\" action=\"{PathPrefix}/recurring/{encodedIdUrl}/pause{clusterSuffix}\" style=\"display:inline\">" +
                   "<button type=\"submit\" class=\"btn btn-sm\" style=\"background:var(--warning,#f59e0b);color:#000\">⏸ Pause</button></form>"
-                : $"<form method=\"post\" action=\"{PathPrefix}/recurring/{encodedIdUrl}/resume\" style=\"display:inline\">" +
+                : $"<form method=\"post\" action=\"{PathPrefix}/recurring/{encodedIdUrl}/resume{clusterSuffix}\" style=\"display:inline\">" +
                   "<button type=\"submit\" class=\"btn btn-primary btn-sm\">▶ Resume</button></form>";
 
             var forceDeleteButton =
-                $"<form method=\"post\" action=\"{PathPrefix}/recurring/{encodedIdUrl}/force-delete\" style=\"display:inline\">" +
+                $"<form method=\"post\" action=\"{PathPrefix}/recurring/{encodedIdUrl}/force-delete{clusterSuffix}\" style=\"display:inline\">" +
                 "<button type=\"submit\" class=\"btn btn-danger btn-sm\" onclick=\"return confirm('Delete this job and all its records?')\">✕ Force Delete</button></form>";
 
             var editForm =
                 $"<details style=\"display:inline-block;margin-left:4px\">" +
                 $"<summary class=\"btn btn-sm\" style=\"cursor:pointer;display:inline-block\">✎ Edit Cron</summary>" +
-                $"<form method=\"post\" action=\"{PathPrefix}/recurring/{encodedIdUrl}/update-config\" " +
+                $"<form method=\"post\" action=\"{PathPrefix}/recurring/{encodedIdUrl}/update-config{clusterSuffix}\" " +
                 $"style=\"margin-top:6px;display:flex;gap:6px;align-items:center\">" +
                 $"<input type=\"text\" name=\"cronOverride\" placeholder=\"{System.Web.HttpUtility.HtmlAttributeEncode(effectiveCron)}\" " +
                 $"value=\"{System.Web.HttpUtility.HtmlAttributeEncode(job.CronOverride ?? string.Empty)}\" " +
@@ -181,8 +189,13 @@ internal sealed class RecurringJobDetailPage : IComponent
             var opt20 = PageSize == 20 ? " selected" : string.Empty;
             var opt50 = PageSize == 50 ? " selected" : string.Empty;
 
+            var clusterHiddenInput = ActiveCluster is not null
+                ? $"<input type=\"hidden\" name=\"cluster\" value=\"{System.Web.HttpUtility.HtmlAttributeEncode(ActiveCluster.Id)}\" />"
+                : string.Empty;
+
             var pageSizeSelector =
                 $"<form method=\"get\" action=\"{PathPrefix}/recurring/{encodedIdUrl}\" style=\"display:inline-flex;align-items:center;gap:8px;margin-bottom:12px\">" +
+                clusterHiddenInput +
                 "<label style=\"color:#9ca3af;font-size:13px\">Show:</label>" +
                 "<select name=\"pageSize\" onchange=\"this.form.submit()\" style=\"background:#1f2937;color:#f9fafb;border:1px solid #374151;border-radius:4px;padding:4px 8px;font-size:13px\">" +
                 $"<option value=\"10\"{opt10}>10</option>" +
@@ -198,7 +211,7 @@ internal sealed class RecurringJobDetailPage : IComponent
                 "<th>#</th><th>Status</th><th>Started</th><th>Duration</th><th></th>" +
                 $"</tr></thead><tbody>{rows}</tbody></table>";
 
-            var paginationHtml = BuildPagination(Executions, encodedIdUrl);
+            var paginationHtml = BuildPagination(Executions, encodedIdUrl, clusterParam);
 
             executionsSection =
                 "<h2 style=\"margin-top:32px\">Last Executions</h2>" +
@@ -226,7 +239,7 @@ internal sealed class RecurringJobDetailPage : IComponent
             $"  title.textContent = 'Execution Logs \\u2014 ' + jobId.substring(0, 8) + '...';\n" +
             $"  modal.showModal();\n" +
             $"  try {{\n" +
-            $"    const res = await fetch(`{PathPrefix}/jobs/${{jobId}}/logs`);\n" +
+            $"    const res = await fetch(`{PathPrefix}/jobs/${{jobId}}/logs{clusterSuffix}`);\n" +
             $"    const logs = await res.json();\n" +
             $"    if (logs.length === 0) {{\n" +
             $"      content.textContent = 'No logs captured for this execution.';\n" +
@@ -256,7 +269,12 @@ internal sealed class RecurringJobDetailPage : IComponent
 
         // ── Assemble body ─────────────────────────────────────────────────────
 
+        var actionsBlock = actionsHtml.Length > 0
+            ? $"<div style=\"margin-top:20px\">{actionsHtml}</div>"
+            : string.Empty;
+
         var body =
+            (isReadOnly ? HtmlFragments.ReadOnlyBanner() : string.Empty) +
             HtmlFragments.Breadcrumbs(PathPrefix, ("Recurring", PathPrefix + "/recurring"), (job.RecurringJobId, null)) +
             $"<div id=\"auto-refresh-container\" data-refresh=\"true\">" +
             $"<div style=\"display:flex;align-items:center;gap:12px;margin-top:16px;margin-bottom:8px\">" +
@@ -266,7 +284,7 @@ internal sealed class RecurringJobDetailPage : IComponent
             $"<div style=\"margin-top:16px\">" +
             $"<div class=\"detail-grid\">{defGrid}</div>" +
             $"</div>" +
-            $"<div style=\"margin-top:20px\">{actionsHtml}</div>" +
+            actionsBlock +
             executionsSection +
             $"</div>" +
             modalHtml;
@@ -274,7 +292,7 @@ internal sealed class RecurringJobDetailPage : IComponent
         return HtmlShell.Wrap(Title, PathPrefix, "recurring", body, Counters, clusters: Clusters, activeCluster: ActiveCluster);
     }
 
-    private string BuildPagination(PagedResult<JobRecord> result, string encodedIdUrl)
+    private string BuildPagination(PagedResult<JobRecord> result, string encodedIdUrl, string clusterParam)
     {
         var totalPages = (int)Math.Ceiling((double)result.TotalCount / result.PageSize);
         if (totalPages <= 1)
@@ -283,11 +301,11 @@ internal sealed class RecurringJobDetailPage : IComponent
         }
 
         var prev = result.Page > 1
-            ? $"<a href=\"{PathPrefix}/recurring/{encodedIdUrl}?page={result.Page - 1}&pageSize={PageSize}\" class=\"btn btn-sm\">← Prev</a>"
+            ? $"<a href=\"{PathPrefix}/recurring/{encodedIdUrl}?page={result.Page - 1}&pageSize={PageSize}{clusterParam}\" class=\"btn btn-sm\">← Prev</a>"
             : string.Empty;
 
         var next = result.Page < totalPages
-            ? $"<a href=\"{PathPrefix}/recurring/{encodedIdUrl}?page={result.Page + 1}&pageSize={PageSize}\" class=\"btn btn-sm\">Next →</a>"
+            ? $"<a href=\"{PathPrefix}/recurring/{encodedIdUrl}?page={result.Page + 1}&pageSize={PageSize}{clusterParam}\" class=\"btn btn-sm\">Next →</a>"
             : string.Empty;
 
         return

@@ -78,8 +78,10 @@ internal sealed class FailedPage : IComponent
                 _ => "No matching jobs.",
             };
 
+            var isReadOnlyEmpty = ActiveCluster?.IsReadOnly == true;
             var emptyBody =
                 "<div id=\"failed-page-content\" data-refresh=\"true\">" +
+                (isReadOnlyEmpty ? HtmlFragments.ReadOnlyBanner() : string.Empty) +
                 HtmlFragments.Breadcrumbs(PathPrefix, ("Failed", null)) +
                 HtmlFragments.PageHeader("Failed Jobs", subtitle) +
                 HtmlFragments.FilterBar(PathPrefix, currentStatus, Search, null, null, queues) +
@@ -88,20 +90,28 @@ internal sealed class FailedPage : IComponent
             return HtmlShell.Wrap(Title, PathPrefix, "failed", emptyBody, Counters, clusters: Clusters, activeCluster: ActiveCluster);
         }
 
-        var headerActions =
-            $"<form method=\"post\" action=\"{PathPrefix}/jobs/bulk\" style=\"display:inline\">" +
-            $"<input type=\"hidden\" name=\"status\" value=\"{currentStatus}\" />" +
-            "<button type=\"submit\" name=\"bulkAction\" value=\"requeue\" class=\"btn btn-primary\">↺ Requeue All</button></form> " +
-            $"<form method=\"post\" action=\"{PathPrefix}/jobs/bulk\" style=\"display:inline\">" +
-            $"<input type=\"hidden\" name=\"status\" value=\"{currentStatus}\" />" +
-            $"<button type=\"submit\" name=\"bulkAction\" value=\"delete\" class=\"btn btn-danger\" onclick=\"return confirm('Delete all {currentStatus.ToLower()} jobs?')\">✕ Delete All</button></form>";
+        var isReadOnly = ActiveCluster?.IsReadOnly == true;
+        var clusterSuffix = ActiveCluster is not null ? $"?cluster={Uri.EscapeDataString(ActiveCluster.Id)}" : string.Empty;
 
-        var rows = string.Join(string.Empty, result.Items.Select(j => HtmlFragments.JobRowFailed(j, PathPrefix, now)));
+        string? headerActions = null;
+        if (!isReadOnly)
+        {
+            headerActions =
+                $"<form method=\"post\" action=\"{PathPrefix}/jobs/bulk{clusterSuffix}\" style=\"display:inline\">" +
+                $"<input type=\"hidden\" name=\"status\" value=\"{currentStatus}\" />" +
+                "<button type=\"submit\" name=\"bulkAction\" value=\"requeue\" class=\"btn btn-primary\">↺ Requeue All</button></form> " +
+                $"<form method=\"post\" action=\"{PathPrefix}/jobs/bulk{clusterSuffix}\" style=\"display:inline\">" +
+                $"<input type=\"hidden\" name=\"status\" value=\"{currentStatus}\" />" +
+                $"<button type=\"submit\" name=\"bulkAction\" value=\"delete\" class=\"btn btn-danger\" onclick=\"return confirm('Delete all {currentStatus.ToLower()} jobs?')\">✕ Delete All</button></form>";
+        }
+
+        var rows = string.Join(string.Empty, result.Items.Select(j => HtmlFragments.JobRowFailed(j, PathPrefix, now, ActiveCluster)));
         var baseUrl = $"{PathPrefix}/failed?search={Uri.EscapeDataString(Search ?? string.Empty)}";
         var pagination = HtmlFragments.Pagination(result, baseUrl);
 
         var body =
             "<div id=\"failed-page-content\" data-refresh=\"true\">" +
+            (isReadOnly ? HtmlFragments.ReadOnlyBanner() : string.Empty) +
             HtmlFragments.Breadcrumbs(PathPrefix, ("Failed", null)) +
             HtmlFragments.PageHeader("Failed Jobs", subtitle, headerActions) +
             HtmlFragments.FilterBar(PathPrefix, currentStatus, Search, null, null, queues) +

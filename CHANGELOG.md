@@ -8,6 +8,11 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`NexJob.Dashboard` — Multi-Cluster Action URL Query Preservation and Read-Only UI Guard**:
+  - Fixed form action URLs across `RecurringJobDetailPage`, `JobDetailPage`, `RecurringPage`, `FailedPage`, and `SettingsPage` to append and preserve the `?cluster={id}` query parameter, preventing mutations on remote clusters from inadvertently hitting the default cluster.
+  - Enforced client-side UI `IsReadOnly` guards across all dashboard pages: mutating buttons (`Trigger Now`, `Pause`, `Force Delete`, `Requeue`, `Apply`, `Reset`, bulk actions) are cleanly hidden when viewing a read-only cluster and a `ReadOnlyBanner` is displayed.
+  - Preserved active cluster parameter in log streaming and execution modal fetches.
+
 - **`NexJob` Core — Worker Poisons Foreign Jobs on Shared Queue (Issue #201)**:
   - Introduced `ForeignJobTypeException` in `NexJob.Exceptions` thrown by `DefaultJobInvokerFactory` when a worker dequeues a job whose type or input type cannot be resolved in the local assembly/runtime.
   - Hardened `JobExecutor.ExecuteJobAsync` to catch `ForeignJobTypeException` separately from standard execution failures: the worker rolls back the attempt increment, defers the job with a configurable `ForeignJobRetryDelay` (default 5s) via `CommitJobResultAsync`, and avoids dead-lettering (`IDeadLetterDispatcher` is never invoked).

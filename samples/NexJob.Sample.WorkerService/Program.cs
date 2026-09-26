@@ -19,8 +19,35 @@ builder.Services
     .AddNexJob(builder.Configuration)
     .AddNexJobJobs(typeof(Program).Assembly);
 
-// Embedded standalone HTTP server hosting dashboard at http://localhost:5005/dashboard
-builder.Services.AddNexJobStandaloneDashboard(builder.Configuration);
+// Embedded standalone HTTP server hosting dashboard
+if (args.Contains("--multi-cluster"))
+{
+    builder.Services.AddNexJobStandaloneDashboard(options =>
+    {
+        options.Port = 5006;
+        options.Path = "/dashboard";
+        options.Title = "NexJob Federation Hub (Multi-Cluster Demo)";
+        options.LocalhostOnly = false;
+
+        // Register clusters using custom or shared storage
+        builder.Services.AddSingleton<IHostedService>(sp => new ClusterSetupHostedService(
+            options,
+            sp.GetRequiredService<NexJob.Storage.IDashboardStorage>(),
+            sp.GetRequiredService<NexJob.Storage.IJobStorage>(),
+            sp.GetRequiredService<NexJob.Storage.IRecurringStorage>(),
+            sp.GetRequiredService<NexJob.IJobControlService>()));
+    });
+}
+else
+{
+    builder.Services.AddNexJobStandaloneDashboard(options =>
+    {
+        options.Port = 5005;
+        options.Path = "/dashboard";
+        options.Title = "NexJob Monocluster (Single Cluster Demo)";
+        options.LocalhostOnly = false;
+    });
+}
 
 var host = builder.Build();
 
@@ -46,3 +73,51 @@ lifetime.ApplicationStarted.Register(() =>
 });
 
 await host.RunAsync();
+
+internal sealed class ClusterSetupHostedService : IHostedService
+{
+    private readonly StandaloneDashboardOptions _options;
+    private readonly NexJob.Storage.IDashboardStorage _storage;
+    private readonly NexJob.Storage.IJobStorage _jobStorage;
+    private readonly NexJob.Storage.IRecurringStorage _recurringStorage;
+    private readonly NexJob.IJobControlService _controlService;
+
+    public ClusterSetupHostedService(
+        StandaloneDashboardOptions options,
+        NexJob.Storage.IDashboardStorage storage,
+        NexJob.Storage.IJobStorage jobStorage,
+        NexJob.Storage.IRecurringStorage recurringStorage,
+        NexJob.IJobControlService controlService)
+    {
+        _options = options;
+        _storage = storage;
+        _jobStorage = jobStorage;
+        _recurringStorage = recurringStorage;
+        _controlService = controlService;
+    }
+
+    public Task StartAsync(CancellationToken cancellationToken)
+    {
+        _options.AddCluster(new NexJob.Dashboard.DashboardCluster(
+            "prod-us",
+            "Production (US-East)",
+            _storage,
+            _jobStorage,
+            _recurringStorage,
+            _controlService,
+            isReadOnly: true));
+
+        _options.AddCluster(new NexJob.Dashboard.DashboardCluster(
+            "staging",
+            "Staging Cluster",
+            _storage,
+            _jobStorage,
+            _recurringStorage,
+            _controlService,
+            isReadOnly: false));
+
+        return Task.CompletedTask;
+    }
+
+    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+}

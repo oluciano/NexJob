@@ -42,10 +42,13 @@ internal sealed class RecurringPage : IComponent
             return HtmlShell.Wrap(Title, PathPrefix, "recurring", emptyBody, Counters, clusters: Clusters, activeCluster: ActiveCluster);
         }
 
-        var rows = string.Join(string.Empty, jobs.Select(j => HtmlFragments.RecurringRow(j, PathPrefix, now)));
+        var isReadOnly = ActiveCluster?.IsReadOnly == true;
+        var rows = string.Join(string.Empty, jobs.Select(j => HtmlFragments.RecurringRow(j, PathPrefix, now, ActiveCluster)));
+        var actionsHeader = !isReadOnly ? "<th style=\"text-align:right\">Actions</th>" : string.Empty;
 
         var body =
             "<div id=\"recurring-page-content\" data-refresh=\"true\">" +
+            (isReadOnly ? HtmlFragments.ReadOnlyBanner() : string.Empty) +
             HtmlFragments.Breadcrumbs(PathPrefix, ("Recurring", null)) +
             HtmlFragments.PageHeader("Recurring Jobs", "Automated background job schedules") +
             "<div class=\"card\">" +
@@ -60,9 +63,8 @@ internal sealed class RecurringPage : IComponent
             "<th>Queue</th>" +
             "<th>Last Run</th>" +
             "<th>Next Run</th>" +
-            "<th style=\"text-align:right\">Actions</th>" +
-            "</tr></thead>"
- +
+            actionsHeader +
+            "</tr></thead>" +
             $"<tbody>{rows}</tbody>" +
             "</table>" +
             "</div>" +

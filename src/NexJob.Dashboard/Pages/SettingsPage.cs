@@ -93,7 +93,42 @@ internal sealed class SettingsPage : ComponentBase
             || Runtime.RetentionDeadLetter.HasValue
             || Runtime.RetentionBatchSize.HasValue;
 
+        var isReadOnly = ActiveCluster?.IsReadOnly == true;
+        var clusterSuffix = ActiveCluster is not null ? $"?cluster={Uri.EscapeDataString(ActiveCluster.Id)}" : string.Empty;
+
+        var workersAction = !isReadOnly
+            ? $"<form method=\"post\" action=\"{PathPrefix}/settings/workers{clusterSuffix}\" style=\"display:flex;gap:8px;align-items:center\">" +
+              $"<input type=\"number\" name=\"workers\" value=\"{effectiveWorkers}\" min=\"1\" max=\"200\" " +
+              $"style=\"width:80px\"/>" +
+              "<button class=\"btn btn-primary btn-sm\" type=\"submit\">Apply</button>" +
+              "</form>"
+            : $"<span style=\"font-weight:700;font-size:16px\">{effectiveWorkers}</span>";
+
+        var pollingAction = !isReadOnly
+            ? $"<form method=\"post\" action=\"{PathPrefix}/settings/polling{clusterSuffix}\" style=\"display:flex;gap:8px;align-items:center\">" +
+              $"<input type=\"number\" name=\"seconds\" value=\"{(int)effectivePolling}\" min=\"1\" max=\"300\" " +
+              $"style=\"width:80px\"/>" +
+              "<span style=\"font-size:12px;color:var(--text-tertiary)\">s</span>" +
+              "<button class=\"btn btn-primary btn-sm\" type=\"submit\">Apply</button>" +
+              "</form>"
+            : $"<span style=\"font-weight:700;font-size:16px\">{(int)effectivePolling}s</span>";
+
+        string recurringAction;
+        if (isReadOnly)
+        {
+            recurringAction = string.Empty;
+        }
+        else if (Runtime.RecurringJobsPaused)
+        {
+            recurringAction = $"<form method=\"post\" action=\"{PathPrefix}/recurring/resume-all{clusterSuffix}\"><button class=\"btn btn-primary btn-sm\" type=\"submit\">Resume All</button></form>";
+        }
+        else
+        {
+            recurringAction = $"<form method=\"post\" action=\"{PathPrefix}/recurring/pause-all{clusterSuffix}\"><button class=\"btn btn-danger btn-sm\" type=\"submit\">Pause All</button></form>";
+        }
+
         var body =
+            (isReadOnly ? HtmlFragments.ReadOnlyBanner() : string.Empty) +
             HtmlFragments.Breadcrumbs(PathPrefix, ("Settings", null)) +
             HtmlFragments.PageHeader("Settings", "Live runtime configuration — changes apply immediately") +
 
@@ -106,11 +141,7 @@ internal sealed class SettingsPage : ComponentBase
             "<div style=\"display:flex;justify-content:space-between;align-items:center\">" +
             "<div><div style=\"font-weight:600\">Active workers</div>" +
             $"<div style=\"font-size:12px;color:var(--text-tertiary)\">Baseline: {Options.Workers}</div></div>" +
-            $"<form method=\"post\" action=\"{PathPrefix}/settings/workers\" style=\"display:flex;gap:8px;align-items:center\">" +
-            $"<input type=\"number\" name=\"workers\" value=\"{effectiveWorkers}\" min=\"1\" max=\"200\" " +
-            $"style=\"width:80px\"/>" +
-            "<button class=\"btn btn-primary btn-sm\" type=\"submit\">Apply</button>" +
-            "</form>" +
+            workersAction +
             "</div>" +
             (Runtime.Workers.HasValue
                 ? "<div style=\"margin-top:12px\"><div class=\"badge badge-warning\" style=\"width:100%;text-align:center\">Runtime override active</div></div>"
@@ -124,19 +155,14 @@ internal sealed class SettingsPage : ComponentBase
             "<div style=\"display:flex;justify-content:space-between;align-items:center\">" +
             "<div><div style=\"font-weight:600\">Polling interval</div>" +
             $"<div style=\"font-size:12px;color:var(--text-tertiary)\">Baseline: {Options.PollingInterval.TotalSeconds}s</div></div>" +
-            $"<form method=\"post\" action=\"{PathPrefix}/settings/polling\" style=\"display:flex;gap:8px;align-items:center\">" +
-            $"<input type=\"number\" name=\"seconds\" value=\"{(int)effectivePolling}\" min=\"1\" max=\"300\" " +
-            $"style=\"width:80px\"/>" +
-            "<span style=\"font-size:12px;color:var(--text-tertiary)\">s</span>" +
-            "<button class=\"btn btn-primary btn-sm\" type=\"submit\">Apply</button>" +
-            "</form>" +
+            pollingAction +
             "</div></div></div>" +
 
             // Queues card
             "<div class=\"card\">" +
             "<div class=\"card-header\"><h3>Queues</h3></div>" +
             "<div style=\"padding:16px\">" +
-            BuildQueueRows() +
+            BuildQueueRows(isReadOnly, clusterSuffix) +
             "</div></div>" +
 
             // Retention card
@@ -144,10 +170,10 @@ internal sealed class SettingsPage : ComponentBase
             "<div class=\"card-header\"><h3>Retention Policy</h3></div>" +
             "<div style=\"padding:16px\">" +
             "<div style=\"display:flex;flex-direction:column;gap:12px\">" +
-            BuildRetentionRow("Succeeded jobs (days)", "retentionSucceededDays", effectiveRetentionSucceeded, Options.RetentionSucceeded.TotalDays, ("retentionFailedDays", effectiveRetentionFailed), ("retentionExpiredDays", effectiveRetentionExpired), ("retentionDeadLetterDays", effectiveRetentionDeadLetter)) +
-            BuildRetentionRow("Failed jobs (days)", "retentionFailedDays", effectiveRetentionFailed, Options.RetentionFailed.TotalDays, ("retentionSucceededDays", effectiveRetentionSucceeded), ("retentionExpiredDays", effectiveRetentionExpired), ("retentionDeadLetterDays", effectiveRetentionDeadLetter)) +
-            BuildRetentionRow("Expired jobs (days)", "retentionExpiredDays", effectiveRetentionExpired, Options.RetentionExpired.TotalDays, ("retentionSucceededDays", effectiveRetentionSucceeded), ("retentionFailedDays", effectiveRetentionFailed), ("retentionDeadLetterDays", effectiveRetentionDeadLetter)) +
-            BuildRetentionRow("Dead-letter jobs (days)", "retentionDeadLetterDays", effectiveRetentionDeadLetter, Options.RetentionDeadLetter.TotalDays, ("retentionSucceededDays", effectiveRetentionSucceeded), ("retentionFailedDays", effectiveRetentionFailed), ("retentionExpiredDays", effectiveRetentionExpired)) +
+            BuildRetentionRow("Succeeded jobs (days)", "retentionSucceededDays", effectiveRetentionSucceeded, Options.RetentionSucceeded.TotalDays, isReadOnly, clusterSuffix, ("retentionFailedDays", effectiveRetentionFailed), ("retentionExpiredDays", effectiveRetentionExpired), ("retentionDeadLetterDays", effectiveRetentionDeadLetter)) +
+            BuildRetentionRow("Failed jobs (days)", "retentionFailedDays", effectiveRetentionFailed, Options.RetentionFailed.TotalDays, isReadOnly, clusterSuffix, ("retentionSucceededDays", effectiveRetentionSucceeded), ("retentionExpiredDays", effectiveRetentionExpired), ("retentionDeadLetterDays", effectiveRetentionDeadLetter)) +
+            BuildRetentionRow("Expired jobs (days)", "retentionExpiredDays", effectiveRetentionExpired, Options.RetentionExpired.TotalDays, isReadOnly, clusterSuffix, ("retentionSucceededDays", effectiveRetentionSucceeded), ("retentionFailedDays", effectiveRetentionFailed), ("retentionDeadLetterDays", effectiveRetentionDeadLetter)) +
+            BuildRetentionRow("Dead-letter jobs (days)", "retentionDeadLetterDays", effectiveRetentionDeadLetter, Options.RetentionDeadLetter.TotalDays, isReadOnly, clusterSuffix, ("retentionSucceededDays", effectiveRetentionSucceeded), ("retentionFailedDays", effectiveRetentionFailed), ("retentionExpiredDays", effectiveRetentionExpired)) +
             "</div>" +
             (Runtime.RetentionSucceeded.HasValue || Runtime.RetentionFailed.HasValue || Runtime.RetentionExpired.HasValue || Runtime.RetentionDeadLetter.HasValue
                 ? "<div style=\"margin-top:12px\"><div class=\"badge badge-warning\" style=\"width:100%;text-align:center\">Runtime override active</div></div>"
@@ -162,9 +188,7 @@ internal sealed class SettingsPage : ComponentBase
             "<div><div style=\"font-weight:600\">Execution status</div><div style=\"font-size:12px;color:var(--text-tertiary)\">" +
             $"{(Runtime.RecurringJobsPaused ? "Currently paused" : "Running normally")}</div>" +
             "</div>" +
-            (Runtime.RecurringJobsPaused
-                ? $"<form method=\"post\" action=\"{PathPrefix}/recurring/resume-all\"><button class=\"btn btn-primary btn-sm\" type=\"submit\">Resume All</button></form>"
-                : $"<form method=\"post\" action=\"{PathPrefix}/recurring/pause-all\"><button class=\"btn btn-danger btn-sm\" type=\"submit\">Pause All</button></form>") +
+            recurringAction +
             "</div></div></div>" +
 
             "</div>" + // End grid
@@ -177,9 +201,9 @@ internal sealed class SettingsPage : ComponentBase
             "</div></div>" +
 
             // Reset overrides
-            (hasOverrides
+            (hasOverrides && !isReadOnly
                 ? "<div style=\"margin-top:8px;text-align:right\">" +
-                  $"<form method=\"post\" action=\"{PathPrefix}/settings/reset\">" +
+                  $"<form method=\"post\" action=\"{PathPrefix}/settings/reset{clusterSuffix}\">" +
                   "<button class=\"btn btn-danger\" type=\"submit\" onclick=\"return confirm('Reset all runtime overrides to baseline config?')\">" +
                   "Reset All Runtime Overrides</button>" +
                   "</form></div>"
@@ -188,22 +212,27 @@ internal sealed class SettingsPage : ComponentBase
         builder.AddMarkupContent(0, HtmlShell.Wrap(Title, PathPrefix, "settings", body, Counters, clusters: Clusters, activeCluster: ActiveCluster));
     }
 
-    private string BuildRetentionRow(string label, string fieldName, int value, double baseline, params (string Name, int Val)[] otherFields)
+    private string BuildRetentionRow(string label, string fieldName, int value, double baseline, bool isReadOnly, string clusterSuffix, params (string Name, int Val)[] otherFields)
     {
         var hiddenInputs = string.Join(string.Empty, otherFields.Select(f => $"<input type=\"hidden\" name=\"{f.Name}\" value=\"{f.Val}\" />"));
+
+        var actionHtml = !isReadOnly
+            ? $"<form method=\"post\" action=\"{PathPrefix}/settings/retention{clusterSuffix}\" style=\"display:flex;gap:8px;align-items:center\">" +
+              hiddenInputs +
+              $"<input type=\"number\" name=\"{fieldName}\" value=\"{value}\" min=\"0\" max=\"3650\" style=\"width:80px\"/>" +
+              "<button class=\"btn btn-primary btn-sm\" type=\"submit\">Save</button>" +
+              "</form>"
+            : $"<span style=\"font-weight:700;font-size:14px\">{value}d</span>";
 
         return
             "<div style=\"display:flex;justify-content:space-between;align-items:center\">" +
             $"<div><div style=\"font-weight:600\">{label}</div>" +
             $"<div style=\"font-size:12px;color:var(--text-tertiary)\">Baseline: {baseline}d</div></div>" +
-            $"<form method=\"post\" action=\"{PathPrefix}/settings/retention\" style=\"display:flex;gap:8px;align-items:center\">" +
-            hiddenInputs +
-            $"<input type=\"number\" name=\"{fieldName}\" value=\"{value}\" min=\"0\" max=\"3650\" style=\"width:80px\"/>" +
-            "<button class=\"btn btn-primary btn-sm\" type=\"submit\">Save</button>" +
-            "</form></div>";
+            actionHtml +
+            "</div>";
     }
 
-    private string BuildQueueRows()
+    private string BuildQueueRows(bool isReadOnly, string clusterSuffix)
     {
         if (Options.Queues.Count == 0)
         {
@@ -234,8 +263,8 @@ internal sealed class SettingsPage : ComponentBase
             }
 
             var toggleAction = isPaused
-                ? $"{PathPrefix}/queues/{Uri.EscapeDataString(q)}/resume"
-                : $"{PathPrefix}/queues/{Uri.EscapeDataString(q)}/pause";
+                ? $"{PathPrefix}/queues/{Uri.EscapeDataString(q)}/resume{clusterSuffix}"
+                : $"{PathPrefix}/queues/{Uri.EscapeDataString(q)}/pause{clusterSuffix}";
 
             var toggleIcon = isPaused
                 ? "<svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><polygon points=\"5 3 19 12 5 21 5 3\"/></svg>"
@@ -243,14 +272,27 @@ internal sealed class SettingsPage : ComponentBase
 
             var colorStyle = isPaused ? "color:var(--success)" : "color:var(--warning)";
 
+            string buttonHtml;
+            if (isReadOnly)
+            {
+                buttonHtml = string.Empty;
+            }
+            else
+            {
+                var actionTitle = isPaused ? "Resume queue" : "Pause queue";
+                buttonHtml =
+                    $"<form method=\"post\" action=\"{toggleAction}\">" +
+                    $"<button type=\"submit\" class=\"btn-icon-sm\" title=\"{actionTitle}\" style=\"{colorStyle}\">{toggleIcon}</button>" +
+                    $"</form>";
+            }
+
             sb.Append(
                 $"<div style=\"display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border)\">" +
                 $"<div><div style=\"font-weight:600\">{System.Web.HttpUtility.HtmlEncode(q)}</div></div>" +
                 $"<div style=\"display:flex;align-items:center;gap:12px\">" +
                 $"{statusBadge}" +
-                $"<form method=\"post\" action=\"{toggleAction}\">" +
-                $"<button type=\"submit\" class=\"btn-icon-sm\" title=\"{(isPaused ? "Resume" : "Pause")} queue\" style=\"{colorStyle}\">{toggleIcon}</button>" +
-                $"</form></div></div>");
+                buttonHtml +
+                "</div></div>");
         }
 
         return sb.ToString();
