@@ -64,6 +64,8 @@ lifetime.ApplicationStarted.Register(() =>
             new CleanupInput("temp-files"),
             cron: "0 2 * * *");
 
+        await scheduler.EnqueueAsync<HealthCheckJob>(queue: "default");
+
         for (int i = 0; i < 20; i++)
         {
             await scheduler.EnqueueAsync<ProcessOrderJob, ProcessOrderInput>(

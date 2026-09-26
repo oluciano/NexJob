@@ -155,6 +155,7 @@ The dashboard provides real-time operational visibility into your background job
 - **Maxton Design System:** Modern 64px header, live cluster status indicator, and `Ctrl + K` instant job search.
 - **Cluster Pipeline Topology Map:** Native SVG & CSS flow diagram showing Ingress Triggers ➔ Queue Buffers ➔ Worker Nodes.
 - **Live Event Listeners:** Dedicated `/listeners` page monitoring connected message brokers (RabbitMQ, Kafka, AWS SQS, Azure Service Bus, Salesforce).
+- **Job Catalog & Definitions (`/catalog`):** Aggregated job types, queue distribution, run counts, error rates, deep links to history, and on-demand ad-hoc triggering for parameterless jobs.
 - **Server-Sent Events (SSE):** Streaming logs and real-time execution progress bars without page reloads.
 
 ### ASP.NET Core Web App
