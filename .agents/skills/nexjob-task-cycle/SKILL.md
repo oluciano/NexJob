@@ -14,7 +14,7 @@ It synthesizes the best principles of context engineering and verification gates
 
 ---
 
-## The 5-Phase Workflow
+## The 6-Phase Workflow
 
 ```
 [Phase 0: Technical Grooming & Architectural Debate]
@@ -36,6 +36,9 @@ It synthesizes the best principles of context engineering and verification gates
                          │
                          ▼
         [Phase 5: Handoff & PR Generation]
+                         │
+                         ▼
+     [Phase 6: Issue Closeout & Acceptance Gate]
 ```
 
 ---
@@ -62,7 +65,7 @@ When a task is new, non-trivial, or ambiguous (or when explicitly requested via 
 5. **Backlog Crystallization (GitHub Issues Integration):**
    - Materialize each groomed item into a dedicated GitHub Issue via `gh issue create`.
    - **Language Mandate:** Issues must be written **strictly in English**.
-   - Use conventional titles (`type(scope): description`), assign relevant labels (`bug`, `enhancement`, `documentation`, `tests`), and structure the body with:
+   - Use conventional titles (`type(scope): description`), assign relevant labels (`bug`, `enhancement`, `reliability`, `performance`, `documentation`, `rfc`), and structure the body with:
      - **Context & Motivation**
      - **Current vs Expected Behavior**
      - **Definition of Done (DoD)**
@@ -77,13 +80,20 @@ When a task is new, non-trivial, or ambiguous (or when explicitly requested via 
 
 > **Goal:** Ensure context stays lean and the agent stays strictly within its assigned lane.
 
-1. **Inspect Target Files:** Check which projects/files are involved.
-2. **Strict Lane Boundaries (GEMINI.md):**
-   - ❌ **Forbidden:** `src/NexJob/Internal/`, `IJobStorage`, `IRecurringStorage`, `IDashboardStorage`, `JobRecord`, `IScheduler`, `JobWakeUpChannel`.
-   - 🛑 If a change requires touching these, **STOP execution and escalate to the user/architect.**
+1. **Inspect Target Files & Squad Lane (GEMINI.md):**
+   - Check which projects/files are involved.
+   - ❌ **Protected Core Files:** `src/NexJob/Internal/`, `IJobStorage`, `IRecurringStorage`, `IDashboardStorage`, `JobRecord`, `IScheduler`, `JobWakeUpChannel`.
+   - 🛑 If an issue requires modifying protected core execution (e.g. issues like #201 or #204 in `JobExecutor.cs`), it belongs to **Architect / Claude Code (bruxo)** or requires explicit architectural pre-approval before proceeding.
+2. **Branch Isolation Mandate:**
+   - Always branch off the latest `develop`:
+     ```bash
+     git checkout develop && git pull origin develop
+     git checkout -b <type>/<issue-id>-<short-description>
+     ```
+   - Never commit implementation code directly to `develop` or `main`.
 3. **Context Engineering (State Tracking):**
    - Maintain task progress in `.gemini/scratch/task-state.md` with:
-     - Objective
+     - Objective & Linked Issue (#ID)
      - Current Phase
      - Decisions & DoD
      - Next Atomic Action
@@ -193,5 +203,47 @@ gh pr create \
 - [x] \`CHANGELOG.md\` updated under \`[Unreleased]\`
 
 ## Related issues
+<!-- Use 'Closes #<id>' for features/bugs. Use 'Relates to #<id>' for ongoing RFCs or architectural spikes. -->
 Closes #<id>"
 ```
+
+---
+
+## Phase 6: Issue Closeout & Acceptance Gate (Audit-Proof Closure)
+
+> **Goal:** Ensure issues are never closed silently or ambiguously. Every closed issue must have an explicit acceptance statement or abandonment rationale.
+
+When an issue reaches completion or is decided to be dismissed:
+
+### Scenario A: Delivered & Accepted (PR Merged)
+1. Add the `completed` label to the issue:
+   ```bash
+   gh issue edit <id> --add-label "completed"
+   ```
+2. Post an **Acceptance Comment** summarizing the resolution and PR reference:
+   ```bash
+   gh issue comment <id> --body "### Acceptance & Resolution Statement
+   - **Delivered in:** PR #<pr-number>
+   - **Verification:** 3N Testing Matrix passing, 0 compiler warnings, 100% format compliant.
+   - **Status:** Verified and accepted into \`develop\`."
+   ```
+3. GitHub automatically closes the issue via the PR's `Closes #<id>` keyword, or close it explicitly:
+   ```bash
+   gh issue close <id> --reason "completed"
+   ```
+
+### Scenario B: Rejected, Deprecated, or Abandoned (Not Planned)
+1. Add the `abandoned` label (or `wontfix` / `invalid`):
+   ```bash
+   gh issue edit <id> --add-label "abandoned"
+   ```
+2. Post an explicit **Decision Rationale Comment** explaining *why* the issue was dropped:
+   ```bash
+   gh issue comment <id> --body "### Closure Rationale (Not Planned)
+   - **Reason:** <Clear, respectful technical justification or architectural trade-off explaining why this path was not adopted>.
+   - **Alternative:** <Reference to superseding issue/RFC if applicable>."
+   ```
+3. Close the issue as not planned:
+   ```bash
+   gh issue close <id> --reason "not planned"
+   ```
