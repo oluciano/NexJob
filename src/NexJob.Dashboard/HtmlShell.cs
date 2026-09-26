@@ -438,8 +438,12 @@ internal static class HtmlShell
         NavCounters? counters = null,
         JobMetrics? metrics = null,
         IReadOnlyList<DashboardCluster>? clusters = null,
-        DashboardCluster? activeCluster = null) =>
-        $$"""
+        DashboardCluster? activeCluster = null)
+    {
+        var clusterQuery = activeCluster is not null ? $"?cluster={Uri.EscapeDataString(activeCluster.Id)}" : string.Empty;
+        var clusterParam = activeCluster is not null ? $"&cluster={Uri.EscapeDataString(activeCluster.Id)}" : string.Empty;
+
+        return $$"""
         <!DOCTYPE html>
         <html lang="en" data-theme="blue-theme">
         <head>
@@ -451,7 +455,7 @@ internal static class HtmlShell
         <!-- Top Header (Maxton 64px) -->
         <header class="top-header">
             <div class="header-left">
-                <a href="{{pathPrefix}}" class="header-logo">
+                <a href="{{pathPrefix}}{{clusterQuery}}" class="header-logo">
                     <h1>NexJob</h1>
                     <span class="logo-badge">Pro</span>
                 </a>
@@ -460,7 +464,7 @@ internal static class HtmlShell
                 </button>
                 <div class="header-search" onclick="document.getElementById('header-search-input').focus()">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-tertiary)"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                    <input type="text" id="header-search-input" placeholder="Search jobs, queues, tags..." onkeydown="if(event.key==='Enter'){window.location.href='{{pathPrefix}}/jobs?q='+encodeURIComponent(this.value);}" />
+                    <input type="text" id="header-search-input" placeholder="Search jobs, queues, tags..." onkeydown="if(event.key==='Enter'){window.location.href='{{pathPrefix}}/jobs?q='+encodeURIComponent(this.value)+'{{clusterParam}}';}" />
                     <kbd>Ctrl + K</kbd>
                 </div>
             </div>
@@ -484,27 +488,27 @@ internal static class HtmlShell
             <nav class="sidebar" id="sidebar">
                 <div class="nav-scroller">
                     <div class="nav-category-title">MONITORING</div>
-                    <a href="{{pathPrefix}}" class="nav-item {{Active(activeRoute, "overview")}}" title="Overview">
+                    <a href="{{pathPrefix}}{{clusterQuery}}" class="nav-item {{Active(activeRoute, "overview")}}" title="Overview">
                         <div class="nav-item-left">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
                             <span class="nav-label">Overview</span>
                         </div>
                     </a>
-                    <a href="{{pathPrefix}}/queues" class="nav-item {{Active(activeRoute, "queues")}}" title="Queues">
+                    <a href="{{pathPrefix}}/queues{{clusterQuery}}" class="nav-item {{Active(activeRoute, "queues")}}" title="Queues">
                         <div class="nav-item-left">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
                             <span class="nav-label">Queues</span>
                         </div>
                         {{NavCounter(counters?.Queues, counters?.QueuesClass)}}
                     </a>
-                    <a href="{{pathPrefix}}/servers" class="nav-item {{Active(activeRoute, "servers")}}" title="Servers">
+                    <a href="{{pathPrefix}}/servers{{clusterQuery}}" class="nav-item {{Active(activeRoute, "servers")}}" title="Servers">
                         <div class="nav-item-left">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
                             <span class="nav-label">Servers</span>
                         </div>
                         {{NavCounter(counters?.Servers, counters?.ServersClass)}}
                     </a>
-                    <a href="{{pathPrefix}}/listeners" class="nav-item {{Active(activeRoute, "listeners")}}" title="Listeners">
+                    <a href="{{pathPrefix}}/listeners{{clusterQuery}}" class="nav-item {{Active(activeRoute, "listeners")}}" title="Listeners">
                         <div class="nav-item-left">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"/><path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5"/><circle cx="12" cy="12" r="2"/><path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"/><path d="M19.1 4.9C23 8.8 23 15.1 19.1 19.1"/></svg>
                             <span class="nav-label">Listeners</span>
@@ -513,21 +517,21 @@ internal static class HtmlShell
                     </a>
 
                     <div class="nav-category-title">EXECUTION</div>
-                    <a href="{{pathPrefix}}/jobs" class="nav-item {{Active(activeRoute, "jobs")}}" title="Jobs">
+                    <a href="{{pathPrefix}}/jobs{{clusterQuery}}" class="nav-item {{Active(activeRoute, "jobs")}}" title="Jobs">
                         <div class="nav-item-left">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
                             <span class="nav-label">Jobs</span>
                         </div>
                         {{NavCounter(counters?.Jobs, null)}}
                     </a>
-                    <a href="{{pathPrefix}}/recurring" class="nav-item {{Active(activeRoute, "recurring")}}" title="Recurring">
+                    <a href="{{pathPrefix}}/recurring{{clusterQuery}}" class="nav-item {{Active(activeRoute, "recurring")}}" title="Recurring">
                         <div class="nav-item-left">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
                             <span class="nav-label">Recurring</span>
                         </div>
                         {{NavCounter(counters?.Recurring, null)}}
                     </a>
-                    <a href="{{pathPrefix}}/failed" class="nav-item {{Active(activeRoute, "failed")}}" title="Failed / DLQ">
+                    <a href="{{pathPrefix}}/failed{{clusterQuery}}" class="nav-item {{Active(activeRoute, "failed")}}" title="Failed / DLQ">
                         <div class="nav-item-left">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
                             <span class="nav-label">Failed / DLQ</span>
@@ -536,7 +540,7 @@ internal static class HtmlShell
                     </a>
 
                     <div class="nav-category-title">SYSTEM</div>
-                    <a href="{{pathPrefix}}/settings" class="nav-item {{Active(activeRoute, "settings")}}" title="Settings">
+                    <a href="{{pathPrefix}}/settings{{clusterQuery}}" class="nav-item {{Active(activeRoute, "settings")}}" title="Settings">
                         <div class="nav-item-left">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
                             <span class="nav-label">Settings</span>
@@ -663,6 +667,25 @@ internal static class HtmlShell
                 window.location.href = url.toString();
             };
 
+            var activeClusterParam = '{{(activeCluster is not null ? activeCluster.Id : string.Empty)}}';
+            if (activeClusterParam) {
+                document.addEventListener('click', function(e) {
+                    var a = e.target && e.target.closest ? e.target.closest('a') : null;
+                    if (!a || !a.href || a.target === '_blank' || a.getAttribute('download') !== null) return;
+                    var href = a.getAttribute('href');
+                    if (!href || href.startsWith('#') || href.startsWith('javascript:')) return;
+                    try {
+                        var targetUrl = new URL(a.href, window.location.origin);
+                        if (targetUrl.origin === window.location.origin && targetUrl.pathname.startsWith('{{pathPrefix}}')) {
+                            if (!targetUrl.searchParams.has('cluster')) {
+                                targetUrl.searchParams.set('cluster', activeClusterParam);
+                                a.href = targetUrl.toString();
+                            }
+                        }
+                    } catch(err) {}
+                });
+            }
+
             window.nexJobBulkAction = async function(action) {
                 var ids = Array.from(document.querySelectorAll('.job-check:checked')).map(c => c.value);
                 if (ids.length === 0) return;
@@ -689,6 +712,7 @@ internal static class HtmlShell
         </body>
         </html>
         """;
+    }
 
     /// <summary>Generates a 404 page.</summary>
     internal static string NotFound(string title, string pathPrefix) => Wrap(title, pathPrefix, string.Empty, "404 Not Found");

@@ -8,7 +8,9 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
-- **`NexJob.Dashboard` — Multi-Cluster Action URL Query Preservation and Read-Only UI Guard**:
+- **`NexJob.Dashboard` — Multi-Cluster Navigation & Action URL Preservation and Read-Only UI Guard**:
+  - Ensured active cluster parameter (`?cluster={id}`) is systematically preserved across sidebar navigation, header logo, search bar, breadcrumbs, and pagination.
+  - Implemented client-side navigation interceptor in `HtmlShell` that automatically propagates the active cluster ID across internal page transitions when browsing a non-default cluster.
   - Fixed form action URLs across `RecurringJobDetailPage`, `JobDetailPage`, `RecurringPage`, `FailedPage`, and `SettingsPage` to append and preserve the `?cluster={id}` query parameter, preventing mutations on remote clusters from inadvertently hitting the default cluster.
   - Enforced client-side UI `IsReadOnly` guards across all dashboard pages: mutating buttons (`Trigger Now`, `Pause`, `Force Delete`, `Requeue`, `Apply`, `Reset`, bulk actions) are cleanly hidden when viewing a read-only cluster and a `ReadOnlyBanner` is displayed.
   - Preserved active cluster parameter in log streaming and execution modal fetches.

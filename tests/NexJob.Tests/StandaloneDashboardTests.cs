@@ -533,6 +533,13 @@ public sealed class StandaloneDashboardTests
             var jobsHtmlB = await jobsClusterB.Content.ReadAsStringAsync();
             jobsHtmlB.Should().Contain("JobClusterB");
             jobsHtmlB.Should().NotContain("JobClusterA");
+
+            // 3. Verify sidebar navigation links preserve the active cluster parameter
+            jobsHtmlB.Should().Contain("href=\"/dashboard/queues?cluster=cluster-b\"");
+            jobsHtmlB.Should().Contain("href=\"/dashboard/servers?cluster=cluster-b\"");
+            jobsHtmlB.Should().Contain("href=\"/dashboard/recurring?cluster=cluster-b\"");
+            jobsHtmlB.Should().Contain("href=\"/dashboard/failed?cluster=cluster-b\"");
+            jobsHtmlB.Should().Contain("href=\"/dashboard/settings?cluster=cluster-b\"");
         }
         finally
         {
