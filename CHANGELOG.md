@@ -6,6 +6,14 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **`NexJob` Core — Worker Poisons Foreign Jobs on Shared Queue (Issue #201)**:
+  - Introduced `ForeignJobTypeException` in `NexJob.Exceptions` thrown by `DefaultJobInvokerFactory` when a worker dequeues a job whose type or input type cannot be resolved in the local assembly/runtime.
+  - Hardened `JobExecutor.ExecuteJobAsync` to catch `ForeignJobTypeException` separately from standard execution failures: the worker rolls back the attempt increment, defers the job with a configurable `ForeignJobRetryDelay` (default 5s) via `CommitJobResultAsync`, and avoids dead-lettering (`IDeadLetterDispatcher` is never invoked).
+  - Added `ForeignJobRetryDelay` option to `NexJobOptions` (default 5s).
+  - Added 3N unit testing matrix in `tests/NexJob.Tests/JobExecutorHardeningTests.cs` and `tests/NexJob.Tests/DefaultJobInvokerFactoryHardeningTests.cs`.
+
 ### Added
 
 - **`NexJob.Dashboard` & `NexJob.Dashboard.Standalone` — Dedicated Ops Host Mode and Queue Scoping (Issue #199)**:

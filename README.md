@@ -100,6 +100,7 @@ The job expires if not started within 5 minutes — no silent failures, no zombi
 - **Predictable retries** — exponential backoff with configurable policies, global + per-job `[Retry]`
 - **Deadline enforcement** — jobs expire if not executed in time (`deadlineAfter`)
 - **Dead-letter handlers** — automatic fallback when all retries are exhausted
+- **Multi-service safe deferral** — foreign jobs from other microservices are automatically deferred without penalizing attempts or dead-lettering
 - **Concurrency throttling** — `[Throttle]` attribute for per-resource limits
 - **Distributed throttling** — `UseDistributedThrottle()` enforces global cluster-wide rate limits via Redis
 - **Job continuations** — chain jobs with parent/child relationships

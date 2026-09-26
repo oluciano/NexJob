@@ -172,6 +172,23 @@ Before generating the Pull Request:
 
 ---
 
+## Phase 4.6: Documentation & Wiki Truth Gate
+
+> **Goal:** Ensure the Wiki and Package READMEs reflect all new options, architectural behaviors, and breaking/fixed patterns before any PR is submitted.
+
+Every task that introduces or modifies public options, defaults, architecture behaviors, or multi-service patterns MUST audit and update documentation directly in the working branch:
+
+1. **Package / Root READMEs:**
+   - If a new feature or behavior was added to a package, update the corresponding `src/<Package>/README.md` or root `README.md`.
+2. **Wiki Pages (`docs/wiki/*.md`):**
+   - **Configuration:** If new options or settings were introduced, update `docs/wiki/11-Configuration-Reference.md`.
+   - **Execution & Retry:** If retry/failure/dead-letter mechanics changed, update `docs/wiki/06-Retry-And-Dead-Letter.md`.
+   - **Architecture & Best Practices:** If deployment topology, queue isolation, or ops hosting guidelines were impacted, update `docs/wiki/13-Best-Practices.md`.
+   - **Dashboard & Monitoring:** If dashboard options, UI scoping, or telemetry changed, update `docs/wiki/10-Dashboard.md` and `docs/wiki/12-OpenTelemetry.md`.
+3. **Accuracy Check:** Never leave documentation to be fixed "later in release mode" if the code introducing the change is already being PR'd into `develop`.
+
+---
+
 ## Phase 5: Handoff & PR Generation
 
 > **Goal:** Deliver a fully documented, ready-to-merge Pull Request.
@@ -200,6 +217,7 @@ gh pr create \
 - [x] \`dotnet test\` passed with 3N test coverage (Positive/Negative/Input)
 - [x] No protected core files or storage interfaces modified
 - [x] Public API has XML documentation (///)
+- [x] Documentation & Wiki updated (\`README.md\` and \`docs/wiki/*.md\`)
 - [x] \`CHANGELOG.md\` updated under \`[Unreleased]\`
 
 ## Related issues

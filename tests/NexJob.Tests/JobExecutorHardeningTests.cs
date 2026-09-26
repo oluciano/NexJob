@@ -3,6 +3,7 @@ using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
+using NexJob.Exceptions;
 using NexJob.Storage;
 using Xunit;
 
@@ -211,6 +212,81 @@ public sealed class JobExecutorHardeningTests
 
         // Assert
         _storage.Verify(x => x.UpdateHeartbeatAsync(job.Id, It.IsAny<CancellationToken>()), Times.AtLeastOnce);
+    }
+
+    // ─── Foreign Job Branches ──────────────────────────────────────────────
+
+    /// <summary>N1 (Positive): Tests that foreign job is deferred with ForeignJobRetryDelay, resets attempt, and is not dead-lettered.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task ExecuteJobAsync_WhenForeignJobTypeExceptionThrown_DefersJobWithoutPenalizingAttempts()
+    {
+        // Arrange
+        var job = new JobRecord { Id = JobId.New(), JobType = "ForeignService.Job", Attempts = 1, MaxAttempts = 3 };
+        var foreignException = new ForeignJobTypeException(job.JobType, "Cannot load job type: ForeignService.Job");
+
+        _invokerFactory.Setup(x => x.PrepareAsync(job, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(foreignException);
+
+        // Act
+        await _sut.ExecuteJobAsync(job);
+
+        // Assert
+        job.Attempts.Should().Be(0, "foreign job attempt increment must be rolled back");
+        _deadLetterDispatcher.Verify(x => x.DispatchAsync(It.IsAny<JobRecord>(), It.IsAny<Exception>(), It.IsAny<CancellationToken>()), Times.Never);
+        _retryPolicy.Verify(x => x.ComputeRetryAt(It.IsAny<JobRecord>(), It.IsAny<Exception>()), Times.Never);
+        _storage.Verify(x => x.CommitJobResultAsync(
+            job.Id,
+            It.Is<JobExecutionResult>(r => !r.Succeeded && r.RetryAt != null && r.Exception == foreignException),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    /// <summary>N2 (Negative): Tests that normal exceptions (non-foreign) are handled via standard retry policy and dead-lettering.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task ExecuteJobAsync_WhenNonForeignExceptionThrown_UsesStandardRetryAndDeadLetter()
+    {
+        // Arrange
+        var job = new JobRecord { Id = JobId.New(), JobType = "TestJob", Attempts = 1, MaxAttempts = 1 };
+        var standardException = new InvalidOperationException("Standard execution failure");
+
+        _invokerFactory.Setup(x => x.PrepareAsync(job, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(standardException);
+        _retryPolicy.Setup(x => x.ComputeRetryAt(job, standardException))
+            .Returns((DateTimeOffset?)null);
+
+        // Act
+        await _sut.ExecuteJobAsync(job);
+
+        // Assert
+        _deadLetterDispatcher.Verify(x => x.DispatchAsync(job, standardException, It.IsAny<CancellationToken>()), Times.Once);
+        _storage.Verify(x => x.CommitJobResultAsync(
+            job.Id,
+            It.Is<JobExecutionResult>(r => !r.Succeeded && r.RetryAt == null),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    /// <summary>N3 (Boundary): Tests that when job.Attempts is already 0, deferring a foreign job does not make Attempts negative.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task ExecuteJobAsync_WhenAttemptsZero_ForeignJobDoesNotMakeAttemptsNegative()
+    {
+        // Arrange
+        var job = new JobRecord { Id = JobId.New(), JobType = "ForeignService.Job", Attempts = 0, MaxAttempts = 3 };
+        var foreignException = new ForeignJobTypeException(job.JobType, "Cannot load job type: ForeignService.Job");
+
+        _invokerFactory.Setup(x => x.PrepareAsync(job, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(foreignException);
+
+        // Act
+        await _sut.ExecuteJobAsync(job);
+
+        // Assert
+        job.Attempts.Should().Be(0);
+        _storage.Verify(x => x.CommitJobResultAsync(
+            job.Id,
+            It.Is<JobExecutionResult>(r => !r.Succeeded && r.RetryAt != null),
+            It.IsAny<CancellationToken>()), Times.Once);
     }
 
     // ─── Helpers ───────────────────────────────────────────────────────────

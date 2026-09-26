@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
+using NexJob.Exceptions;
 using NexJob.Storage;
 using NexJob.Telemetry;
 
@@ -133,6 +134,36 @@ internal sealed class JobExecutor : IDisposable, IAsyncDisposable
             }
 
             _logger.LogDebug("Job {JobId} completed successfully", job.Id);
+        }
+        catch (ForeignJobTypeException ex)
+        {
+            sw.Stop();
+            // Foreign job: the job type or input type cannot be resolved in this process/service.
+            // Do not penalize attempts or move to dead-letter. Defer with backoff so the owning service can execute it.
+            if (job.Attempts > 0)
+            {
+                job.Attempts--;
+            }
+
+            var retryAt = DateTimeOffset.UtcNow + _options.ForeignJobRetryDelay;
+            _logger.LogWarning(
+                ex,
+                "Job {JobId} references foreign type '{TypeName}' not available in this host. Deferring until {RetryAt} without penalizing attempts.",
+                job.Id,
+                ex.TypeName,
+                retryAt);
+
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            activity?.SetTag("nexjob.foreign_job", true);
+
+            await _storage.CommitJobResultAsync(job.Id, new JobExecutionResult
+            {
+                Succeeded = false,
+                Logs = logScope.Entries,
+                Exception = ex,
+                RetryAt = retryAt,
+                RecurringJobId = job.RecurringJobId,
+            }, CancellationToken.None).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
