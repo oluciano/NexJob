@@ -803,6 +803,57 @@ public sealed class StandaloneDashboardTests
         }
     }
 
+    [Fact]
+    public async Task StandaloneDashboard_Catalog_ParameterizedJob_RendersRequiresInputDisabled()
+    {
+        var port = GetFreeTcpPort();
+        using var host = Host.CreateDefaultBuilder()
+            .ConfigureServices(services =>
+            {
+                services.AddNexJob();
+                services.AddNexJobStandaloneDashboard(options =>
+                {
+                    options.Port = port;
+                    options.Path = "/dashboard";
+                    options.Title = "Test Catalog Dashboard";
+                    options.LocalhostOnly = true;
+                });
+            })
+            .Build();
+
+        try
+        {
+            await host.StartAsync();
+
+            var storage = host.Services.GetRequiredService<NexJob.Storage.IJobStorage>();
+            await storage.EnqueueAsync(new JobRecord
+            {
+                Id = JobId.New(),
+                JobType = typeof(StubParameterizedJob).AssemblyQualifiedName!,
+                Queue = "default",
+                Status = JobStatus.Succeeded,
+            });
+
+            using var client = new HttpClient
+            {
+                BaseAddress = new Uri($"http://localhost:{port}"),
+                Timeout = TimeSpan.FromSeconds(5),
+            };
+
+            var res = await client.GetAsync("/dashboard/catalog");
+            res.StatusCode.Should().Be(HttpStatusCode.OK);
+            var html = await res.Content.ReadAsStringAsync();
+
+            html.Should().Contain("StubParameterizedJob");
+            html.Should().Contain("Requires Input");
+            html.Should().Contain("disabled");
+        }
+        finally
+        {
+            await host.StopAsync();
+        }
+    }
+
     private static int GetFreeTcpPort()
     {
         var listener = new TcpListener(IPAddress.Loopback, 0);
@@ -816,4 +867,9 @@ public sealed class StandaloneDashboardTests
 public sealed class StubParameterlessJob : IJob
 {
     public Task ExecuteAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+}
+
+public sealed class StubParameterizedJob : IJob<string>
+{
+    public Task ExecuteAsync(string input, CancellationToken cancellationToken) => Task.CompletedTask;
 }

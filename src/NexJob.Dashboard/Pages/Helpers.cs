@@ -13,6 +13,32 @@ internal static class Helpers
         return parts[^1];
     }
 
+    internal static Type? ResolveType(string typeName)
+    {
+        var type = Type.GetType(typeName, throwOnError: false);
+        if (type is not null)
+        {
+            return type;
+        }
+
+        foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+        {
+            type = assembly.GetType(typeName, throwOnError: false);
+            if (type is not null)
+            {
+                return type;
+            }
+        }
+
+        return null;
+    }
+
+    internal static bool IsParameterlessJob(string typeName)
+    {
+        var type = ResolveType(typeName);
+        return type is not null && typeof(IJob).IsAssignableFrom(type);
+    }
+
     internal static string BadgeHtml(JobStatus s) => s switch
     {
         JobStatus.Enqueued => "<span class=\"badge badge-enqueued\">Enqueued</span>",

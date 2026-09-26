@@ -101,12 +101,26 @@ internal sealed class CatalogPage : IComponent
 
             var historyUrl = $"{PathPrefix}/jobs?search={Uri.EscapeDataString(shortName)}&queue={Uri.EscapeDataString(item.Queue)}{clusterParam}";
 
-            var triggerAction = !isReadOnly
-                ? $"<form method=\"post\" action=\"{PathPrefix}/catalog/{Uri.EscapeDataString(item.JobType)}/trigger{clusterQuery}\" style=\"display:inline\">" +
-                  $"<input type=\"hidden\" name=\"queue\" value=\"{HttpUtility.HtmlAttributeEncode(item.Queue)}\" />" +
-                  "<button type=\"submit\" class=\"btn btn-primary btn-sm\" title=\"Enqueue ad-hoc execution (parameterless IJob only)\">Trigger</button>" +
-                  "</form>"
-                : string.Empty;
+            var isParameterless = Helpers.IsParameterlessJob(item.JobType);
+
+            string triggerAction;
+            if (isReadOnly)
+            {
+                triggerAction = string.Empty;
+            }
+            else if (isParameterless)
+            {
+                triggerAction =
+                    $"<form method=\"post\" action=\"{PathPrefix}/catalog/{Uri.EscapeDataString(item.JobType)}/trigger{clusterQuery}\" style=\"display:inline\">" +
+                    $"<input type=\"hidden\" name=\"queue\" value=\"{HttpUtility.HtmlAttributeEncode(item.Queue)}\" />" +
+                    "<button type=\"submit\" class=\"btn btn-primary btn-sm\" title=\"Enqueue ad-hoc execution (parameterless IJob)\">Trigger</button>" +
+                    "</form>";
+            }
+            else
+            {
+                triggerAction =
+                    "<button type=\"button\" class=\"btn btn-secondary btn-sm\" disabled style=\"opacity:0.6;cursor:not-allowed\" title=\"Parameterized job (IJob&lt;T&gt;) requires an input payload and cannot be triggered ad-hoc\">Requires Input</button>";
+            }
 
             var actionsHtml =
                 $"<div style=\"display:flex;gap:8px;justify-content:flex-end;align-items:center\">" +

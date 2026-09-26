@@ -637,7 +637,7 @@ public sealed class DashboardMiddleware
             }
         }
 
-        var jobType = Type.GetType(rawType, throwOnError: false);
+        var jobType = Pages.Helpers.ResolveType(rawType);
         if (jobType is not null && typeof(IJob).IsAssignableFrom(jobType))
         {
             var scheduler = context.RequestServices.GetService<IScheduler>();
