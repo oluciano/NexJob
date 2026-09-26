@@ -49,13 +49,21 @@ public sealed class DashboardMiddleware
             return;
         }
 
+        DashboardCluster? activeCluster = null;
+        if (_options.Clusters.Count > 0)
+        {
+            var clusterId = context.Request.Query["cluster"].ToString();
+            activeCluster = _options.Clusters.FirstOrDefault(c => string.Equals(c.Id, clusterId, StringComparison.OrdinalIgnoreCase))
+                ?? _options.Clusters[0];
+        }
+
         var subPath = path[_pathPrefix.Length..].TrimStart('/');
 
         // SSE metrics stream
         if (string.Equals(subPath, "stream", StringComparison.Ordinal) && string.Equals(context.Request.Method, HttpMethods.Get, StringComparison.Ordinal))
         {
-            var storage = context.RequestServices.GetRequiredService<IDashboardStorage>();
-            await DashboardStreamEndpoint.HandleAsync(context, storage, _options).ConfigureAwait(false);
+            var storage = activeCluster?.DashboardStorage ?? context.RequestServices.GetRequiredService<IDashboardStorage>();
+            await DashboardStreamEndpoint.HandleAsync(context, storage, _options, activeCluster).ConfigureAwait(false);
             return;
         }
 
@@ -66,7 +74,7 @@ public sealed class DashboardMiddleware
             string.Equals(logsSegments[0], "jobs", StringComparison.Ordinal) &&
             string.Equals(logsSegments[2], "logs", StringComparison.Ordinal))
         {
-            var logsStorage = context.RequestServices.GetRequiredService<IDashboardStorage>();
+            var logsStorage = activeCluster?.DashboardStorage ?? context.RequestServices.GetRequiredService<IDashboardStorage>();
             if (!Guid.TryParse(logsSegments[1], out var logsGuid))
             {
                 context.Response.StatusCode = 400;
@@ -92,13 +100,13 @@ public sealed class DashboardMiddleware
         }
 
         // Handle API actions (POST)
-        if (string.Equals(context.Request.Method, HttpMethods.Post, StringComparison.Ordinal) && await HandleActionsAsync(context, subPath).ConfigureAwait(false))
+        if (string.Equals(context.Request.Method, HttpMethods.Post, StringComparison.Ordinal) && await HandleActionsAsync(context, subPath, activeCluster).ConfigureAwait(false))
         {
             return;
         }
 
         // Render page
-        var html = await RenderPageAsync(context, subPath).ConfigureAwait(false);
+        var html = await RenderPageAsync(context, subPath, activeCluster).ConfigureAwait(false);
         if (string.Equals(html, HtmlShell.NotFound(_options.Title, _pathPrefix), StringComparison.Ordinal))
         {
             context.Response.StatusCode = 404;
@@ -144,19 +152,27 @@ public sealed class DashboardMiddleware
     }
 
 #pragma warning disable SCS0027
-    private static void LocalRedirect(HttpContext context, string location)
+    private static void LocalRedirect(HttpContext context, string location, DashboardCluster? activeCluster = null)
     {
         if (location.StartsWith("/", StringComparison.Ordinal) && !location.StartsWith("//", StringComparison.Ordinal))
         {
+            if (activeCluster is not null)
+            {
+                var separator = location.Contains('?', StringComparison.Ordinal) ? "&" : "?";
+                location = $"{location}{separator}cluster={Uri.EscapeDataString(activeCluster.Id)}";
+            }
+
             context.Response.Redirect(location);
         }
     }
 #pragma warning restore SCS0027
 
     private static async Task<JobMetrics> GetCachedMetricsAsync(
-        IMemoryCache cache, IDashboardStorage storage, DashboardOptions options, CancellationToken ct)
+        IMemoryCache cache, IDashboardStorage storage, DashboardOptions options, DashboardCluster? activeCluster, CancellationToken ct)
     {
-        const string CacheKey = "nexjob:dashboard:metrics";
+        var cacheKey = activeCluster is not null
+            ? $"nexjob:dashboard:metrics:{activeCluster.Id}"
+            : "nexjob:dashboard:metrics";
 
         // If cache TTL is zero, disable caching
         if (options.MetricsCacheTtl == TimeSpan.Zero)
@@ -164,65 +180,80 @@ public sealed class DashboardMiddleware
             return await storage.GetMetricsAsync(ct).ConfigureAwait(false);
         }
 
-        if (cache.TryGetValue(CacheKey, out JobMetrics? cached) && cached is not null)
+        if (cache.TryGetValue(cacheKey, out JobMetrics? cached) && cached is not null)
         {
             return cached;
         }
 
         var metrics = await storage.GetMetricsAsync(ct).ConfigureAwait(false);
-        cache.Set(CacheKey, metrics, options.MetricsCacheTtl);
+        cache.Set(cacheKey, metrics, options.MetricsCacheTtl);
 
         return metrics;
     }
 
-    private async Task<bool> HandleActionsAsync(HttpContext context, string subPath)
+    private async Task<bool> HandleActionsAsync(HttpContext context, string subPath, DashboardCluster? activeCluster)
     {
-        var recurringStorage = context.RequestServices.GetRequiredService<IRecurringStorage>();
-        var dashboardStorage = context.RequestServices.GetRequiredService<IDashboardStorage>();
-        var controlService = context.RequestServices.GetRequiredService<IJobControlService>();
-        var runtimeStore = context.RequestServices.GetRequiredService<IRuntimeSettingsStore>();
+        if (activeCluster?.IsReadOnly == true)
+        {
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            return true;
+        }
+
+        var recurringStorage = activeCluster?.RecurringStorage
+            ?? (activeCluster?.DashboardStorage as IRecurringStorage)
+            ?? context.RequestServices.GetRequiredService<IRecurringStorage>();
+
+        var dashboardStorage = activeCluster?.DashboardStorage
+            ?? context.RequestServices.GetRequiredService<IDashboardStorage>();
+
+        var controlService = activeCluster?.ControlService
+            ?? context.RequestServices.GetRequiredService<IJobControlService>();
+
+        var runtimeStore = activeCluster?.RuntimeStore
+            ?? context.RequestServices.GetService<IRuntimeSettingsStore>()
+            ?? context.RequestServices.GetRequiredService<IRuntimeSettingsStore>();
 
         if (subPath.StartsWith("jobs/", StringComparison.Ordinal))
         {
-            return await TryHandleJobActionAsync(context, subPath, controlService).ConfigureAwait(false)
-                || await TryHandleBulkActionAsync(context, subPath, dashboardStorage, controlService).ConfigureAwait(false);
+            return await TryHandleJobActionAsync(context, subPath, controlService, activeCluster).ConfigureAwait(false)
+                || await TryHandleBulkActionAsync(context, subPath, dashboardStorage, controlService, activeCluster).ConfigureAwait(false);
         }
 
         if (subPath.StartsWith("recurring/", StringComparison.Ordinal))
         {
-            return await TryHandleRecurringActionAsync(context, subPath, recurringStorage).ConfigureAwait(false);
+            return await TryHandleRecurringActionAsync(context, subPath, recurringStorage, runtimeStore, activeCluster).ConfigureAwait(false);
         }
 
         if (subPath.StartsWith("settings/", StringComparison.Ordinal)
             || subPath.StartsWith("queues/", StringComparison.Ordinal))
         {
-            return await TryHandleSettingsActionAsync(context, subPath, runtimeStore, controlService).ConfigureAwait(false);
+            return await TryHandleSettingsActionAsync(context, subPath, runtimeStore, controlService, activeCluster).ConfigureAwait(false);
         }
 
         return false;
     }
 
     private async Task<bool> TryHandleJobActionAsync(
-        HttpContext context, string subPath, IJobControlService controlService)
+        HttpContext context, string subPath, IJobControlService controlService, DashboardCluster? activeCluster)
     {
         if (subPath.Contains("/runnow", StringComparison.Ordinal) && TryGetJobId(subPath, out var runNowId))
         {
             await controlService.RequeueJobAsync(runNowId, context.RequestAborted).ConfigureAwait(false);
-            LocalRedirect(context, $"{_pathPrefix}/jobs/{runNowId.Value}");
+            LocalRedirect(context, $"{_pathPrefix}/jobs/{runNowId.Value}", activeCluster);
             return true;
         }
 
         if (subPath.Contains("/requeue", StringComparison.Ordinal) && TryGetJobId(subPath, out var requeueId))
         {
             await controlService.RequeueJobAsync(requeueId, context.RequestAborted).ConfigureAwait(false);
-            LocalRedirect(context, $"{_pathPrefix}/failed");
+            LocalRedirect(context, $"{_pathPrefix}/failed", activeCluster);
             return true;
         }
 
         if (subPath.Contains("/delete", StringComparison.Ordinal) && TryGetJobId(subPath, out var deleteId))
         {
             await controlService.DeleteJobAsync(deleteId, context.RequestAborted).ConfigureAwait(false);
-            LocalRedirect(context, $"{_pathPrefix}/failed");
+            LocalRedirect(context, $"{_pathPrefix}/failed", activeCluster);
             return true;
         }
 
@@ -230,13 +261,13 @@ public sealed class DashboardMiddleware
     }
 
     private async Task<bool> TryHandleRecurringActionAsync(
-        HttpContext context, string subPath, IRecurringStorage recurringStorage)
+        HttpContext context, string subPath, IRecurringStorage recurringStorage, IRuntimeSettingsStore runtimeStore, DashboardCluster? activeCluster)
     {
         if (subPath.Contains("/delete", StringComparison.Ordinal))
         {
             var recurringId = GetRecurringId(subPath);
             await recurringStorage.DeleteRecurringJobAsync(recurringId, context.RequestAborted).ConfigureAwait(false);
-            LocalRedirect(context, $"{_pathPrefix}/recurring");
+            LocalRedirect(context, $"{_pathPrefix}/recurring", activeCluster);
             return true;
         }
 
@@ -245,7 +276,7 @@ public sealed class DashboardMiddleware
             var recurringId = GetRecurringId(subPath);
             await recurringStorage.SetRecurringJobNextExecutionAsync(
                 recurringId, DateTimeOffset.UtcNow.AddSeconds(-1), context.RequestAborted).ConfigureAwait(false);
-            LocalRedirect(context, $"{_pathPrefix}/recurring/{Uri.UnescapeDataString(recurringId)}");
+            LocalRedirect(context, $"{_pathPrefix}/recurring/{Uri.UnescapeDataString(recurringId)}", activeCluster);
             return true;
         }
 
@@ -259,7 +290,7 @@ public sealed class DashboardMiddleware
                 await recurringStorage.UpdateRecurringJobConfigAsync(recurringId, existing.CronOverride, enabled: false, context.RequestAborted).ConfigureAwait(false);
             }
 
-            LocalRedirect(context, $"{_pathPrefix}/recurring/{Uri.UnescapeDataString(recurringId)}");
+            LocalRedirect(context, $"{_pathPrefix}/recurring/{Uri.UnescapeDataString(recurringId)}", activeCluster);
             return true;
         }
 
@@ -273,7 +304,7 @@ public sealed class DashboardMiddleware
                 await recurringStorage.UpdateRecurringJobConfigAsync(recurringId, existing.CronOverride, enabled: true, context.RequestAborted).ConfigureAwait(false);
             }
 
-            LocalRedirect(context, $"{_pathPrefix}/recurring/{Uri.UnescapeDataString(recurringId)}");
+            LocalRedirect(context, $"{_pathPrefix}/recurring/{Uri.UnescapeDataString(recurringId)}", activeCluster);
             return true;
         }
 
@@ -297,7 +328,7 @@ public sealed class DashboardMiddleware
                 catch (CronFormatException)
                 {
                     // Invalid cron — redirect back without saving
-                    LocalRedirect(context, $"{_pathPrefix}/recurring/{Uri.EscapeDataString(recurringId)}");
+                    LocalRedirect(context, $"{_pathPrefix}/recurring/{Uri.EscapeDataString(recurringId)}", activeCluster);
                     return true;
                 }
             }
@@ -328,7 +359,7 @@ public sealed class DashboardMiddleware
                 }
             }
 
-            LocalRedirect(context, $"{_pathPrefix}/recurring/{Uri.EscapeDataString(recurringId)}");
+            LocalRedirect(context, $"{_pathPrefix}/recurring/{Uri.EscapeDataString(recurringId)}", activeCluster);
             return true;
         }
 
@@ -336,7 +367,7 @@ public sealed class DashboardMiddleware
         {
             var recurringId = GetRecurringId(subPath);
             await recurringStorage.ForceDeleteRecurringJobAsync(recurringId, context.RequestAborted).ConfigureAwait(false);
-            LocalRedirect(context, $"{_pathPrefix}/recurring");
+            LocalRedirect(context, $"{_pathPrefix}/recurring", activeCluster);
             return true;
         }
 
@@ -344,7 +375,7 @@ public sealed class DashboardMiddleware
         {
             var recurringId = GetRecurringId(subPath);
             await recurringStorage.RestoreRecurringJobAsync(recurringId, context.RequestAborted).ConfigureAwait(false);
-            LocalRedirect(context, $"{_pathPrefix}/recurring/{Uri.EscapeDataString(recurringId)}");
+            LocalRedirect(context, $"{_pathPrefix}/recurring/{Uri.EscapeDataString(recurringId)}", activeCluster);
             return true;
         }
 
@@ -357,7 +388,7 @@ public sealed class DashboardMiddleware
             // nothing selected — do nothing
             if (ids.Length == 0)
             {
-                LocalRedirect(context, $"{_pathPrefix}/recurring");
+                LocalRedirect(context, $"{_pathPrefix}/recurring", activeCluster);
                 return true;
             }
 
@@ -380,27 +411,25 @@ public sealed class DashboardMiddleware
                 }
             }
 
-            LocalRedirect(context, $"{_pathPrefix}/recurring");
+            LocalRedirect(context, $"{_pathPrefix}/recurring", activeCluster);
             return true;
         }
 
         if (string.Equals(subPath, "recurring/pause-all", StringComparison.Ordinal))
         {
-            var runtimeStore = context.RequestServices.GetRequiredService<IRuntimeSettingsStore>();
             var rt = await runtimeStore.GetAsync(context.RequestAborted).ConfigureAwait(false);
             rt.RecurringJobsPaused = true;
             await runtimeStore.SaveAsync(rt, context.RequestAborted).ConfigureAwait(false);
-            LocalRedirect(context, $"{_pathPrefix}/settings");
+            LocalRedirect(context, $"{_pathPrefix}/settings", activeCluster);
             return true;
         }
 
         if (string.Equals(subPath, "recurring/resume-all", StringComparison.Ordinal))
         {
-            var runtimeStore = context.RequestServices.GetRequiredService<IRuntimeSettingsStore>();
             var rt = await runtimeStore.GetAsync(context.RequestAborted).ConfigureAwait(false);
             rt.RecurringJobsPaused = false;
             await runtimeStore.SaveAsync(rt, context.RequestAborted).ConfigureAwait(false);
-            LocalRedirect(context, $"{_pathPrefix}/settings");
+            LocalRedirect(context, $"{_pathPrefix}/settings", activeCluster);
             return true;
         }
 
@@ -409,7 +438,8 @@ public sealed class DashboardMiddleware
 
     private async Task<bool> TryHandleBulkActionAsync(
         HttpContext context, string subPath,
-        IDashboardStorage dashboardStorage, IJobControlService controlService)
+        IDashboardStorage dashboardStorage, IJobControlService controlService,
+        DashboardCluster? activeCluster)
     {
         if (!string.Equals(subPath, "jobs/bulk", StringComparison.Ordinal) &&
             !string.Equals(subPath, "jobs/bulk-requeue", StringComparison.Ordinal) &&
@@ -472,13 +502,13 @@ public sealed class DashboardMiddleware
             return true;
         }
 
-        LocalRedirect(context, $"{_pathPrefix}/failed");
+        LocalRedirect(context, $"{_pathPrefix}/failed", activeCluster);
         return true;
     }
 
     private async Task<bool> TryHandleSettingsActionAsync(
         HttpContext context, string subPath, IRuntimeSettingsStore runtimeStore,
-        IJobControlService controlService)
+        IJobControlService controlService, DashboardCluster? activeCluster)
     {
         if (string.Equals(subPath, "settings/workers", StringComparison.Ordinal))
         {
@@ -490,7 +520,7 @@ public sealed class DashboardMiddleware
                 await runtimeStore.SaveAsync(rt, context.RequestAborted).ConfigureAwait(false);
             }
 
-            LocalRedirect(context, $"{_pathPrefix}/settings");
+            LocalRedirect(context, $"{_pathPrefix}/settings", activeCluster);
             return true;
         }
 
@@ -504,14 +534,14 @@ public sealed class DashboardMiddleware
                 await runtimeStore.SaveAsync(rt, context.RequestAborted).ConfigureAwait(false);
             }
 
-            LocalRedirect(context, $"{_pathPrefix}/settings");
+            LocalRedirect(context, $"{_pathPrefix}/settings", activeCluster);
             return true;
         }
 
         if (string.Equals(subPath, "settings/reset", StringComparison.Ordinal))
         {
             await runtimeStore.SaveAsync(new RuntimeSettings(), context.RequestAborted).ConfigureAwait(false);
-            LocalRedirect(context, $"{_pathPrefix}/settings");
+            LocalRedirect(context, $"{_pathPrefix}/settings", activeCluster);
             return true;
         }
 
@@ -543,7 +573,7 @@ public sealed class DashboardMiddleware
 
             await runtimeStore.SaveAsync(rt, context.RequestAborted).ConfigureAwait(false);
 
-            LocalRedirect(context, $"{_pathPrefix}/settings");
+            LocalRedirect(context, $"{_pathPrefix}/settings", activeCluster);
             return true;
         }
 
@@ -555,7 +585,7 @@ public sealed class DashboardMiddleware
             var target = !string.IsNullOrEmpty(referer) && referer.Contains("/queues", StringComparison.Ordinal)
                 ? $"{_pathPrefix}/queues"
                 : $"{_pathPrefix}/settings";
-            LocalRedirect(context, target);
+            LocalRedirect(context, target, activeCluster);
             return true;
         }
 
@@ -567,38 +597,40 @@ public sealed class DashboardMiddleware
             var target = !string.IsNullOrEmpty(referer) && referer.Contains("/queues", StringComparison.Ordinal)
                 ? $"{_pathPrefix}/queues"
                 : $"{_pathPrefix}/settings";
-            LocalRedirect(context, target);
+            LocalRedirect(context, target, activeCluster);
             return true;
         }
 
         return false;
     }
 
-    private async Task<string> RenderPageAsync(HttpContext context, string subPath)
+    private async Task<string> RenderPageAsync(HttpContext context, string subPath, DashboardCluster? activeCluster)
     {
 #pragma warning disable MA0004
-        var jobStorage = context.RequestServices.GetRequiredService<IJobStorage>();
-        var recurringStorage = context.RequestServices.GetRequiredService<IRecurringStorage>();
-        var dashboardStorage = context.RequestServices.GetRequiredService<IDashboardStorage>();
+        var dashboardStorage = activeCluster?.DashboardStorage ?? context.RequestServices.GetRequiredService<IDashboardStorage>();
+        var jobStorage = activeCluster?.JobStorage ?? (dashboardStorage as IJobStorage) ?? context.RequestServices.GetRequiredService<IJobStorage>();
+        var recurringStorage = activeCluster?.RecurringStorage ?? (dashboardStorage as IRecurringStorage) ?? context.RequestServices.GetRequiredService<IRecurringStorage>();
         var cache = context.RequestServices.GetRequiredService<IMemoryCache>();
         await using var renderer = new HtmlRenderer(context.RequestServices,
             context.RequestServices.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>());
 #pragma warning restore MA0004
 
         // Compute shared counters once for all pages
-        var metrics = await GetCachedMetricsAsync(cache, dashboardStorage, _options, context.RequestAborted).ConfigureAwait(false);
+        var metrics = await GetCachedMetricsAsync(cache, dashboardStorage, _options, activeCluster, context.RequestAborted).ConfigureAwait(false);
         var servers = await jobStorage.GetActiveServersAsync(TimeSpan.FromMinutes(1), context.RequestAborted).ConfigureAwait(false);
         var queues = await dashboardStorage.GetQueueMetricsAsync(context.RequestAborted).ConfigureAwait(false);
         var nexJobOptions = context.RequestServices.GetRequiredService<NexJobOptions>();
 
-        // Filter queues when options.Queues is specified (queue isolation mode)
-        var scopedQueues = _options.Queues is { Count: > 0 }
-            ? queues.Where(q => _options.Queues.Contains(q.Queue, StringComparer.OrdinalIgnoreCase)).ToList()
+        var effectiveQueues = activeCluster?.Queues ?? _options.Queues;
+
+        // Filter queues when effectiveQueues is specified (queue isolation mode)
+        var scopedQueues = effectiveQueues is { Count: > 0 }
+            ? queues.Where(q => effectiveQueues.Contains(q.Queue, StringComparer.OrdinalIgnoreCase)).ToList()
             : queues;
 
         var activeQueues = scopedQueues.Count(q => q.Processing > 0);
-        var totalQueues = _options.Queues is { Count: > 0 }
-            ? _options.Queues.Count
+        var totalQueues = effectiveQueues is { Count: > 0 }
+            ? effectiveQueues.Count
             : nexJobOptions.Queues.Count;
 
         var listenerRegistry = context.RequestServices.GetService<IListenerRegistry>();
@@ -623,6 +655,8 @@ public sealed class DashboardMiddleware
             Listeners: listenersCounter,
             ListenersClass: listenersClass);
 
+        var clustersList = _options.Clusters.Count > 0 ? _options.Clusters : null;
+
         ParameterView parameters;
 
         if (string.Equals(subPath, string.Empty, StringComparison.Ordinal) || string.Equals(subPath, "overview", StringComparison.Ordinal))
@@ -637,14 +671,16 @@ public sealed class DashboardMiddleware
                 ["Title"] = _options.Title,
                 ["Counters"] = counters,
                 ["Metrics"] = metrics,
-                ["Queues"] = _options.Queues,
+                ["Queues"] = effectiveQueues,
+                ["Clusters"] = clustersList,
+                ["ActiveCluster"] = activeCluster,
             });
             return await RenderAsync<OverviewPage>(renderer, parameters).ConfigureAwait(false);
         }
 
         if (string.Equals(subPath, "queues", StringComparison.Ordinal))
         {
-            var runtimeStore = context.RequestServices.GetService<IRuntimeSettingsStore>();
+            var runtimeStore = activeCluster?.RuntimeStore ?? context.RequestServices.GetService<IRuntimeSettingsStore>();
             parameters = ParameterView.FromDictionary(new Dictionary<string, object?>(StringComparer.Ordinal)
             {
                 ["Storage"] = dashboardStorage,
@@ -653,7 +689,9 @@ public sealed class DashboardMiddleware
                 ["Counters"] = counters,
                 ["Options"] = nexJobOptions,
                 ["RuntimeStore"] = runtimeStore,
-                ["Queues"] = _options.Queues,
+                ["Queues"] = effectiveQueues,
+                ["Clusters"] = clustersList,
+                ["ActiveCluster"] = activeCluster,
             });
             return await RenderAsync<QueuesPage>(renderer, parameters).ConfigureAwait(false);
         }
@@ -666,6 +704,8 @@ public sealed class DashboardMiddleware
                 ["PathPrefix"] = _pathPrefix,
                 ["Title"] = _options.Title,
                 ["Counters"] = counters,
+                ["Clusters"] = clustersList,
+                ["ActiveCluster"] = activeCluster,
             });
             return await RenderAsync<ServersPage>(renderer, parameters).ConfigureAwait(false);
         }
@@ -678,6 +718,8 @@ public sealed class DashboardMiddleware
                 ["PathPrefix"] = _pathPrefix,
                 ["Title"] = _options.Title,
                 ["Counters"] = counters,
+                ["Clusters"] = clustersList,
+                ["ActiveCluster"] = activeCluster,
             });
             return await RenderAsync<ListenersPage>(renderer, parameters).ConfigureAwait(false);
         }
@@ -693,9 +735,9 @@ public sealed class DashboardMiddleware
             }
 
             var queue = query.TryGetValue("queue", out var qu) && !string.IsNullOrWhiteSpace(qu) ? (string?)qu : null;
-            if (queue is null && _options.Queues is { Count: 1 })
+            if (queue is null && effectiveQueues is { Count: 1 })
             {
-                queue = _options.Queues[0];
+                queue = effectiveQueues[0];
             }
 
             var period = query.TryGetValue("period", out var pr) && !string.IsNullOrWhiteSpace(pr) ? (string?)pr : null;
@@ -729,7 +771,9 @@ public sealed class DashboardMiddleware
                 ["Period"] = period,
                 ["Page"] = page,
                 ["Counters"] = counters,
-                ["Queues"] = _options.Queues,
+                ["Queues"] = effectiveQueues,
+                ["Clusters"] = clustersList,
+                ["ActiveCluster"] = activeCluster,
             });
             return await RenderAsync<JobsPage>(renderer, parameters).ConfigureAwait(false);
         }
@@ -746,6 +790,9 @@ public sealed class DashboardMiddleware
                     ["Title"] = _options.Title,
                     ["JobId"] = new JobId(guid),
                     ["Counters"] = counters,
+                    ["IsReadOnly"] = activeCluster?.IsReadOnly == true,
+                    ["Clusters"] = clustersList,
+                    ["ActiveCluster"] = activeCluster,
                 });
                 return await RenderAsync<JobDetailPage>(renderer, parameters).ConfigureAwait(false);
             }
@@ -775,6 +822,8 @@ public sealed class DashboardMiddleware
                 ["PathPrefix"] = _pathPrefix,
                 ["Title"] = _options.Title,
                 ["Counters"] = counters,
+                ["Clusters"] = clustersList,
+                ["ActiveCluster"] = activeCluster,
             });
             return await RenderAsync<RecurringJobDetailPage>(renderer, parameters).ConfigureAwait(false);
         }
@@ -787,6 +836,8 @@ public sealed class DashboardMiddleware
                 ["PathPrefix"] = _pathPrefix,
                 ["Title"] = _options.Title,
                 ["Counters"] = counters,
+                ["Clusters"] = clustersList,
+                ["ActiveCluster"] = activeCluster,
             });
             return await RenderAsync<RecurringPage>(renderer, parameters).ConfigureAwait(false);
         }
@@ -799,14 +850,18 @@ public sealed class DashboardMiddleware
                 ["PathPrefix"] = _pathPrefix,
                 ["Title"] = _options.Title,
                 ["Counters"] = counters,
-                ["Queues"] = _options.Queues,
+                ["Queues"] = effectiveQueues,
+                ["Clusters"] = clustersList,
+                ["ActiveCluster"] = activeCluster,
             });
             return await RenderAsync<FailedPage>(renderer, parameters).ConfigureAwait(false);
         }
 
         if (string.Equals(subPath, "settings", StringComparison.Ordinal))
         {
-            var runtimeStore = context.RequestServices.GetRequiredService<IRuntimeSettingsStore>();
+            var runtimeStore = activeCluster?.RuntimeStore
+                ?? context.RequestServices.GetService<IRuntimeSettingsStore>()
+                ?? context.RequestServices.GetRequiredService<IRuntimeSettingsStore>();
             var runtime = await runtimeStore.GetAsync(context.RequestAborted).ConfigureAwait(false);
 
             parameters = ParameterView.FromDictionary(new Dictionary<string, object?>(StringComparer.Ordinal)
@@ -817,6 +872,8 @@ public sealed class DashboardMiddleware
                 ["PathPrefix"] = _pathPrefix,
                 ["Title"] = _options.Title,
                 ["Counters"] = counters,
+                ["Clusters"] = clustersList,
+                ["ActiveCluster"] = activeCluster,
             });
             return await RenderAsync<SettingsPage>(renderer, parameters).ConfigureAwait(false);
         }

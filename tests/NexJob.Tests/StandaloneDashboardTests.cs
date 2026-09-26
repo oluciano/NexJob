@@ -462,6 +462,189 @@ public sealed class StandaloneDashboardTests
         }
     }
 
+    [Fact]
+    public async Task StandaloneDashboard_MultiCluster_RendersClustersAndSwitchesCorrectly()
+    {
+        // N1 (Positive): Multiple clusters registered — selector appears and clusters can be switched via ?cluster=
+        var port = GetFreeTcpPort();
+        var storageA = new NexJob.Internal.InMemoryStorageProvider();
+        var storageB = new NexJob.Internal.InMemoryStorageProvider();
+
+        await storageA.EnqueueAsync(new JobRecord
+        {
+            Id = new JobId(Guid.NewGuid()),
+            JobType = "JobClusterA",
+            Queue = "default",
+            Status = JobStatus.Enqueued,
+            CreatedAt = DateTimeOffset.UtcNow,
+        });
+
+        await storageB.EnqueueAsync(new JobRecord
+        {
+            Id = new JobId(Guid.NewGuid()),
+            JobType = "JobClusterB",
+            Queue = "default",
+            Status = JobStatus.Enqueued,
+            CreatedAt = DateTimeOffset.UtcNow,
+        });
+
+        using var host = Host.CreateDefaultBuilder()
+            .ConfigureServices(services =>
+            {
+                services.AddNexJob();
+                services.AddNexJobStandaloneDashboard(options =>
+                {
+                    options.Port = port;
+                    options.Path = "/dashboard";
+                    options.LocalhostOnly = true;
+                    options.AddCluster(new NexJob.Dashboard.DashboardCluster("cluster-a", "Production Cluster", storageA));
+                    options.AddCluster(new NexJob.Dashboard.DashboardCluster("cluster-b", "Staging Cluster", storageB));
+                });
+            })
+            .Build();
+
+        try
+        {
+            await host.StartAsync();
+
+            using var client = new HttpClient
+            {
+                BaseAddress = new Uri($"http://localhost:{port}"),
+                Timeout = TimeSpan.FromSeconds(5),
+            };
+
+            // 1. Accessing without ?cluster= defaults to first cluster (cluster-a)
+            var defaultRes = await client.GetAsync("/dashboard");
+            defaultRes.StatusCode.Should().Be(HttpStatusCode.OK);
+            var defaultHtml = await defaultRes.Content.ReadAsStringAsync();
+            defaultHtml.Should().Contain("Cluster: Production Cluster");
+            defaultHtml.Should().Contain("Cluster: Staging Cluster");
+
+            // Overview for cluster-a should contain JobClusterA
+            var jobsClusterA = await client.GetAsync("/dashboard/jobs?cluster=cluster-a");
+            jobsClusterA.StatusCode.Should().Be(HttpStatusCode.OK);
+            var jobsHtmlA = await jobsClusterA.Content.ReadAsStringAsync();
+            jobsHtmlA.Should().Contain("JobClusterA");
+            jobsHtmlA.Should().NotContain("JobClusterB");
+
+            // 2. Switching to cluster-b renders jobs from cluster-b
+            var jobsClusterB = await client.GetAsync("/dashboard/jobs?cluster=cluster-b");
+            jobsClusterB.StatusCode.Should().Be(HttpStatusCode.OK);
+            var jobsHtmlB = await jobsClusterB.Content.ReadAsStringAsync();
+            jobsHtmlB.Should().Contain("JobClusterB");
+            jobsHtmlB.Should().NotContain("JobClusterA");
+
+            // 3. Verify sidebar navigation links preserve the active cluster parameter
+            jobsHtmlB.Should().Contain("href=\"/dashboard/queues?cluster=cluster-b\"");
+            jobsHtmlB.Should().Contain("href=\"/dashboard/servers?cluster=cluster-b\"");
+            jobsHtmlB.Should().Contain("href=\"/dashboard/recurring?cluster=cluster-b\"");
+            jobsHtmlB.Should().Contain("href=\"/dashboard/failed?cluster=cluster-b\"");
+            jobsHtmlB.Should().Contain("href=\"/dashboard/settings?cluster=cluster-b\"");
+        }
+        finally
+        {
+            await host.StopAsync();
+        }
+    }
+
+    [Fact]
+    public async Task StandaloneDashboard_MultiCluster_ReadOnlyClusterRejectsMutationsAndUnknownClusterFallsBack()
+    {
+        // N2 (Negative): Unknown cluster falls back to first cluster; read-only cluster rejects POST mutations with 403 Forbidden
+        var port = GetFreeTcpPort();
+        var storageReadOnly = new NexJob.Internal.InMemoryStorageProvider();
+        var storageWritable = new NexJob.Internal.InMemoryStorageProvider();
+
+        using var host = Host.CreateDefaultBuilder()
+            .ConfigureServices(services =>
+            {
+                services.AddNexJob();
+                services.AddNexJobStandaloneDashboard(options =>
+                {
+                    options.Port = port;
+                    options.Path = "/dashboard";
+                    options.LocalhostOnly = true;
+                    options.AddCluster(new NexJob.Dashboard.DashboardCluster("prod-ro", "Production (Read-Only)", storageReadOnly, isReadOnly: true));
+                    options.AddCluster(new NexJob.Dashboard.DashboardCluster("dev-rw", "Development", storageWritable, isReadOnly: false));
+                });
+            })
+            .Build();
+
+        try
+        {
+            await host.StartAsync();
+
+            using var client = new HttpClient
+            {
+                BaseAddress = new Uri($"http://localhost:{port}"),
+                Timeout = TimeSpan.FromSeconds(5),
+            };
+
+            // 1. Unknown cluster id falls back to first cluster (prod-ro)
+            var fallbackRes = await client.GetAsync("/dashboard?cluster=non-existent");
+            fallbackRes.StatusCode.Should().Be(HttpStatusCode.OK);
+            var fallbackHtml = await fallbackRes.Content.ReadAsStringAsync();
+            fallbackHtml.Should().Contain("Cluster: Production (Read-Only)");
+
+            // 2. Mutation on read-only cluster returns 403 Forbidden
+            var postRo = await client.PostAsync("/dashboard/recurring/test-job/delete?cluster=prod-ro", null);
+            postRo.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+            // 3. Mutation on default (first cluster, which is prod-ro) also returns 403 Forbidden
+            var postRoDefault = await client.PostAsync("/dashboard/recurring/test-job/delete", null);
+            postRoDefault.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        }
+        finally
+        {
+            await host.StopAsync();
+        }
+    }
+
+    [Fact]
+    public async Task StandaloneDashboard_MultiCluster_SingleOrZeroClustersHidesSwitcher()
+    {
+        // N3 (Boundary): When only 1 cluster is registered (or 0 clusters), the cluster switcher dropdown is not rendered
+        var port = GetFreeTcpPort();
+        var storageSingle = new NexJob.Internal.InMemoryStorageProvider();
+
+        using var host = Host.CreateDefaultBuilder()
+            .ConfigureServices(services =>
+            {
+                services.AddNexJob();
+                services.AddNexJobStandaloneDashboard(options =>
+                {
+                    options.Port = port;
+                    options.Path = "/dashboard";
+                    options.LocalhostOnly = true;
+                    options.AddCluster(new NexJob.Dashboard.DashboardCluster("only-one", "Single Cluster", storageSingle));
+                });
+            })
+            .Build();
+
+        try
+        {
+            await host.StartAsync();
+
+            using var client = new HttpClient
+            {
+                BaseAddress = new Uri($"http://localhost:{port}"),
+                Timeout = TimeSpan.FromSeconds(5),
+            };
+
+            var res = await client.GetAsync("/dashboard");
+            res.StatusCode.Should().Be(HttpStatusCode.OK);
+            var html = await res.Content.ReadAsStringAsync();
+
+            // Switcher dropdown should NOT be present when only 1 cluster exists
+            html.Should().NotContain("class=\"cluster-switcher\"");
+            html.Should().NotContain("title=\"Switch Cluster\"");
+        }
+        finally
+        {
+            await host.StopAsync();
+        }
+    }
+
     private static int GetFreeTcpPort()
     {
         var listener = new TcpListener(IPAddress.Loopback, 0);

@@ -25,7 +25,7 @@ internal static class DashboardStreamEndpoint
     /// Each event carries a compact JSON object with counters, hourly throughput,
     /// and active job progress updates for live progress bars on the job detail page.
     /// </summary>
-    internal static async Task HandleAsync(HttpContext context, IDashboardStorage storage, DashboardOptions options)
+    internal static async Task HandleAsync(HttpContext context, IDashboardStorage storage, DashboardOptions options, DashboardCluster? activeCluster = null)
     {
         context.Response.ContentType = "text/event-stream";
         context.Response.Headers["Cache-Control"] = "no-cache";
@@ -39,7 +39,7 @@ internal static class DashboardStreamEndpoint
         {
             while (!ct.IsCancellationRequested)
             {
-                var metrics = await GetCachedMetricsAsync(cache, storage, options, ct).ConfigureAwait(false);
+                var metrics = await GetCachedMetricsAsync(cache, storage, options, activeCluster, ct).ConfigureAwait(false);
 
                 var activeResult = await storage.GetJobsAsync(
                     new JobFilter { Status = JobStatus.Processing }, 1, 20, ct).ConfigureAwait(false);
@@ -74,9 +74,11 @@ internal static class DashboardStreamEndpoint
     }
 
     private static async Task<JobMetrics> GetCachedMetricsAsync(
-        IMemoryCache cache, IDashboardStorage storage, DashboardOptions options, CancellationToken ct)
+        IMemoryCache cache, IDashboardStorage storage, DashboardOptions options, DashboardCluster? activeCluster, CancellationToken ct)
     {
-        const string CacheKey = "nexjob:dashboard:metrics";
+        var cacheKey = activeCluster is not null
+            ? $"nexjob:dashboard:metrics:{activeCluster.Id}"
+            : "nexjob:dashboard:metrics";
 
         // If cache TTL is zero, disable caching
         if (options.MetricsCacheTtl == TimeSpan.Zero)
@@ -84,13 +86,13 @@ internal static class DashboardStreamEndpoint
             return await storage.GetMetricsAsync(ct).ConfigureAwait(false);
         }
 
-        if (cache.TryGetValue(CacheKey, out JobMetrics? cached) && cached is not null)
+        if (cache.TryGetValue(cacheKey, out JobMetrics? cached) && cached is not null)
         {
             return cached;
         }
 
         var metrics = await storage.GetMetricsAsync(ct).ConfigureAwait(false);
-        cache.Set(CacheKey, metrics, options.MetricsCacheTtl);
+        cache.Set(cacheKey, metrics, options.MetricsCacheTtl);
 
         return metrics;
     }

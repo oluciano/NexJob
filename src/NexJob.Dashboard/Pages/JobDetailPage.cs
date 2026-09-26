@@ -17,6 +17,8 @@ internal sealed class JobDetailPage : IComponent
     [Parameter] public NavCounters? Counters { get; set; }
     [Parameter] public JobId JobId { get; set; }
     [Parameter] public bool IsReadOnly { get; set; }
+    [Parameter] public IReadOnlyList<DashboardCluster>? Clusters { get; set; }
+    [Parameter] public DashboardCluster? ActiveCluster { get; set; }
 
     void IComponent.Attach(RenderHandle renderHandle) => _handle = renderHandle;
 
@@ -38,11 +40,13 @@ internal sealed class JobDetailPage : IComponent
                 HtmlFragments.Breadcrumbs(PathPrefix, ("Jobs", $"{PathPrefix}/jobs"), ("Not Found", null)) +
                 HtmlFragments.EmptyState("0 0 24 24", "Job not found") +
                 $"<div style=\"text-align:center;margin-top:12px\"><a href=\"{PathPrefix}/jobs\" class=\"btn btn-ghost btn-sm\">← Back to Jobs</a></div>";
-            return HtmlShell.Wrap(Title, PathPrefix, "jobs", notFoundHtml, Counters);
+            return HtmlShell.Wrap(Title, PathPrefix, "jobs", notFoundHtml, Counters, clusters: Clusters, activeCluster: ActiveCluster);
         }
 
         var now = DateTimeOffset.UtcNow;
         var vm = new JobDetailViewModel { Job = job, PathPrefix = PathPrefix, Now = now };
+
+        var clusterSuffix = ActiveCluster is not null ? $"?cluster={Uri.EscapeDataString(ActiveCluster.Id)}" : string.Empty;
 
         // Action buttons
         var actions = string.Empty;
@@ -51,16 +55,16 @@ internal sealed class JobDetailPage : IComponent
             if (job.Status == JobStatus.Scheduled)
             {
                 actions +=
-                    $"<form method=\"post\" action=\"{PathPrefix}/jobs/{job.Id.Value}/runnow\" style=\"display:inline\">" +
+                    $"<form method=\"post\" action=\"{PathPrefix}/jobs/{job.Id.Value}/runnow{clusterSuffix}\" style=\"display:inline\">" +
                     "<button type=\"submit\" class=\"btn btn-primary btn-sm\">▶ Run Now</button></form> ";
             }
 
             if (job.Status == JobStatus.Failed)
             {
                 actions +=
-                    $"<form method=\"post\" action=\"{PathPrefix}/jobs/{job.Id.Value}/requeue\" style=\"display:inline\">" +
+                    $"<form method=\"post\" action=\"{PathPrefix}/jobs/{job.Id.Value}/requeue{clusterSuffix}\" style=\"display:inline\">" +
                     "<button type=\"submit\" class=\"btn btn-primary btn-sm\" onclick=\"return confirm('Requeue this job?')\">↺ Requeue</button></form> " +
-                    $"<form method=\"post\" action=\"{PathPrefix}/jobs/{job.Id.Value}/delete\" style=\"display:inline\">" +
+                    $"<form method=\"post\" action=\"{PathPrefix}/jobs/{job.Id.Value}/delete{clusterSuffix}\" style=\"display:inline\">" +
                     "<button type=\"submit\" class=\"btn btn-danger btn-sm\" onclick=\"return confirm('Delete this job?')\">Delete</button></form>";
             }
         }
@@ -199,7 +203,7 @@ internal sealed class JobDetailPage : IComponent
             $"var logsBadge=document.getElementById('logs-count-badge');" +
             $"var isRunning={(job.Status == JobStatus.Processing ? "true" : "false")};" +
             $"var lastLogsCount={job.ExecutionLogs.Count};" +
-            $"var es=new EventSource('{PathPrefix}/stream');" +
+            $"var es=new EventSource('{PathPrefix}/stream{clusterSuffix}');" +
             $"es.onmessage=function(e){{" +
             $"var d=JSON.parse(e.data);" +
             $"var jobs=d.activeJobs||[];" +
@@ -210,7 +214,7 @@ internal sealed class JobDetailPage : IComponent
             $"if(msgEl&&j.progressMessage)msgEl.textContent=j.progressMessage;" +
             $"}}" +
             $"if(isRunning){{" +
-            $"fetch('{PathPrefix}/jobs/'+jobId+'/logs').then(r=>r.json()).then(logs=>{{" +
+            $"fetch('{PathPrefix}/jobs/'+jobId+'/logs{clusterSuffix}').then(r=>r.json()).then(logs=>{{" +
             $"if(Array.isArray(logs)&&logs.length>lastLogsCount&&logsBody){{" +
             $"lastLogsCount=logs.length;" +
             $"if(logsBadge)logsBadge.textContent='('+logs.length+' entries)';" +
@@ -243,6 +247,6 @@ internal sealed class JobDetailPage : IComponent
             logsSection +
             sseScript;
 
-        return HtmlShell.Wrap(Title, PathPrefix, "jobs", body, Counters);
+        return HtmlShell.Wrap(Title, PathPrefix, "jobs", body, Counters, clusters: Clusters, activeCluster: ActiveCluster);
     }
 }

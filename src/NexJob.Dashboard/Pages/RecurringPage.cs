@@ -14,6 +14,8 @@ internal sealed class RecurringPage : IComponent
     [Parameter] public string PathPrefix { get; set; } = "/dashboard";
     [Parameter] public string Title { get; set; } = "NexJob";
     [Parameter] public NavCounters? Counters { get; set; }
+    [Parameter] public IReadOnlyList<DashboardCluster>? Clusters { get; set; }
+    [Parameter] public DashboardCluster? ActiveCluster { get; set; }
 
     void IComponent.Attach(RenderHandle renderHandle) => _handle = renderHandle;
 
@@ -37,13 +39,16 @@ internal sealed class RecurringPage : IComponent
                 HtmlFragments.Breadcrumbs(PathPrefix, ("Recurring", null)) +
                 HtmlFragments.PageHeader("Recurring Jobs", "Scheduled cron jobs") +
                 HtmlFragments.EmptyState("0 0 24 24", "No recurring jobs registered.");
-            return HtmlShell.Wrap(Title, PathPrefix, "recurring", emptyBody, Counters);
+            return HtmlShell.Wrap(Title, PathPrefix, "recurring", emptyBody, Counters, clusters: Clusters, activeCluster: ActiveCluster);
         }
 
-        var rows = string.Join(string.Empty, jobs.Select(j => HtmlFragments.RecurringRow(j, PathPrefix, now)));
+        var isReadOnly = ActiveCluster?.IsReadOnly == true;
+        var rows = string.Join(string.Empty, jobs.Select(j => HtmlFragments.RecurringRow(j, PathPrefix, now, ActiveCluster)));
+        var actionsHeader = !isReadOnly ? "<th style=\"text-align:right\">Actions</th>" : string.Empty;
 
         var body =
             "<div id=\"recurring-page-content\" data-refresh=\"true\">" +
+            (isReadOnly ? HtmlFragments.ReadOnlyBanner() : string.Empty) +
             HtmlFragments.Breadcrumbs(PathPrefix, ("Recurring", null)) +
             HtmlFragments.PageHeader("Recurring Jobs", "Automated background job schedules") +
             "<div class=\"card\">" +
@@ -58,15 +63,14 @@ internal sealed class RecurringPage : IComponent
             "<th>Queue</th>" +
             "<th>Last Run</th>" +
             "<th>Next Run</th>" +
-            "<th style=\"text-align:right\">Actions</th>" +
-            "</tr></thead>"
- +
+            actionsHeader +
+            "</tr></thead>" +
             $"<tbody>{rows}</tbody>" +
             "</table>" +
             "</div>" +
             "</div>" +
             "</div>";
 
-        return HtmlShell.Wrap(Title, PathPrefix, "recurring", body, Counters);
+        return HtmlShell.Wrap(Title, PathPrefix, "recurring", body, Counters, clusters: Clusters, activeCluster: ActiveCluster);
     }
 }

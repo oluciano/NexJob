@@ -8,6 +8,13 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`NexJob.Dashboard` — Multi-Cluster Navigation & Action URL Preservation and Read-Only UI Guard**:
+  - Ensured active cluster parameter (`?cluster={id}`) is systematically preserved across sidebar navigation, header logo, search bar, breadcrumbs, and pagination.
+  - Implemented client-side navigation interceptor in `HtmlShell` that automatically propagates the active cluster ID across internal page transitions when browsing a non-default cluster.
+  - Fixed form action URLs across `RecurringJobDetailPage`, `JobDetailPage`, `RecurringPage`, `FailedPage`, and `SettingsPage` to append and preserve the `?cluster={id}` query parameter, preventing mutations on remote clusters from inadvertently hitting the default cluster.
+  - Enforced client-side UI `IsReadOnly` guards across all dashboard pages: mutating buttons (`Trigger Now`, `Pause`, `Force Delete`, `Requeue`, `Apply`, `Reset`, bulk actions) are cleanly hidden when viewing a read-only cluster and a `ReadOnlyBanner` is displayed.
+  - Preserved active cluster parameter in log streaming and execution modal fetches.
+
 - **`NexJob` Core — Worker Poisons Foreign Jobs on Shared Queue (Issue #201)**:
   - Introduced `ForeignJobTypeException` in `NexJob.Exceptions` thrown by `DefaultJobInvokerFactory` when a worker dequeues a job whose type or input type cannot be resolved in the local assembly/runtime.
   - Hardened `JobExecutor.ExecuteJobAsync` to catch `ForeignJobTypeException` separately from standard execution failures: the worker rolls back the attempt increment, defers the job with a configurable `ForeignJobRetryDelay` (default 5s) via `CommitJobResultAsync`, and avoids dead-lettering (`IDeadLetterDispatcher` is never invoked).
@@ -15,6 +22,14 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - Added 3N unit testing matrix in `tests/NexJob.Tests/JobExecutorHardeningTests.cs` and `tests/NexJob.Tests/DefaultJobInvokerFactoryHardeningTests.cs`.
 
 ### Added
+
+- **`NexJob.Dashboard` & `NexJob.Dashboard.Standalone` — Multi-Cluster Dashboard Federation (Issue #200)**:
+  - Added `DashboardCluster` descriptor encapsulating cluster identity (`Id`, `Name`), isolated storage contracts (`DashboardStorage`, `JobStorage`, `RecurringStorage`, `ControlService`, `RuntimeStore`), cluster-scoped `Queues`, and `IsReadOnly` safety mode.
+  - Added `Clusters` collection and fluent `AddCluster(...)` API to `DashboardOptions` and `StandaloneDashboardOptions`.
+  - Added multi-cluster switcher dropdown in Maxton header when `Clusters.Count > 1`, with active cluster selection controlled via `?cluster={id}` and seamless URL parameter preservation across redirects and actions.
+  - Isolated SSE metrics stream and IMemoryCache keys by cluster (`$"nexjob:dashboard:metrics:{clusterId}"`), preventing cross-cluster cache collision.
+  - Enforced `IsReadOnly` mutation guard returning `403 Forbidden` on POST actions for read-only clusters.
+  - Added 3N testing matrix (Positive, Negative, Boundary) in `tests/NexJob.Tests/StandaloneDashboardTests.cs`.
 
 - **`NexJob.Dashboard` & `NexJob.Dashboard.Standalone` — Dedicated Ops Host Mode and Queue Scoping (Issue #199)**:
   - Added `DisableWorkers` (bool, default `false`) to `StandaloneDashboardOptions`. When set to `true`, `NexJobOptions.Workers` is configured to `0`, allowing a headless worker to function as a dedicated monitoring/ops host without taking processing slots from background workers.

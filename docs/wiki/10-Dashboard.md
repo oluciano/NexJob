@@ -225,11 +225,65 @@ builder.Services.AddNexJobStandaloneDashboard(options =>
 ```
 
 When scoped to a single queue, the `/jobs` page automatically defaults its filter to that queue.
-
+ 
 ---
-
+ 
+## Multi-Cluster Dashboard Federation
+ 
+Federate and aggregate multiple independent NexJob clusters (e.g. production, staging, regional clusters, or multi-tenant databases) within a single dashboard UI without installing extra packages.
+ 
+### Registering Clusters
+ 
+Register named `DashboardCluster` instances via `DashboardOptions.AddCluster` or `StandaloneDashboardOptions.AddCluster`:
+ 
+```csharp
+// ASP.NET Core Web App
+app.UseNexJobDashboard("/dashboard", options =>
+{
+    options.Title = "Global Management Console";
+    options.AddCluster(new DashboardCluster(
+        id: "prod-us",
+        name: "Production (US-East)",
+        dashboardStorage: prodStorage,
+        isReadOnly: true)); // Disables mutating POST actions
+ 
+    options.AddCluster(new DashboardCluster(
+        id: "prod-eu",
+        name: "Production (EU-West)",
+        dashboardStorage: euStorage,
+        isReadOnly: true));
+ 
+    options.AddCluster(new DashboardCluster(
+        id: "staging",
+        name: "Staging Cluster",
+        dashboardStorage: stagingStorage,
+        isReadOnly: false));
+});
+ 
+// Or in Standalone Dashboard:
+builder.Services.AddNexJobStandaloneDashboard(options =>
+{
+    options.Port = 5005;
+    options.Title = "Ops Federation Hub";
+    options.DisableWorkers = true; // Dedicated ops host mode
+    options.AddCluster(new DashboardCluster("cluster-a", "Billing Cluster", billingStorage));
+    options.AddCluster(new DashboardCluster("cluster-b", "Logistics Cluster", logisticsStorage));
+});
+```
+ 
+### Multi-Cluster UI & Switching
+ 
+- When 2 or more clusters are registered, a **Cluster Switcher** dropdown automatically appears in the top header.
+- Active cluster selection is persisted and controlled via the URL query parameter `?cluster={id}`.
+- If no cluster parameter is supplied or an unknown ID is specified, the dashboard defaults gracefully to the first registered cluster.
+- All metrics cards, servers, recurring jobs, log modals, and SSE streams (`/stream`) route exclusively to the active cluster.
+- Read-only clusters (`isReadOnly: true`) reject mutating actions (Run Now, Requeue, Delete, Pause/Resume) with `403 Forbidden` and hide execution buttons.
+- When no clusters are registered, the dashboard operates seamlessly in single-cluster mode querying services directly from DI.
+ 
+---
+ 
 ## Next Steps
-
+ 
 - [Configuration Reference](11-Configuration-Reference.md) — Dashboard options
 - [Troubleshooting](16-Troubleshooting.md) — Dashboard not showing jobs
 - [Best Practices](13-Best-Practices.md) — Production dashboard guidelines

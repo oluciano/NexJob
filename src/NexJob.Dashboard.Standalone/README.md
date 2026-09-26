@@ -83,6 +83,7 @@ builder.Services.AddNexJobStandaloneDashboard(builder.Configuration);
 | `PollIntervalSeconds` | `int` | `3` | SSE live stream update interval in seconds |
 | `DisableWorkers` | `bool` | `false` | When `true`, sets `NexJobOptions.Workers = 0` to run as a dedicated ops/monitoring container |
 | `Queues` | `IReadOnlyList<string>?` | `null` | Optional list of queues to scope the dashboard view, nav counters, and default job listings |
+| `Clusters` | `IReadOnlyList<DashboardCluster>` | `[]` | Registered federated clusters for multi-cluster operations |
 
 ---
 
@@ -98,6 +99,25 @@ builder.Services.AddNexJobStandaloneDashboard(options =>
     options.Title = "Ops Control Center";
     options.DisableWorkers = true; // Sets Workers = 0 on this host
     options.Queues = ["payments", "billing"]; // Scopes UI exclusively to these queues
+});
+```
+
+---
+
+## Multi-Cluster Federation
+
+You can register multiple clusters to aggregate and manage distinct clusters from a single standalone monitoring instance:
+
+```csharp
+builder.Services.AddNexJobStandaloneDashboard(options =>
+{
+    options.Port = 5005;
+    options.Path = "/dashboard";
+    options.Title = "Ops Federation Hub";
+    options.DisableWorkers = true;
+
+    options.AddCluster(new DashboardCluster("prod", "Production Cluster", prodStorage, isReadOnly: true));
+    options.AddCluster(new DashboardCluster("staging", "Staging Cluster", stagingStorage, isReadOnly: false));
 });
 ```
 

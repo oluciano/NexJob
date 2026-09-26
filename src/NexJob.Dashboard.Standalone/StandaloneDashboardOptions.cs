@@ -56,4 +56,21 @@ public sealed class StandaloneDashboardOptions
     /// Defaults to <see langword="null"/> (all cluster queues displayed).
     /// </summary>
     public IReadOnlyList<string>? Queues { get; set; }
+
+    /// <summary>
+    /// Gets the list of registered clusters for multi-cluster federation.
+    /// </summary>
+    public IList<DashboardCluster> Clusters { get; } = new List<DashboardCluster>();
+
+    /// <summary>
+    /// Registers an isolated cluster in the dashboard.
+    /// </summary>
+    /// <param name="cluster">The cluster definition to register.</param>
+    /// <returns>This options instance for method chaining.</returns>
+    public StandaloneDashboardOptions AddCluster(DashboardCluster cluster)
+    {
+        ArgumentNullException.ThrowIfNull(cluster);
+        Clusters.Add(cluster);
+        return this;
+    }
 }

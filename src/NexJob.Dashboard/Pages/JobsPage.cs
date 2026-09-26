@@ -21,6 +21,8 @@ internal sealed class JobsPage : IComponent
     [Parameter] public string? Period { get; set; }
     [Parameter] public int Page { get; set; } = 1;
     [Parameter] public IReadOnlyList<string>? Queues { get; set; }
+    [Parameter] public IReadOnlyList<DashboardCluster>? Clusters { get; set; }
+    [Parameter] public DashboardCluster? ActiveCluster { get; set; }
 
     void IComponent.Attach(RenderHandle renderHandle) => _handle = renderHandle;
 
@@ -147,6 +149,6 @@ internal sealed class JobsPage : IComponent
             $"</div>" +
             $"</div>";
 
-        return HtmlShell.Wrap(Title, PathPrefix, "jobs", body, Counters);
+        return HtmlShell.Wrap(Title, PathPrefix, "jobs", body, Counters, clusters: Clusters, activeCluster: ActiveCluster);
     }
 }
