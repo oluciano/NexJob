@@ -69,6 +69,12 @@ internal sealed class StandaloneDashboardHostedService : IHostedService
             _rootProvider.GetRequiredService<IDashboardStorage>());
         builder.Services.AddSingleton(
             _rootProvider.GetRequiredService<IJobControlService>());
+        var rootScheduler = _rootProvider.GetService<IScheduler>();
+        if (rootScheduler is not null)
+        {
+            builder.Services.AddSingleton(rootScheduler);
+        }
+
         builder.Services.AddSingleton(rootNexJobOptions);
         builder.Services.AddSingleton(
             _rootProvider.GetRequiredService<NexJob.Configuration.IRuntimeSettingsStore>());
