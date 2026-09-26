@@ -6,6 +6,15 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`NexJob.Dashboard` & `NexJob.Dashboard.Standalone` — Dedicated Ops Host Mode and Queue Scoping (Issue #199)**:
+  - Added `DisableWorkers` (bool, default `false`) to `StandaloneDashboardOptions`. When set to `true`, `NexJobOptions.Workers` is configured to `0`, allowing a headless worker to function as a dedicated monitoring/ops host without taking processing slots from background workers.
+  - Added `Queues` (`IReadOnlyList<string>?`) to `DashboardOptions` and `StandaloneDashboardOptions` for queue scoping and isolation.
+  - Scoped dashboard navigation counters, queue cards, and default `/jobs` filter exclusively to the configured queues when `Queues` is specified.
+  - Added comprehensive documentation and architectural guidelines in `docs/wiki/10-Dashboard.md`, `docs/wiki/13-Best-Practices.md`, and `src/NexJob.Dashboard.Standalone/README.md`.
+  - Added 3N unit testing matrix in `tests/NexJob.Tests/StandaloneDashboardTests.cs` (positive, negative, and boundary scenarios).
+
 ## [5.5.0] - 2026-09-25
 
 ### Fixed

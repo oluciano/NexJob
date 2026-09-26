@@ -11,4 +11,12 @@ public sealed class DashboardOptions
     /// Defaults to 3 seconds to prevent excessive database load during SSE polling.
     /// </summary>
     public TimeSpan MetricsCacheTtl { get; set; } = TimeSpan.FromSeconds(3);
+
+    /// <summary>
+    /// Optional collection of queue names to scope the dashboard view to.
+    /// When specified, navigation counters, queue cards, and default job listings
+    /// are scoped exclusively to these queues.
+    /// When <see langword="null"/> (default), all queues across the cluster are visible.
+    /// </summary>
+    public IReadOnlyList<string>? Queues { get; set; }
 }

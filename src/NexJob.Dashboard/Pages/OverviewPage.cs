@@ -25,6 +25,7 @@ internal sealed class OverviewPage : IComponent
     [Parameter] public string Title { get; set; } = "NexJob";
     [Parameter] public NavCounters? Counters { get; set; }
     [Parameter] public JobMetrics? Metrics { get; set; }
+    [Parameter] public IReadOnlyList<string>? Queues { get; set; }
 
     void IComponent.Attach(RenderHandle renderHandle) => _handle = renderHandle;
 
@@ -39,7 +40,19 @@ internal sealed class OverviewPage : IComponent
         var ct = CancellationToken.None;
         _fetchedMetrics = await Storage.GetMetricsAsync(ct);
         _recentJobs = await Storage.GetJobsAsync(new JobFilter(), 1, 5, ct);
-        _queueMetrics = await Storage.GetQueueMetricsAsync(ct);
+        var rawQueueMetrics = await Storage.GetQueueMetricsAsync(ct);
+        if (Queues is { Count: > 0 })
+        {
+            var rawMap = rawQueueMetrics.ToDictionary(q => q.Queue, StringComparer.OrdinalIgnoreCase);
+            _queueMetrics = Queues.Select(qName => rawMap.TryGetValue(qName, out var qm)
+                ? qm
+                : new QueueMetrics { Queue = qName, Enqueued = 0, Processing = 0 }).ToList();
+        }
+        else
+        {
+            _queueMetrics = rawQueueMetrics;
+        }
+
         _activeServers = await JobStorage.GetActiveServersAsync(TimeSpan.FromMinutes(5), ct);
 
         var allRecurring = await RecurringStorage.GetRecurringJobsAsync(ct);

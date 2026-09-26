@@ -50,6 +50,13 @@ internal sealed class StandaloneDashboardHostedService : IHostedService
         builder.WebHost.SuppressStatusMessages(true);
         builder.WebHost.UseUrls(listenUrl);
 
+        var rootNexJobOptions = _rootProvider.GetRequiredService<NexJobOptions>();
+        if (_options.DisableWorkers)
+        {
+            rootNexJobOptions.Workers = 0;
+            _logger.LogInformation("Standalone dashboard running in dedicated ops host mode (workers disabled: Workers = 0).");
+        }
+
         // Re-use the IStorageProvider, IRuntimeSettingsStore and NexJobOptions
         // already registered in the parent host — single source of truth
         builder.Services.AddSingleton(
@@ -62,8 +69,7 @@ internal sealed class StandaloneDashboardHostedService : IHostedService
             _rootProvider.GetRequiredService<IDashboardStorage>());
         builder.Services.AddSingleton(
             _rootProvider.GetRequiredService<IJobControlService>());
-        builder.Services.AddSingleton(
-            _rootProvider.GetRequiredService<NexJobOptions>());
+        builder.Services.AddSingleton(rootNexJobOptions);
         builder.Services.AddSingleton(
             _rootProvider.GetRequiredService<NexJob.Configuration.IRuntimeSettingsStore>());
 
@@ -74,6 +80,7 @@ internal sealed class StandaloneDashboardHostedService : IHostedService
         _app.UseNexJobDashboard(_options.Path, opt =>
         {
             opt.Title = _options.Title;
+            opt.Queues = _options.Queues;
             // IDashboardAuthorizationHandler is not supported in standalone mode
             // Register auth middleware in a WebApplication host instead
         });

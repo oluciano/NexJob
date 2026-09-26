@@ -105,6 +105,12 @@ Deploy separate worker instances with different queue configurations:
 - Worker A: `["default", "emails"]` with 20 workers
 - Worker B: `["heavy-compute"]` with 5 workers
 
+### Multi-Service Architecture & Dedicated Ops Host
+
+In multi-service ecosystems sharing a database cluster:
+1. **Dedicated Ops Host:** Run a dedicated dashboard container with `DisableWorkers = true` so operational monitoring does not consume worker threads or take lock slots from backend workers.
+2. **Dashboard Queue Scoping:** Scope the UI via `options.Queues = ["serviceA-queue"]` so engineering teams only view jobs, metrics, and queues relevant to their bounded context.
+
 ---
 
 ## Monitoring
