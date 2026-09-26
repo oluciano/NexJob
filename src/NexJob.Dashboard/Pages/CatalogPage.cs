@@ -121,15 +121,13 @@ internal sealed class CatalogPage : IComponent
             }
             else
             {
-                var encodedJobType = HttpUtility.JavaScriptStringEncode(item.JobType);
-                var encodedShortName = HttpUtility.JavaScriptStringEncode(shortName);
-                var encodedQueue = HttpUtility.JavaScriptStringEncode(item.Queue);
-                var encodedInputType = HttpUtility.JavaScriptStringEncode(inputTypeName);
-                var encodedSample = HttpUtility.JavaScriptStringEncode(sampleJson);
-
                 triggerAction =
-                    $"<button type=\"button\" class=\"btn btn-primary btn-sm\" style=\"min-width:76px;justify-content:center\" " +
-                    $"onclick=\"openTriggerModal('{encodedJobType}', '{encodedShortName}', '{encodedQueue}', '{encodedInputType}', '{encodedSample}')\" " +
+                    $"<button type=\"button\" class=\"btn btn-primary btn-sm trigger-modal-btn\" style=\"min-width:76px;justify-content:center\" " +
+                    $"data-job-type=\"{HttpUtility.HtmlAttributeEncode(item.JobType)}\" " +
+                    $"data-short-name=\"{HttpUtility.HtmlAttributeEncode(shortName)}\" " +
+                    $"data-queue=\"{HttpUtility.HtmlAttributeEncode(item.Queue)}\" " +
+                    $"data-input-type=\"{HttpUtility.HtmlAttributeEncode(inputTypeName)}\" " +
+                    $"data-sample-json=\"{HttpUtility.HtmlAttributeEncode(sampleJson)}\" " +
                     "title=\"Trigger execution with custom input payload (IJob&lt;T&gt;)\">Trigger</button>";
             }
 
@@ -160,7 +158,7 @@ internal sealed class CatalogPage : IComponent
         }));
 
         var modalHtml =
-            """
+            $$"""
             <style>
                 #triggerModal{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);margin:0}
                 #triggerModal::backdrop{background:rgba(0,0,0,.65)}
@@ -193,33 +191,49 @@ internal sealed class CatalogPage : IComponent
                     </div>
                 </form>
             </dialog>
-            """;
-
-        var scriptHtml =
-            $$"""
             <script>
-                var defaultSampleJson = '{}';
-                function openTriggerModal(jobType, shortName, queue, inputType, sampleJson) {
-                    var modal = document.getElementById('triggerModal');
-                    var form = document.getElementById('triggerModalForm');
-                    var title = document.getElementById('triggerModalTitle');
-                    var queueInput = document.getElementById('triggerModalQueue');
-                    var payloadInput = document.getElementById('triggerModalPayload');
-                    var inputTypeSpan = document.getElementById('triggerModalInputType');
+                (function() {
+                    var defaultSampleJson = '{}';
 
-                    defaultSampleJson = sampleJson;
-                    form.action = '{{PathPrefix}}/catalog/' + encodeURIComponent(jobType) + '/trigger{{clusterQuery}}';
-                    title.textContent = 'Trigger ' + shortName;
-                    queueInput.value = queue;
-                    payloadInput.value = sampleJson;
-                    inputTypeSpan.textContent = inputType;
+                    document.addEventListener('click', function(e) {
+                        var btn = e.target ? e.target.closest('.trigger-modal-btn') : null;
+                        if (!btn) return;
 
-                    modal.showModal();
-                }
+                        var jobType = btn.getAttribute('data-job-type') || '';
+                        var shortName = btn.getAttribute('data-short-name') || '';
+                        var queue = btn.getAttribute('data-queue') || '';
+                        var inputType = btn.getAttribute('data-input-type') || 'JSON';
+                        var sampleJson = btn.getAttribute('data-sample-json') || '{}';
 
-                document.getElementById('triggerModalResetBtn').addEventListener('click', function() {
-                    document.getElementById('triggerModalPayload').value = defaultSampleJson;
-                });
+                        var modal = document.getElementById('triggerModal');
+                        var form = document.getElementById('triggerModalForm');
+                        var title = document.getElementById('triggerModalTitle');
+                        var queueInput = document.getElementById('triggerModalQueue');
+                        var payloadInput = document.getElementById('triggerModalPayload');
+                        var inputTypeSpan = document.getElementById('triggerModalInputType');
+
+                        defaultSampleJson = sampleJson;
+                        form.action = '{{PathPrefix}}/catalog/' + encodeURIComponent(jobType) + '/trigger{{clusterQuery}}';
+                        title.textContent = 'Trigger ' + shortName;
+                        queueInput.value = queue;
+                        payloadInput.value = sampleJson;
+                        inputTypeSpan.textContent = inputType;
+
+                        if (typeof modal.showModal === 'function') {
+                            modal.showModal();
+                        } else {
+                            modal.style.display = 'block';
+                        }
+                    });
+
+                    var resetBtn = document.getElementById('triggerModalResetBtn');
+                    if (resetBtn) {
+                        resetBtn.addEventListener('click', function() {
+                            var payloadInput = document.getElementById('triggerModalPayload');
+                            if (payloadInput) payloadInput.value = defaultSampleJson;
+                        });
+                    }
+                })();
             </script>
             """;
 
@@ -248,9 +262,8 @@ internal sealed class CatalogPage : IComponent
             "</table>" +
             "</div>" +
             "</div>" +
-            modalHtml +
-            scriptHtml +
-            "</div>";
+            "</div>" +
+            modalHtml;
 
         return HtmlShell.Wrap(Title, PathPrefix, "catalog", body, Counters, clusters: Clusters, activeCluster: ActiveCluster);
     }

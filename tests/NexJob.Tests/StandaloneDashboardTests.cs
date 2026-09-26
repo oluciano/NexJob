@@ -849,7 +849,7 @@ public sealed class StandaloneDashboardTests
             var html = await res.Content.ReadAsStringAsync();
 
             html.Should().Contain("StubParameterizedJob");
-            html.Should().Contain("openTriggerModal");
+            html.Should().Contain("trigger-modal-btn");
             html.Should().Contain("triggerModal");
 
             // 2. Post to trigger parameterized job with custom inputJson payload
