@@ -185,6 +185,49 @@ The dashboard shows:
 
 ---
 
+## Multi-Service Architecture & Dashboard Queue Isolation
+
+When running multiple independent microservices against a shared database or cluster, each service typically owns a dedicated set of queues (e.g. `billing`, `inventory`, `notifications`).
+
+### Dedicated Ops Host Mode
+
+To avoid background processing on the ops dashboard host, configure `DisableWorkers = true`:
+
+```csharp
+builder.Services.AddNexJobStandaloneDashboard(options =>
+{
+    options.Port = 5005;
+    options.Path = "/dashboard";
+    options.Title = "Global Ops Dashboard";
+    options.DisableWorkers = true; // Sets Workers = 0 on this host
+});
+```
+
+### Queue Scoping (Isolation)
+
+You can scope any dashboard instance to a subset of queues via `options.Queues`. The dashboard will filter navigation counters, queue cards, and default job queries exclusively to those queues:
+
+```csharp
+// In ASP.NET Core:
+app.UseNexJobDashboard("/dashboard", options =>
+{
+    options.Title = "Billing Service Dashboard";
+    options.Queues = ["billing", "invoices"];
+});
+
+// In Standalone Dashboard:
+builder.Services.AddNexJobStandaloneDashboard(options =>
+{
+    options.Title = "Inventory Ops";
+    options.Queues = ["inventory", "warehouse"];
+    options.DisableWorkers = true;
+});
+```
+
+When scoped to a single queue, the `/jobs` page automatically defaults its filter to that queue.
+
+---
+
 ## Next Steps
 
 - [Configuration Reference](11-Configuration-Reference.md) — Dashboard options

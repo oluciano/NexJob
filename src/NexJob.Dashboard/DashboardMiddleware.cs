@@ -591,8 +591,15 @@ public sealed class DashboardMiddleware
         var queues = await dashboardStorage.GetQueueMetricsAsync(context.RequestAborted).ConfigureAwait(false);
         var nexJobOptions = context.RequestServices.GetRequiredService<NexJobOptions>();
 
-        var activeQueues = queues.Count(q => q.Processing > 0);
-        var totalQueues = nexJobOptions.Queues.Count;
+        // Filter queues when options.Queues is specified (queue isolation mode)
+        var scopedQueues = _options.Queues is { Count: > 0 }
+            ? queues.Where(q => _options.Queues.Contains(q.Queue, StringComparer.OrdinalIgnoreCase)).ToList()
+            : queues;
+
+        var activeQueues = scopedQueues.Count(q => q.Processing > 0);
+        var totalQueues = _options.Queues is { Count: > 0 }
+            ? _options.Queues.Count
+            : nexJobOptions.Queues.Count;
 
         var listenerRegistry = context.RequestServices.GetService<IListenerRegistry>();
         var allListeners = listenerRegistry?.GetAll() ?? Array.Empty<ListenerSnapshot>();
@@ -630,6 +637,7 @@ public sealed class DashboardMiddleware
                 ["Title"] = _options.Title,
                 ["Counters"] = counters,
                 ["Metrics"] = metrics,
+                ["Queues"] = _options.Queues,
             });
             return await RenderAsync<OverviewPage>(renderer, parameters).ConfigureAwait(false);
         }
@@ -645,6 +653,7 @@ public sealed class DashboardMiddleware
                 ["Counters"] = counters,
                 ["Options"] = nexJobOptions,
                 ["RuntimeStore"] = runtimeStore,
+                ["Queues"] = _options.Queues,
             });
             return await RenderAsync<QueuesPage>(renderer, parameters).ConfigureAwait(false);
         }
@@ -684,6 +693,11 @@ public sealed class DashboardMiddleware
             }
 
             var queue = query.TryGetValue("queue", out var qu) && !string.IsNullOrWhiteSpace(qu) ? (string?)qu : null;
+            if (queue is null && _options.Queues is { Count: 1 })
+            {
+                queue = _options.Queues[0];
+            }
+
             var period = query.TryGetValue("period", out var pr) && !string.IsNullOrWhiteSpace(pr) ? (string?)pr : null;
             var tag = query.TryGetValue("tag", out var tg) && !string.IsNullOrWhiteSpace(tg) ? (string?)tg : null;
 
@@ -715,6 +729,7 @@ public sealed class DashboardMiddleware
                 ["Period"] = period,
                 ["Page"] = page,
                 ["Counters"] = counters,
+                ["Queues"] = _options.Queues,
             });
             return await RenderAsync<JobsPage>(renderer, parameters).ConfigureAwait(false);
         }
@@ -784,6 +799,7 @@ public sealed class DashboardMiddleware
                 ["PathPrefix"] = _pathPrefix,
                 ["Title"] = _options.Title,
                 ["Counters"] = counters,
+                ["Queues"] = _options.Queues,
             });
             return await RenderAsync<FailedPage>(renderer, parameters).ConfigureAwait(false);
         }

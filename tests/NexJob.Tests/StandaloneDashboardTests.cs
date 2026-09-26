@@ -271,6 +271,197 @@ public sealed class StandaloneDashboardTests
         html.Should().Contain("Worker Nodes");
     }
 
+    [Fact]
+    public async Task StandaloneDashboard_WithDisableWorkers_SetsWorkersToZero()
+    {
+        // N1 (Positive): DisableWorkers = true sets root NexJobOptions.Workers to 0 for dedicated ops host
+        var port = GetFreeTcpPort();
+        NexJobOptions? capturedOptions = null;
+
+        using var host = Host.CreateDefaultBuilder()
+            .ConfigureServices(services =>
+            {
+                services.AddNexJob(opt =>
+                {
+                    opt.Workers = 10;
+                });
+                services.AddNexJobStandaloneDashboard(options =>
+                {
+                    options.Port = port;
+                    options.Path = "/dashboard";
+                    options.LocalhostOnly = true;
+                    options.DisableWorkers = true;
+                });
+            })
+            .Build();
+
+        capturedOptions = host.Services.GetRequiredService<NexJobOptions>();
+
+        try
+        {
+            await host.StartAsync();
+
+            capturedOptions.Workers.Should().Be(0);
+
+            using var client = new HttpClient
+            {
+                BaseAddress = new Uri($"http://localhost:{port}"),
+                Timeout = TimeSpan.FromSeconds(5),
+            };
+
+            var res = await client.GetAsync("/dashboard");
+            res.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+        finally
+        {
+            await host.StopAsync();
+        }
+    }
+
+    [Fact]
+    public async Task StandaloneDashboard_WithQueueScoping_ScopesQueuesAndNavCounters()
+    {
+        // N1 (Positive): When Queues is configured, QueuesPage and nav counters reflect scoped queues
+        var port = GetFreeTcpPort();
+
+        using var host = Host.CreateDefaultBuilder()
+            .ConfigureServices(services =>
+            {
+                services.AddNexJob(opt =>
+                {
+                    opt.Queues = ["payments", "reports", "emails"];
+                });
+                services.AddNexJobStandaloneDashboard(options =>
+                {
+                    options.Port = port;
+                    options.Path = "/dashboard";
+                    options.LocalhostOnly = true;
+                    options.Queues = ["payments"];
+                });
+            })
+            .Build();
+
+        try
+        {
+            await host.StartAsync();
+
+            using var client = new HttpClient
+            {
+                BaseAddress = new Uri($"http://localhost:{port}"),
+                Timeout = TimeSpan.FromSeconds(5),
+            };
+
+            // Verify navigation counters: total queues in counter is 1, not 3
+            var overviewRes = await client.GetAsync("/dashboard");
+            overviewRes.StatusCode.Should().Be(HttpStatusCode.OK);
+            var overviewHtml = await overviewRes.Content.ReadAsStringAsync();
+            overviewHtml.Should().Contain("/1<"); // Queues counter: 0/1
+
+            // Verify Queues page: shows payments queue
+            var queuesRes = await client.GetAsync("/dashboard/queues");
+            queuesRes.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            // Verify default queue filter on Jobs page: defaults to single scoped queue
+            var jobsRes = await client.GetAsync("/dashboard/jobs");
+            jobsRes.StatusCode.Should().Be(HttpStatusCode.OK);
+            var jobsHtml = await jobsRes.Content.ReadAsStringAsync();
+            jobsHtml.Should().Contain("value=\"payments\" selected");
+        }
+        finally
+        {
+            await host.StopAsync();
+        }
+    }
+
+    [Fact]
+    public async Task StandaloneDashboard_WithoutScoping_PreservesGlobalQueues()
+    {
+        // N2 (Negative): Without Queues scoping (null), all cluster queues are preserved in counters and pages
+        var port = GetFreeTcpPort();
+
+        using var host = Host.CreateDefaultBuilder()
+            .ConfigureServices(services =>
+            {
+                services.AddNexJob(opt =>
+                {
+                    opt.Queues = ["orders", "billing"];
+                });
+                services.AddNexJobStandaloneDashboard(options =>
+                {
+                    options.Port = port;
+                    options.Path = "/dashboard";
+                    options.LocalhostOnly = true;
+                    options.Queues = null;
+                });
+            })
+            .Build();
+
+        try
+        {
+            await host.StartAsync();
+
+            using var client = new HttpClient
+            {
+                BaseAddress = new Uri($"http://localhost:{port}"),
+                Timeout = TimeSpan.FromSeconds(5),
+            };
+
+            var res = await client.GetAsync("/dashboard");
+            res.StatusCode.Should().Be(HttpStatusCode.OK);
+            var html = await res.Content.ReadAsStringAsync();
+            html.Should().Contain("/2<"); // Queues counter: 0/2
+        }
+        finally
+        {
+            await host.StopAsync();
+        }
+    }
+
+    [Fact]
+    public async Task StandaloneDashboard_WithEmptyQueuesList_HandlesGracefully()
+    {
+        // N3 (Boundary): Empty Queues list falls back gracefully without exception
+        var port = GetFreeTcpPort();
+
+        using var host = Host.CreateDefaultBuilder()
+            .ConfigureServices(services =>
+            {
+                services.AddNexJob(opt =>
+                {
+                    opt.Queues = ["alpha", "beta"];
+                });
+                services.AddNexJobStandaloneDashboard(options =>
+                {
+                    options.Port = port;
+                    options.Path = "/dashboard";
+                    options.LocalhostOnly = true;
+                    options.Queues = Array.Empty<string>();
+                });
+            })
+            .Build();
+
+        try
+        {
+            await host.StartAsync();
+
+            using var client = new HttpClient
+            {
+                BaseAddress = new Uri($"http://localhost:{port}"),
+                Timeout = TimeSpan.FromSeconds(5),
+            };
+
+            var res = await client.GetAsync("/dashboard");
+            res.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            var jobsRes = await client.GetAsync("/dashboard/jobs");
+            jobsRes.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+        finally
+        {
+            await host.StopAsync();
+        }
+    }
+
     private static int GetFreeTcpPort()
     {
         var listener = new TcpListener(IPAddress.Loopback, 0);

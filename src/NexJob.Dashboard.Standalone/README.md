@@ -81,10 +81,30 @@ builder.Services.AddNexJobStandaloneDashboard(builder.Configuration);
 | `Title` | `string` | `"NexJob"` | Title displayed in the browser tab and navigation bar |
 | `LocalhostOnly` | `bool` | `false` | When `true`, binds strictly to `127.0.0.1` / `localhost` |
 | `PollIntervalSeconds` | `int` | `3` | SSE live stream update interval in seconds |
+| `DisableWorkers` | `bool` | `false` | When `true`, sets `NexJobOptions.Workers = 0` to run as a dedicated ops/monitoring container |
+| `Queues` | `IReadOnlyList<string>?` | `null` | Optional list of queues to scope the dashboard view, nav counters, and default job listings |
+
+---
+
+## Dedicated Ops Host Mode (Dashboard Only)
+
+In high-concurrency environments or multi-service clusters, you can run a dedicated lightweight container strictly for ops/monitoring without taking worker execution slots from processing nodes:
+
+```csharp
+builder.Services.AddNexJobStandaloneDashboard(options =>
+{
+    options.Port = 5005;
+    options.Path = "/dashboard";
+    options.Title = "Ops Control Center";
+    options.DisableWorkers = true; // Sets Workers = 0 on this host
+    options.Queues = ["payments", "billing"]; // Scopes UI exclusively to these queues
+});
+```
 
 ---
 
 ## Security Best Practices
 
 - **Production Workers:** Set `LocalhostOnly = true` to restrict access strictly to the local host machine, or bind to an internal network interface.
+- **Dedicated Ops Host:** Set `DisableWorkers = true` so the monitoring container does not consume processing capacity or compete for job dispatching.
 - **Reverse Proxy:** Place an authenticated reverse proxy (Nginx, Traefik, AWS ALB) in front of the dashboard port when accessing across internal networks.

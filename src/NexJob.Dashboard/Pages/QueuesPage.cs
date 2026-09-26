@@ -17,6 +17,7 @@ internal sealed class QueuesPage : IComponent
     [Parameter] public NavCounters? Counters { get; set; }
     [Parameter] public NexJobOptions Options { get; set; } = default!;
     [Parameter] public IRuntimeSettingsStore? RuntimeStore { get; set; }
+    [Parameter] public IReadOnlyList<string>? Queues { get; set; }
 
     void IComponent.Attach(RenderHandle renderHandle) => _handle = renderHandle;
 
@@ -26,7 +27,20 @@ internal sealed class QueuesPage : IComponent
 
         // NOTE (Blazor Dispatcher Invariant):
         // Do NOT use .ConfigureAwait(false) here. Rendering via _handle.Render requires execution on the Dispatcher.
-        var queues = await Storage.GetQueueMetricsAsync();
+        var rawQueues = await Storage.GetQueueMetricsAsync();
+        IReadOnlyList<QueueMetrics> queues;
+        if (Queues is { Count: > 0 })
+        {
+            var rawMap = rawQueues.ToDictionary(q => q.Queue, StringComparer.OrdinalIgnoreCase);
+            queues = Queues.Select(qName => rawMap.TryGetValue(qName, out var qm)
+                ? qm
+                : new QueueMetrics { Queue = qName, Enqueued = 0, Processing = 0 }).ToList();
+        }
+        else
+        {
+            queues = rawQueues;
+        }
+
         var processingJobs = await Storage.GetJobsAsync(
             filter: new JobFilter { Status = JobStatus.Processing },
             page: 1,

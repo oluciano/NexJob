@@ -17,6 +17,7 @@ internal sealed class FailedPage : IComponent
     [Parameter] public JobStatus? StatusFilter { get; set; }
     [Parameter] public string? Search { get; set; }
     [Parameter] public int Page { get; set; } = 1;
+    [Parameter] public IReadOnlyList<string>? Queues { get; set; }
 
     void IComponent.Attach(RenderHandle renderHandle) => _handle = renderHandle;
 
@@ -27,7 +28,19 @@ internal sealed class FailedPage : IComponent
         // NOTE (Blazor Dispatcher Invariant):
         // Do NOT use .ConfigureAwait(false) here. Rendering via _handle.Render requires execution on the Dispatcher.
         // Fetch queues for the filter dropdown
-        var queues = await Storage.GetQueueMetricsAsync(CancellationToken.None);
+        var rawQueues = await Storage.GetQueueMetricsAsync(CancellationToken.None);
+        IReadOnlyList<QueueMetrics> queues;
+        if (Queues is { Count: > 0 })
+        {
+            var rawMap = rawQueues.ToDictionary(q => q.Queue, StringComparer.OrdinalIgnoreCase);
+            queues = Queues.Select(qName => rawMap.TryGetValue(qName, out var qm)
+                ? qm
+                : new QueueMetrics { Queue = qName, Enqueued = 0, Processing = 0 }).ToList();
+        }
+        else
+        {
+            queues = rawQueues;
+        }
 
         // Default to Failed if no status specified; allow Expired as override
         var status = StatusFilter ?? JobStatus.Failed;
