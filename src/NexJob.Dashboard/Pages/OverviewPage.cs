@@ -26,6 +26,8 @@ internal sealed class OverviewPage : IComponent
     [Parameter] public NavCounters? Counters { get; set; }
     [Parameter] public JobMetrics? Metrics { get; set; }
     [Parameter] public IReadOnlyList<string>? Queues { get; set; }
+    [Parameter] public IReadOnlyList<DashboardCluster>? Clusters { get; set; }
+    [Parameter] public DashboardCluster? ActiveCluster { get; set; }
 
     void IComponent.Attach(RenderHandle renderHandle) => _handle = renderHandle;
 
@@ -336,6 +338,6 @@ internal sealed class OverviewPage : IComponent
             $"}})();" +
             $"}})();</script>";
 
-        return HtmlShell.Wrap(Title, PathPrefix, "overview", body, Counters, m);
+        return HtmlShell.Wrap(Title, PathPrefix, "overview", body, Counters, m, Clusters, ActiveCluster);
     }
 }

@@ -430,7 +430,15 @@ internal static class HtmlShell
     private static readonly string DashboardVersion = GetAssemblyVersion(typeof(HtmlShell).Assembly);
 
     /// <summary>Wraps the content in the standard HTML shell.</summary>
-    internal static string Wrap(string title, string pathPrefix, string activeRoute, string body, NavCounters? counters = null, JobMetrics? metrics = null) =>
+    internal static string Wrap(
+        string title,
+        string pathPrefix,
+        string activeRoute,
+        string body,
+        NavCounters? counters = null,
+        JobMetrics? metrics = null,
+        IReadOnlyList<DashboardCluster>? clusters = null,
+        DashboardCluster? activeCluster = null) =>
         $$"""
         <!DOCTYPE html>
         <html lang="en" data-theme="blue-theme">
@@ -457,6 +465,7 @@ internal static class HtmlShell
                 </div>
             </div>
             <div class="header-right">
+                {{ClusterSwitcher(clusters, activeCluster)}}
                 {{HealthBadge(metrics)}}
                 <button type="button" class="header-btn theme-customizer-btn" onclick="nexJobToggleDrawer(true)" title="Theme Customizer">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.563-2.512 5.563-5.563C22 6.5 17.5 2 12 2z"/></svg>
@@ -643,6 +652,17 @@ internal static class HtmlShell
 
             window.nexJobClearSelection = function() { document.querySelectorAll('.job-check:checked').forEach(c => c.checked = false); nexJobUpdateSelection(); };
             
+            window.nexJobSwitchCluster = function(select) {
+                var clusterId = select.value;
+                var url = new URL(window.location.href);
+                if (clusterId) {
+                    url.searchParams.set('cluster', clusterId);
+                } else {
+                    url.searchParams.delete('cluster');
+                }
+                window.location.href = url.toString();
+            };
+
             window.nexJobBulkAction = async function(action) {
                 var ids = Array.from(document.querySelectorAll('.job-check:checked')).map(c => c.value);
                 if (ids.length === 0) return;
@@ -715,5 +735,28 @@ internal static class HtmlShell
         }
 
         return assembly.GetName().Version?.ToString(3) ?? "5.3.0";
+    }
+
+    private static string ClusterSwitcher(IReadOnlyList<DashboardCluster>? clusters, DashboardCluster? activeCluster)
+    {
+        if (clusters is null || clusters.Count <= 1)
+        {
+            return string.Empty;
+        }
+
+        var sb = new System.Text.StringBuilder();
+        sb.Append("<div class=\"cluster-switcher\" style=\"display:flex;align-items:center;gap:6px;margin-right:12px\">");
+        sb.Append("<svg width=\"15\" height=\"15\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" style=\"color:var(--text-tertiary)\"><ellipse cx=\"12\" cy=\"5\" rx=\"9\" ry=\"3\"></ellipse><path d=\"M21 12c0 1.66-4 3-9 3s-9-1.34-9-3\"></path><path d=\"M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5\"></path></svg>");
+        sb.Append("<select onchange=\"nexJobSwitchCluster(this)\" title=\"Switch Cluster\" style=\"font-size:12px;padding:4px 8px;font-weight:600;border-radius:6px;background:var(--bg-secondary);border:1px solid var(--border);color:var(--text-primary);cursor:pointer\">");
+
+        foreach (var c in clusters)
+        {
+            var isSelected = activeCluster is not null && string.Equals(c.Id, activeCluster.Id, StringComparison.OrdinalIgnoreCase);
+            var selectedAttr = isSelected ? " selected" : string.Empty;
+            sb.Append($"<option value=\"{System.Web.HttpUtility.HtmlAttributeEncode(c.Id)}\"{selectedAttr}>Cluster: {System.Web.HttpUtility.HtmlEncode(c.Name)}</option>");
+        }
+
+        sb.Append("</select></div>");
+        return sb.ToString();
     }
 }

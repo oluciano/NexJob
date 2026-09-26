@@ -15,6 +15,8 @@ internal sealed class ServersPage : IComponent
     [Parameter] public string PathPrefix { get; set; } = "/dashboard";
     [Parameter] public string Title { get; set; } = "NexJob";
     [Parameter] public NavCounters? Counters { get; set; }
+    [Parameter] public IReadOnlyList<DashboardCluster>? Clusters { get; set; }
+    [Parameter] public DashboardCluster? ActiveCluster { get; set; }
 
     void IComponent.Attach(RenderHandle renderHandle) => _handle = renderHandle;
 
@@ -37,7 +39,7 @@ internal sealed class ServersPage : IComponent
                 HtmlFragments.Breadcrumbs(PathPrefix, ("Servers", null)) +
                 HtmlFragments.PageHeader("Servers", "Active worker nodes across the cluster") +
                 HtmlFragments.EmptyState("2 2 20 8 2 2 2 14 20 8 2 2 6 6 6.01 6 6 18 6.01 18", "No active servers running.");
-            return HtmlShell.Wrap(Title, PathPrefix, "servers", emptyBody, Counters);
+            return HtmlShell.Wrap(Title, PathPrefix, "servers", emptyBody, Counters, clusters: Clusters, activeCluster: ActiveCluster);
         }
 
         var tableBody = string.Join(string.Empty, servers.Select(s =>
@@ -106,6 +108,6 @@ internal sealed class ServersPage : IComponent
             "</div>" +
             "</div>";
 
-        return HtmlShell.Wrap(Title, PathPrefix, "servers", body, Counters);
+        return HtmlShell.Wrap(Title, PathPrefix, "servers", body, Counters, clusters: Clusters, activeCluster: ActiveCluster);
     }
 }

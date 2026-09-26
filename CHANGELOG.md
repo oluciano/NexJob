@@ -16,6 +16,14 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`NexJob.Dashboard` & `NexJob.Dashboard.Standalone` — Multi-Cluster Dashboard Federation (Issue #200)**:
+  - Added `DashboardCluster` descriptor encapsulating cluster identity (`Id`, `Name`), isolated storage contracts (`DashboardStorage`, `JobStorage`, `RecurringStorage`, `ControlService`, `RuntimeStore`), cluster-scoped `Queues`, and `IsReadOnly` safety mode.
+  - Added `Clusters` collection and fluent `AddCluster(...)` API to `DashboardOptions` and `StandaloneDashboardOptions`.
+  - Added multi-cluster switcher dropdown in Maxton header when `Clusters.Count > 1`, with active cluster selection controlled via `?cluster={id}` and seamless URL parameter preservation across redirects and actions.
+  - Isolated SSE metrics stream and IMemoryCache keys by cluster (`$"nexjob:dashboard:metrics:{clusterId}"`), preventing cross-cluster cache collision.
+  - Enforced `IsReadOnly` mutation guard returning `403 Forbidden` on POST actions for read-only clusters.
+  - Added 3N testing matrix (Positive, Negative, Boundary) in `tests/NexJob.Tests/StandaloneDashboardTests.cs`.
+
 - **`NexJob.Dashboard` & `NexJob.Dashboard.Standalone` — Dedicated Ops Host Mode and Queue Scoping (Issue #199)**:
   - Added `DisableWorkers` (bool, default `false`) to `StandaloneDashboardOptions`. When set to `true`, `NexJobOptions.Workers` is configured to `0`, allowing a headless worker to function as a dedicated monitoring/ops host without taking processing slots from background workers.
   - Added `Queues` (`IReadOnlyList<string>?`) to `DashboardOptions` and `StandaloneDashboardOptions` for queue scoping and isolation.

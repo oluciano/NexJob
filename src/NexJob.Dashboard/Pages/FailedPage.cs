@@ -18,6 +18,8 @@ internal sealed class FailedPage : IComponent
     [Parameter] public string? Search { get; set; }
     [Parameter] public int Page { get; set; } = 1;
     [Parameter] public IReadOnlyList<string>? Queues { get; set; }
+    [Parameter] public IReadOnlyList<DashboardCluster>? Clusters { get; set; }
+    [Parameter] public DashboardCluster? ActiveCluster { get; set; }
 
     void IComponent.Attach(RenderHandle renderHandle) => _handle = renderHandle;
 
@@ -83,7 +85,7 @@ internal sealed class FailedPage : IComponent
                 HtmlFragments.FilterBar(PathPrefix, currentStatus, Search, null, null, queues) +
                 HtmlFragments.EmptyState("12 22s10-9 10-9-9-9-9 9 10 9z", emptyMsg + " — " + emptySub) +
                 "</div>";
-            return HtmlShell.Wrap(Title, PathPrefix, "failed", emptyBody, Counters);
+            return HtmlShell.Wrap(Title, PathPrefix, "failed", emptyBody, Counters, clusters: Clusters, activeCluster: ActiveCluster);
         }
 
         var headerActions =
@@ -113,6 +115,6 @@ internal sealed class FailedPage : IComponent
             $"</div>" +
             "</div>";
 
-        return HtmlShell.Wrap(Title, PathPrefix, "failed", body, Counters);
+        return HtmlShell.Wrap(Title, PathPrefix, "failed", body, Counters, clusters: Clusters, activeCluster: ActiveCluster);
     }
 }

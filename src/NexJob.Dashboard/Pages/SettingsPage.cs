@@ -39,6 +39,14 @@ internal sealed class SettingsPage : ComponentBase
     [Parameter]
     public string Title { get; set; } = "NexJob";
 
+    /// <summary>Optional federated clusters list.</summary>
+    [Parameter]
+    public IReadOnlyList<DashboardCluster>? Clusters { get; set; }
+
+    /// <summary>Currently active cluster.</summary>
+    [Parameter]
+    public DashboardCluster? ActiveCluster { get; set; }
+
     /// <inheritdoc/>
     protected override void BuildRenderTree(RenderTreeBuilder builder)
     {
@@ -177,7 +185,7 @@ internal sealed class SettingsPage : ComponentBase
                   "</form></div>"
                 : string.Empty);
 
-        builder.AddMarkupContent(0, HtmlShell.Wrap(Title, PathPrefix, "settings", body, Counters));
+        builder.AddMarkupContent(0, HtmlShell.Wrap(Title, PathPrefix, "settings", body, Counters, clusters: Clusters, activeCluster: ActiveCluster));
     }
 
     private string BuildRetentionRow(string label, string fieldName, int value, double baseline, params (string Name, int Val)[] otherFields)

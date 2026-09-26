@@ -17,6 +17,8 @@ internal sealed class JobDetailPage : IComponent
     [Parameter] public NavCounters? Counters { get; set; }
     [Parameter] public JobId JobId { get; set; }
     [Parameter] public bool IsReadOnly { get; set; }
+    [Parameter] public IReadOnlyList<DashboardCluster>? Clusters { get; set; }
+    [Parameter] public DashboardCluster? ActiveCluster { get; set; }
 
     void IComponent.Attach(RenderHandle renderHandle) => _handle = renderHandle;
 
@@ -38,7 +40,7 @@ internal sealed class JobDetailPage : IComponent
                 HtmlFragments.Breadcrumbs(PathPrefix, ("Jobs", $"{PathPrefix}/jobs"), ("Not Found", null)) +
                 HtmlFragments.EmptyState("0 0 24 24", "Job not found") +
                 $"<div style=\"text-align:center;margin-top:12px\"><a href=\"{PathPrefix}/jobs\" class=\"btn btn-ghost btn-sm\">← Back to Jobs</a></div>";
-            return HtmlShell.Wrap(Title, PathPrefix, "jobs", notFoundHtml, Counters);
+            return HtmlShell.Wrap(Title, PathPrefix, "jobs", notFoundHtml, Counters, clusters: Clusters, activeCluster: ActiveCluster);
         }
 
         var now = DateTimeOffset.UtcNow;
@@ -243,6 +245,6 @@ internal sealed class JobDetailPage : IComponent
             logsSection +
             sseScript;
 
-        return HtmlShell.Wrap(Title, PathPrefix, "jobs", body, Counters);
+        return HtmlShell.Wrap(Title, PathPrefix, "jobs", body, Counters, clusters: Clusters, activeCluster: ActiveCluster);
     }
 }

@@ -18,6 +18,8 @@ internal sealed class QueuesPage : IComponent
     [Parameter] public NexJobOptions Options { get; set; } = default!;
     [Parameter] public IRuntimeSettingsStore? RuntimeStore { get; set; }
     [Parameter] public IReadOnlyList<string>? Queues { get; set; }
+    [Parameter] public IReadOnlyList<DashboardCluster>? Clusters { get; set; }
+    [Parameter] public DashboardCluster? ActiveCluster { get; set; }
 
     void IComponent.Attach(RenderHandle renderHandle) => _handle = renderHandle;
 
@@ -87,7 +89,7 @@ internal sealed class QueuesPage : IComponent
                 HtmlFragments.Breadcrumbs(PathPrefix, ("Queues", null)) +
                 HtmlFragments.PageHeader("Queues", "Active processing queues") +
                 HtmlFragments.EmptyState("0 0 24 24", "No active queues.");
-            return HtmlShell.Wrap(Title, PathPrefix, "queues", emptyBody, Counters);
+            return HtmlShell.Wrap(Title, PathPrefix, "queues", emptyBody, Counters, clusters: Clusters, activeCluster: ActiveCluster);
         }
 
         // Sort queues by activity (Processing > Enqueued > Name)
@@ -115,7 +117,7 @@ internal sealed class QueuesPage : IComponent
             heatmap +
             "</div>";
 
-        return HtmlShell.Wrap(Title, PathPrefix, "queues", body, Counters);
+        return HtmlShell.Wrap(Title, PathPrefix, "queues", body, Counters, clusters: Clusters, activeCluster: ActiveCluster);
     }
 
     private string BuildWorkerHeatmap(IReadOnlyList<JobRecord> processingJobs)

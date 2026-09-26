@@ -27,6 +27,12 @@ internal sealed class RecurringJobDetailPage : IComponent
     /// <summary>Gets or sets shared navigation counters.</summary>
     [Parameter] public NavCounters? Counters { get; set; }
 
+    /// <summary>Gets or sets optional federated clusters list.</summary>
+    [Parameter] public IReadOnlyList<DashboardCluster>? Clusters { get; set; }
+
+    /// <summary>Gets or sets currently active cluster.</summary>
+    [Parameter] public DashboardCluster? ActiveCluster { get; set; }
+
     void IComponent.Attach(RenderHandle renderHandle) => _handle = renderHandle;
 
     Task IComponent.SetParametersAsync(ParameterView parameters)
@@ -265,7 +271,7 @@ internal sealed class RecurringJobDetailPage : IComponent
             $"</div>" +
             modalHtml;
 
-        return HtmlShell.Wrap(Title, PathPrefix, "recurring", body, Counters);
+        return HtmlShell.Wrap(Title, PathPrefix, "recurring", body, Counters, clusters: Clusters, activeCluster: ActiveCluster);
     }
 
     private string BuildPagination(PagedResult<JobRecord> result, string encodedIdUrl)

@@ -81,6 +81,11 @@ internal sealed class StandaloneDashboardHostedService : IHostedService
         {
             opt.Title = _options.Title;
             opt.Queues = _options.Queues;
+            foreach (var cluster in _options.Clusters)
+            {
+                opt.AddCluster(cluster);
+            }
+
             // IDashboardAuthorizationHandler is not supported in standalone mode
             // Register auth middleware in a WebApplication host instead
         });

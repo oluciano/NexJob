@@ -49,6 +49,7 @@ app.Run();
 
 ## Features
 
+- **Multi-Cluster Dashboard Federation:** Seamlessly aggregate multiple isolated NexJob clusters (regional, multi-tenant, or staging vs production) in a single dashboard with live cluster switching dropdown (`?cluster={id}`), cluster-isolated SSE caching, and read-only cluster protection.
 - **Enterprise Maxton Design System:** Complete visual overhaul inspired by the modern Maxton UI layout, featuring an executive 64px Top Header with responsive sidebar toggle (☰), global keyboard search (`Ctrl + K`), live cluster health status badge (`HEALTHY`, `DEGRADED`, `INCIDENT`), and docs shortcuts.
 - **Multi-Theme Switcher (5 Themes):** Instant 1-click theme customizer offcanvas drawer supporting `Blue Theme` (Midnight - default), `Dark`, `Light`, `Semi-Dark` (dark sidebar/header with light content), and `Bordered` (clean 1px high-contrast borders without heavy shadows), fully persisted in `localStorage`.
 - **Cluster Pipeline Topology Map:** Native SVG & animated CSS flowchart connecting Ingress & Triggers ➔ Queue Buffers ➔ Processing Workers with live activity pulse indicators.
@@ -62,6 +63,22 @@ app.Run();
 - **Worker Nodes & Heartbeats:** Live view of registered worker instances, process IDs, and health status.
 - **Read Replica Isolation:** Compatible with `UseDashboardReadReplica()` to ensure monitoring traffic does not impact primary database write performance.
 - **Zero External Dependencies:** 100% self-contained in native CSS and vanilla JS — zero external NPM, Webpack, or CDN dependencies.
+
+---
+
+## Multi-Cluster Federation
+
+Aggregate multiple clusters in a single dashboard instance:
+
+```csharp
+app.UseNexJobDashboard("/dashboard", options =>
+{
+    options.Title = "Global Ops Hub";
+    options.AddCluster(new DashboardCluster("us-east", "US-East Production", usEastStorage, isReadOnly: true));
+    options.AddCluster(new DashboardCluster("eu-west", "EU-West Production", euWestStorage, isReadOnly: true));
+    options.AddCluster(new DashboardCluster("staging", "Staging", stagingStorage, isReadOnly: false));
+});
+```
 
 ---
 
@@ -101,3 +118,5 @@ When authorization fails, the dashboard returns `401 Unauthorized` or `403 Forbi
 |---|---|---|---|
 | `Title` | `string` | `"NexJob"` | Title shown in the browser tab and sidebar header |
 | `MetricsCacheTtl` | `TimeSpan` | `3s` | Cache duration for dashboard metrics to prevent DB overload during SSE polling |
+| `Queues` | `IReadOnlyList<string>?` | `null` | Optional list of queues to scope the dashboard view, nav counters, and default job listings |
+| `Clusters` | `IReadOnlyList<DashboardCluster>` | `[]` | Registered federated clusters for multi-cluster operations |
