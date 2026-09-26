@@ -110,6 +110,7 @@ Deploy separate worker instances with different queue configurations:
 In multi-service ecosystems sharing a database cluster:
 1. **Dedicated Ops Host:** Run a dedicated dashboard container with `DisableWorkers = true` so operational monitoring does not consume worker threads or take lock slots from backend workers.
 2. **Dashboard Queue Scoping:** Scope the UI via `options.Queues = ["serviceA-queue"]` so engineering teams only view jobs, metrics, and queues relevant to their bounded context.
+3. **Foreign Job Safe Deferral:** While queue separation (`options.Queues`) is the recommended best practice, if workers encounter foreign job types, NexJob automatically rolls back attempt counts and defers the job via `options.ForeignJobRetryDelay` rather than failing or dead-lettering it.
 
 ---
 

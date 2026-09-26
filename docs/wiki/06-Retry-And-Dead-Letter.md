@@ -147,6 +147,30 @@ The `JobRecord` passed to dead-letter handlers contains:
 | Data validation error (bad input) | Dead-letter immediately — `[Retry(0)]` |
 | Business rule violation | Dead-letter — retry won't fix it |
 | Database deadlock | Retries with short delays (2-3 attempts) |
+| Foreign job type (worker lacks job assembly) | Safe deferral (resets attempt, defers without dead-lettering) |
+
+---
+
+## Multi-Service & Foreign Job Safe Deferral
+
+When multiple microservices or processes share the same database cluster or storage queue, a worker may dequeue a job whose CLR `JobType` or `InputType` belongs to another service and cannot be loaded in the current runtime.
+
+In earlier versions, this resulted in an unhandled type loading exception that consumed retry attempts and eventually poisoned the job into Dead-Letter.
+
+### How Safe Deferral Works:
+1. When `DefaultJobInvokerFactory` cannot resolve `JobType` or `InputType`, it raises a `ForeignJobTypeException`.
+2. `JobExecutor` intercepts this exception and treats it as a non-fatal, foreign job event:
+   - **Rolls back the attempt increment:** Restores `job.Attempts` so the owning service has its full attempt budget.
+   - **Defers the job:** Reschedules the job at `DateTimeOffset.UtcNow + options.ForeignJobRetryDelay` (default 5s) so the worker does not spin in a tight polling loop, giving the owning node an opportunity to pick it up.
+   - **Never Dead-Letters:** `IDeadLetterDispatcher` is never called for foreign jobs.
+
+```csharp
+builder.Services.AddNexJob(options =>
+{
+    // Deferral delay before foreign jobs become visible again for other workers
+    options.ForeignJobRetryDelay = TimeSpan.FromSeconds(5); // Default: 5s
+});
+```
 
 ---
 

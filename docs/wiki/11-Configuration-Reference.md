@@ -18,6 +18,9 @@ builder.Services.AddNexJob(options =>
     // Polling interval when no wake-up signal
     options.PollingInterval = TimeSpan.FromSeconds(15); // Default: 15s
 
+    // Deferral delay before foreign jobs become visible again for other workers
+    options.ForeignJobRetryDelay = TimeSpan.FromSeconds(5); // Default: 5s
+
     // Heartbeat interval (how often processing jobs update their heartbeat)
     options.HeartbeatInterval = TimeSpan.FromSeconds(30); // Default: 30s
 
