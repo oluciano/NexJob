@@ -15,16 +15,26 @@ Rather than requiring brittle manual test scripts, this skill uses a **Goal-Driv
 
 ---
 
-## When to Activate
+## Operational Dual Modes
 
-1. **Automatic Gate (`IF` changes touch dashboard):**
-   - Automatically invoked during **Phase 4.7** of `nexjob-task-cycle` whenever `git status` or `git diff develop...HEAD` modifies files inside `src/NexJob.Dashboard/` or `src/NexJob.Dashboard.Standalone/`.
-2. **On-Demand:**
-   - Any time the user says:
-     - *"rode o teste de chaos no dashboard"*
-     - *"simule um usuário/dev/SRE no dashboard"*
-     - *"valide a UX do dashboard"*
-     - *"tire screenshots das telas do dashboard"*
+The Chaos Gate operates in two distinct, complementary modes:
+
+### Mode 1: Daily Change-Driven Chaos Gate (`nexjob-task-cycle` - Phase 4.7)
+- **Trigger:** Any PR, bugfix, or feature modifying `src/NexJob.Dashboard*`.
+- **Strategy:** Cirúrgica e contextual.
+- **Workflow:**
+  1. Inspects the `git diff` of the specific change.
+  2. Generates dynamic 3N UI scenarios (Valid, Invalid, Boundary/Edge-case) targeting the affected components.
+  3. Seeds synthetic scenarios (e.g., job with checkpoint, stripped payload, circuit in error) only as demanded by the change.
+  4. Runs `chaos-runner.js` to assert immediate feedback and prevent frustration traps.
+
+### Mode 2: Release Full UI Regression Gate (`nexjob-release` - Phase 4)
+- **Trigger:** Official release preparation from `develop` to `main`.
+- **Strategy:** Broad, deterministic baseline.
+- **Workflow:**
+  1. Seeds the complete synthetic ecosystem (all states: enqueued, running, failed with stack traces, checkpoints, stripped payloads, orphan queues, and multi-viewport layouts).
+  2. Runs `full-regression.js` auditing all 14 dashboard routes, sorting algorithms, filter combinations, action links, and mobile/tablet layouts.
+  3. Enforces 0 HTTP 500 errors and 100% resistance to adversarial fuzzing before release packaging.
 
 ---
 
