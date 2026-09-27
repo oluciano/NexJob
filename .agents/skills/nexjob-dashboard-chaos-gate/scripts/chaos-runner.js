@@ -177,18 +177,16 @@ async function run() {
     };
 
     // Restore viewport
-    await page.setViewportSize({ width: 1280, height: 800 });
-
     // -------------------------------------------------------------
-    // 💥 IMPOSSIBLE / BOUNDARY ADVERSARIAL TESTS
+    // 💥 3N TESTING MATRIX SUMMARY (N1, N2, N3)
     // -------------------------------------------------------------
-    console.log('[💥 Impossible & Boundary Tests] Fuzzing query params, overflows, and dead ends...');
+    console.log('[💥 3N Testing Matrix Verification] Executing boundary fuzzing...');
 
     const adversarialUrls = [
-      { name: 'Negative & Massive Pagination', url: `${BASE_URL}/jobs?page=-999999&limit=999999999` },
-      { name: 'Malformed Status & Nonexistent Cluster', url: `${BASE_URL}/jobs?status=__SQL_INJECTION__&cluster=non_existent_cluster_99` },
-      { name: 'Extreme Unicode Search Query', url: `${BASE_URL}/catalog?search=🔥🔥🔥%20%3Cscript%3Ealert(1)%3C/script%3E` },
-      { name: 'Corrupted Job ID Format', url: `${BASE_URL}/jobs/corrupted-non-guid-job-id-xyz` }
+      { name: 'N3 Boundary: Negative & Massive Pagination', url: `${BASE_URL}/jobs?page=-999999&limit=999999999` },
+      { name: 'N2 Negative: Malformed Status & Nonexistent Cluster', url: `${BASE_URL}/jobs?status=__SQL_INJECTION__&cluster=non_existent_cluster_99` },
+      { name: 'N3 Boundary: Extreme Unicode Search Query', url: `${BASE_URL}/catalog?search=🔥🔥🔥%20%3Cscript%3Ealert(1)%3C/script%3E` },
+      { name: 'N2 Negative: Corrupted Job ID Format', url: `${BASE_URL}/jobs/corrupted-non-guid-job-id-xyz` }
     ];
 
     for (const testCase of adversarialUrls) {
@@ -204,6 +202,21 @@ async function run() {
         resisted: !crashed
       });
     }
+
+    results.threeNMatrix = {
+      n1_positive: {
+        description: 'Happy path job triggering, active filter chip rendering, and queue inspection',
+        passed: results.personas.User?.status === 'PASS' && results.personas.Developer?.status === 'PASS'
+      },
+      n2_negative: {
+        description: 'Nonexistent clusters, invalid job statuses, corrupted job IDs handled gracefully without 500',
+        passed: results.impossibleTests.filter(t => t.name.startsWith('N2')).every(t => t.resisted)
+      },
+      n3_boundary: {
+        description: 'Massive pagination offsets, Unicode & script injection in queries, mobile responsive constraints',
+        passed: results.personas.SRE?.status === 'PASS' && results.impossibleTests.filter(t => t.name.startsWith('N3')).every(t => t.resisted)
+      }
+    };
 
   } catch (err) {
     console.error('[❌ Chaos Gate Error]', err);
