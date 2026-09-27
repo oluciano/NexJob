@@ -38,6 +38,9 @@ It synthesizes the best principles of context engineering and verification gates
      [Phase 4.6: Documentation & Wiki Truth Gate]
                          │
                          ▼
+     [Phase 4.7: Dashboard UX/UI Audit Gate (Conditional)] ◄── ux-auditor skill
+                         │
+                         ▼
         [Phase 5: Handoff & PR Generation]
                          │
                          ▼
@@ -238,6 +241,24 @@ Every task that introduces or modifies public options, defaults, architecture be
    - **Architecture & Best Practices:** If deployment topology, queue isolation, or ops hosting guidelines were impacted, update `docs/wiki/13-Best-Practices.md`.
    - **Dashboard & Monitoring:** If dashboard options, UI scoping, or telemetry changed, update `docs/wiki/10-Dashboard.md` and `docs/wiki/12-OpenTelemetry.md`.
 3. **Accuracy Check:** Never leave documentation to be fixed "later in release mode" if the code introducing the change is already being PR'd into `develop`.
+
+---
+
+## Phase 4.7: Dashboard UX/UI Audit Gate (Conditional)
+
+> **Trigger:** Activated whenever the task touches any file in `src/NexJob.Dashboard` or UI rendering components.  
+> **Goal:** Eliminate developer visual bias, missing operational feedback, action asymmetry, and dead ends before shipping UI changes.
+
+When a task involves the dashboard:
+1. **Activate the `ux-auditor` skill:**
+   - Review changed routes, markup, and interactive elements through the lens of an Ops Operator / SRE.
+2. **Audit Core Vectors:**
+   - **Operational Feedback:** Does the user receive immediate visual confirmation (alert banners, toasts, disabled button during submission) upon triggering actions (requeue, pause, circuit reset, trigger now)?
+   - **Action Symmetry & Degradation:** If an action exists to trip/pause/reset an entity, is there a symmetric way to inspect its detailed state or undo it?
+   - **Dead Ends & Traceability:** When displaying warnings (e.g. `⚠️ NO WORKERS` or `⚡ CIRCUIT OPEN`), can the operator click through to relevant logs, failed jobs, or active server nodes?
+   - **Read-Only / Multi-Cluster Safety:** Are action buttons properly hidden or guarded in read-only / replica cluster views?
+3. **Synthesis & Benefit of the Doubt:**
+   - Summarize findings in the task report: distinguish between immediate blockers to fix in the current PR vs. ergonomic enhancements to log as future issues.
 
 ---
 
