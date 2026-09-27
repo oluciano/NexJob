@@ -23,6 +23,13 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`NexJob.IntegrationTests` & Storage Providers — Integration Test Suite Synchronization for v5.6 Features (Issue #219)**:
+  - Extended shared `StorageProviderTestsBase` contract suite with real-database integration tests across all 5 providers (`InMemory`, `PostgreSQL`, `SQL Server`, `MongoDB`, `Redis`).
+  - Added integration contract coverage for Checkpoints (`SaveCheckpointAsync`, state persistence, and auto-clear on `AcknowledgeAsync` / `AcknowledgeBatchAsync`).
+  - Hardened `AcknowledgeAsync` and `AcknowledgeBatchAsync` across `PostgresStorageProvider`, `SqlServerStorageProvider`, `RedisStorageProvider`, and `MongoStorageProvider` to automatically reset `checkpoint_json = NULL` / unset upon job acknowledgment.
+  - Added integration contract coverage for Retention strategies (`PurgeOnSuccess` physical deletion and `TrimPayloadOnSuccess` payload stripping).
+  - Added integration contract coverage for Job Catalog native aggregations (`GetJobCatalogAsync`).
+
 - **`NexJob` Core & Storage Providers — Progress Checkpoints & State Saving for Long-Running Jobs (Issue #206)**:
   - Added `CheckpointJson` property to `JobRecord` for serializing and preserving arbitrary checkpoint state.
   - Extended `IJobContext` with `TState? GetCheckpoint<TState>()` and `Task SaveCheckpointAsync<TState>(TState state, int? percent, string? message, CancellationToken ct)`.
