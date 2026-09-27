@@ -103,18 +103,31 @@ When picking an issue from the backlog, execute the **Warmup Gate**:
 3. **Warmup Decision Gate:**
    - **If Valid:** Present a brief summary of the current state vs planned change to the user, confirm alignment, select the appropriate workflow (`.agents/method/workflows/{feature|bugfix|refactor|reliability}.md`), and proceed to branch isolation.
    - **If Already Solved or Obsolete:** Present the evidence immediately to the user, document the rationale, and close the issue without generating redundant code (Phase 6, Scenario B).
-4. **Inspect Target Files & Squad Lane (GEMINI.md):**
+4. **WIP Limit = 1 & Issue Kickoff Audit Comment (Scrum Discipline):**
+   - **Check Active WIP:** Run `gh issue list --label in-progress` to ensure no other issue is currently in progress. WIP limit per person/squad lane is strictly **1**. Never start a new issue while another is marked `in-progress`.
+   - **Post Kickoff Comment:** Before writing code or switching branches, post a clear summary/audit comment on the issue so the team and board know what is being worked on:
+     ```bash
+     gh issue comment <id> --body "### 🚀 Work Started (WIP)
+     - **Branch:** \`<type>/<issue-id>-<description>\`
+     - **Objective & Scope:** <Summary of approach, planned changes, and target files>
+     - **DoD & 3N Matrix:** Positive, Negative, and Boundary test matrix planned."
+     ```
+   - **Apply in-progress Label:**
+     ```bash
+     gh issue edit <id> --add-label "in-progress"
+     ```
+5. **Inspect Target Files & Squad Lane (GEMINI.md):**
    - Check which projects/files are involved.
    - ❌ **Protected Core Files:** `src/NexJob/Internal/`, `IJobStorage`, `IRecurringStorage`, `IDashboardStorage`, `JobRecord`, `IScheduler`, `JobWakeUpChannel`.
    - 🛑 If an issue requires modifying protected core execution (e.g. issues like #201 or #204 in `JobExecutor.cs`), it belongs to **Architect / Claude Code (bruxo)** or requires explicit architectural pre-approval before proceeding.
-5. **Branch Isolation Mandate:**
+6. **Branch Isolation Mandate:**
    - Always branch off the latest `develop`:
      ```bash
      git checkout develop && git pull origin develop
      git checkout -b <type>/<issue-id>-<short-description>
      ```
    - Never commit implementation code directly to `develop` or `main`.
-6. **Context Engineering (State Tracking):**
+7. **Context Engineering (State Tracking):**
    - Maintain task progress in `.gemini/scratch/task-state.md` with:
      - Objective & Linked Issue (#ID)
      - Target Files Baseline
