@@ -12,6 +12,7 @@ internal sealed class QueuesPage : IComponent
     private RenderHandle _handle;
 
     [Parameter] public IDashboardStorage Storage { get; set; } = default!;
+    [Parameter] public IJobStorage? JobStorage { get; set; }
     [Parameter] public string PathPrefix { get; set; } = "/dashboard";
     [Parameter] public string Title { get; set; } = "NexJob";
     [Parameter] public NavCounters? Counters { get; set; }
@@ -58,7 +59,21 @@ internal sealed class QueuesPage : IComponent
             }
         }
 
-        _handle.Render(b => b.AddMarkupContent(0, BuildHtml(queues, processingJobs.Items, pausedQueues)));
+        var activeWorkerQueues = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var effectiveJobStorage = JobStorage ?? ActiveCluster?.JobStorage ?? (Storage as IJobStorage);
+        if (effectiveJobStorage != null)
+        {
+            var activeServers = await effectiveJobStorage.GetActiveServersAsync(TimeSpan.FromMinutes(1));
+            foreach (var s in activeServers)
+            {
+                foreach (var q in s.Queues)
+                {
+                    activeWorkerQueues.Add(q);
+                }
+            }
+        }
+
+        _handle.Render(b => b.AddMarkupContent(0, BuildHtml(queues, processingJobs.Items, pausedQueues, activeWorkerQueues)));
     }
 
     private static string FormatElapsed(TimeSpan elapsed)
@@ -81,7 +96,11 @@ internal sealed class QueuesPage : IComponent
         return $"{elapsed.TotalHours:F1}h";
     }
 
-    private string BuildHtml(IReadOnlyList<QueueMetrics> queues, IReadOnlyList<JobRecord> processingJobs, HashSet<string> pausedQueues)
+    private string BuildHtml(
+        IReadOnlyList<QueueMetrics> queues,
+        IReadOnlyList<JobRecord> processingJobs,
+        HashSet<string> pausedQueues,
+        HashSet<string> activeWorkerQueues)
     {
         if (queues.Count == 0)
         {
@@ -100,7 +119,13 @@ internal sealed class QueuesPage : IComponent
             .ToList();
 
         var isReadOnly = ActiveCluster?.IsReadOnly == true;
-        var cards = string.Join(string.Empty, sortedQueues.Select(q => HtmlFragments.QueueCard(q, PathPrefix, pausedQueues.Contains(q.Queue), ActiveCluster)));
+        var cards = string.Join(string.Empty, sortedQueues.Select(q =>
+            HtmlFragments.QueueCard(
+                q,
+                PathPrefix,
+                pausedQueues.Contains(q.Queue),
+                ActiveCluster,
+                hasActiveWorkers: activeWorkerQueues.Contains(q.Queue))));
 
         var heatmap = BuildWorkerHeatmap(processingJobs);
 

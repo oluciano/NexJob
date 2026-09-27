@@ -300,6 +300,16 @@ Inspect distinct job types, performance metrics, queue distributions, error rate
 > `IDashboardStorage.GetJobCatalogAsync` currently features a default interface implementation for backward compatibility. In NexJob v6.0, this method will become abstract across all storage providers. Custom storage providers should implement native aggregated queries (`GROUP BY job_type, queue`) to prepare for v6.0.
 
 ---
+
+## Orphan Queues & Worker Indicators
+
+The dashboard automatically tracks queue health against registered, active worker nodes (`ServerRecord` heartbeats):
+
+- **Queues Page (`/dashboard/queues`):** When a queue contains enqueued jobs (`Enqueued > 0`) but has **no active worker nodes** listening to it, a warning badge `⚠️ NO WORKERS` and an explanatory subtitle are displayed on the queue card.
+- **Servers Page (`/dashboard/servers`):** Displays a prominent warning banner identifying unattended queues that have jobs waiting but 0 configured worker nodes.
+- **Catalog Trigger Modal (`/dashboard/catalog`):** When triggering a job into a queue that has no active workers, a notice is displayed alerting the operator that jobs will wait in queue until a worker is online.
+
+---
  
 ## Next Steps
 

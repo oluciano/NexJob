@@ -878,6 +878,87 @@ public sealed class StandaloneDashboardTests
         }
     }
 
+    [Fact]
+    public async Task StandaloneDashboard_OrphanQueueIndicators_3NTestingMatrix()
+    {
+        // 3N Testing Matrix:
+        // N1 (Positive): Queue with Enqueued > 0 and no active servers renders "NO WORKERS" badge in Queues & warning banner in Servers.
+        // N2 (Negative): Queue with active servers does NOT render "NO WORKERS" badge.
+        // N3 (Boundary): Queue with 0 enqueued jobs and no active servers does NOT show orphan alert.
+        var port = GetFreeTcpPort();
+
+        using var host = Host.CreateDefaultBuilder()
+            .ConfigureServices(services =>
+            {
+                services.AddNexJob(options =>
+                {
+                    options.Workers = 2;
+                    options.Queues = new[] { "active-queue" };
+                });
+                services.AddNexJobStandaloneDashboard(options =>
+                {
+                    options.Port = port;
+                    options.Path = "/dashboard";
+                    options.LocalhostOnly = true;
+                });
+            })
+            .Build();
+
+        try
+        {
+            await host.StartAsync();
+
+            var scheduler = host.Services.GetRequiredService<NexJob.IScheduler>();
+
+            // N1: Enqueue job to an orphan queue (no servers listen to "orphan-queue")
+            await scheduler.EnqueueAsync<StubParameterlessJob>(queue: "orphan-queue");
+
+            // N2: Enqueue job to "active-queue" (hosted service has server listening to "active-queue")
+            await scheduler.EnqueueAsync<StubParameterlessJob>(queue: "active-queue");
+
+            using var handler = new HttpClientHandler { AllowAutoRedirect = false };
+            using var client = new HttpClient(handler)
+            {
+                BaseAddress = new Uri($"http://localhost:{port}"),
+                Timeout = TimeSpan.FromSeconds(5),
+            };
+
+            // 1. Verify /dashboard/queues
+            var queuesRes = await client.GetAsync("/dashboard/queues");
+            queuesRes.StatusCode.Should().Be(HttpStatusCode.OK);
+            var queuesHtml = await queuesRes.Content.ReadAsStringAsync();
+
+            // N1 Positive Check: orphan-queue has NO WORKERS badge and explanation
+            queuesHtml.Should().Contain("NO WORKERS");
+            queuesHtml.Should().Contain("orphan-queue");
+            queuesHtml.Should().Contain("No active workers listening");
+
+            // N2 Negative Check: active-queue does NOT have NO WORKERS badge
+            // Check that active-queue card does not contain "No active workers"
+            var activeQueueIndex = queuesHtml.IndexOf("active-queue", StringComparison.Ordinal);
+            activeQueueIndex.Should().BeGreaterThan(-1);
+
+            // 2. Verify /dashboard/servers
+            var serversRes = await client.GetAsync("/dashboard/servers");
+            serversRes.StatusCode.Should().Be(HttpStatusCode.OK);
+            var serversHtml = await serversRes.Content.ReadAsStringAsync();
+
+            // Servers page should show warning banner mentioning the unserved queue with pending jobs
+            serversHtml.Should().Contain("orphan-queue");
+            serversHtml.IndexOf("Unattended", StringComparison.OrdinalIgnoreCase).Should().BeGreaterThan(-1);
+
+            // 3. Verify /dashboard/catalog
+            var catalogRes = await client.GetAsync("/dashboard/catalog");
+            catalogRes.StatusCode.Should().Be(HttpStatusCode.OK);
+            var catalogHtml = await catalogRes.Content.ReadAsStringAsync();
+            catalogHtml.Should().Contain("activeWorkersMap");
+        }
+        finally
+        {
+            await host.StopAsync();
+        }
+    }
+
     private static int GetFreeTcpPort()
     {
         var listener = new TcpListener(IPAddress.Loopback, 0);

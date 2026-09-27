@@ -787,6 +787,7 @@ public sealed class DashboardMiddleware
             parameters = ParameterView.FromDictionary(new Dictionary<string, object?>(StringComparer.Ordinal)
             {
                 ["Storage"] = dashboardStorage,
+                ["JobStorage"] = jobStorage,
                 ["PathPrefix"] = _pathPrefix,
                 ["Title"] = _options.Title,
                 ["Counters"] = counters,
@@ -804,6 +805,7 @@ public sealed class DashboardMiddleware
             parameters = ParameterView.FromDictionary(new Dictionary<string, object?>(StringComparer.Ordinal)
             {
                 ["Storage"] = jobStorage,
+                ["DashboardStorage"] = dashboardStorage,
                 ["PathPrefix"] = _pathPrefix,
                 ["Title"] = _options.Title,
                 ["Counters"] = counters,
@@ -836,6 +838,7 @@ public sealed class DashboardMiddleware
             parameters = ParameterView.FromDictionary(new Dictionary<string, object?>(StringComparer.Ordinal)
             {
                 ["Storage"] = dashboardStorage,
+                ["JobStorage"] = jobStorage,
                 ["PathPrefix"] = _pathPrefix,
                 ["Title"] = _options.Title,
                 ["Counters"] = counters,
