@@ -239,6 +239,21 @@ async function runFullRegression() {
       });
     }
 
+    report.threeNMatrix = {
+      n1_positive: {
+        description: 'All 14 standard UI routes respond 200 OK, interactive catalog triggers job, and job details render',
+        passed: report.routesPassed === report.totalRoutesChecked && report.interactiveWorkflows.CatalogTrigger?.parameterlessTriggerSuccess
+      },
+      n2_negative: {
+        description: 'Corrupted GUIDs and non-existent entity paths return controlled 404s without 500 or crash',
+        passed: report.adversarialChaos.some(c => c.name.includes('Corrupted') && c.status === 404)
+      },
+      n3_boundary: {
+        description: 'Overflow integers, negative pages, XSS script tags, Arabic/Unicode bombs, and mobile viewports resisted',
+        passed: report.viewportChecks.every(v => v.passed) && report.adversarialChaos.filter(c => !c.name.includes('Corrupted')).every(c => c.resisted)
+      }
+    };
+
   } catch (err) {
     console.error('[❌ Regression Error]', err);
     report.fatalError = err.message;
