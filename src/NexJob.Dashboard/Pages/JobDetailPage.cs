@@ -20,6 +20,9 @@ internal sealed class JobDetailPage : IComponent
     [Parameter] public IReadOnlyList<DashboardCluster>? Clusters { get; set; }
     [Parameter] public DashboardCluster? ActiveCluster { get; set; }
 
+    /// <summary>Gets or sets the set of queue names that currently have at least one active worker listening.</summary>
+    [Parameter] public IReadOnlySet<string>? ActiveWorkerQueues { get; set; }
+
     void IComponent.Attach(RenderHandle renderHandle) => _handle = renderHandle;
 
     async Task IComponent.SetParametersAsync(ParameterView parameters)
@@ -52,11 +55,16 @@ internal sealed class JobDetailPage : IComponent
         var actions = string.Empty;
         if (!IsReadOnly)
         {
+            var queueOrphanWarning = ActiveWorkerQueues is { Count: > 0 } && !ActiveWorkerQueues.Contains(job.Queue, StringComparer.OrdinalIgnoreCase)
+                ? $"\\n\\n⚠ Warning: Queue '{job.Queue}' has no active workers. The job will remain queued until a worker starts."
+                : string.Empty;
+
             if (job.Status == JobStatus.Scheduled)
             {
+                var runNowConfirm = $"Run this job now (bypass schedule)?{queueOrphanWarning}";
                 actions +=
                     $"<form method=\"post\" action=\"{PathPrefix}/jobs/{job.Id.Value}/runnow{clusterSuffix}\" style=\"display:inline\">" +
-                    "<button type=\"submit\" class=\"btn btn-primary btn-sm\">▶ Run Now</button></form> " +
+                    $"<button type=\"submit\" class=\"btn btn-primary btn-sm\" onclick=\"return confirm({System.Web.HttpUtility.JavaScriptStringEncode(runNowConfirm, addDoubleQuotes: true)}\">▶ Run Now</button></form> " +
                     $"<form method=\"post\" action=\"{PathPrefix}/jobs/{job.Id.Value}/delete{clusterSuffix}\" style=\"display:inline\">" +
                     "<button type=\"submit\" class=\"btn btn-danger btn-sm\" onclick=\"return confirm('Cancel and delete this scheduled job?')\">Delete</button></form>";
             }
@@ -68,9 +76,10 @@ internal sealed class JobDetailPage : IComponent
             }
             else if (job.Status == JobStatus.Failed)
             {
+                var requeueConfirm = $"Requeue this job?{queueOrphanWarning}";
                 actions +=
                     $"<form method=\"post\" action=\"{PathPrefix}/jobs/{job.Id.Value}/requeue{clusterSuffix}\" style=\"display:inline\">" +
-                    "<button type=\"submit\" class=\"btn btn-primary btn-sm\" onclick=\"return confirm('Requeue this job?')\">↺ Requeue</button></form> " +
+                    $"<button type=\"submit\" class=\"btn btn-primary btn-sm\" onclick=\"return confirm({System.Web.HttpUtility.JavaScriptStringEncode(requeueConfirm, addDoubleQuotes: true)})\">↺ Requeue</button></form> " +
                     $"<form method=\"post\" action=\"{PathPrefix}/jobs/{job.Id.Value}/delete{clusterSuffix}\" style=\"display:inline\">" +
                     "<button type=\"submit\" class=\"btn btn-danger btn-sm\" onclick=\"return confirm('Delete this job?')\">Delete</button></form>";
             }

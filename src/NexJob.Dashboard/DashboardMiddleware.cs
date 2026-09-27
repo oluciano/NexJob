@@ -971,6 +971,7 @@ public sealed class DashboardMiddleware
                     ["IsReadOnly"] = activeCluster?.IsReadOnly == true,
                     ["Clusters"] = clustersList,
                     ["ActiveCluster"] = activeCluster,
+                    ["ActiveWorkerQueues"] = (IReadOnlySet<string>)activeWorkerQueues,
                 });
                 return await RenderAsync<JobDetailPage>(renderer, parameters).ConfigureAwait(false);
             }
@@ -1002,6 +1003,7 @@ public sealed class DashboardMiddleware
                 ["Counters"] = counters,
                 ["Clusters"] = clustersList,
                 ["ActiveCluster"] = activeCluster,
+                ["ActiveWorkerQueues"] = (IReadOnlySet<string>)activeWorkerQueues,
             });
             return await RenderAsync<RecurringJobDetailPage>(renderer, parameters).ConfigureAwait(false);
         }
@@ -1016,6 +1018,7 @@ public sealed class DashboardMiddleware
                 ["Counters"] = counters,
                 ["Clusters"] = clustersList,
                 ["ActiveCluster"] = activeCluster,
+                ["ActiveWorkerQueues"] = (IReadOnlySet<string>)activeWorkerQueues,
             });
             return await RenderAsync<RecurringPage>(renderer, parameters).ConfigureAwait(false);
         }
@@ -1031,6 +1034,7 @@ public sealed class DashboardMiddleware
                 ["Queues"] = effectiveQueues,
                 ["Clusters"] = clustersList,
                 ["ActiveCluster"] = activeCluster,
+                ["ActiveWorkerQueues"] = (IReadOnlySet<string>)activeWorkerQueues,
             });
             return await RenderAsync<FailedPage>(renderer, parameters).ConfigureAwait(false);
         }

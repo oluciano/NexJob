@@ -6,6 +6,18 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`NexJob.Dashboard` — Operational Warning Confirmation on Inactive/Paused Queues (Issue #226)**:
+  - All trigger and requeue action points now check active worker queues before allowing the operation to proceed.
+  - Catalog **parameterless** direct trigger (`IJob`): a blocking `window.confirm()` dialog is shown before form submission when the target queue has no active worker nodes.
+  - Catalog **parameterized modal** (`IJob<T>`): the existing passive inline warning is now a mandatory confirmation gate — the modal submit is intercepted by JS and shows a `window.confirm()` if the queue warning box is visible.
+  - **Job Detail** `▶ Run Now` and `↺ Requeue` buttons: confirmation message dynamically includes a queue orphan/paused warning when the job's target queue has no active workers.
+  - **Recurring Job Detail** `▶ Trigger Now` button: confirmation dialog includes queue warning when no workers listen to the recurring job's queue.
+  - **Recurring Jobs list** (inline ⚡ icon): trigger icon intercepts click with a queue-aware `confirm()` per row.
+  - **Failed Jobs** `↺ Requeue All`: confirmation now includes a warning when any visible queue lacks active workers.
+  - All pages receive `ActiveWorkerQueues` (the set already computed once per request in `DashboardMiddleware`) — zero additional I/O per page.
+
 ### Fixed
 
 - **`NexJob.Postgres`, `NexJob.Redis`, `NexJob.MongoDB` — Storage Catalog and Payload Trimming Alignment (Issue #222)**:
