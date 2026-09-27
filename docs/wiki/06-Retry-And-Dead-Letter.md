@@ -196,10 +196,32 @@ builder.Services.AddNexJob(options =>
 
 To retain dead-letter jobs indefinitely, set `options.RetentionDeadLetter = TimeSpan.Zero`.
 Chunked purging runs across all persistent storage providers (PostgreSQL, SQL Server, Redis, MongoDB).
-
----
-
-## Next Steps
+ 
+ ---
+ 
++## Anti-Bloat Retention Strategies (`[Retention]`)
++
++For ultra high-throughput workloads (e.g. streaming message triggers) where retaining millions of succeeded jobs until the scheduled retention interval causes table/index bloat:
++
++1. **Immediate Purge (`PurgeOnSuccess = true`):**
++   ```csharp
++   [Retention(PurgeOnSuccess = true)]
++   public sealed class FastIngestionJob : IJob<DataChunk> { ... }
++   ```
++   Deletes the job row atomically upon successful completion. Succeeded jobs will not bloat `/jobs` tables, but lifetime execution statistics are preserved in `/catalog`.
++
++2. **Payload Stripping (`TrimPayloadOnSuccess = true`):**
++   ```csharp
++   [Retention(TrimPayloadOnSuccess = true)]
++   public sealed class LargeDocumentJob : IJob<DocumentPayload> { ... }
++   ```
++   Clears `InputJson` upon successful execution (`InputJson = ""`). Metadata (execution duration, completion timestamp, tags, logs) is retained for auditability while drastically cutting storage footprint.
++
++*Note: If a job fails or enters dead-letter, retention purge/trim is bypassed, ensuring full diagnostics and input data remain available for retry and debugging.*
++
++---
++
+ ## Next Steps
 
 - [Throttling](07-Throttling.md) — Limit concurrent executions
 - [Idempotency](17-Idempotency.md) — Handle retries safely with idempotent jobs

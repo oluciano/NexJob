@@ -934,9 +934,22 @@ public sealed class RedisStorageProvider : IStorageProvider
         // Execute atomic state transitions via Lua script
         await _db.ScriptEvaluateAsync(CommitJobResultScript.ExecutableScript, keys: null, values: args).ConfigureAwait(false);
 
-        // Persist logs (non-critical for atomicity)
-        await _db.StringSetAsync(LogsKey(idStr), logsJson).ConfigureAwait(false);
-        await _db.HashSetAsync(JobKey(idStr), "executionLogs", logsJson).ConfigureAwait(false);
+        if (result.Succeeded && result.PurgeOnSuccess)
+        {
+            await _db.KeyDeleteAsync(JobKey(idStr)).ConfigureAwait(false);
+            await _db.KeyDeleteAsync(LogsKey(idStr)).ConfigureAwait(false);
+        }
+        else
+        {
+            if (result.Succeeded && result.TrimPayloadOnSuccess)
+            {
+                await _db.HashSetAsync(JobKey(idStr), "inputJson", string.Empty).ConfigureAwait(false);
+            }
+
+            // Persist logs (non-critical for atomicity)
+            await _db.StringSetAsync(LogsKey(idStr), logsJson).ConfigureAwait(false);
+            await _db.HashSetAsync(JobKey(idStr), "executionLogs", logsJson).ConfigureAwait(false);
+        }
     }
 
     /// <inheritdoc/>

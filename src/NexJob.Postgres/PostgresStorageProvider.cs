@@ -1163,14 +1163,32 @@ public sealed class PostgresStorageProvider : IStorageProvider, IDisposable, IAs
         IDbConnection conn, IDbTransaction tx, JobId jobId, JobExecutionResult result,
         string logsJson)
     {
-        await conn.ExecuteAsync(
-            """
-            UPDATE nexjob_jobs
-            SET status = 'Succeeded', completed_at = NOW(), heartbeat_at = NULL, execution_logs = @Logs::jsonb
-            WHERE id = @id
-            """,
-            new { id = jobId.Value, Logs = logsJson },
-            transaction: tx);
+        if (result.PurgeOnSuccess)
+        {
+            await conn.ExecuteAsync(
+                "DELETE FROM nexjob_jobs WHERE id = @id",
+                new { id = jobId.Value },
+                transaction: tx);
+        }
+        else
+        {
+            var updateSql = result.TrimPayloadOnSuccess
+                ? """
+                  UPDATE nexjob_jobs
+                  SET status = 'Succeeded', completed_at = NOW(), heartbeat_at = NULL, execution_logs = @Logs::jsonb, input_json = ''
+                  WHERE id = @id
+                  """
+                : """
+                  UPDATE nexjob_jobs
+                  SET status = 'Succeeded', completed_at = NOW(), heartbeat_at = NULL, execution_logs = @Logs::jsonb
+                  WHERE id = @id
+                  """;
+
+            await conn.ExecuteAsync(
+                updateSql,
+                new { id = jobId.Value, Logs = logsJson },
+                transaction: tx);
+        }
 
         await conn.ExecuteAsync(
             """
