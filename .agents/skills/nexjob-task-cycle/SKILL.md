@@ -20,7 +20,7 @@ It synthesizes the best principles of context engineering and verification gates
 [Phase 0: Technical Grooming & Architectural Debate]
                          │
                          ▼
-        [Phase 1: Pre-Flight & Boundary Check]
+     [Phase 1: Pre-Flight & Context Warmup Gate]
                          │
                          ▼
         [Phase 2: Mandatory 3N Testing Matrix]
@@ -67,6 +67,7 @@ When a task is new, non-trivial, or ambiguous (or when explicitly requested via 
    - **Language Mandate:** Issues must be written **strictly in English**.
    - Use conventional titles (`type(scope): description`), assign relevant labels (`bug`, `enhancement`, `reliability`, `performance`, `documentation`, `rfc`), and structure the body with:
      - **Context & Motivation**
+     - **Target Files & Components Map:** Explicit list of files/classes identified during grooming (serves as the baseline for future warmup/validity checks).
      - **Current vs Expected Behavior**
      - **Definition of Done (DoD)**
      - **3N Testing Matrix Plan**
@@ -76,24 +77,37 @@ When a task is new, non-trivial, or ambiguous (or when explicitly requested via 
 
 ---
 
-## Phase 1: Pre-Flight & Boundary Check (Anti-Drift)
+## Phase 1: Pre-Flight, Issue Warmup & Context Validation Gate
 
-> **Goal:** Ensure context stays lean and the agent stays strictly within its assigned lane.
+> **Goal:** Before touching code or creating branches, summarize the issue, validate whether it remains valid against the latest `develop`, and ensure it was not already addressed or superseded.
 
-1. **Inspect Target Files & Squad Lane (GEMINI.md):**
+When picking an issue from the backlog, execute the **Warmup Gate**:
+
+1. **Issue Context Summary:**
+   - Review the issue description, DoD, and specifically the **Target Files & Components Map** recorded during grooming.
+2. **Current State & Validity Check (Warmup):**
+   - **Inspect Target Files on `develop`:** Check the mapped files on the latest `develop` (`git log -n 5 <path>`, `view_file` or `grep`) to inspect current implementation.
+   - **Already Solved?** Verify if a recent PR or refactor already fixed or implemented this behavior indirectly.
+   - **Still Valid?** Verify whether the classes, methods, or architectural premises cited in the issue still exist or have evolved.
+   - **Active Collisions:** Check if another open PR or branch is actively touching the same components.
+3. **Warmup Decision Gate:**
+   - **If Valid:** Present a brief summary of the current state vs planned change to the user, confirm alignment, and proceed to branch isolation.
+   - **If Already Solved or Obsolete:** Present the evidence immediately to the user, document the rationale, and close the issue without generating redundant code (Phase 6, Scenario B).
+4. **Inspect Target Files & Squad Lane (GEMINI.md):**
    - Check which projects/files are involved.
    - ❌ **Protected Core Files:** `src/NexJob/Internal/`, `IJobStorage`, `IRecurringStorage`, `IDashboardStorage`, `JobRecord`, `IScheduler`, `JobWakeUpChannel`.
    - 🛑 If an issue requires modifying protected core execution (e.g. issues like #201 or #204 in `JobExecutor.cs`), it belongs to **Architect / Claude Code (bruxo)** or requires explicit architectural pre-approval before proceeding.
-2. **Branch Isolation Mandate:**
+5. **Branch Isolation Mandate:**
    - Always branch off the latest `develop`:
      ```bash
      git checkout develop && git pull origin develop
      git checkout -b <type>/<issue-id>-<short-description>
      ```
    - Never commit implementation code directly to `develop` or `main`.
-3. **Context Engineering (State Tracking):**
+6. **Context Engineering (State Tracking):**
    - Maintain task progress in `.gemini/scratch/task-state.md` with:
      - Objective & Linked Issue (#ID)
+     - Target Files Baseline
      - Current Phase
      - Decisions & DoD
      - Next Atomic Action
