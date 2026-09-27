@@ -1,6 +1,8 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Text;
 using System.Web;
+using NexJob.Configuration;
+using NexJob.Internal;
 using NexJob.Storage;
 
 namespace NexJob.Dashboard.Pages;
@@ -431,7 +433,8 @@ internal static class HtmlFragments
         string pathPrefix,
         bool isPaused = false,
         DashboardCluster? activeCluster = null,
-        bool hasActiveWorkers = true)
+        bool hasActiveWorkers = true,
+        QueueCircuitStatus? circuitStatus = null)
     {
         var total = queue.Enqueued + queue.Processing;
         var utilPct = total > 0 ? (int)(queue.Processing * 100.0 / total) : 0;
@@ -448,16 +451,50 @@ internal static class HtmlFragments
         var pauseForm = string.Empty;
         if (!isReadOnly)
         {
+            var resetForm = string.Empty;
+            if (circuitStatus is not null && circuitStatus.State != QueueCircuitState.Closed)
+            {
+                resetForm = $"<form method=\"post\" action=\"{pathPrefix}/queues/{Uri.EscapeDataString(queue.Queue)}/reset-circuit{clusterSuffix}\" style=\"display:inline\" onclick=\"return confirm('Reset circuit breaker for queue {HtmlEncode(queue.Queue)}? This will immediately resume traffic to downstream API.')\">" +
+                    $"<button type=\"submit\" class=\"btn btn-secondary btn-sm\" title=\"Reset Circuit Breaker\">⚡ Reset Circuit</button></form>";
+            }
+
             pauseForm = isPaused
                 ? $"<form method=\"post\" action=\"{pathPrefix}/queues/{Uri.EscapeDataString(queue.Queue)}/resume{clusterSuffix}\" style=\"display:inline\">" +
                   $"<button type=\"submit\" class=\"btn btn-primary btn-sm\" title=\"Resume Queue\">▶ Resume</button></form>"
                 : $"<form method=\"post\" action=\"{pathPrefix}/queues/{Uri.EscapeDataString(queue.Queue)}/pause{clusterSuffix}\" style=\"display:inline\" onclick=\"return confirm('Pause queue {HtmlEncode(queue.Queue)}?')\">" +
                   $"<button type=\"submit\" class=\"btn btn-secondary btn-sm\" title=\"Pause Queue\">⏸ Pause</button></form>";
+
+            if (!string.IsNullOrEmpty(resetForm))
+            {
+                pauseForm = resetForm + pauseForm;
+            }
         }
 
         var statusBadge = isPaused
             ? " <span class=\"badge badge-warning\" style=\"font-size:10px;margin-left:6px\">PAUSED</span>"
             : string.Empty;
+
+        var circuitBadge = string.Empty;
+        var failedLink = string.Empty;
+        if (circuitStatus is not null)
+        {
+            if (circuitStatus.State == QueueCircuitState.Open)
+            {
+                var remainingSec = circuitStatus.RemainingCooldown.HasValue
+                    ? $" ({(int)circuitStatus.RemainingCooldown.Value.TotalSeconds}s)"
+                    : string.Empty;
+                circuitBadge = $" <a href=\"{pathPrefix}/failed?queue={Uri.EscapeDataString(queue.Queue)}{(activeCluster is not null ? $"&cluster={Uri.EscapeDataString(activeCluster.Id)}" : string.Empty)}\" style=\"text-decoration:none\"><span class=\"badge badge-danger\" style=\"font-size:10px;margin-left:6px;cursor:pointer\" title=\"Circuit is OPEN due to downstream failures. Click to view failed errors.\">⚡ CIRCUIT OPEN{remainingSec}</span></a>";
+                failedLink = $"<a href=\"{pathPrefix}/failed?queue={Uri.EscapeDataString(queue.Queue)}{(activeCluster is not null ? $"&cluster={Uri.EscapeDataString(activeCluster.Id)}" : string.Empty)}\" class=\"btn btn-secondary btn-sm\" style=\"color:var(--error);border-color:var(--error)\">View Errors</a>";
+            }
+            else if (circuitStatus.State == QueueCircuitState.HalfOpen)
+            {
+                circuitBadge = " <span class=\"badge badge-warning\" style=\"font-size:10px;margin-left:6px\" title=\"Canary probe in flight to test downstream service health.\">🟡 CANARY TESTING</span>";
+            }
+            else if (circuitStatus.State == QueueCircuitState.Recovering)
+            {
+                circuitBadge = $" <span class=\"badge badge-info\" style=\"font-size:10px;margin-left:6px\" title=\"Ramp-up mode active to prevent thundering herd (max concurrency: {circuitStatus.AllowedConcurrency}).\">🟢 RECOVERING</span>";
+            }
+        }
 
         var orphanWarning = !hasActiveWorkers && queue.Enqueued > 0
             ? " <span class=\"badge badge-warning\" style=\"font-size:10px;margin-left:6px\" title=\"No active worker nodes are listening to this queue. Jobs will remain enqueued until a worker configured for this queue is online.\">⚠️ NO WORKERS</span>"
@@ -470,7 +507,7 @@ internal static class HtmlFragments
         return
             $"<div style=\"padding:16px 24px;display:flex;align-items:center;gap:24px;border-bottom:1px solid var(--border)\">" +
             $"<div style=\"width:220px;font-weight:600;font-size:15px;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap\">" +
-            $"{HtmlEncode(queue.Queue)}{statusBadge}{orphanWarning}{orphanSubtitle}</div>" +
+            $"{HtmlEncode(queue.Queue)}{statusBadge}{circuitBadge}{orphanWarning}{orphanSubtitle}</div>" +
             $"<div style=\"flex:1;display:flex;gap:40px;align-items:center\">" +
                 $"<div style=\"width:150px;display:flex;align-items:baseline;gap:8px\"><div style=\"font-size:10px;color:var(--text-tertiary);font-weight:700\">ENQUEUED</div><div style=\"font-weight:700;color:var(--info);font-size:18px\">{queue.Enqueued}</div></div>" +
                 $"<div style=\"width:150px;display:flex;align-items:baseline;gap:8px\"><div style=\"font-size:10px;color:var(--text-tertiary);font-weight:700\">PROCESSING</div><div style=\"font-weight:700;color:var(--warning);font-size:18px\">{queue.Processing}</div></div>" +
@@ -480,6 +517,7 @@ internal static class HtmlFragments
                 $"</div>" +
             $"</div>" +
             $"<div style=\"display:flex;gap:8px;align-items:center;justify-content:flex-end\">" +
+                failedLink +
                 pauseForm +
                 $"<a href=\"{pathPrefix}/jobs?queue={Uri.EscapeDataString(queue.Queue)}{(activeCluster is not null ? $"&cluster={Uri.EscapeDataString(activeCluster.Id)}" : string.Empty)}\" class=\"btn btn-secondary btn-sm\">View Jobs</a>" +
             $"</div>" +

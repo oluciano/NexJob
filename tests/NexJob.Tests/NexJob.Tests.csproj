@@ -20,6 +20,7 @@
     <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks.Abstractions" Version="10.0.6" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="8.0.1" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.3" />
+    <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" Version="10.10.0" />
     <PackageReference Include="Moq" Version="4.20.72" />
     <PackageReference Include="StackExchange.Redis" Version="2.12.14" />
     <ProjectReference Include="..\..\src\NexJob\NexJob.csproj" />

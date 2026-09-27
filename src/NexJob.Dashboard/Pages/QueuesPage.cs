@@ -2,6 +2,7 @@ using System.Diagnostics.CodeAnalysis;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Rendering;
 using NexJob.Configuration;
+using NexJob.Internal;
 using NexJob.Storage;
 
 namespace NexJob.Dashboard.Pages;
@@ -18,6 +19,7 @@ internal sealed class QueuesPage : IComponent
     [Parameter] public NavCounters? Counters { get; set; }
     [Parameter] public NexJobOptions Options { get; set; } = default!;
     [Parameter] public IRuntimeSettingsStore? RuntimeStore { get; set; }
+    [Parameter] public IQueueCircuitBreakerManager? CircuitBreakerManager { get; set; }
     [Parameter] public IReadOnlyList<string>? Queues { get; set; }
     [Parameter] public IReadOnlyList<DashboardCluster>? Clusters { get; set; }
     [Parameter] public DashboardCluster? ActiveCluster { get; set; }
@@ -73,7 +75,16 @@ internal sealed class QueuesPage : IComponent
             }
         }
 
-        _handle.Render(b => b.AddMarkupContent(0, BuildHtml(queues, processingJobs.Items, pausedQueues, activeWorkerQueues)));
+        var circuitStatuses = new Dictionary<string, QueueCircuitStatus>(StringComparer.OrdinalIgnoreCase);
+        if (CircuitBreakerManager != null)
+        {
+            foreach (var status in CircuitBreakerManager.GetAllStatuses())
+            {
+                circuitStatuses[status.Queue] = status;
+            }
+        }
+
+        _handle.Render(b => b.AddMarkupContent(0, BuildHtml(queues, processingJobs.Items, pausedQueues, activeWorkerQueues, circuitStatuses)));
     }
 
     private static string FormatElapsed(TimeSpan elapsed)
@@ -100,7 +111,8 @@ internal sealed class QueuesPage : IComponent
         IReadOnlyList<QueueMetrics> queues,
         IReadOnlyList<JobRecord> processingJobs,
         HashSet<string> pausedQueues,
-        HashSet<string> activeWorkerQueues)
+        HashSet<string> activeWorkerQueues,
+        IReadOnlyDictionary<string, QueueCircuitStatus> circuitStatuses)
     {
         if (queues.Count == 0)
         {
@@ -120,12 +132,16 @@ internal sealed class QueuesPage : IComponent
 
         var isReadOnly = ActiveCluster?.IsReadOnly == true;
         var cards = string.Join(string.Empty, sortedQueues.Select(q =>
-            HtmlFragments.QueueCard(
+        {
+            circuitStatuses.TryGetValue(q.Queue, out var cs);
+            return HtmlFragments.QueueCard(
                 q,
                 PathPrefix,
                 pausedQueues.Contains(q.Queue),
                 ActiveCluster,
-                hasActiveWorkers: activeWorkerQueues.Contains(q.Queue))));
+                hasActiveWorkers: activeWorkerQueues.Contains(q.Queue),
+                circuitStatus: cs);
+        }));
 
         var heatmap = BuildWorkerHeatmap(processingJobs);
 

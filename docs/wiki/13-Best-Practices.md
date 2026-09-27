@@ -155,6 +155,46 @@ public sealed class HeavyReportGenerationJob : IJob<LargeReportInput>
 
 ---
 
+## Downstream Outage Protection & Circuit Breakers
+
+When communicating with external partners (payment gateways, CRM APIs, shipping providers), outages can quickly cause cascading failures:
+1. Retries burn rapidly across thousands of jobs.
+2. The failing service gets hammered ("metralhadora" effect), worsening their downtime.
+3. Storage gets polluted with dead-lettered jobs that were otherwise completely valid.
+
+### Protect Queues with Circuit Breakers
+
+Group external-facing jobs into dedicated queues (e.g., `payments`, `erp-sync`) and enable the queue-level circuit breaker:
+
+```csharp
+builder.Services.AddNexJob(options =>
+{
+    options.ConfigureQueue("payments", queue =>
+    {
+        queue.EnableCircuitBreaker(cb =>
+        {
+            cb.FailureThreshold = 5;
+            cb.InitialOpenDuration = TimeSpan.FromSeconds(30);
+            cb.BackoffMultiplier = 2.0;
+            cb.MaxOpenDuration = TimeSpan.FromMinutes(10);
+            cb.RecoveryDuration = TimeSpan.FromMinutes(2);
+            cb.RecoveryConcurrency = 2; // Anti-thundering herd ramp-up
+
+            // Protect downstream API: trips on 5xx, timeouts, 429 Too Many Requests (Rate Limits),
+            // 401 Unauthorized (expired tokens), and network connection drops, while safely ignoring client bugs (400, 403, 404, 422)
+            cb.BreakOnTransientHttpErrors(includeAuthErrors: true);
+            cb.BreakOn<TimeoutException>();
+        });
+    });
+});
+```
+
+### Why Ramp-Up Concurrency Matters
+
+When an external API comes back online after an outage, NexJob transitions the queue to **Recovering** mode rather than immediately unleashing full concurrency. With `RecoveryConcurrency = 2`, only 2 jobs execute concurrently for the duration of `RecoveryDuration`. This gentle ramp-up protects recovering external services from an immediate thundering herd crash.
+
+---
+
 ## Monitoring
 
 ### Enable OpenTelemetry

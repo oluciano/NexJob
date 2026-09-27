@@ -95,6 +95,53 @@ unavailable, the system degrades to per-process throttling automatically.
 
 ---
 
+## Queue-Level Dynamic Circuit Breaker
+
+While `[Throttle]` controls steady-state concurrency, the **Queue Circuit Breaker** protects downstream APIs during severe outages or degradation. When downstream failures spike, NexJob automatically pauses the affected queue, preventing thundering herds and endless retries, and gradually ramps traffic back up when the service recovers.
+
+### Circuit States
+- **Closed**: Normal processing. All jobs in the queue execute according to worker concurrency.
+- **Open**: Consecutive downstream failures reached `FailureThreshold`. Queue is paused; jobs accumulate safely in storage without burning retries. Exponential backoff multiplies the cooldown duration on repeated probe failures up to `MaxOpenDuration`.
+- **Half-Open**: Cooldown elapsed. Exactly one canary job is dispatched to probe downstream health.
+- **Recovering (Anti-Thundering Herd)**: Canary succeeded! Instead of releasing full concurrency immediately ("metralhadora" effect), concurrency is capped at `RecoveryConcurrency` for `RecoveryDuration` to let the downstream service stabilize.
+
+### Configuration
+
+Configure the circuit breaker per queue via `ConfigureQueue`:
+
+```csharp
+builder.Services.AddNexJob(options =>
+{
+    options.ConfigureQueue("payments", queue =>
+    {
+        queue.EnableCircuitBreaker(cb =>
+        {
+            cb.FailureThreshold = 5;
+            cb.InitialOpenDuration = TimeSpan.FromSeconds(30);
+            cb.BackoffMultiplier = 2.0;
+            cb.MaxOpenDuration = TimeSpan.FromMinutes(10);
+            cb.RecoveryDuration = TimeSpan.FromMinutes(2);
+            cb.RecoveryConcurrency = 2;
+
+            // Automatically break on 5xx, timeouts, 429 (Rate Limits), 401 Unauthorized (expired tokens), and network drops
+            // while safely ignoring client bugs (400 Bad Request, 403 Forbidden, 404 Not Found, 422)
+            cb.BreakOnTransientHttpErrors(includeAuthErrors: true);
+
+            // Or register custom exception types with an optional predicate
+            cb.BreakOn<TimeoutException>();
+            cb.BreakOn<InvalidOperationException>(ex => ex.Message.Contains("Rate limit exceeded", StringComparison.OrdinalIgnoreCase));
+        });
+    });
+});
+```
+
+### Dashboard & Programmatic Control
+
+- **Dashboard UI**: Visual indicators appear on `/queues` (`⚡ CIRCUIT OPEN (Xs)`, `🟡 CANARY TESTING`, `🟢 RECOVERING`). Operators can manually trip or reset the circuit via the **Reset Circuit** button.
+- **Programmatic Reset**: Use `IJobControlService.ResetQueueCircuitAsync(queueName)` to manually reset the circuit upon receiving recovery webhooks or alerts.
+
+---
+
 ## Next Steps
 
 - [Retry & Dead Letter](06-Retry-And-Dead-Letter.md) — Handle failures when throttled jobs timeout
