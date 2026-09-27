@@ -204,6 +204,17 @@ dotnet build -c Release
 
 # 3. Execute Unit Tests
 dotnet test --no-build
+
+# 4. Execute Targeted Integration Tests (Mandatory when touching Storage, Core or Brokers)
+# If touching Core (src/NexJob/):
+dotnet test tests/NexJob.IntegrationTests --filter "FullyQualifiedName~InMemoryStorageProviderTests|FullyQualifiedName~JobExecutionEndToEndTests"
+
+# If touching Storage Providers (Postgres, SqlServer, Mongo, Redis):
+# (Requires local Docker / Testcontainers if run locally, or verify targeted container tests pass)
+dotnet test tests/NexJob.IntegrationTests --filter "FullyQualifiedName~<Provider>"
+
+# If touching Messaging Triggers / Outbox (RabbitMQ, Kafka, SQS, Salesforce):
+dotnet test tests/NexJob.<Package>.IntegrationTests
 ```
 
 - **Architecture Compliance Audit (`03-validation-mode.md`):**
@@ -211,6 +222,7 @@ dotnet test --no-build
   - [ ] Dispatcher remains stateless.
   - [ ] Deadline enforced BEFORE execution begins.
   - [ ] Dead-letter handler exceptions are swallowed/logged (never crashes dispatcher).
+  - [ ] Storage & Core contracts verified against Integration Suite (`tests/NexJob.IntegrationTests`).
 - **If any step fails:** Do not ask the user what to do. Inspect the failure, correct the production code, and re-run the gate until all pass with **0 errors and 0 warnings**.
 - For troubleshooting StyleCop warnings (SA1202, SA1204, SA1413, SA1508), refer to [verification-gate.md](./references/verification-gate.md).
 
