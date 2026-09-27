@@ -190,6 +190,7 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
             {
                 job.Status = JobStatus.Succeeded;
                 job.CompletedAt = DateTimeOffset.UtcNow;
+                job.CheckpointJson = null;
             }
         }
 
@@ -208,6 +209,7 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
                 {
                     job.Status = JobStatus.Succeeded;
                     job.CompletedAt = now;
+                    job.CheckpointJson = null;
                 }
             }
         }

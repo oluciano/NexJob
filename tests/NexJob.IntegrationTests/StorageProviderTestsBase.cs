@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using FluentAssertions;
 using NexJob.Storage;
 using Xunit;
@@ -823,13 +824,15 @@ public abstract class StorageProviderTestsBase
         JobPriority priority = JobPriority.Normal,
         JobStatus status = JobStatus.Enqueued,
         JobId? parentJobId = null,
-        int maxAttempts = 5) =>
+        int maxAttempts = 5,
+        string jobType = "NexJob.IntegrationTests.FakeJob",
+        string? inputJson = null) =>
         new()
         {
             Id = new JobId(Guid.NewGuid()),
-            JobType = "NexJob.IntegrationTests.FakeJob",
+            JobType = jobType,
             InputType = "NexJob.IntegrationTests.FakeInput",
-            InputJson = $"{{\"seq\":\"{Guid.NewGuid()}\"}}",
+            InputJson = inputJson ?? $"{{\"seq\":\"{Guid.NewGuid()}\"}}",
             Queue = queue,
             Priority = priority,
             Status = status,
@@ -1138,5 +1141,218 @@ public abstract class StorageProviderTestsBase
         result.Should().NotBeNull();
         result!.IdempotencyKey.Should().Be(key);
         result.Status.Should().Be(JobStatus.Enqueued);
+    }
+
+    // ── v5.6 Features: Checkpoints & State Saving (#206) ──────────────────────
+
+    [Fact]
+    public async Task SaveCheckpointAsync_PersistsCheckpointAndProgress_AcrossFetchAndRead()
+    {
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
+        var record = MakeJob();
+        await storage.EnqueueAsync(record);
+
+        var fetched = await storage.FetchNextAsync(["default"]);
+        fetched.Should().NotBeNull();
+
+        var checkpointPayload = "{\"lastRow\":1500,\"batchCount\":15}";
+        await storage.SaveCheckpointAsync(
+            fetched!.Id,
+            checkpointJson: checkpointPayload,
+            percent: 50,
+            message: "Processed 1500 rows",
+            ct: CancellationToken.None);
+
+        var updated = await dashboard.GetJobByIdAsync(fetched.Id);
+        updated.Should().NotBeNull();
+        updated!.CheckpointJson.Should().Be(checkpointPayload);
+        updated.ProgressPercent.Should().Be(50);
+        updated.ProgressMessage.Should().Be("Processed 1500 rows");
+    }
+
+    [Fact]
+    public async Task AcknowledgeAsync_ClearsCheckpointJson_OnSuccess()
+    {
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
+        var record = MakeJob();
+        await storage.EnqueueAsync(record);
+
+        var fetched = (await storage.FetchNextAsync(["default"]))!;
+        await storage.SaveCheckpointAsync(
+            fetched.Id,
+            checkpointJson: "{\"step\":3}",
+            percent: 90,
+            message: "Almost done",
+            ct: CancellationToken.None);
+
+        // Act — complete job successfully
+        await storage.AcknowledgeAsync(fetched.Id);
+
+        // Assert — checkpoint_json must be cleared to avoid database bloat
+        var updated = await dashboard.GetJobByIdAsync(fetched.Id);
+        updated.Should().NotBeNull();
+        updated!.Status.Should().Be(JobStatus.Succeeded);
+        updated.CheckpointJson.Should().BeNull("checkpoint state must be wiped when job succeeds");
+    }
+
+    [Fact]
+    public async Task CommitJobResultAsync_PreservesCheckpointJson_OnRetryAndDeadLetter()
+    {
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
+        var record = MakeJob();
+        await storage.EnqueueAsync(record);
+
+        var fetched = (await storage.FetchNextAsync(["default"]))!;
+        var checkpoint = "{\"resumeAfterKey\":\"cursor-xyz\"}";
+        await storage.SaveCheckpointAsync(
+            fetched.Id,
+            checkpointJson: checkpoint,
+            percent: 40,
+            message: "Interrupted",
+            ct: CancellationToken.None);
+
+        // Act 1 — commit failure with retry scheduled
+        var retryAt = DateTimeOffset.UtcNow.AddMinutes(2);
+        await storage.CommitJobResultAsync(fetched.Id, new JobExecutionResult
+        {
+            Succeeded = false,
+            Logs = [],
+            RetryAt = retryAt,
+            Exception = new InvalidOperationException("transient network drop"),
+        });
+
+        // Assert 1 — checkpoint must be preserved across retry
+        var scheduled = await dashboard.GetJobByIdAsync(fetched.Id);
+        scheduled.Should().NotBeNull();
+        scheduled!.Status.Should().Be(JobStatus.Scheduled);
+        scheduled.CheckpointJson.Should().Be(checkpoint, "interrupted job must resume from last checkpoint on retry");
+
+        // Act 2 — commit final dead-letter failure (no retry)
+        await storage.CommitJobResultAsync(fetched.Id, new JobExecutionResult
+        {
+            Succeeded = false,
+            Logs = [],
+            RetryAt = null,
+            Exception = new InvalidOperationException("exhausted"),
+        });
+
+        // Assert 2 — checkpoint preserved in dead-letter for audit
+        var failed = await dashboard.GetJobByIdAsync(fetched.Id);
+        failed.Should().NotBeNull();
+        failed!.Status.Should().Be(JobStatus.Failed);
+        failed.CheckpointJson.Should().Be(checkpoint, "checkpoint must be preserved on dead-letter for operator diagnosis");
+    }
+
+    // ── v5.6 Features: Retention Strategies (#203) ─────────────────────────────
+
+    [Fact]
+    public async Task CommitJobResultAsync_WithPurgeOnSuccess_PhysicallyDeletesJob()
+    {
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
+        var record = MakeJob();
+        await storage.EnqueueAsync(record);
+
+        var fetched = (await storage.FetchNextAsync(["default"]))!;
+        await storage.CommitJobResultAsync(fetched.Id, new JobExecutionResult
+        {
+            Succeeded = true,
+            Logs = [],
+            PurgeOnSuccess = true,
+        });
+
+        var purged = await dashboard.GetJobByIdAsync(fetched.Id);
+        purged.Should().BeNull("PurgeOnSuccess=true must physically delete the row from storage upon success");
+    }
+
+    [Fact]
+    public async Task CommitJobResultAsync_WithTrimPayloadOnSuccess_WipesInputJson()
+    {
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
+        var record = MakeJob(inputJson: "{\"heavyPayload\":[1,2,3,4,5]}");
+        await storage.EnqueueAsync(record);
+
+        var fetched = (await storage.FetchNextAsync(["default"]))!;
+        await storage.CommitJobResultAsync(fetched.Id, new JobExecutionResult
+        {
+            Succeeded = true,
+            Logs = [],
+            TrimPayloadOnSuccess = true,
+        });
+
+        var trimmed = await dashboard.GetJobByIdAsync(fetched.Id);
+        trimmed.Should().NotBeNull();
+        trimmed!.Status.Should().Be(JobStatus.Succeeded);
+        string.IsNullOrEmpty(trimmed.InputJson).Should().BeTrue("TrimPayloadOnSuccess=true must wipe input payload on success to prevent bloat");
+    }
+
+    [Fact]
+    public async Task CommitJobResultAsync_FailedJob_PreservesPayloadEvenWithPurgeOrTrim()
+    {
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
+        var originalPayload = "{\"secretValue\":\"do-not-lose\"}";
+        var record = MakeJob(inputJson: originalPayload);
+        await storage.EnqueueAsync(record);
+
+        var fetched = (await storage.FetchNextAsync(["default"]))!;
+        await storage.CommitJobResultAsync(fetched.Id, new JobExecutionResult
+        {
+            Succeeded = false,
+            Logs = [],
+            PurgeOnSuccess = true,
+            TrimPayloadOnSuccess = true,
+            Exception = new InvalidOperationException("failed execution"),
+        });
+
+        var preserved = await dashboard.GetJobByIdAsync(fetched.Id);
+        preserved.Should().NotBeNull("failed jobs must never be purged even if PurgeOnSuccess was configured");
+        preserved!.Status.Should().Be(JobStatus.Failed);
+        JsonNode.DeepEquals(JsonNode.Parse(preserved.InputJson), JsonNode.Parse(originalPayload))
+            .Should().BeTrue("failed jobs must retain payload for triage");
+    }
+
+    // ── v5.6 Features: Job Catalog Aggregation (#202) ──────────────────────────
+
+    [Fact]
+    public async Task GetJobCatalogAsync_AggregatesDistinctTypesAndRunStatistics()
+    {
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
+
+        var jobA1 = MakeJob(queue: "reports", jobType: "MyApp.ReportsJob");
+        await storage.EnqueueAsync(jobA1);
+
+        var jobA2 = MakeJob(queue: "reports", jobType: "MyApp.ReportsJob");
+        await storage.EnqueueAsync(jobA2);
+
+        var jobB1 = MakeJob(queue: "sync", jobType: "MyApp.SyncJob");
+        await storage.EnqueueAsync(jobB1);
+
+        // Execute A1 (success)
+        var fetchedA1 = (await storage.FetchNextAsync(["reports"]))!;
+        await storage.CommitJobResultAsync(fetchedA1.Id, new JobExecutionResult { Succeeded = true, Logs = [] });
+
+        // Execute A2 (failure)
+        var fetchedA2 = (await storage.FetchNextAsync(["reports"]))!;
+        await storage.CommitJobResultAsync(fetchedA2.Id, new JobExecutionResult { Succeeded = false, Logs = [], Exception = new Exception("err") });
+
+        // Execute B1 (success)
+        var fetchedB1 = (await storage.FetchNextAsync(["sync"]))!;
+        await storage.CommitJobResultAsync(fetchedB1.Id, new JobExecutionResult { Succeeded = true, Logs = [] });
+
+        // Act
+        var catalog = await dashboard.GetJobCatalogAsync(CancellationToken.None);
+
+        // Assert
+        catalog.Should().NotBeNull();
+        var reportsItem = catalog.FirstOrDefault(c => c.JobType == "MyApp.ReportsJob" && c.Queue == "reports");
+        reportsItem.Should().NotBeNull();
+        reportsItem!.TotalRuns.Should().Be(2);
+        reportsItem.SucceededRuns.Should().Be(1);
+        reportsItem.FailedRuns.Should().Be(1);
+
+        var syncItem = catalog.FirstOrDefault(c => c.JobType == "MyApp.SyncJob" && c.Queue == "sync");
+        syncItem.Should().NotBeNull();
+        syncItem!.TotalRuns.Should().Be(1);
+        syncItem.SucceededRuns.Should().Be(1);
+        syncItem.FailedRuns.Should().Be(0);
     }
 }

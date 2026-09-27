@@ -37,7 +37,7 @@ internal sealed class JobRow
         Id = new JobId(Id),
         JobType = JobType,
         InputType = InputType,
-        InputJson = InputJson,
+        InputJson = string.IsNullOrEmpty(InputJson) || string.Equals(InputJson, "{}", StringComparison.Ordinal) || string.Equals(InputJson, "null", StringComparison.Ordinal) ? string.Empty : InputJson,
         SchemaVersion = SchemaVersion,
         Queue = Queue,
         Priority = (JobPriority)Priority,
