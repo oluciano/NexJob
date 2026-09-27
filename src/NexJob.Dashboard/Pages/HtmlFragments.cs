@@ -426,7 +426,12 @@ internal static class HtmlFragments
     }
 
     /// <summary>Renders a compact queue row for high-density monitoring with control actions.</summary>
-    internal static string QueueCard(QueueMetrics queue, string pathPrefix, bool isPaused = false, DashboardCluster? activeCluster = null)
+    internal static string QueueCard(
+        QueueMetrics queue,
+        string pathPrefix,
+        bool isPaused = false,
+        DashboardCluster? activeCluster = null,
+        bool hasActiveWorkers = true)
     {
         var total = queue.Enqueued + queue.Processing;
         var utilPct = total > 0 ? (int)(queue.Processing * 100.0 / total) : 0;
@@ -454,10 +459,18 @@ internal static class HtmlFragments
             ? " <span class=\"badge badge-warning\" style=\"font-size:10px;margin-left:6px\">PAUSED</span>"
             : string.Empty;
 
+        var orphanWarning = !hasActiveWorkers && queue.Enqueued > 0
+            ? " <span class=\"badge badge-warning\" style=\"font-size:10px;margin-left:6px\" title=\"No active worker nodes are listening to this queue. Jobs will remain enqueued until a worker configured for this queue is online.\">⚠️ NO WORKERS</span>"
+            : string.Empty;
+
+        var orphanSubtitle = !hasActiveWorkers && queue.Enqueued > 0
+            ? "<div style=\"font-size:11px;color:var(--warning);margin-top:2px;font-weight:400\">⚠️ No active workers listening</div>"
+            : string.Empty;
+
         return
             $"<div style=\"padding:16px 24px;display:flex;align-items:center;gap:24px;border-bottom:1px solid var(--border)\">" +
             $"<div style=\"width:220px;font-weight:600;font-size:15px;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap\">" +
-            $"{HtmlEncode(queue.Queue)}{statusBadge}</div>" +
+            $"{HtmlEncode(queue.Queue)}{statusBadge}{orphanWarning}{orphanSubtitle}</div>" +
             $"<div style=\"flex:1;display:flex;gap:40px;align-items:center\">" +
                 $"<div style=\"width:150px;display:flex;align-items:baseline;gap:8px\"><div style=\"font-size:10px;color:var(--text-tertiary);font-weight:700\">ENQUEUED</div><div style=\"font-weight:700;color:var(--info);font-size:18px\">{queue.Enqueued}</div></div>" +
                 $"<div style=\"width:150px;display:flex;align-items:baseline;gap:8px\"><div style=\"font-size:10px;color:var(--text-tertiary);font-weight:700\">PROCESSING</div><div style=\"font-weight:700;color:var(--warning);font-size:18px\">{queue.Processing}</div></div>" +

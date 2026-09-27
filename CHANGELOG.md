@@ -23,6 +23,14 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`NexJob.Dashboard` — Orphan Queues & Inactive Worker Indicators (Issue #212)**:
+  - Added real-time tracking of queue coverage against active worker nodes registered via `IJobStorage.GetActiveServersAsync()`.
+  - Added warning badge `⚠️ NO WORKERS` and warning subtitle on `QueuesPage` cards whenever a queue has pending jobs (`Enqueued > 0`) but no active worker nodes in the cluster configured to process it.
+  - Added unserved queues alert banner on `ServersPage` highlighting queues that have accumulated work without any online worker nodes.
+  - Added live queue coverage check in the `CatalogPage` Trigger Modal, alerting operators before enqueuing a job if the chosen queue currently lacks active workers.
+  - Added 3N unit testing matrix (Positive, Negative, Boundary) in `tests/NexJob.Tests/StandaloneDashboardTests.cs`.
+  - Documented behavior in `docs/wiki/10-Dashboard.md`.
+
 - **`NexJob` Core & `NexJob.Dashboard` — Job Catalog & Definitions View and On-Demand Triggering (Issue #202)**:
   - Added `JobCatalogItem` record encapsulating job definitions with aggregated execution telemetry (`JobType`, `Queue`, `TotalRuns`, `SucceededRuns`, `FailedRuns`, `LastExecutedAt`, `AvgDurationSeconds`).
   - Extended `IDashboardStorage` with `GetJobCatalogAsync` featuring a default interface implementation for backward compatibility with external providers (with deprecation notice for v6.0).

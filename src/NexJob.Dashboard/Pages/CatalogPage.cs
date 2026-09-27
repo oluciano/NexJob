@@ -14,6 +14,7 @@ internal sealed class CatalogPage : IComponent
     private RenderHandle _handle;
 
     [Parameter] public IDashboardStorage Storage { get; set; } = default!;
+    [Parameter] public IJobStorage? JobStorage { get; set; }
     [Parameter] public string PathPrefix { get; set; } = "/dashboard";
     [Parameter] public string Title { get; set; } = "NexJob";
     [Parameter] public NavCounters? Counters { get; set; }
@@ -48,10 +49,24 @@ internal sealed class CatalogPage : IComponent
                 .ToList();
         }
 
-        _handle.Render(b => b.AddMarkupContent(0, BuildHtml(catalog)));
+        var activeWorkerQueues = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var effectiveJobStorage = JobStorage ?? ActiveCluster?.JobStorage ?? (Storage as IJobStorage);
+        if (effectiveJobStorage != null)
+        {
+            var activeServers = await effectiveJobStorage.GetActiveServersAsync(TimeSpan.FromMinutes(1));
+            foreach (var s in activeServers)
+            {
+                foreach (var q in s.Queues)
+                {
+                    activeWorkerQueues.Add(q);
+                }
+            }
+        }
+
+        _handle.Render(b => b.AddMarkupContent(0, BuildHtml(catalog, activeWorkerQueues)));
     }
 
-    private string BuildHtml(IReadOnlyList<JobCatalogItem> items)
+    private string BuildHtml(IReadOnlyList<JobCatalogItem> items, HashSet<string> activeWorkerQueues)
     {
         var now = DateTimeOffset.UtcNow;
         var clusterQuery = ActiveCluster is not null ? $"?cluster={Uri.EscapeDataString(ActiveCluster.Id)}" : string.Empty;
@@ -176,6 +191,9 @@ internal sealed class CatalogPage : IComponent
                         <div>
                             <label style="display:block;font-size:12px;font-weight:600;color:#9ca3af;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px">Queue</label>
                             <input type="text" id="triggerModalQueue" name="queue" style="width:100%;box-sizing:border-box" required />
+                            <div id="triggerModalQueueWarn" style="display:none;font-size:12px;color:var(--warning);margin-top:6px;padding:6px 10px;background:rgba(255,159,67,0.12);border:1px solid var(--warning);border-radius:4px">
+                                ⚠️ Notice: No active worker nodes are currently listening to this queue. Jobs will remain enqueued until a worker is started for this queue.
+                            </div>
                         </div>
                         <div>
                             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
@@ -194,6 +212,25 @@ internal sealed class CatalogPage : IComponent
             <script>
                 (function() {
                     var defaultSampleJson = '{}';
+                    var activeWorkersMap = [{{string.Join(", ", activeWorkerQueues.Select(q => $"'{HttpUtility.JavaScriptStringEncode(q.ToLowerInvariant())}'"))}}];
+
+                    function updateQueueWarning() {
+                        var queueInput = document.getElementById('triggerModalQueue');
+                        var warnBox = document.getElementById('triggerModalQueueWarn');
+                        if (!queueInput || !warnBox) return;
+
+                        var val = (queueInput.value || '').trim().toLowerCase();
+                        if (val && activeWorkersMap.length > 0 && activeWorkersMap.indexOf(val) === -1) {
+                            warnBox.style.display = 'block';
+                        } else {
+                            warnBox.style.display = 'none';
+                        }
+                    }
+
+                    var queueEl = document.getElementById('triggerModalQueue');
+                    if (queueEl) {
+                        queueEl.addEventListener('input', updateQueueWarning);
+                    }
 
                     document.addEventListener('click', function(e) {
                         var btn = e.target ? e.target.closest('.trigger-modal-btn') : null;
@@ -218,6 +255,7 @@ internal sealed class CatalogPage : IComponent
                         queueInput.value = queue;
                         payloadInput.value = sampleJson;
                         inputTypeSpan.textContent = inputType;
+                        updateQueueWarning();
 
                         if (typeof modal.showModal === 'function') {
                             modal.showModal();
