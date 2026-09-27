@@ -13,13 +13,13 @@ Eliminate AI hallucination, prevent unintended redesign, standardize execution w
 ## Quick Start
 
 **For most tasks:**
-1. Start with `/ai-method/core/00-foundation-minimal.md`
-2. Choose your workflow: `/ai-method/workflows/{type}.md`
-3. Use appropriate mode: `/ai-method/modes/{number}.md`
+1. Start with `.agents/method/core/00-foundation-minimal.md`
+2. Choose your workflow: `.agents/method/workflows/{type}.md`
+3. Use appropriate mode: `.agents/method/modes/{number}.md`
 
 **For complex scenarios:**
-- Add `/ai-method/core/00-foundation-extended.md`
-- Reference `/ai-method/templates/` for outputs
+- Add `.agents/method/core/00-foundation-extended.md`
+- Reference `.agents/method/templates/` for outputs
 
 ---
 
@@ -280,7 +280,7 @@ Each step uses **only the context it needs**, minimizing token usage across the 
 ## Files in This System
 
 ```
-ai-method/
+.agents/method/
 ├── README.md (this file)
 ├── core/
 │   ├── 00-foundation-minimal.md (load for every task)

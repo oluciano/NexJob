@@ -17,22 +17,25 @@ It synthesizes the best principles of context engineering and verification gates
 ## The 6-Phase Workflow
 
 ```
-[Phase 0: Technical Grooming & Architectural Debate]
+[Phase 0: Technical Grooming & Architectural Debate]  ◄── 01-architect-mode.md
                          │
                          ▼
-        [Phase 1: Pre-Flight & Boundary Check]
+     [Phase 1: Pre-Flight & Context Warmup Gate]     ◄── Target Files Baseline
                          │
                          ▼
-        [Phase 2: Mandatory 3N Testing Matrix]
+        [Phase 2: Mandatory 3N Testing Matrix]       ◄── Specialized Workflows
+                         │                               (feature, bugfix, refactor,
+                         ▼                                reliability)
+         [Phase 3: Atomic Implementation]            ◄── 02-execution-mode.md
                          │
                          ▼
-         [Phase 3: Atomic Implementation]
-                         │
-                         ▼
-        [Phase 4: Automated Verification Gate]
+        [Phase 4: Automated Verification Gate]       ◄── 03-validation-mode.md
                          │
                          ▼
      [Phase 4.5: Continuous Changelog Maintenance]
+                         │
+                         ▼
+     [Phase 4.6: Documentation & Wiki Truth Gate]
                          │
                          ▼
         [Phase 5: Handoff & PR Generation]
@@ -45,11 +48,13 @@ It synthesizes the best principles of context engineering and verification gates
 
 ## Phase 0: Technical Grooming & Architectural Debate (Discuss / Refine)
 
-> **Goal:** Eliminate ambiguity, challenge assumptions, and agree on the Definition of Done (DoD) before generating code.
+> **Mode:** `.agents/method/modes/01-architect-mode.md`  
+> **Goal:** Eliminate ambiguity, challenge assumptions, and agree on the Definition of Done (DoD) before generating code. **No production code generation permitted in this phase.**
 
-When a task is new, non-trivial, or ambiguous (or when explicitly requested via *"faça um grooming desta task"*), adopt the **Tech Lead / Devil's Advocate** persona and execute an interactive grooming session:
+When a task is new, non-trivial, or ambiguous (or when explicitly requested via *"faça um grooming desta task"*), adopt the **Tech Lead / Devil's Advocate / Architect** persona:
 
 1. **Invariants & Scope Check:**
+   - Consult `.agents/method/core/00-foundation-minimal.md`.
    - Does this touch core execution (`src/NexJob/Internal/`) or core storage contracts? *(If so, flag that it belongs to Architect/Codex/Bruxo).*
    - Does this change any public API signature or behavior?
 2. **Failure Modes & Edge Cases:**
@@ -72,6 +77,7 @@ When a task is new, non-trivial, or ambiguous (or when explicitly requested via 
    - **Language Mandate:** Issues must be written **strictly in English**.
    - Use conventional titles (`type(scope): description`), assign relevant labels (`bug`, `enhancement`, `reliability`, `performance`, `documentation`, `rfc`), and structure the body with:
      - **Context & Motivation**
+     - **Target Files & Components Map:** Explicit list of files/classes identified during grooming (serves as the baseline for future warmup/validity checks).
      - **Current vs Expected Behavior**
      - **Definition of Done (DoD)**
      - **3N Testing Matrix Plan**
@@ -81,24 +87,37 @@ When a task is new, non-trivial, or ambiguous (or when explicitly requested via 
 
 ---
 
-## Phase 1: Pre-Flight & Boundary Check (Anti-Drift)
+## Phase 1: Pre-Flight, Issue Warmup & Context Validation Gate
 
-> **Goal:** Ensure context stays lean and the agent stays strictly within its assigned lane.
+> **Goal:** Before touching code or creating branches, summarize the issue, validate whether it remains valid against the latest `develop`, and ensure it was not already addressed or superseded.
 
-1. **Inspect Target Files & Squad Lane (GEMINI.md):**
+When picking an issue from the backlog, execute the **Warmup Gate**:
+
+1. **Issue Context Summary:**
+   - Review the issue description, DoD, and specifically the **Target Files & Components Map** recorded during grooming.
+2. **Current State & Validity Check (Warmup):**
+   - **Inspect Target Files on `develop`:** Check the mapped files on the latest `develop` (`git log -n 5 <path>`, `view_file` or `grep`) to inspect current implementation.
+   - **Already Solved?** Verify if a recent PR or refactor already fixed or implemented this behavior indirectly.
+   - **Still Valid?** Verify whether the classes, methods, or architectural premises cited in the issue still exist or have evolved.
+   - **Active Collisions:** Check if another open PR or branch is actively touching the same components.
+3. **Warmup Decision Gate:**
+   - **If Valid:** Present a brief summary of the current state vs planned change to the user, confirm alignment, select the appropriate workflow (`.agents/method/workflows/{feature|bugfix|refactor|reliability}.md`), and proceed to branch isolation.
+   - **If Already Solved or Obsolete:** Present the evidence immediately to the user, document the rationale, and close the issue without generating redundant code (Phase 6, Scenario B).
+4. **Inspect Target Files & Squad Lane (GEMINI.md):**
    - Check which projects/files are involved.
    - ❌ **Protected Core Files:** `src/NexJob/Internal/`, `IJobStorage`, `IRecurringStorage`, `IDashboardStorage`, `JobRecord`, `IScheduler`, `JobWakeUpChannel`.
    - 🛑 If an issue requires modifying protected core execution (e.g. issues like #201 or #204 in `JobExecutor.cs`), it belongs to **Architect / Claude Code (bruxo)** or requires explicit architectural pre-approval before proceeding.
-2. **Branch Isolation Mandate:**
+5. **Branch Isolation Mandate:**
    - Always branch off the latest `develop`:
      ```bash
      git checkout develop && git pull origin develop
      git checkout -b <type>/<issue-id>-<short-description>
      ```
    - Never commit implementation code directly to `develop` or `main`.
-3. **Context Engineering (State Tracking):**
+6. **Context Engineering (State Tracking):**
    - Maintain task progress in `.gemini/scratch/task-state.md` with:
      - Objective & Linked Issue (#ID)
+     - Target Files Baseline
      - Current Phase
      - Decisions & DoD
      - Next Atomic Action
@@ -108,6 +127,12 @@ When a task is new, non-trivial, or ambiguous (or when explicitly requested via 
 
 ## Phase 2: Mandatory 3N Testing Matrix (Test-First)
 
+> **Workflow Reference:** Follow the task-specific workflow from `.agents/method/workflows/`:
+> - New Capabilities: `feature.md`
+> - Bug Fixes: `bugfix.md` (mandatory reproduction test before fixing)
+> - Code Cleanup: `refactor.md` (strict behavioral parity)
+> - Stress/Timeouts: `reliability.md`
+> 
 > **Goal:** Solidify behavior with immutable test contracts before modifying production code.
 
 Every feature or bug fix must produce at least 3 distinct test categories:
@@ -125,7 +150,8 @@ Every feature or bug fix must produce at least 3 distinct test categories:
 
 ## Phase 3: Atomic Implementation Guardrails
 
-> **Goal:** Smallest safe change with 100% adherence to NexJob coding standards.
+> **Mode:** `.agents/method/modes/02-execution-mode.md`  
+> **Goal:** Implement ONLY what was specified. No architectural redesign, no unrequested abstractions, smallest safe change with 100% adherence to NexJob coding standards.
 
 Apply the following mandatory engineering rules:
 - **Sealed by default:** All new classes must be `sealed` unless designed for extension.
@@ -141,7 +167,8 @@ Apply the following mandatory engineering rules:
 
 ## Phase 4: Automated Verification Gate
 
-> **Goal:** Guarantee zero CI breakages before claiming work is finished.
+> **Mode:** `.agents/method/modes/03-validation-mode.md`  
+> **Goal:** Guarantee zero CI breakages and zero invariant drift before claiming work is finished.
 
 Execute the verification sequence directly in the terminal:
 
@@ -156,7 +183,12 @@ dotnet build -c Release
 dotnet test --no-build
 ```
 
-- **If any step fails:** Do not ask the user what to do. Inspect the failure, correct the production code, and re-run the gate until all 3 pass with **0 errors and 0 warnings**.
+- **Architecture Compliance Audit (`03-validation-mode.md`):**
+  - [ ] Storage is the single source of truth (no in-memory cache overriding state transitions).
+  - [ ] Dispatcher remains stateless.
+  - [ ] Deadline enforced BEFORE execution begins.
+  - [ ] Dead-letter handler exceptions are swallowed/logged (never crashes dispatcher).
+- **If any step fails:** Do not ask the user what to do. Inspect the failure, correct the production code, and re-run the gate until all pass with **0 errors and 0 warnings**.
 - For troubleshooting StyleCop warnings (SA1202, SA1204, SA1413, SA1508), refer to [verification-gate.md](./references/verification-gate.md).
 
 ---

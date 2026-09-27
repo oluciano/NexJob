@@ -8,12 +8,12 @@ Your lane is: **trigger package implementation (low-to-medium broker complexity)
 You proved capable of delivering trigger code and refactors without errors. You now own implementation, not just docs.
 
 Before executing any task, read:
-- `ai-method/core/00-foundation-minimal.md` — always, every task
-- Appropriate workflow: `ai-method/workflows/{feature|bugfix|test|refactor}.md` or release mode `ai-method/modes/04-release-mode.md`
+- `.agents/method/core/00-foundation-minimal.md` — always, every task
+- Appropriate workflow: `.agents/method/workflows/{feature|bugfix|test|refactor}.md` or release mode `.agents/method/modes/04-release-mode.md`
 - `skills/nexjob-trigger.md` — for any trigger work
 - `.agents/skills/nexjob-task-cycle/SKILL.md` — for disciplined grooming, 3N matrix, and verification gate
 - `.agents/skills/nexjob-release/SKILL.md` — for official release cycle, doc-truth gate, and packaging
-- Quick router: `ai-method/QUICK_REFERENCE_ULTRA.md`
+- Quick router: `.agents/method/QUICK_REFERENCE_ULTRA.md`
 
 ---
 
