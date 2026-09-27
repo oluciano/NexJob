@@ -20,6 +20,8 @@ internal sealed class CatalogPage : IComponent
     [Parameter] public NavCounters? Counters { get; set; }
     [Parameter] public string? Search { get; set; }
     [Parameter] public string? QueueFilter { get; set; }
+    [Parameter] public string? TriggeredJobId { get; set; }
+    [Parameter] public string? Sort { get; set; }
     [Parameter] public IReadOnlyList<DashboardCluster>? Clusters { get; set; }
     [Parameter] public DashboardCluster? ActiveCluster { get; set; }
 
@@ -49,6 +51,29 @@ internal sealed class CatalogPage : IComponent
                 .ToList();
         }
 
+        // Apply sorting
+        if (string.Equals(Sort, "failure-rate", StringComparison.OrdinalIgnoreCase))
+        {
+            catalog = catalog
+                .OrderByDescending(c => c.TotalRuns > 0 ? (double)c.FailedRuns / c.TotalRuns : 0.0)
+                .ThenBy(c => Helpers.ShortType(c.JobType), StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+        else if (string.Equals(Sort, "duration", StringComparison.OrdinalIgnoreCase))
+        {
+            catalog = catalog
+                .OrderByDescending(c => c.AvgDurationSeconds ?? 0.0)
+                .ThenBy(c => Helpers.ShortType(c.JobType), StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+        else if (string.Equals(Sort, "runs", StringComparison.OrdinalIgnoreCase))
+        {
+            catalog = catalog
+                .OrderByDescending(c => c.TotalRuns)
+                .ThenBy(c => Helpers.ShortType(c.JobType), StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
         var activeWorkerQueues = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var effectiveJobStorage = JobStorage ?? ActiveCluster?.JobStorage ?? (Storage as IJobStorage);
         if (effectiveJobStorage != null)
@@ -73,7 +98,7 @@ internal sealed class CatalogPage : IComponent
         var clusterParam = ActiveCluster is not null ? $"&cluster={Uri.EscapeDataString(ActiveCluster.Id)}" : string.Empty;
         var isReadOnly = ActiveCluster?.IsReadOnly == true;
 
-        if (items.Count == 0 && string.IsNullOrWhiteSpace(Search) && string.IsNullOrWhiteSpace(QueueFilter))
+        if (items.Count == 0 && string.IsNullOrWhiteSpace(Search) && string.IsNullOrWhiteSpace(QueueFilter) && string.IsNullOrWhiteSpace(TriggeredJobId))
         {
             var emptyBody =
                 HtmlFragments.Breadcrumbs(PathPrefix, ("Catalog", null)) +
@@ -275,9 +300,24 @@ internal sealed class CatalogPage : IComponent
             </script>
             """;
 
+        var triggeredBanner = string.Empty;
+        if (!string.IsNullOrWhiteSpace(TriggeredJobId))
+        {
+            var triggeredJobUrl = $"{PathPrefix}/jobs/{Uri.EscapeDataString(TriggeredJobId)}{clusterQuery}";
+            triggeredBanner =
+                $"<div class=\"alert alert-success\" style=\"margin-bottom:20px;display:flex;align-items:center;justify-content:space-between;padding:12px 18px;border-radius:8px\">" +
+                $"<div style=\"display:flex;align-items:center;gap:8px\">" +
+                $"<span>✅ Job enqueued successfully:</span> " +
+                $"<a href=\"{triggeredJobUrl}\" style=\"font-family:monospace;font-weight:700;color:inherit;text-decoration:underline\">{HttpUtility.HtmlEncode(TriggeredJobId)}</a>" +
+                $"</div>" +
+                $"<a href=\"{PathPrefix}/catalog{clusterQuery}\" class=\"btn btn-ghost btn-sm\" style=\"color:inherit;text-decoration:none;font-weight:700\">✕</a>" +
+                $"</div>";
+        }
+
         var body =
             "<div id=\"catalog-page-content\" data-refresh=\"true\">" +
             (isReadOnly ? HtmlFragments.ReadOnlyBanner() : string.Empty) +
+            triggeredBanner +
             HtmlFragments.Breadcrumbs(PathPrefix, ("Catalog", null)) +
             HtmlFragments.PageHeader("Job Catalog & Definitions", "Registered job types, execution counts, error rates, and ad-hoc triggering") +
             filterBar +
@@ -312,6 +352,18 @@ internal sealed class CatalogPage : IComponent
         var searchVal = HttpUtility.HtmlAttributeEncode(Search ?? string.Empty);
         var queueVal = HttpUtility.HtmlAttributeEncode(QueueFilter ?? string.Empty);
 
+        var sortOptions = string.Join(string.Empty, new[]
+        {
+            (string.Empty, "Default Sort"),
+            ("failure-rate", "Highest Failure Rate"),
+            ("duration", "Longest Duration"),
+            ("runs", "Most Runs"),
+        }.Select(o =>
+        {
+            var selected = string.Equals(Sort, o.Item1, StringComparison.OrdinalIgnoreCase) ? " selected" : string.Empty;
+            return $"<option value=\"{HttpUtility.HtmlAttributeEncode(o.Item1)}\"{selected}>{o.Item2}</option>";
+        }));
+
         return $"""
             <div class="card" style="padding:16px 20px;margin-bottom:20px">
                 <form method="get" action="{PathPrefix}/catalog" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
@@ -321,6 +373,11 @@ internal sealed class CatalogPage : IComponent
                     </div>
                     <div style="min-width:140px">
                         <input type="text" name="queue" value="{queueVal}" placeholder="Filter by Queue..." style="width:100%" />
+                    </div>
+                    <div style="min-width:160px">
+                        <select name="sort" style="width:100%">
+                            {sortOptions}
+                        </select>
                     </div>
                     <button type="submit" class="btn btn-primary btn-sm">Filter</button>
                     <a href="{PathPrefix}/catalog{(ActiveCluster is not null ? $"?cluster={Uri.EscapeDataString(ActiveCluster.Id)}" : string.Empty)}" class="btn btn-secondary btn-sm">Reset</a>

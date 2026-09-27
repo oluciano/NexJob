@@ -259,7 +259,11 @@ public sealed class DashboardMiddleware
         if (subPath.Contains("/delete", StringComparison.Ordinal) && TryGetJobId(subPath, out var deleteId))
         {
             await controlService.DeleteJobAsync(deleteId, context.RequestAborted).ConfigureAwait(false);
-            LocalRedirect(context, $"{_pathPrefix}/failed", activeCluster);
+            var referer = context.Request.Headers.Referer.ToString();
+            var target = (!string.IsNullOrEmpty(referer) && referer.Contains("/jobs", StringComparison.Ordinal))
+                ? $"{_pathPrefix}/jobs"
+                : $"{_pathPrefix}/failed";
+            LocalRedirect(context, target, activeCluster);
             return true;
         }
 
@@ -681,6 +685,8 @@ public sealed class DashboardMiddleware
                     };
 
                     await scheduler.EnqueueAsync(jobRecord, DuplicatePolicy.AllowAfterFailed, context.RequestAborted).ConfigureAwait(false);
+                    LocalRedirect(context, $"{_pathPrefix}/catalog?triggered={Uri.EscapeDataString(jobRecord.Id.Value.ToString())}", activeCluster);
+                    return true;
                 }
                 else if (inputType is not null && !string.IsNullOrWhiteSpace(payloadJson))
                 {
@@ -705,6 +711,8 @@ public sealed class DashboardMiddleware
                             };
 
                             await scheduler.EnqueueAsync(jobRecord, DuplicatePolicy.AllowAfterFailed, context.RequestAborted).ConfigureAwait(false);
+                            LocalRedirect(context, $"{_pathPrefix}/catalog?triggered={Uri.EscapeDataString(jobRecord.Id.Value.ToString())}", activeCluster);
+                            return true;
                         }
                     }
                     catch
@@ -758,9 +766,34 @@ public sealed class DashboardMiddleware
             listenersClass = listeningCount == allListeners.Count ? "ok" : "warn";
         }
 
+        var activeWorkerQueues = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var server in servers)
+        {
+            foreach (var q in server.Queues)
+            {
+                activeWorkerQueues.Add(q);
+            }
+        }
+
+        var hasOrphanQueues = scopedQueues.Any(q => q.Enqueued > 0 && !activeWorkerQueues.Contains(q.Queue));
+
+        string queuesClass;
+        if (hasOrphanQueues)
+        {
+            queuesClass = "alert";
+        }
+        else if (activeQueues < totalQueues)
+        {
+            queuesClass = "warn";
+        }
+        else
+        {
+            queuesClass = "ok";
+        }
+
         NavCounters counters = new NavCounters(
             Queues: $"{activeQueues}/{totalQueues}",
-            QueuesClass: activeQueues < totalQueues ? "warn" : "ok",
+            QueuesClass: queuesClass,
             Jobs: $"{metrics.Processing}/{metrics.Enqueued}",
             Recurring: $"{metrics.Processing}/{metrics.Recurring}",
             Failed: metrics.Failed > 0 ? metrics.Failed.ToString(CultureInfo.InvariantCulture) : null,
@@ -768,7 +801,8 @@ public sealed class DashboardMiddleware
             Servers: $"{servers.Count}/{servers.Count}",
             ServersClass: "ok",
             Listeners: listenersCounter,
-            ListenersClass: listenersClass);
+            ListenersClass: listenersClass,
+            HasOrphanQueues: hasOrphanQueues);
 
         var clustersList = _options.Clusters.Count > 0 ? _options.Clusters : null;
 
@@ -848,6 +882,8 @@ public sealed class DashboardMiddleware
             var query = context.Request.Query;
             var search = query.TryGetValue("search", out var sr) ? (string?)sr : null;
             var queue = query.TryGetValue("queue", out var qu) ? (string?)qu : null;
+            var triggered = query.TryGetValue("triggered", out var tr) ? (string?)tr : null;
+            var sort = query.TryGetValue("sort", out var so) ? (string?)so : null;
 
             parameters = ParameterView.FromDictionary(new Dictionary<string, object?>(StringComparer.Ordinal)
             {
@@ -858,6 +894,8 @@ public sealed class DashboardMiddleware
                 ["Counters"] = counters,
                 ["Search"] = search,
                 ["QueueFilter"] = queue,
+                ["TriggeredJobId"] = triggered,
+                ["Sort"] = sort,
                 ["Clusters"] = clustersList,
                 ["ActiveCluster"] = activeCluster,
             });

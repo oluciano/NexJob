@@ -412,11 +412,15 @@ internal static class HtmlShell
 
         /* Cluster Topology Map */
         .topology-card { margin-bottom: 24px; padding: 20px; background: var(--bg-primary); border-radius: var(--radius); border: 1px solid var(--border); box-shadow: var(--shadow); }
-        .topology-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
-        .topology-diagram { display: grid; grid-template-columns: 1fr 40px 1fr 40px 1fr; align-items: center; gap: 8px; overflow-x: auto; padding: 10px 0; }
-        .topo-col { display: flex; flex-direction: column; gap: 10px; }
+        .topology-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; flex-wrap: wrap; gap: 12px; }
+        .topology-diagram { display: grid; grid-template-columns: 1fr 40px 1fr 40px 1fr; align-items: center; gap: 8px; overflow-x: auto; padding: 10px 0; min-width: 0; }
+        .topo-col { display: flex; flex-direction: column; gap: 10px; min-width: 140px; }
         .topo-arrow { display: flex; align-items: center; justify-content: center; color: var(--primary); }
         .topo-arrow svg { animation: pulseArrow 2s infinite ease-in-out; }
+        @media (max-width: 768px) {
+            .topology-diagram { display: flex; flex-direction: column; align-items: stretch; gap: 12px; }
+            .topo-arrow svg { transform: rotate(90deg); }
+        }
         @keyframes pulseArrow { 0%, 100% { transform: translateX(0); opacity: 0.6; } 50% { transform: translateX(4px); opacity: 1; } }
         .topo-box { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; transition: var(--transition); }
         .topo-box:hover { border-color: var(--primary); transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.15); }

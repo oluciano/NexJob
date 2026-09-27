@@ -30,6 +30,17 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`NexJob.Dashboard` — UX Polish, Action Ergonomics & Filter Indicators (Issues #214, #220)**:
+  - Added Job Detail actions: Enqueued and Scheduled states now expose Cancel & Delete operations directly from the job detail view.
+  - Added Job Checkpoint Inspector: collapsible `💾 Checkpoint State` panel on Job Detail view displaying formatted progress JSON when `CheckpointJson` is present.
+  - Added Retention Payload Indicator: Job Detail displays an informational badge (`Payload stripped by retention policy (TrimPayloadOnSuccess)`) when payload is trimmed.
+  - Added Destructive Action Safety: Added browser confirmation dialog (`Pause ALL recurring jobs cluster-wide?`) to the Settings page Pause All button.
+  - Added Sidebar Orphan Queue Alert: Added alert badge (`.nav-counter.alert`) to the Queues sidebar item when enqueued jobs exist in queues without active listening workers.
+  - Added Job Catalog Ergonomics: Enqueuing a job from the catalog redirects with `?triggered={jobId}` displaying a success notification banner with direct navigation to the job; added sort controls (`failure-rate`, `duration`, `runs`).
+  - Added Active Filter Breadcrumb Chips: Active filters (status, queue, tag, search) render removable badge chips with individual `[x]` clear links and a `Clear all` button in `FilterBar`.
+  - Added Circuit Breaker Drill-down Links: Direct `View Errors` navigation link to `/failed?queue={q}` for `HalfOpen` and `Recovering` circuit states.
+  - Added Topology Diagram Responsiveness: Responsive layout media query wrapping topology nodes on mobile viewports and rotating connection arrows.
+
 - **`NexJob.IntegrationTests` & Storage Providers — Integration Test Suite Synchronization for v5.6 Features (Issue #219)**:
   - Extended shared `StorageProviderTestsBase` contract suite with real-database integration tests across all 5 providers (`InMemory`, `PostgreSQL`, `SQL Server`, `MongoDB`, `Redis`).
   - Added integration contract coverage for Checkpoints (`SaveCheckpointAsync`, state persistence, and auto-clear on `AcknowledgeAsync` / `AcknowledgeBatchAsync`).

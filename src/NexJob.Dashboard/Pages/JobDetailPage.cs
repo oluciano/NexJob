@@ -56,10 +56,17 @@ internal sealed class JobDetailPage : IComponent
             {
                 actions +=
                     $"<form method=\"post\" action=\"{PathPrefix}/jobs/{job.Id.Value}/runnow{clusterSuffix}\" style=\"display:inline\">" +
-                    "<button type=\"submit\" class=\"btn btn-primary btn-sm\">▶ Run Now</button></form> ";
+                    "<button type=\"submit\" class=\"btn btn-primary btn-sm\">▶ Run Now</button></form> " +
+                    $"<form method=\"post\" action=\"{PathPrefix}/jobs/{job.Id.Value}/delete{clusterSuffix}\" style=\"display:inline\">" +
+                    "<button type=\"submit\" class=\"btn btn-danger btn-sm\" onclick=\"return confirm('Cancel and delete this scheduled job?')\">Delete</button></form>";
             }
-
-            if (job.Status == JobStatus.Failed)
+            else if (job.Status == JobStatus.Enqueued)
+            {
+                actions +=
+                    $"<form method=\"post\" action=\"{PathPrefix}/jobs/{job.Id.Value}/delete{clusterSuffix}\" style=\"display:inline\">" +
+                    "<button type=\"submit\" class=\"btn btn-danger btn-sm\" onclick=\"return confirm('Cancel and delete this enqueued job?')\">Delete</button></form>";
+            }
+            else if (job.Status == JobStatus.Failed)
             {
                 actions +=
                     $"<form method=\"post\" action=\"{PathPrefix}/jobs/{job.Id.Value}/requeue{clusterSuffix}\" style=\"display:inline\">" +
@@ -149,6 +156,10 @@ internal sealed class JobDetailPage : IComponent
                 ("Recurring", job.RecurringJobId is not null ? $"<a href=\"{PathPrefix}/recurring/{Uri.EscapeDataString(job.RecurringJobId)}\">{HttpUtility.HtmlEncode(job.RecurringJobId)}</a>" : "—"));
 
         // Payload
+        var payloadStrippedNotice = (job.Status == JobStatus.Succeeded && string.IsNullOrEmpty(job.InputJson))
+            ? "<div class=\"alert alert-info\" style=\"margin-top:8px;font-size:12px\">ℹ️ Payload stripped by retention policy (TrimPayloadOnSuccess)</div>"
+            : string.Empty;
+
         var payloadSection =
             "<div style=\"margin-bottom:28px\">" +
             "<div style=\"display:flex;justify-content:space-between;align-items:center;margin-bottom:8px\">" +
@@ -158,7 +169,26 @@ internal sealed class JobDetailPage : IComponent
             "<div class=\"terminal-header\"><div class=\"terminal-dots\"><span></span><span></span><span></span></div><span class=\"terminal-title\">payload.json</span><button class=\"copy-btn\" onclick=\"navigator.clipboard.writeText(this.parentElement.nextElementSibling.innerText);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)\">Copy</button></div>" +
             $"<div class=\"terminal-body\"><pre style=\"margin:0;font-size:12px;color:#e2e8f0;overflow-x:auto;font-family:monospace;white-space:pre-wrap\">{Helpers.FormatJson(job.InputJson)}</pre></div>" +
             "</div>" +
+            payloadStrippedNotice +
             "</div>";
+
+        // Checkpoint state section (for long-running/batch checkpoints)
+        var checkpointSection = string.Empty;
+        if (!string.IsNullOrWhiteSpace(job.CheckpointJson))
+        {
+            checkpointSection =
+                "<div style=\"margin-bottom:28px\">" +
+                "<details class=\"card\" open style=\"padding:0;overflow:hidden\">" +
+                "<summary style=\"padding:14px 18px;font-weight:600;font-size:14px;cursor:pointer;background:var(--bg-secondary);display:flex;align-items:center;gap:8px\">💾 Checkpoint State <span style=\"font-size:12px;font-weight:400;color:var(--text-tertiary)\">(Progress snapshot)</span></summary>" +
+                "<div style=\"padding:16px\">" +
+                "<div class=\"terminal-window\">" +
+                "<div class=\"terminal-header\"><div class=\"terminal-dots\"><span></span><span></span><span></span></div><span class=\"terminal-title\">checkpoint.json</span><button class=\"copy-btn\" onclick=\"navigator.clipboard.writeText(this.parentElement.nextElementSibling.innerText);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)\">Copy</button></div>" +
+                $"<div class=\"terminal-body\"><pre style=\"margin:0;font-size:12px;color:#e2e8f0;overflow-x:auto;font-family:monospace;white-space:pre-wrap\">{Helpers.FormatJson(job.CheckpointJson)}</pre></div>" +
+                "</div>" +
+                "</div>" +
+                "</details>" +
+                "</div>";
+        }
 
         // Error section
         var errorSection = HtmlFragments.ErrorSection(job.LastErrorMessage, job.LastErrorStackTrace);
@@ -243,6 +273,7 @@ internal sealed class JobDetailPage : IComponent
             relationships +
             "</div>" +
             payloadSection +
+            checkpointSection +
             errorSection +
             logsSection +
             sseScript;

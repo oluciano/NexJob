@@ -117,6 +117,10 @@ dotnet format --verify-no-changes
 
 # 4. Packaging validation (assert all nupkgs build cleanly)
 dotnet pack -c Release
+
+# 5. Full Dashboard UI Regression Gate (Autonomous Headless Browser)
+# Ensures all routes, visual states, and adversarial edge-cases pass before shipping
+node .agents/skills/nexjob-dashboard-chaos-gate/scripts/full-regression.js
 ```
 
 If any check fails: **STOP**. Fix the issue, verify again, and only continue when 100% green.

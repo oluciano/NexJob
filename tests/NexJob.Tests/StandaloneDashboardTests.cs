@@ -788,9 +788,9 @@ public sealed class StandaloneDashboardTests
             var jobTypeArg = Uri.EscapeDataString(typeof(StubParameterlessJob).AssemblyQualifiedName!);
             var triggerRes = await client.PostAsync($"/dashboard/catalog/{jobTypeArg}/trigger", postContent);
 
-            // Redirects back to /dashboard/catalog
+            // Behavior changed in v5.6: Redirects to /dashboard/catalog with triggered job ID for UX feedback banner
             triggerRes.StatusCode.Should().Be(HttpStatusCode.Redirect);
-            triggerRes.Headers.Location?.ToString().Should().Be("/dashboard/catalog");
+            triggerRes.Headers.Location?.ToString().Should().StartWith("/dashboard/catalog?triggered=");
 
             // Verify the job was actually enqueued in storage
             var storage = host.Services.GetRequiredService<NexJob.Storage.IDashboardStorage>();
@@ -862,8 +862,9 @@ public sealed class StandaloneDashboardTests
             var jobTypeArg = Uri.EscapeDataString(typeof(StubParameterizedJob).AssemblyQualifiedName!);
             var triggerRes = await client.PostAsync($"/dashboard/catalog/{jobTypeArg}/trigger", postContent);
 
+            // Behavior changed in v5.6: Redirects to /dashboard/catalog with triggered job ID for UX feedback banner
             triggerRes.StatusCode.Should().Be(HttpStatusCode.Redirect);
-            triggerRes.Headers.Location?.ToString().Should().Be("/dashboard/catalog");
+            triggerRes.Headers.Location?.ToString().Should().StartWith("/dashboard/catalog?triggered=");
 
             // 3. Verify enqueued job record contains the supplied payload
             var dashboardStorage = host.Services.GetRequiredService<NexJob.Storage.IDashboardStorage>();
@@ -952,6 +953,178 @@ public sealed class StandaloneDashboardTests
             catalogRes.StatusCode.Should().Be(HttpStatusCode.OK);
             var catalogHtml = await catalogRes.Content.ReadAsStringAsync();
             catalogHtml.Should().Contain("activeWorkersMap");
+        }
+        finally
+        {
+            await host.StopAsync();
+        }
+    }
+
+    [Fact]
+    public async Task StandaloneDashboard_JobDetail_ActionsCheckpointAndRetentionMarker_3NTestingMatrix()
+    {
+        // 3N Testing Matrix:
+        // N1 (Positive): Enqueued and Scheduled jobs render Cancel/Delete action; jobs with CheckpointJson render checkpoint state card; Succeeded jobs without payload show retention stripped marker.
+        // N2 (Negative): Processing and Succeeded jobs with payload do NOT show Delete button or stripped marker.
+        // N3 (Input/Boundary): CheckpointJson is empty/null -> checkpoint card is omitted gracefully.
+        var port = GetFreeTcpPort();
+
+        using var host = Host.CreateDefaultBuilder()
+            .ConfigureServices(services =>
+            {
+                services.AddNexJob();
+                services.AddNexJobStandaloneDashboard(options =>
+                {
+                    options.Port = port;
+                    options.Path = "/dashboard";
+                    options.LocalhostOnly = true;
+                });
+            })
+            .Build();
+
+        try
+        {
+            await host.StartAsync();
+
+            var storage = (NexJob.Storage.IJobStorage)host.Services.GetRequiredService<NexJob.Storage.IDashboardStorage>();
+
+            // 1. Create Enqueued Job with CheckpointJson
+            var enqueuedJob = new JobRecord
+            {
+                Id = JobId.New(),
+                JobType = typeof(StubParameterlessJob).AssemblyQualifiedName!,
+                InputType = string.Empty,
+                InputJson = "{}",
+                Queue = "default",
+                Status = JobStatus.Enqueued,
+                CreatedAt = DateTimeOffset.UtcNow,
+                CheckpointJson = "{\"processedItems\": 42, \"cursor\": \"batch-042\"}",
+            };
+            await storage.EnqueueAsync(enqueuedJob);
+
+            // 2. Create Succeeded Job with stripped payload (retention policy)
+            var succeededJob = new JobRecord
+            {
+                Id = JobId.New(),
+                JobType = typeof(StubParameterlessJob).AssemblyQualifiedName!,
+                InputType = string.Empty,
+                InputJson = string.Empty,
+                Queue = "default",
+                Status = JobStatus.Succeeded,
+                CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-5),
+                CompletedAt = DateTimeOffset.UtcNow,
+            };
+            await storage.EnqueueAsync(succeededJob);
+
+            // 3. Create Scheduled Job
+            var scheduledJob = new JobRecord
+            {
+                Id = JobId.New(),
+                JobType = typeof(StubParameterlessJob).AssemblyQualifiedName!,
+                InputType = string.Empty,
+                InputJson = "{}",
+                Queue = "default",
+                Status = JobStatus.Scheduled,
+                CreatedAt = DateTimeOffset.UtcNow,
+                ScheduledAt = DateTimeOffset.UtcNow.AddHours(1),
+            };
+            await storage.EnqueueAsync(scheduledJob);
+
+            using var client = new HttpClient
+            {
+                BaseAddress = new Uri($"http://localhost:{port}"),
+                Timeout = TimeSpan.FromSeconds(5),
+            };
+
+            // Test Enqueued Job: Cancel/Delete action + Checkpoint card
+            var resEnqueued = await client.GetAsync($"/dashboard/jobs/{enqueuedJob.Id.Value}");
+            resEnqueued.StatusCode.Should().Be(HttpStatusCode.OK);
+            var htmlEnqueued = await resEnqueued.Content.ReadAsStringAsync();
+            htmlEnqueued.Should().Contain($"action=\"/dashboard/jobs/{enqueuedJob.Id.Value}/delete\"");
+            htmlEnqueued.Should().Contain("Cancel and delete this enqueued job?");
+            htmlEnqueued.Should().Contain("💾 Checkpoint State");
+            htmlEnqueued.Should().Contain("processedItems");
+            htmlEnqueued.Should().Contain("cursor");
+
+            // Test Succeeded Job: Payload stripped marker + No delete button
+            var resSucceeded = await client.GetAsync($"/dashboard/jobs/{succeededJob.Id.Value}");
+            resSucceeded.StatusCode.Should().Be(HttpStatusCode.OK);
+            var htmlSucceeded = await resSucceeded.Content.ReadAsStringAsync();
+            htmlSucceeded.Should().Contain("Payload stripped by retention policy (TrimPayloadOnSuccess)");
+            htmlSucceeded.Should().NotContain($"action=\"/dashboard/jobs/{succeededJob.Id.Value}/delete\"");
+            htmlSucceeded.Should().NotContain("💾 Checkpoint State");
+
+            // Test Scheduled Job: Run Now + Delete action
+            var resScheduled = await client.GetAsync($"/dashboard/jobs/{scheduledJob.Id.Value}");
+            resScheduled.StatusCode.Should().Be(HttpStatusCode.OK);
+            var htmlScheduled = await resScheduled.Content.ReadAsStringAsync();
+            htmlScheduled.Should().Contain($"action=\"/dashboard/jobs/{scheduledJob.Id.Value}/runnow\"");
+            htmlScheduled.Should().Contain($"action=\"/dashboard/jobs/{scheduledJob.Id.Value}/delete\"");
+            htmlScheduled.Should().Contain("Cancel and delete this scheduled job?");
+        }
+        finally
+        {
+            await host.StopAsync();
+        }
+    }
+
+    [Fact]
+    public async Task StandaloneDashboard_Settings_PauseAllConfirmation_And_CircuitDrilldown_And_FilterChips()
+    {
+        // Tests for:
+        // 1. SettingsPage Pause All destructive safety confirm dialog
+        // 2. JobsPage active filter chips and breadcrumbs
+        // 3. CatalogPage sort options and triggered banner
+        var port = GetFreeTcpPort();
+
+        using var host = Host.CreateDefaultBuilder()
+            .ConfigureServices(services =>
+            {
+                services.AddNexJob();
+                services.AddNexJobStandaloneDashboard(options =>
+                {
+                    options.Port = port;
+                    options.Path = "/dashboard";
+                    options.LocalhostOnly = true;
+                });
+            })
+            .Build();
+
+        try
+        {
+            await host.StartAsync();
+
+            using var client = new HttpClient
+            {
+                BaseAddress = new Uri($"http://localhost:{port}"),
+                Timeout = TimeSpan.FromSeconds(5),
+            };
+
+            // 1. Settings Page: confirm on Pause All
+            var resSettings = await client.GetAsync("/dashboard/settings");
+            resSettings.StatusCode.Should().Be(HttpStatusCode.OK);
+            var htmlSettings = await resSettings.Content.ReadAsStringAsync();
+            htmlSettings.Should().Contain("onclick=\"return confirm('Pause ALL recurring jobs cluster-wide?')\"");
+
+            // 2. Jobs Page: Filter chips
+            var resJobs = await client.GetAsync("/dashboard/jobs?status=Enqueued&queue=default&tag=critical&search=Stub");
+            resJobs.StatusCode.Should().Be(HttpStatusCode.OK);
+            var htmlJobs = await resJobs.Content.ReadAsStringAsync();
+            htmlJobs.Should().Contain("Active Filters:");
+            htmlJobs.Should().Contain("Search: <strong>Stub</strong>");
+            htmlJobs.Should().Contain("Status: <strong>Enqueued</strong>");
+            htmlJobs.Should().Contain("Queue: <strong>default</strong>");
+            htmlJobs.Should().Contain("Tag: <strong>critical</strong>");
+            htmlJobs.Should().Contain("Clear all");
+
+            // 3. Catalog Page: Sort options and triggered banner
+            var resCatalog = await client.GetAsync("/dashboard/catalog?triggered=test-job-uuid-1234&sort=failure-rate");
+            resCatalog.StatusCode.Should().Be(HttpStatusCode.OK);
+            var htmlCatalog = await resCatalog.Content.ReadAsStringAsync();
+            htmlCatalog.Should().Contain("Job enqueued successfully:");
+            htmlCatalog.Should().Contain("test-job-uuid-1234");
+            htmlCatalog.Should().Contain("Highest Failure Rate");
+            htmlCatalog.Should().Contain("Longest Duration");
         }
         finally
         {

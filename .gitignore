@@ -34,3 +34,5 @@ BenchmarkDotNet.Artifacts/
 .qwen/
 .claude/
 .gemini/
+.dashboard-simulations/
+node_modules/

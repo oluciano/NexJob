@@ -265,9 +265,51 @@ internal static class HtmlFragments
             return $"<option value=\"{HttpUtility.HtmlAttributeEncode(o.Item1)}\"{selected}>{o.Item2}</option>";
         }));
 
+        var chips = new List<string>();
+        if (!string.IsNullOrEmpty(search))
+        {
+            var removeUrl = $"{pathPrefix}/jobs?status={Uri.EscapeDataString(currentStatus)}&tag={Uri.EscapeDataString(tag ?? string.Empty)}&queue={Uri.EscapeDataString(queueVal)}&period={Uri.EscapeDataString(periodVal)}";
+            chips.Add($"<span class=\"badge badge-gray\" style=\"display:inline-flex;align-items:center;gap:6px;padding:4px 8px\">Search: <strong>{searchVal}</strong><a href=\"{removeUrl}\" style=\"color:inherit;text-decoration:none;font-weight:700\">✕</a></span>");
+        }
+
+        if (!string.IsNullOrEmpty(currentStatus))
+        {
+            var removeUrl = $"{pathPrefix}/jobs?search={Uri.EscapeDataString(search ?? string.Empty)}&tag={Uri.EscapeDataString(tag ?? string.Empty)}&queue={Uri.EscapeDataString(queueVal)}&period={Uri.EscapeDataString(periodVal)}";
+            chips.Add($"<span class=\"badge badge-gray\" style=\"display:inline-flex;align-items:center;gap:6px;padding:4px 8px\">Status: <strong>{HttpUtility.HtmlEncode(currentStatus)}</strong><a href=\"{removeUrl}\" style=\"color:inherit;text-decoration:none;font-weight:700\">✕</a></span>");
+        }
+
+        if (!string.IsNullOrEmpty(queue))
+        {
+            var removeUrl = $"{pathPrefix}/jobs?status={Uri.EscapeDataString(currentStatus)}&search={Uri.EscapeDataString(search ?? string.Empty)}&tag={Uri.EscapeDataString(tag ?? string.Empty)}&period={Uri.EscapeDataString(periodVal)}";
+            chips.Add($"<span class=\"badge badge-gray\" style=\"display:inline-flex;align-items:center;gap:6px;padding:4px 8px\">Queue: <strong>{HttpUtility.HtmlEncode(queue)}</strong><a href=\"{removeUrl}\" style=\"color:inherit;text-decoration:none;font-weight:700\">✕</a></span>");
+        }
+
+        if (!string.IsNullOrEmpty(period))
+        {
+            var removeUrl = $"{pathPrefix}/jobs?status={Uri.EscapeDataString(currentStatus)}&search={Uri.EscapeDataString(search ?? string.Empty)}&tag={Uri.EscapeDataString(tag ?? string.Empty)}&queue={Uri.EscapeDataString(queueVal)}";
+            chips.Add($"<span class=\"badge badge-gray\" style=\"display:inline-flex;align-items:center;gap:6px;padding:4px 8px\">Period: <strong>{HttpUtility.HtmlEncode(period)}</strong><a href=\"{removeUrl}\" style=\"color:inherit;text-decoration:none;font-weight:700\">✕</a></span>");
+        }
+
+        if (!string.IsNullOrEmpty(tag))
+        {
+            var removeUrl = $"{pathPrefix}/jobs?status={Uri.EscapeDataString(currentStatus)}&search={Uri.EscapeDataString(search ?? string.Empty)}&queue={Uri.EscapeDataString(queueVal)}&period={Uri.EscapeDataString(periodVal)}";
+            chips.Add($"<span class=\"badge badge-gray\" style=\"display:inline-flex;align-items:center;gap:6px;padding:4px 8px\">Tag: <strong>{tagVal}</strong><a href=\"{removeUrl}\" style=\"color:inherit;text-decoration:none;font-weight:700\">✕</a></span>");
+        }
+
+        var activeChipsHtml = string.Empty;
+        if (chips.Count > 0)
+        {
+            activeChipsHtml =
+                $"<div class=\"active-filters\" style=\"display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap;font-size:12px\">" +
+                $"<span style=\"color:var(--text-tertiary);font-weight:600;font-size:11px;text-transform:uppercase\">Active Filters:</span>" +
+                string.Join(string.Empty, chips) +
+                $"<a href=\"{pathPrefix}/jobs\" class=\"btn btn-ghost btn-sm\" style=\"font-size:11px;padding:2px 6px;color:var(--text-secondary)\">Clear all</a>" +
+                $"</div>";
+        }
+
         return
             $"<div class=\"filters\">" +
-            $"<form method=\"get\" action=\"{pathPrefix}/jobs\" style=\"display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;width:100%\">" +
+            $"<form method=\"get\" action=\"{pathPrefix}/jobs\" style=\"display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;width:100%\">" +
             $"<div style=\"display:flex;gap:4px;flex:1;min-width:200px\">" +
             $"<input type=\"text\" name=\"search\" placeholder=\"Search type or ID…\" value=\"{searchVal}\" style=\"flex:1\" />" +
             $"</div>" +
@@ -282,6 +324,7 @@ internal static class HtmlFragments
                 : string.Empty) +
             $"</div>" +
             $"</form>" +
+            activeChipsHtml +
             $"</div>";
     }
 
@@ -478,21 +521,24 @@ internal static class HtmlFragments
         var failedLink = string.Empty;
         if (circuitStatus is not null)
         {
+            var failedUrl = $"{pathPrefix}/failed?queue={Uri.EscapeDataString(queue.Queue)}{(activeCluster is not null ? $"&cluster={Uri.EscapeDataString(activeCluster.Id)}" : string.Empty)}";
             if (circuitStatus.State == QueueCircuitState.Open)
             {
                 var remainingSec = circuitStatus.RemainingCooldown.HasValue
                     ? $" ({(int)circuitStatus.RemainingCooldown.Value.TotalSeconds}s)"
                     : string.Empty;
-                circuitBadge = $" <a href=\"{pathPrefix}/failed?queue={Uri.EscapeDataString(queue.Queue)}{(activeCluster is not null ? $"&cluster={Uri.EscapeDataString(activeCluster.Id)}" : string.Empty)}\" style=\"text-decoration:none\"><span class=\"badge badge-danger\" style=\"font-size:10px;margin-left:6px;cursor:pointer\" title=\"Circuit is OPEN due to downstream failures. Click to view failed errors.\">⚡ CIRCUIT OPEN{remainingSec}</span></a>";
-                failedLink = $"<a href=\"{pathPrefix}/failed?queue={Uri.EscapeDataString(queue.Queue)}{(activeCluster is not null ? $"&cluster={Uri.EscapeDataString(activeCluster.Id)}" : string.Empty)}\" class=\"btn btn-secondary btn-sm\" style=\"color:var(--error);border-color:var(--error)\">View Errors</a>";
+                circuitBadge = $" <a href=\"{failedUrl}\" style=\"text-decoration:none\"><span class=\"badge badge-danger\" style=\"font-size:10px;margin-left:6px;cursor:pointer\" title=\"Circuit is OPEN due to downstream failures. Click to view failed errors.\">⚡ CIRCUIT OPEN{remainingSec}</span></a>";
+                failedLink = $"<a href=\"{failedUrl}\" class=\"btn btn-secondary btn-sm\" style=\"color:var(--error);border-color:var(--error)\">View Errors</a>";
             }
             else if (circuitStatus.State == QueueCircuitState.HalfOpen)
             {
-                circuitBadge = " <span class=\"badge badge-warning\" style=\"font-size:10px;margin-left:6px\" title=\"Canary probe in flight to test downstream service health.\">🟡 CANARY TESTING</span>";
+                circuitBadge = $" <a href=\"{failedUrl}\" style=\"text-decoration:none\"><span class=\"badge badge-warning\" style=\"font-size:10px;margin-left:6px;cursor:pointer\" title=\"Canary probe in flight to test downstream service health. Click to view failed errors.\">🟡 CANARY TESTING</span></a>";
+                failedLink = $"<a href=\"{failedUrl}\" class=\"btn btn-secondary btn-sm\" style=\"color:var(--warning);border-color:var(--warning)\">View Errors</a>";
             }
             else if (circuitStatus.State == QueueCircuitState.Recovering)
             {
-                circuitBadge = $" <span class=\"badge badge-info\" style=\"font-size:10px;margin-left:6px\" title=\"Ramp-up mode active to prevent thundering herd (max concurrency: {circuitStatus.AllowedConcurrency}).\">🟢 RECOVERING</span>";
+                circuitBadge = $" <a href=\"{failedUrl}\" style=\"text-decoration:none\"><span class=\"badge badge-info\" style=\"font-size:10px;margin-left:6px;cursor:pointer\" title=\"Ramp-up mode active to prevent thundering herd (max concurrency: {circuitStatus.AllowedConcurrency}). Click to view failed errors.\">🟢 RECOVERING</span></a>";
+                failedLink = $"<a href=\"{failedUrl}\" class=\"btn btn-secondary btn-sm\" style=\"color:var(--info);border-color:var(--info)\">View Errors</a>";
             }
         }
 

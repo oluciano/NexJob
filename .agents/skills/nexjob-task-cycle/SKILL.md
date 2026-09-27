@@ -269,8 +269,11 @@ Every task that introduces or modifies public options, defaults, architecture be
 Every task evaluates this gate along two lanes:
 
 ### Lane A: When the task touches `src/NexJob.Dashboard` or UI components
-1. **Activate the `ux-auditor` skill:**
-   - Review changed routes and markup through the lens of an on-call SRE under pressure.
+1. **Activate `nexjob-dashboard-chaos-gate` & `ux-auditor`:**
+   - Execute the autonomous browser chaos runner (`node .agents/skills/nexjob-dashboard-chaos-gate/scripts/chaos-runner.js`).
+   - Run the 3 Persona Walkthroughs (User/Operator Catalog trigger, Developer failure/checkpoint inspection, SRE cluster safety).
+   - Execute the Impossible/Boundary stress suite (parameter fuzzing, Unicode, corrupted IDs, mobile viewport wrapping).
+   - Verify 0 unhandled 500 errors, 0 unhandled client exceptions, and inspect captured screenshots in `.dashboard-simulations/`.
 2. **Audit Core Vectors:**
    - **Operational Feedback & Safety:** Do mutating actions (pause, resume, requeue, reset circuit) have confirmation modals (`confirm()`) to prevent disastrous accidental clicks in production?
    - **Action Symmetry & Traceability:** When displaying warnings (e.g. `⚡ CIRCUIT OPEN` or `⚠️ NO WORKERS`), can the operator click through directly to root-cause errors (`/failed?queue=...`) or active servers without dead ends?
