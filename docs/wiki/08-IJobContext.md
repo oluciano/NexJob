@@ -107,6 +107,64 @@ Fire-and-forget progress for synchronous collections.
 
 ---
 
+## Checkpoints & State Saving (Long-Running Jobs)
+
+For long-running batch jobs, data migrations, or multi-step workflows, NexJob supports state checkpoints.
+If a job is interrupted (worker restart, transient crash, or retry after failure), you can resume processing from the last recorded checkpoint rather than starting from scratch.
+
+### Saving & Resuming Checkpoints
+
+Use `SaveCheckpointAsync<TState>` to persist your progress and checkpoint state atomically, and `GetCheckpoint<TState>()` to resume.
+
+```csharp
+public sealed class LargeDataSyncJob : IJob
+{
+    private readonly IJobContext _context;
+    private readonly IRecordReader _reader;
+    private readonly IRecordProcessor _processor;
+
+    public LargeDataSyncJob(IJobContext context, IRecordReader reader, IRecordProcessor processor)
+    {
+        _context = context;
+        _reader = reader;
+        _processor = processor;
+    }
+
+    public async Task ExecuteAsync(CancellationToken ct)
+    {
+        // 1. Resume from previous checkpoint if available
+        var state = _context.GetCheckpoint<SyncCheckpoint>() ?? new SyncCheckpoint(LastProcessedId: 0, TotalBatches: 0);
+
+        var batch = await _reader.FetchNextBatchAsync(afterId: state.LastProcessedId, ct);
+        while (batch.Count > 0)
+        {
+            await _processor.ProcessBatchAsync(batch, ct);
+
+            state = state with { LastProcessedId = batch.Last().Id, TotalBatches = state.TotalBatches + 1 };
+
+            // 2. Persist checkpoint along with progress reporting
+            await _context.SaveCheckpointAsync(
+                state: state,
+                percent: null,
+                message: $"Processed batch {state.TotalBatches} up to ID {state.LastProcessedId}",
+                ct: ct);
+
+            batch = await _reader.FetchNextBatchAsync(afterId: state.LastProcessedId, ct);
+        }
+    }
+}
+
+public record SyncCheckpoint(long LastProcessedId, int TotalBatches);
+```
+
+### Checkpoint Lifecycle Guarantees
+
+- **State Persistence Across Retries:** If an exception occurs, the job transitions to `Scheduled` (for retry) or `Failed` (dead-letter) with its `CheckpointJson` intact. When attempt 2 starts, `_context.GetCheckpoint<TState>()` returns the exact state saved prior to failure.
+- **Auto-Clearing on Success:** When the job successfully completes (`Succeeded`), the underlying storage provider automatically clears `checkpoint_json = NULL` to avoid unnecessary database bloat.
+- **Low I/O Overhead:** Checkpoint payloads are persisted to storage alongside progress updates without polluting list views or dashboard SSE feeds.
+
+---
+
 ## When to Use IJobContext
 
 **Use it when:**

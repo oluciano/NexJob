@@ -38,6 +38,7 @@ internal sealed class JobDocument
     public List<string> Tags { get; set; } = [];
     public int? ProgressPercent { get; set; }
     public string? ProgressMessage { get; set; }
+    public string? CheckpointJson { get; set; }
 
     public static JobDocument FromRecord(JobRecord r) => new()
     {
@@ -73,6 +74,7 @@ internal sealed class JobDocument
         Tags = r.Tags.ToList(),
         ProgressPercent = r.ProgressPercent,
         ProgressMessage = r.ProgressMessage,
+        CheckpointJson = r.CheckpointJson,
     };
 
     public JobRecord ToRecord() => new()
@@ -109,5 +111,6 @@ internal sealed class JobDocument
         Tags = Tags,
         ProgressPercent = ProgressPercent,
         ProgressMessage = ProgressMessage,
+        CheckpointJson = CheckpointJson,
     };
 }

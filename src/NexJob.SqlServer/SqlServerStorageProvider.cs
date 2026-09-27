@@ -925,6 +925,23 @@ public sealed class SqlServerStorageProvider : IStorageProvider
     }
 
     /// <inheritdoc/>
+    public async Task SaveCheckpointAsync(
+        JobId jobId, string checkpointJson, int? percent, string? message, CancellationToken ct = default)
+    {
+        await using var conn = Open();
+        await conn.OpenAsync(ct).ConfigureAwait(false);
+        await conn.ExecuteAsync(
+            """
+            UPDATE nexjob_jobs
+            SET checkpoint_json = @chk,
+                progress_percent = COALESCE(@p, progress_percent),
+                progress_message = COALESCE(@m, progress_message)
+            WHERE id = @id
+            """,
+            new { id = jobId.Value, chk = checkpointJson, p = percent, m = message });
+    }
+
+    /// <inheritdoc/>
     public async Task<IReadOnlyList<JobRecord>> GetJobsByTagAsync(
         string tag, CancellationToken cancellationToken = default)
     {
@@ -1122,12 +1139,12 @@ public sealed class SqlServerStorageProvider : IStorageProvider
             var updateSql = result.TrimPayloadOnSuccess
                 ? """
                   UPDATE nexjob_jobs
-                  SET status = 'Succeeded', completed_at = SYSUTCDATETIME(), heartbeat_at = NULL, execution_logs = @Logs, input_json = ''
+                  SET status = 'Succeeded', completed_at = SYSUTCDATETIME(), heartbeat_at = NULL, execution_logs = @Logs, input_json = '', checkpoint_json = NULL
                   WHERE id = @id
                   """
                 : """
                   UPDATE nexjob_jobs
-                  SET status = 'Succeeded', completed_at = SYSUTCDATETIME(), heartbeat_at = NULL, execution_logs = @Logs
+                  SET status = 'Succeeded', completed_at = SYSUTCDATETIME(), heartbeat_at = NULL, execution_logs = @Logs, checkpoint_json = NULL
                   WHERE id = @id
                   """;
 

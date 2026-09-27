@@ -741,6 +741,26 @@ public sealed class MongoStorageProvider : IStorageProvider
     }
 
     /// <inheritdoc/>
+    public async Task SaveCheckpointAsync(
+        JobId jobId, string checkpointJson, int? percent, string? message, CancellationToken ct = default)
+    {
+        var update = Builders<JobDocument>.Update
+            .Set(d => d.CheckpointJson, checkpointJson);
+
+        if (percent.HasValue)
+        {
+            update = update.Set(d => d.ProgressPercent, percent.Value);
+        }
+
+        if (message is not null)
+        {
+            update = update.Set(d => d.ProgressMessage, message);
+        }
+
+        await _jobs.UpdateOneAsync(ById(jobId), update, cancellationToken: ct).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc/>
     public async Task<IReadOnlyList<JobRecord>> GetJobsByTagAsync(
         string tag, CancellationToken cancellationToken = default)
     {
@@ -893,6 +913,7 @@ public sealed class MongoStorageProvider : IStorageProvider
                 .Set(d => d.Status, JobStatus.Succeeded)
                 .Set(d => d.CompletedAt, now)
                 .Unset(d => d.HeartbeatAt)
+                .Unset(d => d.CheckpointJson)
                 .Set(d => d.ExecutionLogs, entries);
 
             if (result.TrimPayloadOnSuccess)

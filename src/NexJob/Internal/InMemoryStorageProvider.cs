@@ -764,6 +764,34 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
     }
 
     /// <inheritdoc/>
+    public Task SaveCheckpointAsync(
+        JobId jobId,
+        string checkpointJson,
+        int? percent,
+        string? message,
+        CancellationToken ct = default)
+    {
+        if (_jobs.TryGetValue(jobId.Value, out var job))
+        {
+            lock (job)
+            {
+                job.CheckpointJson = checkpointJson;
+                if (percent.HasValue)
+                {
+                    job.ProgressPercent = percent.Value;
+                }
+
+                if (message is not null)
+                {
+                    job.ProgressMessage = message;
+                }
+            }
+        }
+
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc/>
     public Task<IReadOnlyList<JobRecord>> GetJobsByTagAsync(string tag, CancellationToken cancellationToken = default)
     {
         IReadOnlyList<JobRecord> result = _jobs.Values
@@ -943,6 +971,7 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
         job.CompletedAt = DateTimeOffset.UtcNow;
         job.HeartbeatAt = null;
         job.ExecutionLogs = result.Logs;
+        job.CheckpointJson = null;
 
         if (result.TrimPayloadOnSuccess)
         {

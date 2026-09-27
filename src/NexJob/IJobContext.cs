@@ -36,4 +36,29 @@ public interface IJobContext
     /// <param name="message">Optional human-readable status message.</param>
     /// <param name="ct">Cancellation token.</param>
     Task ReportProgressAsync(int percent, string? message = null, CancellationToken ct = default);
+
+    /// <summary>
+    /// Deserializes and returns the last saved checkpoint state for this job instance,
+    /// or <see langword="null"/> if no checkpoint has been persisted yet (e.g. on first attempt).
+    /// </summary>
+    /// <typeparam name="TState">The checkpoint state model type.</typeparam>
+    /// <returns>The deserialized state object, or <see langword="null"/>.</returns>
+    TState? GetCheckpoint<TState>()
+        where TState : class;
+
+    /// <summary>
+    /// Persists an execution checkpoint and updates visual progress in a single atomic database operation.
+    /// Enables long-running batch jobs to resume exactly where they left off if interrupted by server restarts or pod scaling.
+    /// </summary>
+    /// <typeparam name="TState">The checkpoint state model type.</typeparam>
+    /// <param name="state">The checkpoint state to serialize and persist.</param>
+    /// <param name="percent">Optional progress percentage (0–100) to update on the dashboard.</param>
+    /// <param name="message">Optional human-readable progress status message.</param>
+    /// <param name="ct">Cancellation token.</param>
+    Task SaveCheckpointAsync<TState>(
+        TState state,
+        int? percent = null,
+        string? message = null,
+        CancellationToken ct = default)
+        where TState : class;
 }

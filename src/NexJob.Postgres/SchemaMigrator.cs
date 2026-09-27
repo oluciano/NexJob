@@ -22,6 +22,7 @@ internal static class SchemaMigrator
         new(6, "create active servers table", SchemaSql.V6CreateServersTable),
         new(7, "create nexjob_settings table for runtime configuration", SchemaSql.V7CreateSettingsTable),
         new(8, "add unique index for idempotency_key", SchemaSql.V8AddIdempotencyKeyIndex),
+        new(9, "add checkpoint_json column to nexjob_jobs", SchemaSql.V9AddCheckpointColumn),
     ];
 
     // Arbitrary but stable numeric key for pg_advisory_lock: hash of 'nexjob'
