@@ -22,6 +22,16 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - Added 3N unit testing matrix in `tests/NexJob.Tests/JobExecutorHardeningTests.cs` and `tests/NexJob.Tests/DefaultJobInvokerFactoryHardeningTests.cs`.
 
 ### Added
+ 
+ - **`NexJob` Core & Storage Providers — Anti-Bloat Retention Strategies (Issue #203)**:
+   - Added declarative `[Retention(PurgeOnSuccess = bool, TrimPayloadOnSuccess = bool)]` attribute to decorate job classes.
+   - Implemented immediate row purge (`PurgeOnSuccess = true`) upon successful job execution across all storage providers (`InMemory`, `PostgreSQL`, `SQL Server`, `MongoDB`, `Redis`), preventing table growth and WAL bloat in high-frequency streaming workloads.
+   - Implemented payload stripping (`TrimPayloadOnSuccess = true`), wiping `InputJson` upon successful execution while preserving job state, timestamps, tags, and logs for auditability.
+   - Hardened `JobExecutor` to propagate retention metadata in `JobExecutionResult` and bypass delayed batch acknowledgment when purge or trim operations are requested.
+   - Preserved lifetime job catalog statistics (`/catalog`) in `InMemoryStorageProvider` via aggregated lifetime tracking counters even when individual job instances are immediately purged.
+   - Documented retention strategies in `docs/wiki/06-Retry-And-Dead-Letter.md` and `docs/wiki/13-Best-Practices.md`.
+   - Added 3N unit testing matrix (Positive, Negative, Boundary) in `tests/NexJob.Tests/RetentionHardeningTests.cs`.
+
 
 - **`NexJob.Dashboard` — Orphan Queues & Inactive Worker Indicators (Issue #212)**:
   - Added real-time tracking of queue coverage against active worker nodes registered via `IJobStorage.GetActiveServersAsync()`.

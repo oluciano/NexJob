@@ -112,6 +112,47 @@ In multi-service ecosystems sharing a database cluster:
 2. **Dashboard Queue Scoping:** Scope the UI via `options.Queues = ["serviceA-queue"]` so engineering teams only view jobs, metrics, and queues relevant to their bounded context.
 3. **Foreign Job Safe Deferral:** While queue separation (`options.Queues`) is the recommended best practice, if workers encounter foreign job types, NexJob automatically rolls back attempt counts and defers the job via `options.ForeignJobRetryDelay` rather than failing or dead-lettering it.
 
+### Anti-Bloat Retention Strategies (High-Throughput Workloads)
+
+In high-throughput environments (e.g., event streaming via Kafka, SQS, or RabbitMQ processing millions of jobs daily), table growth and storage bloat can become problematic even with scheduled chunked purging.
+
+Use the `[Retention]` attribute on job classes to enforce immediate pruning or payload stripping upon successful completion:
+
+```csharp
+// 1. Ephemeral Jobs: Delete record immediately upon success
+[Retention(PurgeOnSuccess = true)]
+public sealed class HighFrequencyTelemetryJob : IJob<TelemetryPayload>
+{
+    public async Task ExecuteAsync(TelemetryPayload payload, CancellationToken ct)
+    {
+        // Process telemetry...
+        // On success, the job row is immediately deleted from storage.
+        // Catalog lifetime statistics (/catalog) are preserved!
+    }
+}
+
+// 2. Payload Stripping: Keep metadata & logs for auditing, strip heavy JSON payloads
+[Retention(TrimPayloadOnSuccess = true)]
+public sealed class HeavyReportGenerationJob : IJob<LargeReportInput>
+{
+    public async Task ExecuteAsync(LargeReportInput input, CancellationToken ct)
+    {
+        // Process heavy input...
+        // On success, InputJson is stripped (''), saving massive storage space
+        // while preserving duration, state, queue, and execution logs.
+    }
+}
+```
+
+| Strategy | Attribute Setting | Storage Impact | Auditability |
+|---|---|---|---|
+| **Default** | *(None)* | Job retained until `JobRetentionService` runs | Full job record and payload intact |
+| **Immediate Purge** | `PurgeOnSuccess = true` | Zero row bloat on success; row is deleted atomically | Succeeded jobs vanish from `/jobs`; lifetime stats preserved in `/catalog` |
+| **Payload Stripping** | `TrimPayloadOnSuccess = true` | Massive space savings (payload set to empty string) | Job record, state, duration, and logs preserved; payload stripped |
+
+> [!NOTE]
+> If a job with `PurgeOnSuccess = true` fails, it is **never** purged immediately: it follows normal retry policies and dead-letter retention so operators can diagnose and requeue errors.
+
 ---
 
 ## Monitoring

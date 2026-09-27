@@ -883,13 +883,25 @@ public sealed class MongoStorageProvider : IStorageProvider
         JobId jobId, JobExecutionResult result,
         List<ExecutionLogEntry> entries, DateTimeOffset now, CancellationToken ct)
     {
-        var update = Builders<JobDocument>.Update
-            .Set(d => d.Status, JobStatus.Succeeded)
-            .Set(d => d.CompletedAt, now)
-            .Unset(d => d.HeartbeatAt)
-            .Set(d => d.ExecutionLogs, entries);
+        if (result.PurgeOnSuccess)
+        {
+            await _jobs.DeleteOneAsync(ById(jobId), cancellationToken: ct).ConfigureAwait(false);
+        }
+        else
+        {
+            var update = Builders<JobDocument>.Update
+                .Set(d => d.Status, JobStatus.Succeeded)
+                .Set(d => d.CompletedAt, now)
+                .Unset(d => d.HeartbeatAt)
+                .Set(d => d.ExecutionLogs, entries);
 
-        await _jobs.UpdateOneAsync(ById(jobId), update, cancellationToken: ct).ConfigureAwait(false);
+            if (result.TrimPayloadOnSuccess)
+            {
+                update = update.Set(d => d.InputJson, string.Empty);
+            }
+
+            await _jobs.UpdateOneAsync(ById(jobId), update, cancellationToken: ct).ConfigureAwait(false);
+        }
 
         var contFilter = Builders<JobDocument>.Filter.And(
             Builders<JobDocument>.Filter.Eq(d => d.Status, JobStatus.AwaitingContinuation),

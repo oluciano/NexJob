@@ -119,7 +119,10 @@ internal sealed class JobExecutor : IDisposable, IAsyncDisposable
             RecordSuccessMetrics(job.JobType, sw.Elapsed);
             activity?.SetStatus(ActivityStatusCode.Ok);
 
-            if (_options.EnableBatchAcknowledgment && job.RecurringJobId is null && job.ParentJobId is null && logScope.Entries.Count == 0)
+            var purgeOnSuccess = context.RetentionAttribute?.PurgeOnSuccess == true;
+            var trimPayloadOnSuccess = context.RetentionAttribute?.TrimPayloadOnSuccess == true;
+
+            if (_options.EnableBatchAcknowledgment && !purgeOnSuccess && !trimPayloadOnSuccess && job.RecurringJobId is null && job.ParentJobId is null && logScope.Entries.Count == 0)
             {
                 _ackChannel.Writer.TryWrite(job.Id);
             }
@@ -130,6 +133,8 @@ internal sealed class JobExecutor : IDisposable, IAsyncDisposable
                     Succeeded = true,
                     Logs = logScope.Entries,
                     RecurringJobId = job.RecurringJobId,
+                    PurgeOnSuccess = purgeOnSuccess,
+                    TrimPayloadOnSuccess = trimPayloadOnSuccess,
                 }, CancellationToken.None).ConfigureAwait(false);
             }
 

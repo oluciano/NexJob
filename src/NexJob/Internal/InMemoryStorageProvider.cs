@@ -19,6 +19,7 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
     private readonly ConcurrentDictionary<string, RecurringJobRecord> _recurringJobs = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, DateTimeOffset> _recurringLocks = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, ServerRecord> _servers = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<(string JobType, string Queue), (long Succeeded, long Failed, DateTimeOffset? LastExecuted, double? TotalDurationSeconds, long DurationCount)> _lifetimeCatalogStats = new();
 
     // Indexed as: _queues[queueName][priorityIndex]
     // Priority indices: 0=Critical, 1=High, 2=Normal, 3=Low
@@ -679,7 +680,32 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
 
             if (result.Succeeded)
             {
-                ApplySuccess(job, result);
+                if (result.PurgeOnSuccess)
+                {
+                    var duration = (job.CompletedAt ?? DateTimeOffset.UtcNow) - (job.ProcessingStartedAt ?? job.CreatedAt);
+                    var durationSec = duration.TotalSeconds >= 0 ? duration.TotalSeconds : 0;
+                    _lifetimeCatalogStats.AddOrUpdate(
+                        (job.JobType, job.Queue),
+                        _ => (1, 0, DateTimeOffset.UtcNow, durationSec, 1),
+                        (_, cur) => (cur.Succeeded + 1, cur.Failed, DateTimeOffset.UtcNow, (cur.TotalDurationSeconds ?? 0) + durationSec, cur.DurationCount + 1));
+
+                    _jobs.TryRemove(jobId.Value, out _);
+                    if (job.IdempotencyKey is not null)
+                    {
+                        _idempotencyIndex.TryRemove(job.IdempotencyKey, out _);
+                    }
+
+                    if (result.RecurringJobId is not null
+                        && _recurringJobs.TryGetValue(result.RecurringJobId, out var rj))
+                    {
+                        rj.LastExecutionStatus = JobStatus.Succeeded;
+                        rj.LastExecutionError = null;
+                    }
+                }
+                else
+                {
+                    ApplySuccess(job, result);
+                }
             }
             else if (result.RetryAt.HasValue)
             {
@@ -749,41 +775,61 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
     /// <inheritdoc/>
     public Task<IReadOnlyList<JobCatalogItem>> GetJobCatalogAsync(CancellationToken cancellationToken = default)
     {
-        IReadOnlyList<JobCatalogItem> items = _jobs.Values
-            .GroupBy(j => new { j.JobType, j.Queue })
-            .Select(g =>
-            {
-                var total = (long)g.Count();
-                var succeeded = (long)g.Count(j => j.Status == JobStatus.Succeeded);
-                var failed = (long)g.Count(j => j.Status == JobStatus.Failed);
+        var allKeys = _jobs.Values
+            .Select(j => (j.JobType, j.Queue))
+            .Concat(_lifetimeCatalogStats.Keys)
+            .Distinct()
+            .ToList();
 
-                DateTimeOffset? lastExecuted = g
-                    .Select(j => j.CompletedAt ?? j.ProcessingStartedAt)
-                    .Where(t => t.HasValue)
-                    .OrderByDescending(t => t!.Value)
-                    .FirstOrDefault();
+        var items = new List<JobCatalogItem>();
 
-                var durations = g
-                    .Where(j => j.ProcessingStartedAt.HasValue && j.CompletedAt.HasValue && j.CompletedAt >= j.ProcessingStartedAt)
-                    .Select(j => (j.CompletedAt!.Value - j.ProcessingStartedAt!.Value).TotalSeconds)
-                    .ToList();
+        foreach (var key in allKeys)
+        {
+            var activeJobs = _jobs.Values
+                .Where(j => string.Equals(j.JobType, key.JobType, StringComparison.Ordinal)
+                         && string.Equals(j.Queue, key.Queue, StringComparison.Ordinal))
+                .ToList();
 
-                double? avgDuration = durations.Count > 0 ? durations.Average() : null;
+            _lifetimeCatalogStats.TryGetValue(key, out var lifetime);
 
-                return new JobCatalogItem(
-                    JobType: g.Key.JobType,
-                    Queue: g.Key.Queue,
-                    TotalRuns: total,
-                    SucceededRuns: succeeded,
-                    FailedRuns: failed,
-                    LastExecutedAt: lastExecuted,
-                    AvgDurationSeconds: avgDuration);
-            })
+            var activeSucceeded = (long)activeJobs.Count(j => j.Status == JobStatus.Succeeded);
+            var activeFailed = (long)activeJobs.Count(j => j.Status == JobStatus.Failed);
+            var totalSucceeded = lifetime.Succeeded + activeSucceeded;
+            var totalFailed = lifetime.Failed + activeFailed;
+            var totalRuns = totalSucceeded + totalFailed + activeJobs.Count(j => j.Status != JobStatus.Succeeded && j.Status != JobStatus.Failed);
+
+            DateTimeOffset? lastExecuted = activeJobs
+                .Select(j => j.CompletedAt ?? j.ProcessingStartedAt)
+                .Concat(new[] { lifetime.LastExecuted })
+                .Where(t => t.HasValue)
+                .OrderByDescending(t => t!.Value)
+                .FirstOrDefault();
+
+            var activeDurations = activeJobs
+                .Where(j => j.ProcessingStartedAt.HasValue && j.CompletedAt.HasValue && j.CompletedAt >= j.ProcessingStartedAt)
+                .Select(j => (j.CompletedAt!.Value - j.ProcessingStartedAt!.Value).TotalSeconds)
+                .ToList();
+
+            var totalDurationSum = (lifetime.TotalDurationSeconds ?? 0) + activeDurations.Sum();
+            var totalDurationCount = lifetime.DurationCount + activeDurations.Count;
+            double? avgDuration = totalDurationCount > 0 ? totalDurationSum / totalDurationCount : null;
+
+            items.Add(new JobCatalogItem(
+                JobType: key.JobType,
+                Queue: key.Queue,
+                TotalRuns: totalRuns,
+                SucceededRuns: totalSucceeded,
+                FailedRuns: totalFailed,
+                LastExecutedAt: lastExecuted,
+                AvgDurationSeconds: avgDuration));
+        }
+
+        IReadOnlyList<JobCatalogItem> sorted = items
             .OrderBy(c => c.JobType, StringComparer.Ordinal)
             .ThenBy(c => c.Queue, StringComparer.Ordinal)
             .ToList();
 
-        return Task.FromResult(items);
+        return Task.FromResult(sorted);
     }
 
     /// <inheritdoc/>
@@ -897,6 +943,11 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
         job.CompletedAt = DateTimeOffset.UtcNow;
         job.HeartbeatAt = null;
         job.ExecutionLogs = result.Logs;
+
+        if (result.TrimPayloadOnSuccess)
+        {
+            job.InputJson = string.Empty;
+        }
 
         if (result.RecurringJobId is not null
             && _recurringJobs.TryGetValue(result.RecurringJobId, out var rj))

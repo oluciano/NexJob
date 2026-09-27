@@ -100,7 +100,9 @@ When picking an issue from the backlog, execute the **Warmup Gate**:
    - **Already Solved?** Verify if a recent PR or refactor already fixed or implemented this behavior indirectly.
    - **Still Valid?** Verify whether the classes, methods, or architectural premises cited in the issue still exist or have evolved.
    - **Active Collisions:** Check if another open PR or branch is actively touching the same components.
-3. **Warmup Decision Gate:**
+3. **Warmup Decision Gate & WIP Limit Enforcement (WIP = 1):**
+   - **Enforce WIP Limit:** Verify that no other issue currently holds the `in-progress` label (`gh issue list --label "in-progress"`). Only one issue may be active at a time to prevent multitasking thrashing.
+   - **Audit Comment & Status:** If valid, attach the `in-progress` label to the issue (`gh issue edit <id> --add-label "in-progress"`) and post a brief summary comment with the mapped Target Files and warmup findings.
    - **If Valid:** Present a brief summary of the current state vs planned change to the user, confirm alignment, select the appropriate workflow (`.agents/method/workflows/{feature|bugfix|refactor|reliability}.md`), and proceed to branch isolation.
    - **If Already Solved or Obsolete:** Present the evidence immediately to the user, document the rationale, and close the issue without generating redundant code (Phase 6, Scenario B).
 4. **WIP Limit = 1 & Issue Kickoff Audit Comment (Scrum Discipline):**
@@ -284,9 +286,9 @@ Closes #<id>"
 When an issue reaches completion or is decided to be dismissed:
 
 ### Scenario A: Delivered & Accepted (PR Merged)
-1. Add the `completed` label to the issue:
+1. Add the `completed` label and remove `in-progress` (releasing the WIP slot):
    ```bash
-   gh issue edit <id> --add-label "completed"
+   gh issue edit <id> --add-label "completed" --remove-label "in-progress"
    ```
 2. Post an **Acceptance Comment** summarizing the resolution and PR reference:
    ```bash

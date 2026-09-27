@@ -54,8 +54,9 @@ internal sealed class DefaultJobInvokerFactory : IJobInvokerFactory
             var jobInstance = scope.ServiceProvider.GetRequiredService(jobType);
             var invoker = GetOrBuildInvoker(jobType, inputType);
             var throttleAttrs = jobType.GetCustomAttributes<ThrottleAttribute>(inherit: true);
+            var retentionAttr = jobType.GetCustomAttribute<RetentionAttribute>(inherit: true);
 
-            return Task.FromResult(new JobInvocationContext(scope, jobInstance, input, invoker, throttleAttrs));
+            return Task.FromResult(new JobInvocationContext(scope, jobInstance, input, invoker, throttleAttrs, retentionAttr));
         }
         catch
         {
