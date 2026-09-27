@@ -62,7 +62,12 @@ When a task is new, non-trivial, or ambiguous (or when explicitly requested via 
 4. **Interactive Alignment:**
    - Present 2 to 4 concise, targeted trade-off questions to the developer.
    - Once aligned, formalize the **Definition of Done (DoD)** and the **3N Testing Plan**.
-5. **Backlog Crystallization (GitHub Issues Integration):**
+5. **Backlog Health & Threshold Alert (Anti-Accumulation Guard):**
+   - Before or upon creating new issues, monitor open issue volume (`gh issue list --state open --limit 50 | wc -l`).
+   - If open issues exceed **15 items**, provide a gentle, non-bureaucratic prompt:
+     > *"Heads-up: We currently have X open issues in the backlog. Would you like to review/attack one of the existing top priorities, or prune/validate stale tickets before logging a new one?"*
+   - This ensures the project avoids zombie backlogs while preserving a fast "groom & attack" rhythm.
+6. **Backlog Crystallization (GitHub Issues Integration):**
    - Materialize each groomed item into a dedicated GitHub Issue via `gh issue create`.
    - **Language Mandate:** Issues must be written **strictly in English**.
    - Use conventional titles (`type(scope): description`), assign relevant labels (`bug`, `enhancement`, `reliability`, `performance`, `documentation`, `rfc`), and structure the body with:

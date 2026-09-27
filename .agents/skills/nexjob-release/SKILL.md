@@ -24,7 +24,7 @@ It guarantees that code and documentation (Wiki + Package READMEs) are strictly 
 
 ---
 
-## The 6-Phase Release Flow
+## The 7-Phase Release Flow
 
 ```
 [Phase 1: Version Auditing & SemVer Detection]
@@ -43,6 +43,9 @@ It guarantees that code and documentation (Wiki + Package READMEs) are strictly 
                      │
                      ▼
 [Phase 6: Post-Release Sync-Back (main ➔ develop)]
+                     │
+                     ▼
+[Phase 7: Post-Release Learning Snapshot (Async Retro)]
 ```
 
 ---
@@ -173,3 +176,24 @@ Since release PRs are merged into `main` using **Squash and Merge** (resulting i
    git push origin develop
    ```
 2. **Verification:** Confirm `develop` contains the release tag and is strictly even/ahead of `origin/main`.
+
+---
+
+## Phase 7: Post-Release Learning Snapshot (Async Retro)
+
+> **Goal:** Continuous self-evolution without meetings or ceremony. Capture operational friction or test/CI hurdles and turn them into permanent rules.
+
+Immediately following the sync-back to `develop`:
+
+1. **Lightweight Friction Audit:**
+   - Did any compiler warning, StyleCop rule, or flaky test delay the release cycle?
+   - Did we encounter documentation drift that was caught late?
+2. **Repository Hardening (Direct to `develop`):**
+   - If a recurring pain point or pattern was identified, synthesize it into a 1-line rule in `GEMINI.md` or a skill reference.
+   - Commit directly to `develop`:
+     ```bash
+     git add GEMINI.md .agents/skills/
+     git commit -m "chore(governance): record release vX.Y.Z learnings"
+     git push origin develop
+     ```
+3. **Done:** The release is officially closed, codebase is updated, and the squad is sharper for the next cycle.
