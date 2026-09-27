@@ -13,4 +13,5 @@ internal sealed record NavCounters(
     string? Servers,
     string? ServersClass,
     string? Listeners = null,
-    string? ListenersClass = null);
+    string? ListenersClass = null,
+    bool HasOrphanQueues = false);

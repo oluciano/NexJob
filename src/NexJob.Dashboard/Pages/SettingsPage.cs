@@ -124,7 +124,7 @@ internal sealed class SettingsPage : ComponentBase
         }
         else
         {
-            recurringAction = $"<form method=\"post\" action=\"{PathPrefix}/recurring/pause-all{clusterSuffix}\"><button class=\"btn btn-danger btn-sm\" type=\"submit\">Pause All</button></form>";
+            recurringAction = $"<form method=\"post\" action=\"{PathPrefix}/recurring/pause-all{clusterSuffix}\"><button class=\"btn btn-danger btn-sm\" type=\"submit\" onclick=\"return confirm('Pause ALL recurring jobs cluster-wide?')\">Pause All</button></form>";
         }
 
         var body =
