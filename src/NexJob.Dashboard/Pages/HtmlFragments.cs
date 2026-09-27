@@ -454,7 +454,7 @@ internal static class HtmlFragments
             var resetForm = string.Empty;
             if (circuitStatus is not null && circuitStatus.State != QueueCircuitState.Closed)
             {
-                resetForm = $"<form method=\"post\" action=\"{pathPrefix}/queues/{Uri.EscapeDataString(queue.Queue)}/reset-circuit{clusterSuffix}\" style=\"display:inline\">" +
+                resetForm = $"<form method=\"post\" action=\"{pathPrefix}/queues/{Uri.EscapeDataString(queue.Queue)}/reset-circuit{clusterSuffix}\" style=\"display:inline\" onclick=\"return confirm('Reset circuit breaker for queue {HtmlEncode(queue.Queue)}? This will immediately resume traffic to downstream API.')\">" +
                     $"<button type=\"submit\" class=\"btn btn-secondary btn-sm\" title=\"Reset Circuit Breaker\">⚡ Reset Circuit</button></form>";
             }
 
@@ -475,6 +475,7 @@ internal static class HtmlFragments
             : string.Empty;
 
         var circuitBadge = string.Empty;
+        var failedLink = string.Empty;
         if (circuitStatus is not null)
         {
             if (circuitStatus.State == QueueCircuitState.Open)
@@ -482,7 +483,8 @@ internal static class HtmlFragments
                 var remainingSec = circuitStatus.RemainingCooldown.HasValue
                     ? $" ({(int)circuitStatus.RemainingCooldown.Value.TotalSeconds}s)"
                     : string.Empty;
-                circuitBadge = $" <span class=\"badge badge-danger\" style=\"font-size:10px;margin-left:6px\" title=\"Circuit is OPEN due to downstream failures. Auto-cooldown active.\">⚡ CIRCUIT OPEN{remainingSec}</span>";
+                circuitBadge = $" <a href=\"{pathPrefix}/failed?queue={Uri.EscapeDataString(queue.Queue)}{(activeCluster is not null ? $"&cluster={Uri.EscapeDataString(activeCluster.Id)}" : string.Empty)}\" style=\"text-decoration:none\"><span class=\"badge badge-danger\" style=\"font-size:10px;margin-left:6px;cursor:pointer\" title=\"Circuit is OPEN due to downstream failures. Click to view failed errors.\">⚡ CIRCUIT OPEN{remainingSec}</span></a>";
+                failedLink = $"<a href=\"{pathPrefix}/failed?queue={Uri.EscapeDataString(queue.Queue)}{(activeCluster is not null ? $"&cluster={Uri.EscapeDataString(activeCluster.Id)}" : string.Empty)}\" class=\"btn btn-secondary btn-sm\" style=\"color:var(--error);border-color:var(--error)\">View Errors</a>";
             }
             else if (circuitStatus.State == QueueCircuitState.HalfOpen)
             {
@@ -515,6 +517,7 @@ internal static class HtmlFragments
                 $"</div>" +
             $"</div>" +
             $"<div style=\"display:flex;gap:8px;align-items:center;justify-content:flex-end\">" +
+                failedLink +
                 pauseForm +
                 $"<a href=\"{pathPrefix}/jobs?queue={Uri.EscapeDataString(queue.Queue)}{(activeCluster is not null ? $"&cluster={Uri.EscapeDataString(activeCluster.Id)}" : string.Empty)}\" class=\"btn btn-secondary btn-sm\">View Jobs</a>" +
             $"</div>" +
