@@ -202,7 +202,8 @@ public sealed class MongoStorageProvider : IStorageProvider
         var update = Builders<JobDocument>.Update
             .Set(d => d.Status, JobStatus.Succeeded)
             .Set(d => d.CompletedAt, DateTimeOffset.UtcNow)
-            .Unset(d => d.HeartbeatAt);
+            .Unset(d => d.HeartbeatAt)
+            .Unset(d => d.CheckpointJson);
 
         await _jobs.UpdateOneAsync(ById(jobId), update, cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -225,7 +226,8 @@ public sealed class MongoStorageProvider : IStorageProvider
         var update = Builders<JobDocument>.Update
             .Set(d => d.Status, JobStatus.Succeeded)
             .Set(d => d.CompletedAt, DateTimeOffset.UtcNow)
-            .Unset(d => d.HeartbeatAt);
+            .Unset(d => d.HeartbeatAt)
+            .Unset(d => d.CheckpointJson);
 
         await _jobs.UpdateManyAsync(filter, update, cancellationToken: cancellationToken).ConfigureAwait(false);
     }

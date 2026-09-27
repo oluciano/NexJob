@@ -315,7 +315,7 @@ public sealed class PostgresStorageProvider : IStorageProvider, IDisposable, IAs
         await conn.ExecuteAsync(
             """
             UPDATE nexjob_jobs
-            SET status = 'Succeeded', completed_at = NOW(), heartbeat_at = NULL
+            SET status = 'Succeeded', completed_at = NOW(), heartbeat_at = NULL, checkpoint_json = NULL
             WHERE id = @id
             """,
             new { id = jobId.Value });
@@ -342,7 +342,7 @@ public sealed class PostgresStorageProvider : IStorageProvider, IDisposable, IAs
         await conn.ExecuteAsync(
             """
             UPDATE nexjob_jobs
-            SET status = 'Succeeded', completed_at = NOW(), heartbeat_at = NULL
+            SET status = 'Succeeded', completed_at = NOW(), heartbeat_at = NULL, checkpoint_json = NULL
             WHERE id = ANY(@Ids)
             """,
             new { Ids = idList });

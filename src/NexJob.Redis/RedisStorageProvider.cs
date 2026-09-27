@@ -357,6 +357,7 @@ public sealed class RedisStorageProvider : IStorageProvider
             new HashEntry("heartbeatAt", string.Empty),
         }).ConfigureAwait(false);
 
+        await _db.HashDeleteAsync(JobKey(id), "checkpointJson").ConfigureAwait(false);
         await _db.HashDeleteAsync(ProcessingKey, id).ConfigureAwait(false);
         await _db.SortedSetAddAsync(ThroughputKey, id, now.ToUnixTimeMilliseconds()).ConfigureAwait(false);
     }

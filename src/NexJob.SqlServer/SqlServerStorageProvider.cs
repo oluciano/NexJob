@@ -290,7 +290,7 @@ public sealed class SqlServerStorageProvider : IStorageProvider
         await conn.ExecuteAsync(
             """
             UPDATE nexjob_jobs
-            SET status = 'Succeeded', completed_at = SYSUTCDATETIME(), heartbeat_at = NULL
+            SET status = 'Succeeded', completed_at = SYSUTCDATETIME(), heartbeat_at = NULL, checkpoint_json = NULL
             WHERE id = @id
             """,
             new { id = jobId.Value });
@@ -317,7 +317,7 @@ public sealed class SqlServerStorageProvider : IStorageProvider
         await conn.ExecuteAsync(
             """
             UPDATE nexjob_jobs
-            SET status = 'Succeeded', completed_at = SYSUTCDATETIME(), heartbeat_at = NULL
+            SET status = 'Succeeded', completed_at = SYSUTCDATETIME(), heartbeat_at = NULL, checkpoint_json = NULL
             WHERE id IN @Ids
             """,
             new { Ids = idList });
