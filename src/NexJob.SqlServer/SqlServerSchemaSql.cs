@@ -150,6 +150,13 @@ internal static class SqlServerSchemaSql
             WHERE idempotency_key IS NOT NULL;
         """;
 
+    /// <summary>V9: Add checkpoint_json column to nexjob_jobs for batch job progress checkpointing.</summary>
+    internal const string V9AddCheckpointColumn =
+        """
+        IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('nexjob_jobs') AND name = 'checkpoint_json')
+            ALTER TABLE nexjob_jobs ADD checkpoint_json NVARCHAR(MAX) NULL;
+        """;
+
     /// <summary>Full initial schema — kept for backward compatibility. Prefer the versioned consts.</summary>
     internal const string CreateTables = V1CreateTables;
 }

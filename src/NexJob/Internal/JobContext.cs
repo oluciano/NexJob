@@ -9,6 +9,7 @@ namespace NexJob.Internal;
 internal sealed class JobContext : IJobContext
 {
     private readonly IJobStorage _storage;
+    private string? _checkpointJson;
 
     /// <summary>
     /// Initializes a new <see cref="JobContext"/> from the fetched <paramref name="job"/> record.
@@ -21,6 +22,7 @@ internal sealed class JobContext : IJobContext
         Queue = job.Queue;
         RecurringJobId = job.RecurringJobId;
         Tags = job.Tags ?? [];
+        _checkpointJson = job.CheckpointJson;
         _storage = storage;
     }
 
@@ -48,5 +50,46 @@ internal sealed class JobContext : IJobContext
         ArgumentOutOfRangeException.ThrowIfNegative(percent);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(percent, 100);
         return _storage.ReportProgressAsync(JobId, percent, message, ct);
+    }
+
+    /// <inheritdoc/>
+    public TState? GetCheckpoint<TState>()
+        where TState : class
+    {
+        if (string.IsNullOrEmpty(_checkpointJson))
+        {
+            return null;
+        }
+
+        try
+        {
+            return System.Text.Json.JsonSerializer.Deserialize<TState>(_checkpointJson);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task SaveCheckpointAsync<TState>(
+        TState state,
+        int? percent = null,
+        string? message = null,
+        CancellationToken ct = default)
+        where TState : class
+    {
+        ArgumentNullException.ThrowIfNull(state);
+
+        if (percent.HasValue)
+        {
+            ArgumentOutOfRangeException.ThrowIfNegative(percent.Value);
+            ArgumentOutOfRangeException.ThrowIfGreaterThan(percent.Value, 100);
+        }
+
+        var json = System.Text.Json.JsonSerializer.Serialize(state);
+        _checkpointJson = json;
+
+        await _storage.SaveCheckpointAsync(JobId, json, percent, message, ct).ConfigureAwait(false);
     }
 }

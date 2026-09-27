@@ -23,6 +23,17 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`NexJob` Core & Storage Providers — Progress Checkpoints & State Saving for Long-Running Jobs (Issue #206)**:
+  - Added `CheckpointJson` property to `JobRecord` for serializing and preserving arbitrary checkpoint state.
+  - Extended `IJobContext` with `TState? GetCheckpoint<TState>()` and `Task SaveCheckpointAsync<TState>(TState state, int? percent, string? message, CancellationToken ct)`.
+  - Added `SaveCheckpointAsync(JobId, string, int?, string?, CancellationToken)` to `IJobStorage` with default interface implementation.
+  - Implemented checkpoint persistence across all 5 storage providers: `InMemoryStorageProvider`, `PostgresStorageProvider`, `SqlServerStorageProvider`, `RedisStorageProvider`, and `MongoStorageProvider`.
+  - Added schema migrations V9 for PostgreSQL (`V9AddCheckpointColumn`) and SQL Server (`V9AddCheckpointColumn`) adding nullable `checkpoint_json` column.
+  - Enforced state persistence on retry: `CheckpointJson` is preserved across retry attempts (`Scheduled`) and dead-letter moves (`Failed`) so interrupted jobs resume exactly from the last saved state.
+  - Enforced anti-bloat cleanup: `checkpoint_json` is automatically cleared (`NULL` / unset) upon successful execution (`Succeeded`) across all storage providers.
+  - Added 3N unit testing matrix (Positive, Negative, Boundary) in `tests/NexJob.Tests/JobCheckpointTests.cs` and updated `tests/NexJob.Tests/SchemaMigratorTests.cs`.
+  - Documented in `docs/wiki/08-IJobContext.md` and `docs/wiki/15-Common-Scenarios.md`.
+
 - **`NexJob` Core & `NexJob.Dashboard` — Dynamic Circuit Breaker & Queue Auto-Pausing (Issue #207)**:
   - Added declarative queue-level circuit breaker via `NexJobOptions.ConfigureQueue(queue, q => q.EnableCircuitBreaker(...))`.
   - Added 4-state lifecycle (`Closed`, `Open`, `HalfOpen`, `Recovering`) to prevent thundering herds ("metralhadora" effect) when downstream APIs experience severe outages.

@@ -941,9 +941,14 @@ public sealed class RedisStorageProvider : IStorageProvider
         }
         else
         {
-            if (result.Succeeded && result.TrimPayloadOnSuccess)
+            if (result.Succeeded)
             {
-                await _db.HashSetAsync(JobKey(idStr), "inputJson", string.Empty).ConfigureAwait(false);
+                await _db.HashDeleteAsync(JobKey(idStr), "checkpointJson").ConfigureAwait(false);
+
+                if (result.TrimPayloadOnSuccess)
+                {
+                    await _db.HashSetAsync(JobKey(idStr), "inputJson", string.Empty).ConfigureAwait(false);
+                }
             }
 
             // Persist logs (non-critical for atomicity)
@@ -978,6 +983,29 @@ public sealed class RedisStorageProvider : IStorageProvider
             new HashEntry("progressPercent", percent.ToString(CultureInfo.InvariantCulture)),
             new HashEntry("progressMessage", message ?? string.Empty),
         ]).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc/>
+    public async Task SaveCheckpointAsync(
+        JobId jobId, string checkpointJson, int? percent, string? message, CancellationToken ct = default)
+    {
+        var key = (RedisKey)JobKey(jobId.Value.ToString());
+        var entries = new List<HashEntry>
+        {
+            new HashEntry("checkpointJson", checkpointJson),
+        };
+
+        if (percent.HasValue)
+        {
+            entries.Add(new HashEntry("progressPercent", percent.Value.ToString(CultureInfo.InvariantCulture)));
+        }
+
+        if (message is not null)
+        {
+            entries.Add(new HashEntry("progressMessage", message));
+        }
+
+        await _db.HashSetAsync(key, entries.ToArray()).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -1397,6 +1425,7 @@ public sealed class RedisStorageProvider : IStorageProvider
             Tags = DeserializeTags(d.GetValueOrDefault("tags", string.Empty)),
             ProgressPercent = int.TryParse(d.GetValueOrDefault("progressPercent"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var pp) ? pp : null,
             ProgressMessage = NullIfEmpty(d.GetValueOrDefault("progressMessage")),
+            CheckpointJson = NullIfEmpty(d.GetValueOrDefault("checkpointJson")),
         };
     }
 

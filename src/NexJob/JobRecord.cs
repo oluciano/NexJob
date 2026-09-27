@@ -134,4 +134,10 @@ public sealed class JobRecord
 
     /// <summary>Last progress message reported by the job. <see langword="null"/> when not reported.</summary>
     public string? ProgressMessage { get; set; }
+
+    /// <summary>
+    /// JSON-serialized checkpoint payload representing the execution state for long-running batch jobs.
+    /// <see langword="null"/> when no checkpoint has been saved or after successful completion.
+    /// </summary>
+    public string? CheckpointJson { get; set; }
 }

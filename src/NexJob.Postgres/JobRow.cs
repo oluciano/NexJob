@@ -30,6 +30,7 @@ internal sealed class JobRow
     public string[]? Tags { get; set; }
     public int? ProgressPercent { get; set; }
     public string? ProgressMessage { get; set; }
+    public string? CheckpointJson { get; set; }
 
     public JobRecord ToRecord() => new()
     {
@@ -60,5 +61,6 @@ internal sealed class JobRow
         Tags = (IReadOnlyList<string>?)Tags ?? [],
         ProgressPercent = ProgressPercent,
         ProgressMessage = ProgressMessage,
+        CheckpointJson = CheckpointJson,
     };
 }

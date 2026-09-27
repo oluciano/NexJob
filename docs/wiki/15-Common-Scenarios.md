@@ -230,6 +230,60 @@ builder.Services.AddNexJob(options =>
 
 ---
 
+## Resuming Long-Running Jobs with Checkpoints
+
+When running batch imports, external migrations, or long data jobs, network glitches or worker restarts can cause failures after hours of work.
+With `IJobContext.SaveCheckpointAsync` and `GetCheckpoint<TState>`, the job picks up exactly from where it left off on the next retry attempt:
+
+```csharp
+public sealed class DataMigrationJob : IJob<MigrationInput>
+{
+    private readonly IJobContext _context;
+    private readonly ILegacyApiClient _client;
+    private readonly IDb _db;
+
+    public DataMigrationJob(IJobContext context, ILegacyApiClient client, IDb db)
+    {
+        _context = context;
+        _client = client;
+        _db = db;
+    }
+
+    public async Task ExecuteAsync(MigrationInput input, CancellationToken ct)
+    {
+        // 1. Resume from previous checkpoint if this is a retry attempt
+        var checkpoint = _context.GetCheckpoint<MigrationCheckpoint>()
+                         ?? new MigrationCheckpoint(LastProcessedKey: null, RecordsMigrated: 0);
+
+        var page = await _client.FetchRecordsAsync(input.BatchSize, checkpoint.LastProcessedKey, ct);
+        while (page.HasItems)
+        {
+            await _db.BulkInsertAsync(page.Items, ct);
+
+            checkpoint = new MigrationCheckpoint(
+                LastProcessedKey: page.LastKey,
+                RecordsMigrated: checkpoint.RecordsMigrated + page.Items.Count);
+
+            // 2. Persist state atomically
+            await _context.SaveCheckpointAsync(
+                state: checkpoint,
+                percent: null,
+                message: $"Migrated {checkpoint.RecordsMigrated} records so far",
+                ct: ct);
+
+            page = await _client.FetchRecordsAsync(input.BatchSize, checkpoint.LastProcessedKey, ct);
+        }
+    }
+}
+
+public sealed record MigrationCheckpoint(string? LastProcessedKey, int RecordsMigrated);
+public sealed record MigrationInput(int BatchSize);
+```
+
+On success, NexJob automatically cleans up `checkpoint_json` from the database.
+
+---
+
 ## Next Steps
 
 - [Idempotency](17-Idempotency.md) — Deep dive on duplicate prevention

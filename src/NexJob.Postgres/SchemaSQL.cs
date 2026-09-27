@@ -132,6 +132,12 @@ internal static class SchemaSql
             WHERE idempotency_key IS NOT NULL;
         """;
 
+    /// <summary>V9: Add checkpoint_json column to nexjob_jobs for batch job progress checkpointing.</summary>
+    internal const string V9AddCheckpointColumn =
+        """
+        ALTER TABLE nexjob_jobs ADD COLUMN IF NOT EXISTS checkpoint_json TEXT NULL;
+        """;
+
     /// <summary>Full initial schema — kept for backward compatibility. Prefer the versioned consts.</summary>
     internal const string CreateTables = V1CreateTables;
 }
