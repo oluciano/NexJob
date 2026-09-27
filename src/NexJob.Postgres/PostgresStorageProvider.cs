@@ -988,8 +988,15 @@ public sealed class PostgresStorageProvider : IStorageProvider, IDisposable, IAs
             ORDER BY job_type ASC, queue ASC
             """;
 
-        var rows = await conn.QueryAsync<JobCatalogItem>(sql).ConfigureAwait(false);
-        return rows.ToList();
+        var rows = await conn.QueryAsync<JobCatalogRow>(sql).ConfigureAwait(false);
+        return rows.Select(r => new JobCatalogItem(
+            r.JobType,
+            r.Queue,
+            r.TotalRuns,
+            r.SucceededRuns,
+            r.FailedRuns,
+            r.LastExecutedAt,
+            r.AvgDurationSeconds)).ToList();
     }
 
     /// <inheritdoc/>
@@ -1192,7 +1199,7 @@ public sealed class PostgresStorageProvider : IStorageProvider, IDisposable, IAs
             var updateSql = result.TrimPayloadOnSuccess
                 ? """
                   UPDATE nexjob_jobs
-                  SET status = 'Succeeded', completed_at = NOW(), heartbeat_at = NULL, execution_logs = @Logs::jsonb, input_json = '', checkpoint_json = NULL
+                  SET status = 'Succeeded', completed_at = NOW(), heartbeat_at = NULL, execution_logs = @Logs::jsonb, input_json = '{}'::jsonb, checkpoint_json = NULL
                   WHERE id = @id
                   """
                 : """

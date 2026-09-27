@@ -8,6 +8,13 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`NexJob.Postgres`, `NexJob.Redis`, `NexJob.MongoDB` — Storage Catalog and Payload Trimming Alignment (Issue #222)**:
+  - Fixed PostgreSQL `TrimPayloadOnSuccess` to update `input_json = '{}'::jsonb`, eliminating PostgreSQL error `22P02: invalid input syntax for type json`.
+  - Added `JobCatalogRow` mapping in `PostgresStorageProvider.GetJobCatalogAsync` to ensure reliable Dapper materialization into `JobCatalogItem`.
+  - Implemented `GetJobCatalogAsync` in `RedisStorageProvider` by scanning `nexjob:jobs:*`, grouping by `(JobType, Queue)`, and aggregating run statistics (totals, successes, failures, last execution, and average duration).
+  - Implemented `GetJobCatalogAsync` in `MongoStorageProvider` by querying and grouping jobs by `(JobType, Queue)` to calculate catalog metrics.
+
+
 - **`NexJob.Dashboard` — Multi-Cluster Navigation & Action URL Preservation and Read-Only UI Guard**:
   - Ensured active cluster parameter (`?cluster={id}`) is systematically preserved across sidebar navigation, header logo, search bar, breadcrumbs, and pagination.
   - Implemented client-side navigation interceptor in `HtmlShell` that automatically propagates the active cluster ID across internal page transitions when browsing a non-default cluster.
