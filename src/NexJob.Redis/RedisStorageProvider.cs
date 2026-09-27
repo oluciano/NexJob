@@ -1033,6 +1033,69 @@ public sealed class RedisStorageProvider : IStorageProvider
         return results;
     }
 
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<JobCatalogItem>> GetJobCatalogAsync(CancellationToken cancellationToken = default)
+    {
+        var grouped = new Dictionary<(string JobType, string Queue), List<JobRecord>>();
+
+        await foreach (var key in ScanJobKeysAsync().WithCancellation(cancellationToken).ConfigureAwait(false))
+        {
+            var hash = await _db.HashGetAllAsync(key).ConfigureAwait(false);
+            if (hash.Length == 0)
+            {
+                continue;
+            }
+
+            var d = ParseHash(hash);
+            var record = HashToRecord(d);
+            var groupKey = (record.JobType, record.Queue);
+
+            if (!grouped.TryGetValue(groupKey, out var list))
+            {
+                list = new List<JobRecord>();
+                grouped[groupKey] = list;
+            }
+
+            list.Add(record);
+        }
+
+        var items = new List<JobCatalogItem>();
+
+        foreach (var (key, jobs) in grouped)
+        {
+            var succeeded = jobs.Count(j => j.Status == JobStatus.Succeeded);
+            var failed = jobs.Count(j => j.Status == JobStatus.Failed);
+            var total = jobs.Count;
+
+            var lastExecuted = jobs
+                .Select(j => j.CompletedAt ?? j.ProcessingStartedAt)
+                .Where(t => t.HasValue)
+                .OrderByDescending(t => t!.Value)
+                .FirstOrDefault();
+
+            var durations = jobs
+                .Where(j => j.ProcessingStartedAt.HasValue && j.CompletedAt.HasValue && j.CompletedAt >= j.ProcessingStartedAt)
+                .Select(j => (j.CompletedAt!.Value - j.ProcessingStartedAt!.Value).TotalSeconds)
+                .ToList();
+
+            double? avgDuration = durations.Count > 0 ? durations.Average() : null;
+
+            items.Add(new JobCatalogItem(
+                JobType: key.JobType,
+                Queue: key.Queue,
+                TotalRuns: total,
+                SucceededRuns: succeeded,
+                FailedRuns: failed,
+                LastExecutedAt: lastExecuted,
+                AvgDurationSeconds: avgDuration));
+        }
+
+        return items
+            .OrderBy(i => i.JobType, StringComparer.Ordinal)
+            .ThenBy(i => i.Queue, StringComparer.Ordinal)
+            .ToList();
+    }
+
     // ── Server / Worker node tracking ─────────────────────────────────────────
 
     /// <inheritdoc/>

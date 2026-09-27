@@ -770,6 +770,50 @@ public sealed class MongoStorageProvider : IStorageProvider
     }
 
     /// <inheritdoc/>
+    public async Task<IReadOnlyList<JobCatalogItem>> GetJobCatalogAsync(CancellationToken cancellationToken = default)
+    {
+        var docs = await _jobs.Find(FilterDefinition<JobDocument>.Empty).ToListAsync(cancellationToken).ConfigureAwait(false);
+
+        var grouped = docs.GroupBy(d => (d.JobType, d.Queue));
+        var items = new List<JobCatalogItem>();
+
+        foreach (var group in grouped)
+        {
+            var jobs = group.ToList();
+            var succeeded = jobs.Count(j => j.Status == JobStatus.Succeeded);
+            var failed = jobs.Count(j => j.Status == JobStatus.Failed);
+            var total = jobs.Count;
+
+            var lastExecuted = jobs
+                .Select(j => j.CompletedAt ?? j.ProcessingStartedAt)
+                .Where(t => t.HasValue)
+                .OrderByDescending(t => t!.Value)
+                .FirstOrDefault();
+
+            var durations = jobs
+                .Where(j => j.ProcessingStartedAt.HasValue && j.CompletedAt.HasValue && j.CompletedAt >= j.ProcessingStartedAt)
+                .Select(j => (j.CompletedAt!.Value - j.ProcessingStartedAt!.Value).TotalSeconds)
+                .ToList();
+
+            double? avgDuration = durations.Count > 0 ? durations.Average() : null;
+
+            items.Add(new JobCatalogItem(
+                JobType: group.Key.JobType,
+                Queue: group.Key.Queue,
+                TotalRuns: total,
+                SucceededRuns: succeeded,
+                FailedRuns: failed,
+                LastExecutedAt: lastExecuted,
+                AvgDurationSeconds: avgDuration));
+        }
+
+        return items
+            .OrderBy(i => i.JobType, StringComparer.Ordinal)
+            .ThenBy(i => i.Queue, StringComparer.Ordinal)
+            .ToList();
+    }
+
+    /// <inheritdoc/>
     public async Task<int> PurgeJobsAsync(RetentionPolicy policy, CancellationToken cancellationToken = default)
     {
         var now = DateTimeOffset.UtcNow;
