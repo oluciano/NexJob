@@ -571,7 +571,7 @@ internal static class HtmlFragments
     }
 
     /// <summary>Renders a high-density table row for a recurring job.</summary>
-    internal static string RecurringRow(RecurringJobRecord job, string pathPrefix, DateTimeOffset now, DashboardCluster? activeCluster = null)
+    internal static string RecurringRow(RecurringJobRecord job, string pathPrefix, DateTimeOffset now, DashboardCluster? activeCluster = null, IReadOnlySet<string>? activeWorkerQueues = null)
     {
         var effectiveCron = job.CronOverride ?? job.Cron;
         var encodedIdUrl = Uri.EscapeDataString(job.RecurringJobId);
@@ -639,7 +639,13 @@ internal static class HtmlFragments
                 ? $"<form method=\"post\" action=\"{pathPrefix}/recurring/{encodedIdUrl}/pause{clusterSuffix}\" style=\"display:inline\" onclick=\"event.stopPropagation()\"><button type=\"submit\" class=\"btn-icon-sm\" title=\"Pause\" style=\"color:var(--warning);background:transparent;border:none\">{pauseIcon}</button></form>"
                 : $"<form method=\"post\" action=\"{pathPrefix}/recurring/{encodedIdUrl}/resume{clusterSuffix}\" style=\"display:inline\" onclick=\"event.stopPropagation()\"><button type=\"submit\" class=\"btn-icon-sm\" title=\"Resume\" style=\"color:var(--success);background:transparent;border:none\">{playIcon}</button></form>";
 
-            actionsHtml = $"<form method=\"post\" action=\"{pathPrefix}/recurring/{encodedIdUrl}/trigger{clusterSuffix}\" style=\"display:inline\" onclick=\"event.stopPropagation()\"><button type=\"submit\" class=\"btn-icon-sm\" title=\"Trigger Now\" style=\"color:var(--primary);background:transparent;border:none\">{boltIcon}</button></form> {pauseResume}";
+            var queueOrphanWarning = activeWorkerQueues is { Count: > 0 } && !activeWorkerQueues.Contains(job.Queue, StringComparer.OrdinalIgnoreCase)
+                ? $"\\n\\n⚠ Warning: Queue '{job.Queue}' has no active workers. The job will remain queued until a worker starts."
+                : string.Empty;
+            var triggerConfirmJs = System.Web.HttpUtility.JavaScriptStringEncode($"Trigger '{job.RecurringJobId}' now?{queueOrphanWarning}", addDoubleQuotes: true);
+
+            actionsHtml = $"<form method=\"post\" action=\"{pathPrefix}/recurring/{encodedIdUrl}/trigger{clusterSuffix}\" style=\"display:inline\" onclick=\"event.stopPropagation()\">" +
+                          $"<button type=\"submit\" class=\"btn-icon-sm\" title=\"Trigger Now\" style=\"color:var(--primary);background:transparent;border:none\" onclick=\"return confirm({triggerConfirmJs})\">{boltIcon}</button></form> {pauseResume}";
         }
 
         var actionsTd = !isReadOnly

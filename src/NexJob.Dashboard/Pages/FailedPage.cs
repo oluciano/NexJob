@@ -21,6 +21,9 @@ internal sealed class FailedPage : IComponent
     [Parameter] public IReadOnlyList<DashboardCluster>? Clusters { get; set; }
     [Parameter] public DashboardCluster? ActiveCluster { get; set; }
 
+    /// <summary>Gets or sets the set of queue names that currently have at least one active worker listening.</summary>
+    [Parameter] public IReadOnlySet<string>? ActiveWorkerQueues { get; set; }
+
     void IComponent.Attach(RenderHandle renderHandle) => _handle = renderHandle;
 
     async Task IComponent.SetParametersAsync(ParameterView parameters)
@@ -96,10 +99,17 @@ internal sealed class FailedPage : IComponent
         string? headerActions = null;
         if (!isReadOnly)
         {
+            var hasOrphanQueues = ActiveWorkerQueues is { Count: > 0 } &&
+                queues.Any(q => !ActiveWorkerQueues.Contains(q.Queue, StringComparer.OrdinalIgnoreCase));
+            var requeueAllConfirm = hasOrphanQueues
+                ? $"Requeue all {currentStatus.ToLower()} jobs?\\n\\n⚠ Warning: Some target queues have no active workers. Requeued jobs will remain stalled until workers start."
+                : $"Requeue all {currentStatus.ToLower()} jobs?";
+            var requeueAllConfirmJs = System.Web.HttpUtility.JavaScriptStringEncode(requeueAllConfirm, addDoubleQuotes: true);
+
             headerActions =
                 $"<form method=\"post\" action=\"{PathPrefix}/jobs/bulk{clusterSuffix}\" style=\"display:inline\">" +
                 $"<input type=\"hidden\" name=\"status\" value=\"{currentStatus}\" />" +
-                "<button type=\"submit\" name=\"bulkAction\" value=\"requeue\" class=\"btn btn-primary\">↺ Requeue All</button></form> " +
+                $"<button type=\"submit\" name=\"bulkAction\" value=\"requeue\" class=\"btn btn-primary\" onclick=\"return confirm({requeueAllConfirmJs})\">↺ Requeue All</button></form> " +
                 $"<form method=\"post\" action=\"{PathPrefix}/jobs/bulk{clusterSuffix}\" style=\"display:inline\">" +
                 $"<input type=\"hidden\" name=\"status\" value=\"{currentStatus}\" />" +
                 $"<button type=\"submit\" name=\"bulkAction\" value=\"delete\" class=\"btn btn-danger\" onclick=\"return confirm('Delete all {currentStatus.ToLower()} jobs?')\">✕ Delete All</button></form>";

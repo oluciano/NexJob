@@ -17,6 +17,9 @@ internal sealed class RecurringPage : IComponent
     [Parameter] public IReadOnlyList<DashboardCluster>? Clusters { get; set; }
     [Parameter] public DashboardCluster? ActiveCluster { get; set; }
 
+    /// <summary>Gets or sets the set of queue names that currently have at least one active worker listening.</summary>
+    [Parameter] public IReadOnlySet<string>? ActiveWorkerQueues { get; set; }
+
     void IComponent.Attach(RenderHandle renderHandle) => _handle = renderHandle;
 
     async Task IComponent.SetParametersAsync(ParameterView parameters)
@@ -43,7 +46,7 @@ internal sealed class RecurringPage : IComponent
         }
 
         var isReadOnly = ActiveCluster?.IsReadOnly == true;
-        var rows = string.Join(string.Empty, jobs.Select(j => HtmlFragments.RecurringRow(j, PathPrefix, now, ActiveCluster)));
+        var rows = string.Join(string.Empty, jobs.Select(j => HtmlFragments.RecurringRow(j, PathPrefix, now, ActiveCluster, ActiveWorkerQueues)));
         var actionsHeader = !isReadOnly ? "<th style=\"text-align:right\">Actions</th>" : string.Empty;
 
         var body =

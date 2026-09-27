@@ -154,7 +154,7 @@ internal sealed class CatalogPage : IComponent
             else if (isParameterless)
             {
                 triggerAction =
-                    $"<form method=\"post\" action=\"{PathPrefix}/catalog/{Uri.EscapeDataString(item.JobType)}/trigger{clusterQuery}\" style=\"display:inline;margin:0\">" +
+                    $"<form method=\"post\" action=\"{PathPrefix}/catalog/{Uri.EscapeDataString(item.JobType)}/trigger{clusterQuery}\" class=\"trigger-direct-form\" data-queue=\"{HttpUtility.HtmlAttributeEncode(item.Queue)}\" style=\"display:inline;margin:0\">" +
                     $"<input type=\"hidden\" name=\"queue\" value=\"{HttpUtility.HtmlAttributeEncode(item.Queue)}\" />" +
                     "<button type=\"submit\" class=\"btn btn-primary btn-sm\" style=\"min-width:76px;justify-content:center\" title=\"Enqueue ad-hoc execution (parameterless IJob)\">Trigger</button>" +
                     "</form>";
@@ -296,6 +296,33 @@ internal sealed class CatalogPage : IComponent
                             if (payloadInput) payloadInput.value = defaultSampleJson;
                         });
                     }
+
+                    var form = document.getElementById('triggerModalForm');
+                    if (form) {
+                        form.addEventListener('submit', function(e) {
+                            var warnBox = document.getElementById('triggerModalQueueWarn');
+                            if (warnBox && warnBox.style.display !== 'none') {
+                                var queueInput = document.getElementById('triggerModalQueue');
+                                var queueName = queueInput ? queueInput.value.trim() : '';
+                                var msg = 'Trigger job on queue \'' + queueName + '\'?\n\n\u26a0 Warning: This queue has no active workers. The job will remain enqueued until a worker starts.';
+                                if (!confirm(msg)) {
+                                    e.preventDefault();
+                                }
+                            }
+                        });
+                    }
+
+                    document.addEventListener('submit', function(e) {
+                        var form = e.target ? e.target.closest('.trigger-direct-form') : null;
+                        if (!form) return;
+                        var queue = (form.getAttribute('data-queue') || '').toLowerCase().trim();
+                        if (queue && activeWorkersMap.length > 0 && activeWorkersMap.indexOf(queue) === -1) {
+                            var msg = 'Trigger job on queue \'' + form.getAttribute('data-queue') + '\'?\n\n\u26a0 Warning: This queue has no active workers. The job will remain enqueued until a worker starts.';
+                            if (!confirm(msg)) {
+                                e.preventDefault();
+                            }
+                        }
+                    });
                 })();
             </script>
             """;

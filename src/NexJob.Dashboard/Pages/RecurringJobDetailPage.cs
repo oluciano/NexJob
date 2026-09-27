@@ -33,6 +33,9 @@ internal sealed class RecurringJobDetailPage : IComponent
     /// <summary>Gets or sets currently active cluster.</summary>
     [Parameter] public DashboardCluster? ActiveCluster { get; set; }
 
+    /// <summary>Gets or sets the set of queue names that currently have at least one active worker listening.</summary>
+    [Parameter] public IReadOnlySet<string>? ActiveWorkerQueues { get; set; }
+
     void IComponent.Attach(RenderHandle renderHandle) => _handle = renderHandle;
 
     Task IComponent.SetParametersAsync(ParameterView parameters)
@@ -119,9 +122,13 @@ internal sealed class RecurringJobDetailPage : IComponent
         }
         else
         {
+            var queueOrphanWarning = ActiveWorkerQueues is { Count: > 0 } && !ActiveWorkerQueues.Contains(job.Queue, StringComparer.OrdinalIgnoreCase)
+                ? $"\\n\\n⚠ Warning: Queue '{job.Queue}' has no active workers. The job will remain queued until a worker starts."
+                : string.Empty;
+            var triggerConfirm = System.Web.HttpUtility.JavaScriptStringEncode($"Trigger '{job.RecurringJobId}' now?{queueOrphanWarning}", addDoubleQuotes: true);
             var triggerButton =
                 $"<form method=\"post\" action=\"{PathPrefix}/recurring/{encodedIdUrl}/trigger{clusterSuffix}\" style=\"display:inline\">" +
-                "<button type=\"submit\" class=\"btn btn-primary btn-sm\">▶ Trigger Now</button></form>";
+                $"<button type=\"submit\" class=\"btn btn-primary btn-sm\" onclick=\"return confirm({triggerConfirm})\">▶ Trigger Now</button></form>";
 
             var pauseResumeButton = job.Enabled
                 ? $"<form method=\"post\" action=\"{PathPrefix}/recurring/{encodedIdUrl}/pause{clusterSuffix}\" style=\"display:inline\">" +
