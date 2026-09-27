@@ -123,9 +123,9 @@ builder.Services.AddNexJob(options =>
             cb.RecoveryDuration = TimeSpan.FromMinutes(2);
             cb.RecoveryConcurrency = 2;
 
-            // Automatically break on 5xx, timeouts, 429 (Rate Limits), and network drops
-            // while ignoring client bugs (400 Bad Request, 404 Not Found, 422)
-            cb.BreakOnTransientHttpErrors();
+            // Automatically break on 5xx, timeouts, 429 (Rate Limits), 401 Unauthorized (expired tokens), and network drops
+            // while safely ignoring client bugs (400 Bad Request, 403 Forbidden, 404 Not Found, 422)
+            cb.BreakOnTransientHttpErrors(includeAuthErrors: true);
 
             // Or register custom exception types with an optional predicate
             cb.BreakOn<TimeoutException>();

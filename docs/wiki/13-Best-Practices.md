@@ -181,8 +181,8 @@ builder.Services.AddNexJob(options =>
             cb.RecoveryConcurrency = 2; // Anti-thundering herd ramp-up
 
             // Protect downstream API: trips on 5xx, timeouts, 429 Too Many Requests (Rate Limits),
-            // and network connection drops, while safely ignoring client bugs (400, 404, 422)
-            cb.BreakOnTransientHttpErrors();
+            // 401 Unauthorized (expired tokens), and network connection drops, while safely ignoring client bugs (400, 403, 404, 422)
+            cb.BreakOnTransientHttpErrors(includeAuthErrors: true);
             cb.BreakOn<TimeoutException>();
         });
     });

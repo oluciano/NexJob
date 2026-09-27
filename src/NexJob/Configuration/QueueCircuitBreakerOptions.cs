@@ -98,13 +98,15 @@ public sealed class QueueCircuitBreakerOptions
     }
 
     /// <summary>
-    /// Configures the circuit breaker to trip only on transient HTTP and connectivity failures,
-    /// including 5xx server errors, 408 Request Timeout, 429 Too Many Requests (Rate Limits),
-    /// and network/DNS connection failures. Business and client errors (400 Bad Request, 401, 403, 404, 422)
+    /// Configures the circuit breaker to trip on transient HTTP, connectivity failures, and optional authentication failures.
+    /// Includes 5xx server errors, 408 Request Timeout, 429 Too Many Requests (Rate Limits), network/DNS drops,
+    /// and 401 Unauthorized (when <paramref name="includeAuthErrors"/> is <see langword="true"/>, protecting the queue when API tokens/keys expire).
+    /// Business and client validation errors (400 Bad Request, 403 Forbidden, 404 Not Found, 422 Unprocessable)
     /// are ignored by the circuit breaker so client payload bugs do not pause the entire queue.
     /// </summary>
+    /// <param name="includeAuthErrors">Whether to treat 401 Unauthorized as a circuit trip condition. Defaults to <see langword="true"/>.</param>
     /// <returns>This options instance for method chaining.</returns>
-    public QueueCircuitBreakerOptions BreakOnTransientHttpErrors()
+    public QueueCircuitBreakerOptions BreakOnTransientHttpErrors(bool includeAuthErrors = true)
     {
         return BreakOn<HttpRequestException>(ex =>
         {
@@ -128,7 +130,13 @@ public sealed class QueueCircuitBreakerOptions
                 return true;
             }
 
-            // Client errors (400 Bad Request, 404 Not Found, 422, etc.) do not trip the circuit
+            // 401 Unauthorized (Expired OAuth token, rotated API Key / secret)
+            if (includeAuthErrors && statusCode == 401)
+            {
+                return true;
+            }
+
+            // Client errors (400 Bad Request, 403 Forbidden, 404 Not Found, 422, etc.) do not trip the circuit
             return false;
         });
     }

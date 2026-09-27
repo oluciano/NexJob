@@ -342,19 +342,20 @@ public sealed class QueueCircuitBreakerTests
             },
             timeProvider: fakeTime);
 
-        // N2 (Negative/Client Error): 400 Bad Request does not increment failure count
+        // N2 (Negative/Client Error): 400 Bad Request and 403 Forbidden do not increment failure count
         manager.RecordOutcome("salesforce", succeeded: false, new HttpRequestException("Invalid entity payload", null, HttpStatusCode.BadRequest));
+        manager.RecordOutcome("salesforce", succeeded: false, new HttpRequestException("Forbidden", null, HttpStatusCode.Forbidden));
         manager.RecordOutcome("salesforce", succeeded: false, new HttpRequestException("Order not found", null, HttpStatusCode.NotFound));
         manager.RecordOutcome("salesforce", succeeded: false, new HttpRequestException("Unprocessable", null, HttpStatusCode.UnprocessableEntity));
 
         Assert.Equal(QueueCircuitState.Closed, manager.GetState("salesforce", out _));
         Assert.Equal(0, manager.GetStatus("salesforce")!.ConsecutiveFailures);
 
-        // N1 (Positive/Transient Error): 503 Service Unavailable + 429 Too Many Requests (Salesforce rate limit)
-        manager.RecordOutcome("salesforce", succeeded: false, new HttpRequestException("Rate limit exceeded", null, (HttpStatusCode)429));
+        // N1 (Positive/Transient & Auth Error): 401 Unauthorized (expired token) + 429 Too Many Requests (Salesforce rate limit)
+        manager.RecordOutcome("salesforce", succeeded: false, new HttpRequestException("Token expired", null, HttpStatusCode.Unauthorized));
         Assert.Equal(1, manager.GetStatus("salesforce")!.ConsecutiveFailures);
 
-        manager.RecordOutcome("salesforce", succeeded: false, new HttpRequestException("Backend down", null, HttpStatusCode.ServiceUnavailable));
+        manager.RecordOutcome("salesforce", succeeded: false, new HttpRequestException("Rate limit exceeded", null, (HttpStatusCode)429));
 
         // Circuit trips open!
         Assert.Equal(QueueCircuitState.Open, manager.GetState("salesforce", out var allowed));
