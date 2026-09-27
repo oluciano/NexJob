@@ -645,6 +645,239 @@ public sealed class StandaloneDashboardTests
         }
     }
 
+    // ─── Job Catalog & Definitions (3N Matrix) ─────────────────────────────
+
+    [Fact]
+    public async Task StandaloneDashboard_Catalog_N1_Positive_RendersCatalogTableAndSidebarLink()
+    {
+        var port = GetFreeTcpPort();
+        using var host = Host.CreateDefaultBuilder()
+            .ConfigureServices(services =>
+            {
+                services.AddNexJob();
+                services.AddNexJobStandaloneDashboard(options =>
+                {
+                    options.Port = port;
+                    options.Path = "/dashboard";
+                    options.Title = "Test Catalog Dashboard";
+                    options.LocalhostOnly = true;
+                });
+            })
+            .Build();
+
+        try
+        {
+            await host.StartAsync();
+
+            var storage = host.Services.GetRequiredService<NexJob.Storage.IJobStorage>();
+            var now = DateTimeOffset.UtcNow;
+            await storage.EnqueueAsync(new JobRecord
+            {
+                Id = JobId.New(),
+                JobType = "BillingInvoiceJob",
+                Queue = "billing",
+                Status = JobStatus.Succeeded,
+                ProcessingStartedAt = now.AddSeconds(-5),
+                CompletedAt = now.AddSeconds(-2),
+                CreatedAt = now.AddSeconds(-10),
+            });
+
+            using var client = new HttpClient
+            {
+                BaseAddress = new Uri($"http://localhost:{port}"),
+                Timeout = TimeSpan.FromSeconds(5),
+            };
+
+            // 1. Check sidebar contains Catalog link
+            var overview = await client.GetAsync("/dashboard");
+            overview.StatusCode.Should().Be(HttpStatusCode.OK);
+            var overviewHtml = await overview.Content.ReadAsStringAsync();
+            overviewHtml.Should().Contain("/dashboard/catalog");
+            overviewHtml.Should().Contain("Catalog");
+
+            // 2. Query /dashboard/catalog
+            var catalog = await client.GetAsync("/dashboard/catalog");
+            catalog.StatusCode.Should().Be(HttpStatusCode.OK);
+            var catalogHtml = await catalog.Content.ReadAsStringAsync();
+            catalogHtml.Should().Contain("Job Catalog &amp; Definitions");
+            catalogHtml.Should().Contain("BillingInvoiceJob");
+            catalogHtml.Should().Contain("billing");
+            catalogHtml.Should().Contain("History");
+        }
+        finally
+        {
+            await host.StopAsync();
+        }
+    }
+
+    [Fact]
+    public async Task StandaloneDashboard_Catalog_N2_Negative_FilterWithNoMatches_ShowsEmptyTableState()
+    {
+        var port = GetFreeTcpPort();
+        using var host = Host.CreateDefaultBuilder()
+            .ConfigureServices(services =>
+            {
+                services.AddNexJob();
+                services.AddNexJobStandaloneDashboard(options =>
+                {
+                    options.Port = port;
+                    options.Path = "/dashboard";
+                    options.Title = "Test Catalog Dashboard";
+                    options.LocalhostOnly = true;
+                });
+            })
+            .Build();
+
+        try
+        {
+            await host.StartAsync();
+
+            using var client = new HttpClient
+            {
+                BaseAddress = new Uri($"http://localhost:{port}"),
+                Timeout = TimeSpan.FromSeconds(5),
+            };
+
+            // Search filter with non-existent job
+            var res = await client.GetAsync("/dashboard/catalog?search=NonExistentJob12345");
+            res.StatusCode.Should().Be(HttpStatusCode.OK);
+            var html = await res.Content.ReadAsStringAsync();
+            html.Should().Contain("0 definitions found");
+        }
+        finally
+        {
+            await host.StopAsync();
+        }
+    }
+
+    [Fact]
+    public async Task StandaloneDashboard_Catalog_N3_Boundary_TriggerActionEnqueuesJobAndRedirects()
+    {
+        var port = GetFreeTcpPort();
+        using var host = Host.CreateDefaultBuilder()
+            .ConfigureServices(services =>
+            {
+                services.AddNexJob();
+                services.AddNexJobStandaloneDashboard(options =>
+                {
+                    options.Port = port;
+                    options.Path = "/dashboard";
+                    options.Title = "Test Catalog Dashboard";
+                    options.LocalhostOnly = true;
+                });
+            })
+            .Build();
+
+        try
+        {
+            await host.StartAsync();
+
+            using var handler = new HttpClientHandler { AllowAutoRedirect = false };
+            using var client = new HttpClient(handler)
+            {
+                BaseAddress = new Uri($"http://localhost:{port}"),
+                Timeout = TimeSpan.FromSeconds(5),
+            };
+
+            // Post to trigger an IJob
+            var postContent = new FormUrlEncodedContent(new[]
+            {
+                new KeyValuePair<string, string>("queue", "catalog-test-queue"),
+            });
+
+            var jobTypeArg = Uri.EscapeDataString(typeof(StubParameterlessJob).AssemblyQualifiedName!);
+            var triggerRes = await client.PostAsync($"/dashboard/catalog/{jobTypeArg}/trigger", postContent);
+
+            // Redirects back to /dashboard/catalog
+            triggerRes.StatusCode.Should().Be(HttpStatusCode.Redirect);
+            triggerRes.Headers.Location?.ToString().Should().Be("/dashboard/catalog");
+
+            // Verify the job was actually enqueued in storage
+            var storage = host.Services.GetRequiredService<NexJob.Storage.IDashboardStorage>();
+            var paged = await storage.GetJobsAsync(new JobFilter { Queue = "catalog-test-queue" }, page: 1, pageSize: 10);
+            paged.Items.Should().ContainSingle(j => j.JobType == typeof(StubParameterlessJob).AssemblyQualifiedName);
+        }
+        finally
+        {
+            await host.StopAsync();
+        }
+    }
+
+    [Fact]
+    public async Task StandaloneDashboard_Catalog_ParameterizedJob_RendersTriggerModalButtonAndEnqueuesWithPayload()
+    {
+        var port = GetFreeTcpPort();
+        using var host = Host.CreateDefaultBuilder()
+            .ConfigureServices(services =>
+            {
+                services.AddNexJob();
+                services.AddNexJobStandaloneDashboard(options =>
+                {
+                    options.Port = port;
+                    options.Path = "/dashboard";
+                    options.Title = "Test Catalog Dashboard";
+                    options.LocalhostOnly = true;
+                });
+            })
+            .Build();
+
+        try
+        {
+            await host.StartAsync();
+
+            var storage = host.Services.GetRequiredService<NexJob.Storage.IJobStorage>();
+            await storage.EnqueueAsync(new JobRecord
+            {
+                Id = JobId.New(),
+                JobType = typeof(StubParameterizedJob).AssemblyQualifiedName!,
+                InputType = typeof(string).AssemblyQualifiedName!,
+                InputJson = "\"initial-test\"",
+                Queue = "default",
+                Status = JobStatus.Succeeded,
+            });
+
+            using var handler = new HttpClientHandler { AllowAutoRedirect = false };
+            using var client = new HttpClient(handler)
+            {
+                BaseAddress = new Uri($"http://localhost:{port}"),
+                Timeout = TimeSpan.FromSeconds(5),
+            };
+
+            // 1. Verify Catalog renders Trigger button that calls openTriggerModal
+            var res = await client.GetAsync("/dashboard/catalog");
+            res.StatusCode.Should().Be(HttpStatusCode.OK);
+            var html = await res.Content.ReadAsStringAsync();
+
+            html.Should().Contain("StubParameterizedJob");
+            html.Should().Contain("trigger-modal-btn");
+            html.Should().Contain("triggerModal");
+
+            // 2. Post to trigger parameterized job with custom inputJson payload
+            var postContent = new FormUrlEncodedContent(new[]
+            {
+                new KeyValuePair<string, string>("queue", "custom-payload-queue"),
+                new KeyValuePair<string, string>("inputJson", "\"hello-from-catalog\""),
+            });
+
+            var jobTypeArg = Uri.EscapeDataString(typeof(StubParameterizedJob).AssemblyQualifiedName!);
+            var triggerRes = await client.PostAsync($"/dashboard/catalog/{jobTypeArg}/trigger", postContent);
+
+            triggerRes.StatusCode.Should().Be(HttpStatusCode.Redirect);
+            triggerRes.Headers.Location?.ToString().Should().Be("/dashboard/catalog");
+
+            // 3. Verify enqueued job record contains the supplied payload
+            var dashboardStorage = host.Services.GetRequiredService<NexJob.Storage.IDashboardStorage>();
+            var paged = await dashboardStorage.GetJobsAsync(new JobFilter { Queue = "custom-payload-queue" }, page: 1, pageSize: 10);
+            paged.Items.Should().ContainSingle(j => j.JobType == typeof(StubParameterizedJob).AssemblyQualifiedName);
+            var enqueued = paged.Items.First(j => j.JobType == typeof(StubParameterizedJob).AssemblyQualifiedName);
+            enqueued.InputJson.Should().Be("\"hello-from-catalog\"");
+        }
+        finally
+        {
+            await host.StopAsync();
+        }
+    }
+
     private static int GetFreeTcpPort()
     {
         var listener = new TcpListener(IPAddress.Loopback, 0);
@@ -653,4 +886,14 @@ public sealed class StandaloneDashboardTests
         listener.Stop();
         return port;
     }
+}
+
+public sealed class StubParameterlessJob : IJob
+{
+    public Task ExecuteAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+}
+
+public sealed class StubParameterizedJob : IJob<string>
+{
+    public Task ExecuteAsync(string input, CancellationToken cancellationToken) => Task.CompletedTask;
 }

@@ -13,6 +13,152 @@ internal static class Helpers
         return parts[^1];
     }
 
+    internal static Type? ResolveType(string typeName)
+    {
+        var type = Type.GetType(typeName, throwOnError: false);
+        if (type is not null)
+        {
+            return type;
+        }
+
+        var cleanName = typeName.Split(',')[0].Trim();
+
+        foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+        {
+            type = assembly.GetType(typeName, throwOnError: false) ?? assembly.GetType(cleanName, throwOnError: false);
+            if (type is not null)
+            {
+                return type;
+            }
+        }
+
+        return null;
+    }
+
+    internal static bool IsParameterlessJob(string typeName)
+    {
+        var type = ResolveType(typeName);
+        return type is not null && typeof(IJob).IsAssignableFrom(type);
+    }
+
+    internal static Type? ResolveJobInputType(string typeName)
+    {
+        var type = ResolveType(typeName);
+        if (type is null)
+        {
+            return null;
+        }
+
+        var jobInterface = Array.Find(
+            type.GetInterfaces(),
+            i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IJob<>));
+        return jobInterface?.GetGenericArguments()[0];
+    }
+
+    internal static string GenerateDefaultJsonSchema(Type inputType)
+    {
+        try
+        {
+            var obj = CreateSampleInstance(inputType);
+            return System.Text.Json.JsonSerializer.Serialize(obj, new System.Text.Json.JsonSerializerOptions
+            {
+                WriteIndented = true,
+            });
+        }
+        catch
+        {
+            return "{}";
+        }
+    }
+
+    private static object? CreateSampleInstance(Type type)
+    {
+        if (type == typeof(string))
+        {
+            return "string";
+        }
+
+        if (type == typeof(int) || type == typeof(long) || type == typeof(short) || type == typeof(byte))
+        {
+            return 0;
+        }
+
+        if (type == typeof(double) || type == typeof(float) || type == typeof(decimal))
+        {
+            return 0.0;
+        }
+
+        if (type == typeof(bool))
+        {
+            return true;
+        }
+
+        if (type == typeof(Guid))
+        {
+            return Guid.NewGuid();
+        }
+
+        if (type == typeof(DateTime))
+        {
+            return DateTime.UtcNow;
+        }
+
+        if (type == typeof(DateTimeOffset))
+        {
+            return DateTimeOffset.UtcNow;
+        }
+
+        if (type.IsEnum)
+        {
+            return Enum.GetValues(type).GetValue(0);
+        }
+
+        try
+        {
+            var ctors = type.GetConstructors();
+            if (ctors.Length > 0)
+            {
+                var ctor = ctors.OrderByDescending(c => c.GetParameters().Length).First();
+                var parameters = ctor.GetParameters();
+                if (parameters.Length > 0)
+                {
+                    var args = new object?[parameters.Length];
+                    for (int i = 0; i < parameters.Length; i++)
+                    {
+                        args[i] = CreateSampleInstance(parameters[i].ParameterType);
+                    }
+
+                    return ctor.Invoke(args);
+                }
+            }
+
+            return Activator.CreateInstance(type);
+        }
+        catch
+        {
+            // If instantiation fails, build a dictionary from public writable properties or constructor parameters
+            var dict = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+            var ctor = type.GetConstructors().OrderByDescending(c => c.GetParameters().Length).FirstOrDefault();
+            if (ctor is not null)
+            {
+                foreach (var p in ctor.GetParameters())
+                {
+                    dict[p.Name ?? "property"] = CreateSampleInstance(p.ParameterType);
+                }
+            }
+
+            foreach (var prop in type.GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance))
+            {
+                if (prop.CanWrite && !dict.ContainsKey(prop.Name))
+                {
+                    dict[prop.Name] = CreateSampleInstance(prop.PropertyType);
+                }
+            }
+
+            return dict.Count > 0 ? dict : null;
+        }
+    }
+
     internal static string BadgeHtml(JobStatus s) => s switch
     {
         JobStatus.Enqueued => "<span class=\"badge badge-enqueued\">Enqueued</span>",

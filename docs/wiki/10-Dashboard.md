@@ -281,8 +281,28 @@ builder.Services.AddNexJobStandaloneDashboard(options =>
 - When no clusters are registered, the dashboard operates seamlessly in single-cluster mode querying services directly from DI.
  
 ---
+
+## Job Catalog & Definitions (`/catalog`)
+
+Inspect distinct job types, performance metrics, queue distributions, error rates, and trigger parameterless jobs on demand.
+
+[![Job Catalog & Definitions](../assets/dashboard-catalog.png)](../assets/dashboard-catalog.png)
+
+### Key Capabilities
+
+- **Aggregated Telemetry:** Distinct job types and queues aggregated via `IDashboardStorage.GetJobCatalogAsync()`, reporting total executions, succeeded count, failed count, failure rate percentage, and average execution duration.
+- **Deep History Linking:** Each catalog entry features a direct **History** link navigating to `/jobs?search={JobType}&queue={Queue}`, immediately filtering historical execution records for detailed diagnostics.
+- **On-Demand Ad-Hoc Execution (Trigger):** For parameterless jobs implementing `IJob`, execute jobs immediately with a single click from the catalog table. (Disabled automatically on read-only clusters).
+- **Cluster & Multi-Tenant Aware:** Seamlessly reflects catalog statistics for the active cluster selected in multi-cluster federation (`?cluster={id}`).
+
+> [!WARNING]
+> **Storage Provider Deprecation Notice:**
+> `IDashboardStorage.GetJobCatalogAsync` currently features a default interface implementation for backward compatibility. In NexJob v6.0, this method will become abstract across all storage providers. Custom storage providers should implement native aggregated queries (`GROUP BY job_type, queue`) to prepare for v6.0.
+
+---
  
 ## Next Steps
+
  
 - [Configuration Reference](11-Configuration-Reference.md) — Dashboard options
 - [Troubleshooting](16-Troubleshooting.md) — Dashboard not showing jobs

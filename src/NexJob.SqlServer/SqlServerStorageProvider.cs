@@ -938,6 +938,35 @@ public sealed class SqlServerStorageProvider : IStorageProvider
     }
 
     /// <inheritdoc/>
+    public async Task<IReadOnlyList<JobCatalogItem>> GetJobCatalogAsync(
+        CancellationToken cancellationToken = default)
+    {
+        await using var conn = Open();
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+
+        const string sql = """
+            SELECT
+                job_type AS JobType,
+                queue AS Queue,
+                CAST(COUNT(*) AS BIGINT) AS TotalRuns,
+                CAST(SUM(CASE WHEN status = 'Succeeded' THEN 1 ELSE 0 END) AS BIGINT) AS SucceededRuns,
+                CAST(SUM(CASE WHEN status = 'Failed' THEN 1 ELSE 0 END) AS BIGINT) AS FailedRuns,
+                MAX(COALESCE(completed_at, processing_started_at)) AS LastExecutedAt,
+                AVG(CASE
+                    WHEN processing_started_at IS NOT NULL AND completed_at IS NOT NULL AND completed_at >= processing_started_at
+                    THEN CAST(DATEDIFF_BIG(MILLISECOND, processing_started_at, completed_at) AS FLOAT) / 1000.0
+                    ELSE NULL
+                END) AS AvgDurationSeconds
+            FROM nexjob_jobs
+            GROUP BY job_type, queue
+            ORDER BY job_type ASC, queue ASC
+            """;
+
+        var rows = await conn.QueryAsync<JobCatalogItem>(sql).ConfigureAwait(false);
+        return rows.ToList();
+    }
+
+    /// <inheritdoc/>
     public async Task<int> PurgeJobsAsync(RetentionPolicy policy, CancellationToken cancellationToken = default)
     {
         await using var conn = Open();

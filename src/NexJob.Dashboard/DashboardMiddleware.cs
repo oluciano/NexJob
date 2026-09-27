@@ -8,6 +8,7 @@ using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
 using NexJob.Configuration;
 using NexJob.Dashboard.Pages;
+using NexJob.Internal;
 using NexJob.Storage;
 
 namespace NexJob.Dashboard;
@@ -228,6 +229,11 @@ public sealed class DashboardMiddleware
             || subPath.StartsWith("queues/", StringComparison.Ordinal))
         {
             return await TryHandleSettingsActionAsync(context, subPath, runtimeStore, controlService, activeCluster).ConfigureAwait(false);
+        }
+
+        if (subPath.StartsWith("catalog/", StringComparison.Ordinal))
+        {
+            return await TryHandleCatalogActionAsync(context, subPath, activeCluster).ConfigureAwait(false);
         }
 
         return false;
@@ -604,6 +610,103 @@ public sealed class DashboardMiddleware
         return false;
     }
 
+    private async Task<bool> TryHandleCatalogActionAsync(
+        HttpContext context, string subPath, DashboardCluster? activeCluster)
+    {
+        // subPath is e.g. "catalog/{jobType}/trigger"
+        if (!subPath.EndsWith("/trigger", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var parts = subPath.Split('/');
+        if (parts.Length < 3)
+        {
+            return false;
+        }
+
+        var rawType = Uri.UnescapeDataString(parts[1]);
+        string? queue = null;
+        string? payloadJson = null;
+        if (context.Request.HasFormContentType)
+        {
+            var form = await context.Request.ReadFormAsync(context.RequestAborted).ConfigureAwait(false);
+            var formQueue = form["queue"].ToString();
+            if (!string.IsNullOrWhiteSpace(formQueue))
+            {
+                queue = formQueue.Trim();
+            }
+
+            var formPayload = form["inputJson"].ToString();
+            if (!string.IsNullOrWhiteSpace(formPayload))
+            {
+                payloadJson = formPayload.Trim();
+            }
+        }
+
+        var jobType = Pages.Helpers.ResolveType(rawType);
+        if (jobType is not null)
+        {
+            var scheduler = context.RequestServices.GetService<IScheduler>();
+            if (scheduler is not null)
+            {
+                var options = context.RequestServices.GetRequiredService<NexJobOptions>();
+                var inputType = Pages.Helpers.ResolveJobInputType(rawType);
+
+                if (typeof(IJob).IsAssignableFrom(jobType))
+                {
+                    var jobRecord = new JobRecord
+                    {
+                        Id = JobId.New(),
+                        JobType = jobType.AssemblyQualifiedName ?? rawType,
+                        InputType = typeof(NoInput).AssemblyQualifiedName!,
+                        InputJson = "{}",
+                        Queue = queue ?? "default",
+                        Priority = JobPriority.Normal,
+                        Status = JobStatus.Enqueued,
+                        CreatedAt = DateTimeOffset.UtcNow,
+                        MaxAttempts = options.MaxAttempts,
+                    };
+
+                    await scheduler.EnqueueAsync(jobRecord, DuplicatePolicy.AllowAfterFailed, context.RequestAborted).ConfigureAwait(false);
+                }
+                else if (inputType is not null && !string.IsNullOrWhiteSpace(payloadJson))
+                {
+                    // Validate JSON against inputType
+                    try
+                    {
+                        var deserialized = System.Text.Json.JsonSerializer.Deserialize(payloadJson, inputType);
+                        if (deserialized is not null)
+                        {
+                            var normalizedJson = System.Text.Json.JsonSerializer.Serialize(deserialized);
+                            var jobRecord = new JobRecord
+                            {
+                                Id = JobId.New(),
+                                JobType = jobType.AssemblyQualifiedName ?? rawType,
+                                InputType = inputType.AssemblyQualifiedName!,
+                                InputJson = normalizedJson,
+                                Queue = queue ?? "default",
+                                Priority = JobPriority.Normal,
+                                Status = JobStatus.Enqueued,
+                                CreatedAt = DateTimeOffset.UtcNow,
+                                MaxAttempts = options.MaxAttempts,
+                            };
+
+                            await scheduler.EnqueueAsync(jobRecord, DuplicatePolicy.AllowAfterFailed, context.RequestAborted).ConfigureAwait(false);
+                        }
+                    }
+                    catch
+                    {
+                        // Invalid JSON payload — skip enqueue and redirect back
+                    }
+                }
+            }
+        }
+
+        LocalRedirect(context, $"{_pathPrefix}/catalog", activeCluster);
+        return true;
+    }
+
     private async Task<string> RenderPageAsync(HttpContext context, string subPath, DashboardCluster? activeCluster)
     {
 #pragma warning disable MA0004
@@ -722,6 +825,26 @@ public sealed class DashboardMiddleware
                 ["ActiveCluster"] = activeCluster,
             });
             return await RenderAsync<ListenersPage>(renderer, parameters).ConfigureAwait(false);
+        }
+
+        if (string.Equals(subPath, "catalog", StringComparison.Ordinal) || subPath.StartsWith("catalog?", StringComparison.Ordinal))
+        {
+            var query = context.Request.Query;
+            var search = query.TryGetValue("search", out var sr) ? (string?)sr : null;
+            var queue = query.TryGetValue("queue", out var qu) ? (string?)qu : null;
+
+            parameters = ParameterView.FromDictionary(new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+                ["Storage"] = dashboardStorage,
+                ["PathPrefix"] = _pathPrefix,
+                ["Title"] = _options.Title,
+                ["Counters"] = counters,
+                ["Search"] = search,
+                ["QueueFilter"] = queue,
+                ["Clusters"] = clustersList,
+                ["ActiveCluster"] = activeCluster,
+            });
+            return await RenderAsync<CatalogPage>(renderer, parameters).ConfigureAwait(false);
         }
 
         if (string.Equals(subPath, "jobs", StringComparison.Ordinal) || subPath.StartsWith("jobs?", StringComparison.Ordinal))

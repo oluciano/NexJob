@@ -856,6 +856,132 @@ public sealed class InMemoryStorageProviderTests
         storedChildB!.Status.Should().Be(JobStatus.Enqueued, "continuation B must be promoted after parent succeeds");
     }
 
+    // ─── GetJobCatalogAsync (3N Matrix) ──────────────────────────────────────
+
+    [Fact]
+    public async Task GetJobCatalogAsync_N1_Positive_AggregatesDistinctJobsAcrossQueuesWithMetrics()
+    {
+        // Arrange
+        var now = DateTimeOffset.UtcNow;
+
+        // Job 1: EmailJob, Queue "emails" - Succeeded (2s duration)
+        var j1 = new JobRecord
+        {
+            Id = JobId.New(),
+            JobType = "SendEmailJob",
+            Queue = "emails",
+            Status = JobStatus.Succeeded,
+            ProcessingStartedAt = now.AddSeconds(-10),
+            CompletedAt = now.AddSeconds(-8),
+            CreatedAt = now.AddSeconds(-20),
+        };
+
+        // Job 2: EmailJob, Queue "emails" - Failed
+        var j2 = new JobRecord
+        {
+            Id = JobId.New(),
+            JobType = "SendEmailJob",
+            Queue = "emails",
+            Status = JobStatus.Failed,
+            ProcessingStartedAt = now.AddSeconds(-5),
+            CompletedAt = now.AddSeconds(-4),
+            CreatedAt = now.AddSeconds(-10),
+        };
+
+        // Job 3: OrderJob, Queue "orders" - Succeeded (5s duration)
+        var j3 = new JobRecord
+        {
+            Id = JobId.New(),
+            JobType = "ProcessOrderJob",
+            Queue = "orders",
+            Status = JobStatus.Succeeded,
+            ProcessingStartedAt = now.AddSeconds(-30),
+            CompletedAt = now.AddSeconds(-25),
+            CreatedAt = now.AddSeconds(-40),
+        };
+
+        await _sut.EnqueueAsync(j1);
+        await _sut.EnqueueAsync(j2);
+        await _sut.EnqueueAsync(j3);
+
+        // Act
+        var catalog = await _sut.GetJobCatalogAsync();
+
+        // Assert
+        catalog.Should().HaveCount(2);
+
+        var orderJob = catalog.Single(c => c.JobType == "ProcessOrderJob");
+        orderJob.Queue.Should().Be("orders");
+        orderJob.TotalRuns.Should().Be(1);
+        orderJob.SucceededRuns.Should().Be(1);
+        orderJob.FailedRuns.Should().Be(0);
+        orderJob.AvgDurationSeconds.Should().BeApproximately(5.0, 0.01);
+        orderJob.LastExecutedAt.Should().Be(j3.CompletedAt);
+
+        var emailJob = catalog.Single(c => c.JobType == "SendEmailJob");
+        emailJob.Queue.Should().Be("emails");
+        emailJob.TotalRuns.Should().Be(2);
+        emailJob.SucceededRuns.Should().Be(1);
+        emailJob.FailedRuns.Should().Be(1);
+        emailJob.AvgDurationSeconds.Should().BeApproximately(1.5, 0.01); // (2s + 1s)/2 = 1.5s
+        emailJob.LastExecutedAt.Should().Be(j2.CompletedAt);
+    }
+
+    [Fact]
+    public async Task GetJobCatalogAsync_N2_Negative_ReturnsEmptyListWhenStorageIsEmpty()
+    {
+        // Act
+        var catalog = await _sut.GetJobCatalogAsync();
+
+        // Assert
+        catalog.Should().NotBeNull();
+        catalog.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GetJobCatalogAsync_N3_Boundary_HandlesNonFinishedJobsAndNullCompletedAtGracefully()
+    {
+        // Arrange
+        var now = DateTimeOffset.UtcNow;
+
+        // Job only enqueued (not started, not completed)
+        var j1 = new JobRecord
+        {
+            Id = JobId.New(),
+            JobType = "PendingJob",
+            Queue = "default",
+            Status = JobStatus.Enqueued,
+            CreatedAt = now,
+        };
+
+        // Job processing (started, but no CompletedAt yet)
+        var j2 = new JobRecord
+        {
+            Id = JobId.New(),
+            JobType = "PendingJob",
+            Queue = "default",
+            Status = JobStatus.Processing,
+            ProcessingStartedAt = now.AddSeconds(-2),
+            CreatedAt = now.AddSeconds(-5),
+        };
+
+        await _sut.EnqueueAsync(j1);
+        await _sut.EnqueueAsync(j2);
+
+        // Act
+        var catalog = await _sut.GetJobCatalogAsync();
+
+        // Assert
+        catalog.Should().HaveCount(1);
+        var item = catalog[0];
+        item.JobType.Should().Be("PendingJob");
+        item.TotalRuns.Should().Be(2);
+        item.SucceededRuns.Should().Be(0);
+        item.FailedRuns.Should().Be(0);
+        item.AvgDurationSeconds.Should().BeNull();
+        item.LastExecutedAt.Should().Be(j2.ProcessingStartedAt);
+    }
+
     // ─── helpers ─────────────────────────────────────────────────────────────
 
     private static JobRecord MakeJob(

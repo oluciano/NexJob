@@ -947,6 +947,35 @@ public sealed class PostgresStorageProvider : IStorageProvider, IDisposable, IAs
     }
 
     /// <inheritdoc/>
+    public async Task<IReadOnlyList<JobCatalogItem>> GetJobCatalogAsync(
+        CancellationToken cancellationToken = default)
+    {
+        await using var conn = Open();
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+
+        const string sql = """
+            SELECT
+                job_type AS JobType,
+                queue AS Queue,
+                COUNT(*)::bigint AS TotalRuns,
+                SUM(CASE WHEN status = 'Succeeded' THEN 1 ELSE 0 END)::bigint AS SucceededRuns,
+                SUM(CASE WHEN status = 'Failed' THEN 1 ELSE 0 END)::bigint AS FailedRuns,
+                MAX(COALESCE(completed_at, processing_started_at)) AS LastExecutedAt,
+                AVG(CASE
+                    WHEN processing_started_at IS NOT NULL AND completed_at IS NOT NULL AND completed_at >= processing_started_at
+                    THEN EXTRACT(EPOCH FROM (completed_at - processing_started_at))
+                    ELSE NULL
+                END)::double precision AS AvgDurationSeconds
+            FROM nexjob_jobs
+            GROUP BY job_type, queue
+            ORDER BY job_type ASC, queue ASC
+            """;
+
+        var rows = await conn.QueryAsync<JobCatalogItem>(sql).ConfigureAwait(false);
+        return rows.ToList();
+    }
+
+    /// <inheritdoc/>
     public async Task<int> PurgeJobsAsync(RetentionPolicy policy, CancellationToken cancellationToken = default)
     {
         await using var conn = Open();

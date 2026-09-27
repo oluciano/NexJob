@@ -56,6 +56,7 @@ app.Run();
 - **Real-Time Live Log Streaming (SSE):** Streaming log viewer on `/jobs/{id}` dynamically appending execution console logs in real-time.
 - **Event Triggers & Listeners Visibility:** Dedicated `/listeners` page rendering active broker connections (RabbitMQ, Kafka, Azure Service Bus, SQS, etc.), consumer groups, target queues/topics, uptime, and real-time status transitions (`Starting`, `Listening`, `Reconnecting`, `Faulted`, `Stopped`).
 - **Time-Window Filtering & Queue Controls:** Quick period filters (`1h`, `6h`, `24h`, `7d`, `All Time`) on `/jobs` and interactive `Pause` / `Resume` buttons on `/queues`.
+- **Job Catalog & Definitions (`/catalog`):** Aggregated job definitions table reporting run volume, error rates, average duration, last execution timestamps, deep links to `/jobs`, and ad-hoc trigger execution for parameterless jobs.
 - **Modernized Terminal & JSON Viewers:** Execution logs and payload viewers formatted into dark terminal-styled code windows with header dots, syntax color tokens, and 1-click clipboard copy buttons.
 - **Live Overview:** Real-time counters for `Enqueued`, `Processing`, `Succeeded`, `Failed`, `Expired`, `Retrying`, and `Dead-Letter` jobs via Server-Sent Events (SSE).
 - **Job Details & Inspection:** View serialized input arguments, execution history, exception stack traces, and captured console logs.

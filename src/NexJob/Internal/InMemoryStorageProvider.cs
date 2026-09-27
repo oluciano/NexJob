@@ -747,6 +747,46 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
     }
 
     /// <inheritdoc/>
+    public Task<IReadOnlyList<JobCatalogItem>> GetJobCatalogAsync(CancellationToken cancellationToken = default)
+    {
+        IReadOnlyList<JobCatalogItem> items = _jobs.Values
+            .GroupBy(j => new { j.JobType, j.Queue })
+            .Select(g =>
+            {
+                var total = (long)g.Count();
+                var succeeded = (long)g.Count(j => j.Status == JobStatus.Succeeded);
+                var failed = (long)g.Count(j => j.Status == JobStatus.Failed);
+
+                DateTimeOffset? lastExecuted = g
+                    .Select(j => j.CompletedAt ?? j.ProcessingStartedAt)
+                    .Where(t => t.HasValue)
+                    .OrderByDescending(t => t!.Value)
+                    .FirstOrDefault();
+
+                var durations = g
+                    .Where(j => j.ProcessingStartedAt.HasValue && j.CompletedAt.HasValue && j.CompletedAt >= j.ProcessingStartedAt)
+                    .Select(j => (j.CompletedAt!.Value - j.ProcessingStartedAt!.Value).TotalSeconds)
+                    .ToList();
+
+                double? avgDuration = durations.Count > 0 ? durations.Average() : null;
+
+                return new JobCatalogItem(
+                    JobType: g.Key.JobType,
+                    Queue: g.Key.Queue,
+                    TotalRuns: total,
+                    SucceededRuns: succeeded,
+                    FailedRuns: failed,
+                    LastExecutedAt: lastExecuted,
+                    AvgDurationSeconds: avgDuration);
+            })
+            .OrderBy(c => c.JobType, StringComparer.Ordinal)
+            .ThenBy(c => c.Queue, StringComparer.Ordinal)
+            .ToList();
+
+        return Task.FromResult(items);
+    }
+
+    /// <inheritdoc/>
     public Task<int> PurgeJobsAsync(RetentionPolicy policy, CancellationToken cancellationToken = default)
     {
         var now = DateTimeOffset.UtcNow;
