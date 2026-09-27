@@ -175,8 +175,8 @@ public sealed class NexJobOptions
     public int RetentionBatchSize { get; set; } = 1000;
 
     /// <summary>
-    /// Per-queue settings loaded from <c>appsettings.json</c>, used for execution windows.
-    /// Populated by <see cref="ApplySettings"/>.
+    /// Per-queue settings loaded from <c>appsettings.json</c>, used for execution windows and circuit breakers.
+    /// Populated by <see cref="ApplySettings"/> or configured programmatically via <see cref="ConfigureQueue"/>.
     /// </summary>
     public List<QueueSettings> QueueSettings { get; set; } = [];
 
@@ -190,6 +190,28 @@ public sealed class NexJobOptions
     /// Internal flag indicating whether a storage provider has been explicitly configured.
     /// </summary>
     internal bool StorageConfigured { get; set; }
+
+    /// <summary>
+    /// Configures queue-level behavior, such as execution windows or dynamic circuit breakers.
+    /// </summary>
+    /// <param name="queueName">The name of the queue to configure.</param>
+    /// <param name="configure">The configuration delegate.</param>
+    /// <returns>This options instance for method chaining.</returns>
+    public NexJobOptions ConfigureQueue(string queueName, Action<QueueSettings> configure)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(queueName);
+        ArgumentNullException.ThrowIfNull(configure);
+
+        var existing = QueueSettings.Find(q => string.Equals(q.Name, queueName, StringComparison.OrdinalIgnoreCase));
+        if (existing is null)
+        {
+            existing = new QueueSettings { Name = queueName };
+            QueueSettings.Add(existing);
+        }
+
+        configure(existing);
+        return this;
+    }
 
     /// <summary>
     /// Marks the in-memory storage provider as explicitly configured, enabling fluent chaining.

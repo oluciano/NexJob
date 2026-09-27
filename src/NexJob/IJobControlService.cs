@@ -33,4 +33,12 @@ public interface IJobControlService
     /// <param name="queue">The name of the queue to resume.</param>
     /// <param name="ct">Token to cancel the operation.</param>
     Task ResumeQueueAsync(string queue, CancellationToken ct = default);
+
+    /// <summary>
+    /// Resets the circuit breaker state of a queue to <see cref="Configuration.QueueCircuitState.Closed"/>,
+    /// clearing consecutive failure counters and cooldown timers.
+    /// </summary>
+    /// <param name="queue">The name of the queue whose circuit breaker will be reset.</param>
+    /// <param name="ct">Token to cancel the operation.</param>
+    Task ResetQueueCircuitAsync(string queue, CancellationToken ct = default);
 }

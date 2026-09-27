@@ -10,18 +10,22 @@ internal sealed class DefaultJobControlService : IJobControlService
 {
     private readonly IDashboardStorage _dashboardStorage;
     private readonly IRuntimeSettingsStore _runtimeStore;
+    private readonly IQueueCircuitBreakerManager? _circuitBreakerManager;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="DefaultJobControlService"/> class.
     /// </summary>
     /// <param name="dashboardStorage">The dashboard storage.</param>
     /// <param name="runtimeStore">The runtime store.</param>
+    /// <param name="circuitBreakerManager">Optional queue circuit breaker manager.</param>
     public DefaultJobControlService(
         IDashboardStorage dashboardStorage,
-        IRuntimeSettingsStore runtimeStore)
+        IRuntimeSettingsStore runtimeStore,
+        IQueueCircuitBreakerManager? circuitBreakerManager = null)
     {
         _dashboardStorage = dashboardStorage;
         _runtimeStore = runtimeStore;
+        _circuitBreakerManager = circuitBreakerManager;
     }
 
     /// <inheritdoc/>
@@ -54,5 +58,12 @@ internal sealed class DefaultJobControlService : IJobControlService
         {
             await _runtimeStore.SaveAsync(rt, ct).ConfigureAwait(false);
         }
+    }
+
+    /// <inheritdoc/>
+    public Task ResetQueueCircuitAsync(string queue, CancellationToken ct = default)
+    {
+        _circuitBreakerManager?.Reset(queue);
+        return Task.CompletedTask;
     }
 }

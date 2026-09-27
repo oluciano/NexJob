@@ -607,6 +607,18 @@ public sealed class DashboardMiddleware
             return true;
         }
 
+        if (subPath.StartsWith("queues/", StringComparison.Ordinal) && subPath.EndsWith("/reset-circuit", StringComparison.Ordinal))
+        {
+            var queueName = Uri.UnescapeDataString(subPath.Split('/')[1]);
+            await controlService.ResetQueueCircuitAsync(queueName, context.RequestAborted).ConfigureAwait(false);
+            var referer = context.Request.Headers.Referer.ToString();
+            var target = !string.IsNullOrEmpty(referer) && referer.Contains("/queues", StringComparison.Ordinal)
+                ? $"{_pathPrefix}/queues"
+                : $"{_pathPrefix}/settings";
+            LocalRedirect(context, target, activeCluster);
+            return true;
+        }
+
         return false;
     }
 
@@ -784,6 +796,7 @@ public sealed class DashboardMiddleware
         if (string.Equals(subPath, "queues", StringComparison.Ordinal))
         {
             var runtimeStore = activeCluster?.RuntimeStore ?? context.RequestServices.GetService<IRuntimeSettingsStore>();
+            var circuitBreakerManager = context.RequestServices.GetService<IQueueCircuitBreakerManager>();
             parameters = ParameterView.FromDictionary(new Dictionary<string, object?>(StringComparer.Ordinal)
             {
                 ["Storage"] = dashboardStorage,
@@ -793,6 +806,7 @@ public sealed class DashboardMiddleware
                 ["Counters"] = counters,
                 ["Options"] = nexJobOptions,
                 ["RuntimeStore"] = runtimeStore,
+                ["CircuitBreakerManager"] = circuitBreakerManager,
                 ["Queues"] = effectiveQueues,
                 ["Clusters"] = clustersList,
                 ["ActiveCluster"] = activeCluster,

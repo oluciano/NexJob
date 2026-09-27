@@ -22,8 +22,20 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - Added 3N unit testing matrix in `tests/NexJob.Tests/JobExecutorHardeningTests.cs` and `tests/NexJob.Tests/DefaultJobInvokerFactoryHardeningTests.cs`.
 
 ### Added
- 
- - **`NexJob` Core & Storage Providers — Anti-Bloat Retention Strategies (Issue #203)**:
+
+- **`NexJob` Core & `NexJob.Dashboard` — Dynamic Circuit Breaker & Queue Auto-Pausing (Issue #207)**:
+  - Added declarative queue-level circuit breaker via `NexJobOptions.ConfigureQueue(queue, q => q.EnableCircuitBreaker(...))`.
+  - Added 4-state lifecycle (`Closed`, `Open`, `HalfOpen`, `Recovering`) to prevent thundering herds ("metralhadora" effect) when downstream APIs experience severe outages.
+  - Implemented progressive exponential backoff multiplier on cooldown for repeated probe failures up to `MaxOpenDuration`.
+  - Added selective exception filtering (`cb.BreakOn<TException>()`) so internal business validation exceptions do not inadvertently trip the downstream breaker.
+  - Added `Recovering` gradual ramp-up state capping concurrency to `RecoveryConcurrency` during `RecoveryDuration` when downstream recovers.
+  - Integrated with `JobDispatcherService` to bypass open queues and dispatch canary in `HalfOpen`.
+  - Integrated with `IJobControlService.ResetQueueCircuitAsync` and `DashboardMiddleware` (`POST /queues/{queue}/reset-circuit`) for manual reset.
+  - Updated Dashboard `/queues` cards with real-time badges (`⚡ CIRCUIT OPEN (Xs)`, `🟡 CANARY TESTING`, `🟢 RECOVERING`) and manual reset action.
+  - Added 3N unit testing matrix using `TimeProvider` / `FakeTimeProvider` in `tests/NexJob.Tests/QueueCircuitBreakerTests.cs`.
+  - Documented in `docs/wiki/07-Throttling.md` and `docs/wiki/13-Best-Practices.md`.
+
+- **`NexJob` Core & Storage Providers — Anti-Bloat Retention Strategies (Issue #203)**:
    - Added declarative `[Retention(PurgeOnSuccess = bool, TrimPayloadOnSuccess = bool)]` attribute to decorate job classes.
    - Implemented immediate row purge (`PurgeOnSuccess = true`) upon successful job execution across all storage providers (`InMemory`, `PostgreSQL`, `SQL Server`, `MongoDB`, `Redis`), preventing table growth and WAL bloat in high-frequency streaming workloads.
    - Implemented payload stripping (`TrimPayloadOnSuccess = true`), wiping `InputJson` upon successful execution while preserving job state, timestamps, tags, and logs for auditability.

@@ -18,6 +18,7 @@ internal sealed class JobDispatcherService : BackgroundService
     private readonly IRuntimeSettingsStore _runtimeStore;
     private readonly NexJobOptions _options;
     private readonly JobWakeUpChannel _wakeUp;
+    private readonly IQueueCircuitBreakerManager? _circuitBreakerManager;
     private readonly ILogger<JobDispatcherService> _logger;
     private int _activeJobCount;
 
@@ -30,7 +31,8 @@ internal sealed class JobDispatcherService : BackgroundService
         IRuntimeSettingsStore runtimeStore,
         NexJobOptions options,
         JobWakeUpChannel wakeUp,
-        ILogger<JobDispatcherService> logger)
+        ILogger<JobDispatcherService> logger,
+        IQueueCircuitBreakerManager? circuitBreakerManager = null)
     {
         _storage = storage;
         _executor = executor;
@@ -38,6 +40,7 @@ internal sealed class JobDispatcherService : BackgroundService
         _options = options;
         _wakeUp = wakeUp;
         _logger = logger;
+        _circuitBreakerManager = circuitBreakerManager;
     }
 
     /// <inheritdoc/>
@@ -211,6 +214,16 @@ internal sealed class JobDispatcherService : BackgroundService
             {
                 _logger.LogDebug("Queue '{Queue}' skipped — outside execution window", q);
                 continue;
+            }
+
+            if (_circuitBreakerManager is not null)
+            {
+                var state = _circuitBreakerManager.GetState(q, out var allowed);
+                if (state == QueueCircuitState.Open || allowed <= 0)
+                {
+                    _logger.LogDebug("Queue '{Queue}' skipped — circuit breaker is OPEN", q);
+                    continue;
+                }
             }
 
             result.Add(q);
