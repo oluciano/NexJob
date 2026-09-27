@@ -180,7 +180,9 @@ builder.Services.AddNexJob(options =>
             cb.RecoveryDuration = TimeSpan.FromMinutes(2);
             cb.RecoveryConcurrency = 2; // Anti-thundering herd ramp-up
 
-            cb.BreakOn<HttpRequestException>();
+            // Protect downstream API: trips on 5xx, timeouts, 429 Too Many Requests (Rate Limits),
+            // and network connection drops, while safely ignoring client bugs (400, 404, 422)
+            cb.BreakOnTransientHttpErrors();
             cb.BreakOn<TimeoutException>();
         });
     });

@@ -123,9 +123,13 @@ builder.Services.AddNexJob(options =>
             cb.RecoveryDuration = TimeSpan.FromMinutes(2);
             cb.RecoveryConcurrency = 2;
 
-            // Only trip on downstream connectivity/HTTP failures
-            cb.BreakOn<HttpRequestException>();
+            // Automatically break on 5xx, timeouts, 429 (Rate Limits), and network drops
+            // while ignoring client bugs (400 Bad Request, 404 Not Found, 422)
+            cb.BreakOnTransientHttpErrors();
+
+            // Or register custom exception types with an optional predicate
             cb.BreakOn<TimeoutException>();
+            cb.BreakOn<InvalidOperationException>(ex => ex.Message.Contains("Rate limit exceeded", StringComparison.OrdinalIgnoreCase));
         });
     });
 });

@@ -35,7 +35,7 @@ public enum QueueCircuitState
 /// </summary>
 public sealed class QueueCircuitBreakerOptions
 {
-    private readonly HashSet<Type> _breakOnTypes = [];
+    private readonly List<Func<Exception, bool>> _predicates = [];
 
     /// <summary>
     /// Gets or sets the number of consecutive eligible failures required to trip the circuit open.
@@ -75,17 +75,62 @@ public sealed class QueueCircuitBreakerOptions
     public TimeSpan RecoveryDuration { get; set; } = TimeSpan.FromMinutes(2);
 
     /// <summary>
-    /// Registers an exception type that is eligible to trip the circuit breaker.
+    /// Registers an exception type that is eligible to trip the circuit breaker, optionally with a custom predicate filter.
     /// Subclasses of <typeparamref name="TException"/> are also considered eligible.
-    /// If no exception types are explicitly registered, any unhandled exception trips the circuit.
+    /// If no exception criteria are explicitly registered, any unhandled exception trips the circuit.
     /// </summary>
     /// <typeparam name="TException">The exception type to monitor.</typeparam>
+    /// <param name="predicate">Optional condition that must evaluate to <see langword="true"/> for the exception to count.</param>
     /// <returns>This options instance for method chaining.</returns>
-    public QueueCircuitBreakerOptions BreakOn<TException>()
+    public QueueCircuitBreakerOptions BreakOn<TException>(Func<TException, bool>? predicate = null)
         where TException : Exception
     {
-        _breakOnTypes.Add(typeof(TException));
+        if (predicate == null)
+        {
+            _predicates.Add(ex => ex is TException);
+        }
+        else
+        {
+            _predicates.Add(ex => ex is TException typedEx && predicate(typedEx));
+        }
+
         return this;
+    }
+
+    /// <summary>
+    /// Configures the circuit breaker to trip only on transient HTTP and connectivity failures,
+    /// including 5xx server errors, 408 Request Timeout, 429 Too Many Requests (Rate Limits),
+    /// and network/DNS connection failures. Business and client errors (400 Bad Request, 401, 403, 404, 422)
+    /// are ignored by the circuit breaker so client payload bugs do not pause the entire queue.
+    /// </summary>
+    /// <returns>This options instance for method chaining.</returns>
+    public QueueCircuitBreakerOptions BreakOnTransientHttpErrors()
+    {
+        return BreakOn<HttpRequestException>(ex =>
+        {
+            // If StatusCode is null, it indicates network-level failure (DNS resolution, connection refused, SSL failure, socket timeout)
+            if (!ex.StatusCode.HasValue)
+            {
+                return true;
+            }
+
+            var statusCode = (int)ex.StatusCode.Value;
+
+            // 5xx Server Errors (500, 502, 503, 504, etc.)
+            if (statusCode >= 500 && statusCode <= 599)
+            {
+                return true;
+            }
+
+            // 408 Request Timeout or 429 Too Many Requests (Rate limit exceeded)
+            if (statusCode == 408 || statusCode == 429)
+            {
+                return true;
+            }
+
+            // Client errors (400 Bad Request, 404 Not Found, 422, etc.) do not trip the circuit
+            return false;
+        });
     }
 
     /// <summary>
@@ -95,12 +140,21 @@ public sealed class QueueCircuitBreakerOptions
     /// <returns><see langword="true"/> if the exception should trigger circuit counting; otherwise <see langword="false"/>.</returns>
     public bool IsEligible(Exception ex)
     {
-        if (_breakOnTypes.Count == 0)
+        ArgumentNullException.ThrowIfNull(ex);
+
+        if (_predicates.Count == 0)
         {
             return true;
         }
 
-        var exType = ex.GetType();
-        return _breakOnTypes.Any(registered => registered.IsAssignableFrom(exType));
+        for (var i = 0; i < _predicates.Count; i++)
+        {
+            if (_predicates[i](ex))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

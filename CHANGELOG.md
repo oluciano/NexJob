@@ -27,7 +27,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - Added declarative queue-level circuit breaker via `NexJobOptions.ConfigureQueue(queue, q => q.EnableCircuitBreaker(...))`.
   - Added 4-state lifecycle (`Closed`, `Open`, `HalfOpen`, `Recovering`) to prevent thundering herds ("metralhadora" effect) when downstream APIs experience severe outages.
   - Implemented progressive exponential backoff multiplier on cooldown for repeated probe failures up to `MaxOpenDuration`.
-  - Added selective exception filtering (`cb.BreakOn<TException>()`) so internal business validation exceptions do not inadvertently trip the downstream breaker.
+  - Added selective exception filtering with predicate support (`cb.BreakOn<TException>(predicate)`) and out-of-the-box helper `cb.BreakOnTransientHttpErrors()`: automatically trips on 5xx, timeouts, 429 Too Many Requests (Rate Limits), and network drops while safely ignoring client/payload bugs (400 Bad Request, 404 Not Found, 422).
   - Added `Recovering` gradual ramp-up state capping concurrency to `RecoveryConcurrency` during `RecoveryDuration` when downstream recovers.
   - Integrated with `JobDispatcherService` to bypass open queues and dispatch canary in `HalfOpen`.
   - Integrated with `IJobControlService.ResetQueueCircuitAsync` and `DashboardMiddleware` (`POST /queues/{queue}/reset-circuit`) for manual reset.

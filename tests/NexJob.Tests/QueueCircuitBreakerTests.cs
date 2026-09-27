@@ -320,4 +320,72 @@ public sealed class QueueCircuitBreakerTests
         Assert.Null(status.OpenedAt);
         Assert.Null(status.NextProbeAt);
     }
+
+    [Fact]
+    public void BreakOnTransientHttpErrors_TripsOn5xxAnd429_AndIgnores400And404()
+    {
+        // Positive & Negative Test for Transient HTTP filtering:
+        // 400 Bad Request & 404 Not Found should NOT trip the circuit.
+        // 503 & 429 Too Many Requests (Rate Limits) MUST trip the circuit.
+        var fakeTime = new FakeTimeProvider();
+        var options = new QueueCircuitBreakerOptions
+        {
+            ConsecutiveFailuresThreshold = 2,
+            OpenDuration = TimeSpan.FromMinutes(1),
+        };
+        options.BreakOnTransientHttpErrors();
+
+        var manager = new DefaultQueueCircuitBreakerManager(
+            new Dictionary<string, QueueCircuitBreakerOptions>
+            {
+                ["salesforce"] = options,
+            },
+            timeProvider: fakeTime);
+
+        // N2 (Negative/Client Error): 400 Bad Request does not increment failure count
+        manager.RecordOutcome("salesforce", succeeded: false, new HttpRequestException("Invalid entity payload", null, HttpStatusCode.BadRequest));
+        manager.RecordOutcome("salesforce", succeeded: false, new HttpRequestException("Order not found", null, HttpStatusCode.NotFound));
+        manager.RecordOutcome("salesforce", succeeded: false, new HttpRequestException("Unprocessable", null, HttpStatusCode.UnprocessableEntity));
+
+        Assert.Equal(QueueCircuitState.Closed, manager.GetState("salesforce", out _));
+        Assert.Equal(0, manager.GetStatus("salesforce")!.ConsecutiveFailures);
+
+        // N1 (Positive/Transient Error): 503 Service Unavailable + 429 Too Many Requests (Salesforce rate limit)
+        manager.RecordOutcome("salesforce", succeeded: false, new HttpRequestException("Rate limit exceeded", null, (HttpStatusCode)429));
+        Assert.Equal(1, manager.GetStatus("salesforce")!.ConsecutiveFailures);
+
+        manager.RecordOutcome("salesforce", succeeded: false, new HttpRequestException("Backend down", null, HttpStatusCode.ServiceUnavailable));
+
+        // Circuit trips open!
+        Assert.Equal(QueueCircuitState.Open, manager.GetState("salesforce", out var allowed));
+        Assert.Equal(0, allowed);
+    }
+
+    [Fact]
+    public void BreakOn_WithCustomPredicate_RespectsPredicateEvaluation()
+    {
+        // Boundary test with custom predicate
+        var fakeTime = new FakeTimeProvider();
+        var options = new QueueCircuitBreakerOptions
+        {
+            ConsecutiveFailuresThreshold = 1,
+            OpenDuration = TimeSpan.FromMinutes(1),
+        };
+
+        // Break on HttpRequestException only if error contains "CRITICAL"
+        options.BreakOn<HttpRequestException>(ex => ex.Message.Contains("CRITICAL", StringComparison.Ordinal));
+
+        var manager = new DefaultQueueCircuitBreakerManager(
+            new Dictionary<string, QueueCircuitBreakerOptions>
+            {
+                ["api"] = options,
+            },
+            timeProvider: fakeTime);
+
+        manager.RecordOutcome("api", succeeded: false, new HttpRequestException("WARNING: minor glitch"));
+        Assert.Equal(QueueCircuitState.Closed, manager.GetState("api", out _));
+
+        manager.RecordOutcome("api", succeeded: false, new HttpRequestException("CRITICAL: partner offline"));
+        Assert.Equal(QueueCircuitState.Open, manager.GetState("api", out _));
+    }
 }
