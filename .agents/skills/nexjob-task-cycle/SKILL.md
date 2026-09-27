@@ -67,15 +67,20 @@ When a task is new, non-trivial, or ambiguous (or when explicitly requested via 
 3. **Performance & Observability:**
    - Will this allocate on the hot execution path?
    - Is distributed tracing (`traceparent`) properly extracted and propagated?
-4. **Interactive Alignment:**
+4. **Operational & SRE Observability Check (Dual Persona: SRE & End User):**
+   - Does this backend feature introduce new operational states, automated pauses, throttles, or failure thresholds?
+   - **The SRE Question:** If this triggers at 3 AM during an outage, how does the on-call SRE discover, diagnose, and remediate it? Is a Dashboard representation required (`/queues`, `/servers`, `/jobs`, `/catalog`)?
+   - **The Developer Question:** Does the developer enqueuing or inspecting jobs have clear visibility into whether their job is waiting, deferred, throttled, or paused?
+   - Explicitly decide in grooming: **Is UI representation part of the current DoD**, or should a dedicated UI issue be logged?
+5. **Interactive Alignment:**
    - Present 2 to 4 concise, targeted trade-off questions to the developer.
    - Once aligned, formalize the **Definition of Done (DoD)** and the **3N Testing Plan**.
-5. **Backlog Health & Threshold Alert (Anti-Accumulation Guard):**
+6. **Backlog Health & Threshold Alert (Anti-Accumulation Guard):**
    - Before or upon creating new issues, monitor open issue volume (`gh issue list --state open --limit 50 | wc -l`).
    - If open issues exceed **15 items**, provide a gentle, non-bureaucratic prompt:
      > *"Heads-up: We currently have X open issues in the backlog. Would you like to review/attack one of the existing top priorities, or prune/validate stale tickets before logging a new one?"*
    - This ensures the project avoids zombie backlogs while preserving a fast "groom & attack" rhythm.
-6. **Backlog Crystallization (GitHub Issues Integration):**
+7. **Backlog Crystallization (GitHub Issues Integration):**
    - Materialize each groomed item into a dedicated GitHub Issue via `gh issue create`.
    - **Language Mandate:** Issues must be written **strictly in English**.
    - Use conventional titles (`type(scope): description`), assign relevant labels (`bug`, `enhancement`, `reliability`, `performance`, `documentation`, `rfc`), and structure the body with:
@@ -244,21 +249,26 @@ Every task that introduces or modifies public options, defaults, architecture be
 
 ---
 
-## Phase 4.7: Dashboard UX/UI Audit Gate (Conditional)
+## Phase 4.7: Operational Visibility & UX Audit Gate (Dual Persona: SRE & End User)
 
-> **Trigger:** Activated whenever the task touches any file in `src/NexJob.Dashboard` or UI rendering components.  
-> **Goal:** Eliminate developer visual bias, missing operational feedback, action asymmetry, and dead ends before shipping UI changes.
+> **Persona:** Senior SRE / On-call Operator + Platform Product Designer.  
+> **Goal:** Eliminate developer visual bias, missing operational feedback, hidden backend state blindness, and dead ends before shipping changes.
 
-When a task involves the dashboard:
+Every task evaluates this gate along two lanes:
+
+### Lane A: When the task touches `src/NexJob.Dashboard` or UI components
 1. **Activate the `ux-auditor` skill:**
-   - Review changed routes, markup, and interactive elements through the lens of an Ops Operator / SRE.
+   - Review changed routes and markup through the lens of an on-call SRE under pressure.
 2. **Audit Core Vectors:**
-   - **Operational Feedback:** Does the user receive immediate visual confirmation (alert banners, toasts, disabled button during submission) upon triggering actions (requeue, pause, circuit reset, trigger now)?
-   - **Action Symmetry & Degradation:** If an action exists to trip/pause/reset an entity, is there a symmetric way to inspect its detailed state or undo it?
-   - **Dead Ends & Traceability:** When displaying warnings (e.g. `⚠️ NO WORKERS` or `⚡ CIRCUIT OPEN`), can the operator click through to relevant logs, failed jobs, or active server nodes?
+   - **Operational Feedback & Safety:** Do mutating actions (pause, resume, requeue, reset circuit) have confirmation modals (`confirm()`) to prevent disastrous accidental clicks in production?
+   - **Action Symmetry & Traceability:** When displaying warnings (e.g. `⚡ CIRCUIT OPEN` or `⚠️ NO WORKERS`), can the operator click through directly to root-cause errors (`/failed?queue=...`) or active servers without dead ends?
    - **Read-Only / Multi-Cluster Safety:** Are action buttons properly hidden or guarded in read-only / replica cluster views?
-3. **Synthesis & Benefit of the Doubt:**
-   - Summarize findings in the task report: distinguish between immediate blockers to fix in the current PR vs. ergonomic enhancements to log as future issues.
+
+### Lane B: When the task is purely Backend (Core, Storage, Triggers)
+1. **The Backstage Observability Check:**
+   - Does this backend feature introduce new states, auto-pausing, throttling, retention pruning, or failure modes that are currently invisible to operators?
+   - **Benefit of the Doubt:** If an SRE has no way to see or control this behavior from the UI, the agent must explicitly flag:
+     > *"Operational Observation: This feature introduces state X (e.g., auto-pause, deferred foreign jobs). It operates correctly, but consider logging an issue to expose this state/action on Dashboard screen Y for SREs."*
 
 ---
 
