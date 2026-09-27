@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using FluentAssertions;
 using NexJob.Storage;
 using Xunit;
@@ -1305,7 +1306,8 @@ public abstract class StorageProviderTestsBase
         var preserved = await dashboard.GetJobByIdAsync(fetched.Id);
         preserved.Should().NotBeNull("failed jobs must never be purged even if PurgeOnSuccess was configured");
         preserved!.Status.Should().Be(JobStatus.Failed);
-        preserved.InputJson.Should().Be(originalPayload, "failed jobs must retain payload for triage");
+        JsonNode.DeepEquals(JsonNode.Parse(preserved.InputJson), JsonNode.Parse(originalPayload))
+            .Should().BeTrue("failed jobs must retain payload for triage");
     }
 
     // ── v5.6 Features: Job Catalog Aggregation (#202) ──────────────────────────
