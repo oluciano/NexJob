@@ -104,6 +104,15 @@ internal sealed class JobExecutor : IDisposable, IAsyncDisposable
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var heartbeatTask = RunHeartbeatAsync(job.Id, cts.Token);
 
+        using var loggingScope = _logger.BeginScope(new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["NexJob.JobId"] = job.Id.Value,
+            ["NexJob.JobType"] = job.JobType,
+            ["NexJob.Queue"] = job.Queue,
+            ["NexJob.Attempt"] = job.Attempts,
+            ["NexJob.TraceParent"] = job.TraceParent ?? string.Empty,
+        });
+
         using var logScope = new JobExecutionLogScope(_options.MaxJobLogLines);
         using var activity = NexJobActivitySource.StartExecute(job.JobType, job.Queue, job.TraceParent);
         activity?.SetTag("nexjob.job_id", job.Id.Value.ToString());
