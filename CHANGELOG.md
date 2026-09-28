@@ -8,6 +8,13 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`NexJob` Core — Structured Logging Scope via `ILogger.BeginScope` during Job Execution (Issue #204)**:
+  - `JobExecutor` now automatically opens an `ILogger.BeginScope` at the start of every job execution, injecting structured keys (`NexJob.JobId`, `NexJob.JobType`, `NexJob.Queue`, `NexJob.Attempt`, `NexJob.TraceParent`) as ambient properties.
+  - Every log entry emitted inside `IJob.ExecuteAsync` — or internally by `JobExecutor` — automatically inherits all 5 structured fields, enabling instant correlation in Splunk, Grafana Loki, Datadog, and Elastic/Kibana without additional configuration.
+  - Scope is established before job invocation and covers both the success path and all failure/retry paths.
+  - `NexJob.TraceParent` is set to an empty string when no W3C `traceparent` was propagated (never null).
+  - Documentation added in `docs/wiki/12-OpenTelemetry.md` with structured log sample output and query examples for Splunk, Loki, and Datadog.
+
 - **`NexJob.Dashboard` — Operational Warning Confirmation on Inactive/Paused Queues (Issue #226)**:
   - All trigger and requeue action points now check active worker queues before allowing the operation to proceed.
   - Catalog **parameterless** direct trigger (`IJob`): a blocking `window.confirm()` dialog is shown before form submission when the target queue has no active worker nodes.

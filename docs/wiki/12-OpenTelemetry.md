@@ -103,6 +103,103 @@ spec:
 
 ---
 
+## Structured Logging — Ambient Job Context (Built-in, Zero Dependencies)
+
+NexJob automatically enriches every log entry emitted during job execution with a structured `ILogger.BeginScope` — **no additional packages required**. This works out of the box with the standard .NET logging pipeline, Serilog, NLog, and OpenTelemetry logging.
+
+### Ambient Scope Keys
+
+When a job starts executing, `JobExecutor` opens a logging scope containing the following keys:
+
+| Key | Type | Description |
+|---|---|---|
+| `NexJob.JobId` | `Guid` | The unique job identifier |
+| `NexJob.JobType` | `string` | The assembly-qualified job type name |
+| `NexJob.Queue` | `string` | The target queue name |
+| `NexJob.Attempt` | `int` | The current attempt number (1-based) |
+| `NexJob.TraceParent` | `string` | The W3C `traceparent` header (empty string if not propagated) |
+
+Every log line emitted inside `IJob.ExecuteAsync` — or by `JobExecutor` internally — **automatically inherits all 5 keys** as structured fields.
+
+### Sample Structured Log Output
+
+With the default .NET JSON console formatter and `IncludeScopes: true`:
+
+```json
+{
+  "Timestamp": "2026-09-26T08:45:10.123Z",
+  "Level": "Information",
+  "Message": "Payment approved for Order #45210",
+  "NexJob.JobId": "8e3b1c77-4a11-4e92-91cd-32aa812f8112",
+  "NexJob.JobType": "Acme.Billing.ProcessPaymentJob",
+  "NexJob.Queue": "payments",
+  "NexJob.Attempt": 1,
+  "NexJob.TraceParent": "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+}
+```
+
+### Enabling Structured Scopes
+
+#### .NET Built-in JSON Console Logger
+
+```json
+{
+  "Logging": {
+    "Console": {
+      "FormatterName": "json",
+      "FormatterOptions": {
+        "IncludeScopes": true
+      }
+    }
+  }
+}
+```
+
+#### Serilog
+
+Serilog captures `ILogger.BeginScope` automatically when `Enrich.FromLogContext()` is configured:
+
+```csharp
+Log.Logger = new LoggerConfiguration()
+    .Enrich.FromLogContext()        // ← captures NexJob scope keys
+    .WriteTo.Console(new JsonFormatter())
+    .WriteTo.Seq("http://localhost:5341")
+    .CreateLogger();
+```
+
+### Querying in Log Aggregation Platforms
+
+#### Splunk
+
+```spl
+index=prod NexJob.JobId="8e3b1c77-4a11-4e92-91cd-32aa812f8112"
+```
+
+```spl
+index=prod NexJob.Queue="payments" NexJob.Attempt>1 | stats count by NexJob.JobType
+```
+
+#### Grafana Loki
+
+```logql
+{app="my-worker"} | json | NexJob_Queue="payments" | line_format "{{.NexJob_JobId}} {{.Message}}"
+```
+
+```logql
+{app="my-worker"} | json | NexJob_Attempt > 1 | count_over_time[5m]
+```
+
+#### Datadog
+
+```
+@NexJob.Queue:payments @NexJob.Attempt:>1
+```
+
+> [!TIP]
+> Combine structured log correlation with distributed traces: filter by `NexJob.TraceParent` to jump from a Loki log line directly to the corresponding Tempo/Jaeger span.
+
+---
+
 ## Compatibility
 
 `NexJob.OpenTelemetry` works with any OpenTelemetry exporter, including:
