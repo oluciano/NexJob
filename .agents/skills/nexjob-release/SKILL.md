@@ -20,7 +20,7 @@ It guarantees that code and documentation (Wiki + Package READMEs) are strictly 
 3. **NuGet & Git Tag Alignment:** Always query `https://api.nuget.org/v3-flatcontainer/nexjob/index.json` and local `git tag` to ensure version monotonicity. Never reuse an existing tag or version.
 4. **SemVer Detection & User Confirmation:** Automatically inspect commits and `CHANGELOG.md` since the last tag to determine if the release is **MAJOR**, **MINOR**, or **PATCH**, propose the next version number, and **ask the user to confirm or override**.
 5. **Quality Gate:** Release builds must pass with **0 warnings** (`TreatWarningsAsErrors = true`), all unit tests must pass, and `dotnet pack` must produce valid `.nupkg` packages.
-6. **Branch Strategy:** Releases are ALWAYS merged via PR from `develop` into `main`. Never push directly to `main`. Never manually create git tags (CI creates the tag upon merge to `main`).
+6. **Branch Strategy:** Releases are ALWAYS merged via PR from `develop` into `main` using **"Create a merge commit"** (not squash, not rebase). Never push directly to `main`. Never manually create git tags (CI creates the tag upon merge to `main`).
 
 ---
 
@@ -169,7 +169,10 @@ If any check fails: **STOP**. Fix the issue, verify again, and only continue whe
 
 ## Phase 6: Post-Release Sync-Back (`main` ➔ `develop`)
 
-Since release PRs are merged into `main` using **Squash and Merge** (resulting in a single release commit on `main`), the release commit and git tag must be synced back into `develop` to prevent branch divergence:
+Since release PRs are merged into `main` using **Merge Commit (`--no-ff`)** (the GitHub default "Create a merge commit" option), the merge commit and git tag must be synced back into `develop` to keep the branches aligned:
+
+> ⚠️ **Critical:** The release PR on GitHub MUST be merged using **"Create a merge commit"** — NOT "Squash and merge" or "Rebase and merge".
+> Squash merge collapses all commits into one new SHA. Git then no longer recognises those commits as present in `main`, causing ghost duplicates (e.g. 70+ phantom commits) to appear in every subsequent release PR. Merge Commit preserves the original SHAs so future PRs only show genuinely new commits.
 
 1. **Pull and Sync Back:**
    ```bash
@@ -180,6 +183,11 @@ Since release PRs are merged into `main` using **Squash and Merge** (resulting i
    git push origin develop
    ```
 2. **Verification:** Confirm `develop` contains the release tag and is strictly even/ahead of `origin/main`.
+   ```bash
+   git log --oneline develop..origin/main   # must be empty (0 commits)
+   git log --oneline origin/main..develop   # shows only new work since release
+   ```
+
 
 ---
 
