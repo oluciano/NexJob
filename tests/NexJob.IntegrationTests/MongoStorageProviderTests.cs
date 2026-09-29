@@ -13,22 +13,25 @@ namespace NexJob.IntegrationTests;
 /// MongoDB instance spun up via Testcontainers.
 /// Requires Docker to be available on the host.
 /// </summary>
-public sealed class MongoStorageProviderTests : StorageProviderTestsBase, IClassFixture<MongoFixture>
+public sealed class MongoStorageProviderTests : StorageProviderTestsBase, IClassFixture<MongoFixture>, IAsyncLifetime
 {
     private readonly MongoFixture _fixture;
+    private readonly MongoTestDatabases _databases = new();
 
     public MongoStorageProviderTests(MongoFixture fixture)
     {
         _fixture = fixture;
     }
 
+    public Task InitializeAsync() => Task.CompletedTask;
+
+    public async Task DisposeAsync() => await _databases.DisposeAsync();
+
     protected override async Task<(IJobStorage Job, IRecurringStorage Recurring, IDashboardStorage Dashboard, IStorageProvider Full)> CreateStorageAsync()
     {
-        var client = new MongoClient(_fixture.Container.GetConnectionString());
-
-        // Create a unique database for each test — ensures complete isolation like PostgreSQL tests
-        var dbName = $"nexjob_test_{Guid.NewGuid():N}";
-        var database = client.GetDatabase(dbName);
+        // Create a unique database for each test — ensures complete isolation like PostgreSQL tests.
+        // It is dropped when the test finishes (see DisposeAsync).
+        var database = _databases.Create(_fixture.Container.GetConnectionString(), "nexjob_test");
 
         var provider = new MongoStorageProvider(database);
 
@@ -58,8 +61,7 @@ public sealed class MongoStorageProviderTests : StorageProviderTestsBase, IClass
     [Fact]
     public async Task Existing_broad_idempotency_index_is_replaced_and_finished_jobs_no_longer_block_the_key()
     {
-        var client = new MongoClient(_fixture.Container.GetConnectionString());
-        var database = client.GetDatabase($"nexjob_test_{Guid.NewGuid():N}");
+        var database = _databases.Create(_fixture.Container.GetConnectionString(), "nexjob_test");
 
         // The index older versions created: unique over every job that has a key, whatever its status.
         await database.RunCommandAsync<BsonDocument>(new BsonDocument
