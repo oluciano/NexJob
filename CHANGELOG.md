@@ -27,6 +27,10 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`NexJob.MongoDB` — `FetchNextAsync` and `FetchBatchAsync` now honor the queue order (Issue #235)**:
+  - Queues are claimed in the order given, and inside a queue the highest job priority and oldest job win, matching PostgreSQL, SQL Server and InMemory. Each claim stays an atomic `FindOneAndUpdate`.
+  - Previously a high-priority job in a later queue was returned before a normal job in the first queue.
+
 - **`NexJob.SqlServer` — `FetchNextAsync` returns `null` for an empty queue list instead of throwing (Issue #236)**:
   - With no queues the generated `VALUES` list was empty and the call failed with `SqlException: Incorrect syntax near ')'`. It now returns `null` without touching the database, like `FetchBatchAsync` and the other providers.
 

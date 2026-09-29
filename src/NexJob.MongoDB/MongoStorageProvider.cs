@@ -115,28 +115,17 @@ public sealed class MongoStorageProvider : IStorageProvider
         // Atomically promote any due scheduled/retry jobs first
         await PromoteDueScheduledJobsAsync(now, cancellationToken).ConfigureAwait(false);
 
-        var filter = Builders<JobDocument>.Filter.And(
-            Builders<JobDocument>.Filter.In(d => d.Queue, queues),
-            Builders<JobDocument>.Filter.Eq(d => d.Status, JobStatus.Enqueued));
-
-        var sort = Builders<JobDocument>.Sort
-            .Ascending(d => d.Priority)   // Critical=1 first
-            .Ascending(d => d.CreatedAt);
-
-        var update = Builders<JobDocument>.Update
-            .Set(d => d.Status, JobStatus.Processing)
-            .Set(d => d.ProcessingStartedAt, now)
-            .Set(d => d.HeartbeatAt, now)
-            .Inc(d => d.Attempts, 1);
-
-        var options = new FindOneAndUpdateOptions<JobDocument>
+        // Queues are tried in the order given; inside a queue the highest priority (Critical=1) and oldest job wins.
+        foreach (var queue in queues)
         {
-            Sort = sort,
-            ReturnDocument = ReturnDocument.After,
-        };
+            var doc = await ClaimNextInQueueAsync(queue, now, cancellationToken).ConfigureAwait(false);
+            if (doc is not null)
+            {
+                return doc.ToRecord();
+            }
+        }
 
-        var doc = await _jobs.FindOneAndUpdateAsync(filter, update, options, cancellationToken).ConfigureAwait(false);
-        return doc?.ToRecord();
+        return null;
     }
 
     /// <inheritdoc/>
@@ -159,36 +148,25 @@ public sealed class MongoStorageProvider : IStorageProvider
         var now = DateTimeOffset.UtcNow;
         await PromoteDueScheduledJobsAsync(now, cancellationToken).ConfigureAwait(false);
 
-        var filter = Builders<JobDocument>.Filter.And(
-            Builders<JobDocument>.Filter.In(d => d.Queue, queues),
-            Builders<JobDocument>.Filter.Eq(d => d.Status, JobStatus.Enqueued));
-
-        var sort = Builders<JobDocument>.Sort
-            .Ascending(d => d.Priority)
-            .Ascending(d => d.CreatedAt);
-
-        var update = Builders<JobDocument>.Update
-            .Set(d => d.Status, JobStatus.Processing)
-            .Set(d => d.ProcessingStartedAt, now)
-            .Set(d => d.HeartbeatAt, now)
-            .Inc(d => d.Attempts, 1);
-
-        var options = new FindOneAndUpdateOptions<JobDocument>
-        {
-            Sort = sort,
-            ReturnDocument = ReturnDocument.After,
-        };
-
+        // Drain the queues in the order given, one atomic claim per job.
         var batch = new List<JobRecord>(maxBatchSize);
-        for (var i = 0; i < maxBatchSize; i++)
+        foreach (var queue in queues)
         {
-            var doc = await _jobs.FindOneAndUpdateAsync(filter, update, options, cancellationToken).ConfigureAwait(false);
-            if (doc is null)
+            while (batch.Count < maxBatchSize)
+            {
+                var doc = await ClaimNextInQueueAsync(queue, now, cancellationToken).ConfigureAwait(false);
+                if (doc is null)
+                {
+                    break;
+                }
+
+                batch.Add(doc.ToRecord());
+            }
+
+            if (batch.Count >= maxBatchSize)
             {
                 break;
             }
-
-            batch.Add(doc.ToRecord());
         }
 
         return batch;
@@ -938,6 +916,29 @@ public sealed class MongoStorageProvider : IStorageProvider
         }
 
         return totalDeleted;
+    }
+
+    private async Task<JobDocument?> ClaimNextInQueueAsync(string queue, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        var filter = Builders<JobDocument>.Filter.And(
+            Builders<JobDocument>.Filter.Eq(d => d.Queue, queue),
+            Builders<JobDocument>.Filter.Eq(d => d.Status, JobStatus.Enqueued));
+
+        var update = Builders<JobDocument>.Update
+            .Set(d => d.Status, JobStatus.Processing)
+            .Set(d => d.ProcessingStartedAt, now)
+            .Set(d => d.HeartbeatAt, now)
+            .Inc(d => d.Attempts, 1);
+
+        var options = new FindOneAndUpdateOptions<JobDocument>
+        {
+            Sort = Builders<JobDocument>.Sort
+                .Ascending(d => d.Priority)   // Critical=1 first
+                .Ascending(d => d.CreatedAt),
+            ReturnDocument = ReturnDocument.After,
+        };
+
+        return await _jobs.FindOneAndUpdateAsync(filter, update, options, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task PromoteDueScheduledJobsAsync(DateTimeOffset now, CancellationToken ct)

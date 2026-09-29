@@ -816,6 +816,67 @@ public abstract class StorageProviderTestsBase
         final.ExecutionLogs[0].Message.Should().Be("First call");
     }
 
+    // ── Queue order beats job priority across queues (issue #235) ──────────────
+
+    [Fact]
+    public async Task FetchNextAsync_PrefersEarlierQueueOverHigherJobPriorityInLaterQueue()
+    {
+        var (storage, _, _, _) = await CreateStorageAsync();
+        var inLaterQueue = MakeJob(queue: "q-low", priority: JobPriority.Critical);
+        var inFirstQueue = MakeJob(queue: "q-high", priority: JobPriority.Normal);
+        await storage.EnqueueAsync(inLaterQueue);
+        await storage.EnqueueAsync(inFirstQueue);
+
+        var fetched = await storage.FetchNextAsync(["q-high", "q-low"]);
+
+        fetched.Should().NotBeNull();
+        fetched!.Id.Should().Be(inFirstQueue.Id, "queues are listed in priority order");
+    }
+
+    [Fact]
+    public async Task FetchBatchAsync_TakesFromEarlierQueueBeforeLaterQueue()
+    {
+        var (storage, _, _, _) = await CreateStorageAsync();
+        var firstQueueJob = MakeJob(queue: "q-high", priority: JobPriority.Normal);
+        await storage.EnqueueAsync(MakeJob(queue: "q-low", priority: JobPriority.Critical));
+        await storage.EnqueueAsync(MakeJob(queue: "q-low", priority: JobPriority.Critical));
+        await storage.EnqueueAsync(firstQueueJob);
+
+        var batch = await storage.FetchBatchAsync(["q-high", "q-low"], 2);
+
+        batch.Should().HaveCount(2);
+        batch.Select(j => j.Id).Should().Contain(firstQueueJob.Id, "the earlier queue is drained before the later one");
+    }
+
+    [Fact]
+    public async Task FetchNextAsync_WithinOneQueueUsesPriorityThenAge()
+    {
+        var (storage, _, _, _) = await CreateStorageAsync();
+        var normalOld = MakeJob(queue: "q-one", priority: JobPriority.Normal);
+        var critical = MakeJob(queue: "q-one", priority: JobPriority.Critical);
+        await storage.EnqueueAsync(normalOld);
+        await storage.EnqueueAsync(critical);
+
+        var first = await storage.FetchNextAsync(["q-one"]);
+        var second = await storage.FetchNextAsync(["q-one"]);
+
+        first!.Id.Should().Be(critical.Id);
+        second!.Id.Should().Be(normalOld.Id);
+    }
+
+    [Fact]
+    public async Task FetchNextAsync_FallsThroughFromEmptyFirstQueueToNextQueue()
+    {
+        var (storage, _, _, _) = await CreateStorageAsync();
+        var record = MakeJob(queue: "q-second");
+        await storage.EnqueueAsync(record);
+
+        var fetched = await storage.FetchNextAsync(["q-empty", "q-second"]);
+
+        fetched.Should().NotBeNull();
+        fetched!.Id.Should().Be(record.Id);
+    }
+
     // ── FetchNext with an empty or unusual queue list (issue #236) ─────────────
 
     [Fact]
