@@ -27,6 +27,10 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`NexJob` Core — InMemory `PurgeJobsAsync` no longer deletes `Failed` jobs early via `RetainDeadLetter` (Issue #231)**:
+  - `Failed` jobs are now purged by `RetainDeadLetter` only when `RetainFailed` is zero, matching PostgreSQL, SQL Server and Redis.
+  - Previously a `Failed` job still within `RetainFailed` could be deleted as soon as it exceeded the shorter `RetainDeadLetter`.
+
 - **`NexJob.Postgres` — Job input `{}` / `null` was read back as an empty string, so the job failed to deserialize (Issue #237)**:
   - `PostgresJobRow.ToRecord()` now reports an empty payload only for `Succeeded` jobs (where `TrimPayloadOnSuccess` can have stripped it). Every other state returns the stored JSON unchanged.
   - Fixes jobs with an empty-record input, `IJob` without input, and no-input recurring jobs failing with `JsonException` on PostgreSQL.
