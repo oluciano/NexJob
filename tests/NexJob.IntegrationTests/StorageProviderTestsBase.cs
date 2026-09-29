@@ -816,6 +816,58 @@ public abstract class StorageProviderTestsBase
         final.ExecutionLogs[0].Message.Should().Be("First call");
     }
 
+    // ── InputJson round trip (issue #237) ──────────────────────────────────────
+
+    [Theory]
+    [InlineData("{}")]
+    [InlineData("null")]
+    public async Task FetchNextAsync_ReturnsEmptyOrNullJsonPayloadUnchanged(string inputJson)
+    {
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
+        var record = MakeJob(inputJson: inputJson);
+        await storage.EnqueueAsync(record);
+
+        var fetched = await storage.FetchNextAsync(["default"]);
+        var viaDashboard = await dashboard.GetJobByIdAsync(record.Id);
+
+        fetched.Should().NotBeNull();
+        fetched!.InputJson.Should().Be(inputJson, "the executor deserializes this string as-is");
+        viaDashboard!.InputJson.Should().Be(inputJson, "a non-terminal job never has its payload stripped");
+    }
+
+    [Fact]
+    public async Task SetFailedAsync_KeepsEmptyObjectPayloadOnFailedJob()
+    {
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
+        var record = MakeJob(inputJson: "{}");
+        await storage.EnqueueAsync(record);
+        var fetched = (await storage.FetchNextAsync(["default"]))!;
+
+        await storage.SetFailedAsync(fetched.Id, new InvalidOperationException("boom"), retryAt: null);
+
+        var failed = await dashboard.GetJobByIdAsync(record.Id);
+        failed!.Status.Should().Be(JobStatus.Failed);
+        failed.InputJson.Should().Be("{}", "only a Succeeded job can have had its payload stripped");
+    }
+
+    [Theory]
+    [InlineData("[]")]
+    [InlineData("{\"name\":\"ação ✓\",\"nested\":{\"n\":[1,2,3]}}")]
+    public async Task FetchNextAsync_PreservesArrayAndUnicodePayloadSemantically(string inputJson)
+    {
+        var (storage, _, _, _) = await CreateStorageAsync();
+        var record = MakeJob(inputJson: inputJson);
+        await storage.EnqueueAsync(record);
+
+        var fetched = await storage.FetchNextAsync(["default"]);
+
+        fetched.Should().NotBeNull();
+
+        // jsonb reformats whitespace, so compare structurally instead of byte for byte.
+        JsonNode.DeepEquals(JsonNode.Parse(fetched!.InputJson), JsonNode.Parse(inputJson))
+            .Should().BeTrue("the stored payload must be semantically identical");
+    }
+
     // ── Helpers ────────────────────────────────────────────────────────────────
 
     private static JobRecord MakeJob(
