@@ -27,6 +27,11 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`NexJob.Postgres` — Job input `{}` / `null` was read back as an empty string, so the job failed to deserialize (Issue #237)**:
+  - `PostgresJobRow.ToRecord()` now reports an empty payload only for `Succeeded` jobs (where `TrimPayloadOnSuccess` can have stripped it). Every other state returns the stored JSON unchanged.
+  - Fixes jobs with an empty-record input, `IJob` without input, and no-input recurring jobs failing with `JsonException` on PostgreSQL.
+  - Known limitation: a `Succeeded` job with a legitimate `{}` input is shown as "payload stripped" in the dashboard.
+
 - **`NexJob.Postgres`, `NexJob.Redis`, `NexJob.MongoDB` — Storage Catalog and Payload Trimming Alignment (Issue #222)**:
   - Fixed PostgreSQL `TrimPayloadOnSuccess` to update `input_json = '{}'::jsonb`, eliminating PostgreSQL error `22P02: invalid input syntax for type json`.
   - Added `JobCatalogRow` mapping in `PostgresStorageProvider.GetJobCatalogAsync` to ensure reliable Dapper materialization into `JobCatalogItem`.
