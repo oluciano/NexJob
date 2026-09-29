@@ -14,6 +14,8 @@ namespace NexJob.SqlServer;
 /// </summary>
 public sealed class SqlServerStorageProvider : IStorageProvider
 {
+    private const int MaxEnqueueAttempts = 3;
+
     private readonly string _connectionString;
     private readonly SqlConnection? _connection;
 
@@ -53,90 +55,91 @@ public sealed class SqlServerStorageProvider : IStorageProvider
 
         if (job.IdempotencyKey is not null)
         {
-            await using var tx = await conn.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
-
-            var existing = await conn.QueryFirstOrDefaultAsync<(Guid Id, string Status)>(
-                """
-                SELECT TOP 1 id, status FROM nexjob_jobs WITH (UPDLOCK, ROWLOCK)
-                WHERE idempotency_key = @key
-                ORDER BY created_at DESC
-                """,
-                new { key = job.IdempotencyKey },
-                tx);
-
-            if (existing.Id != Guid.Empty)
+            // The unique index only covers active jobs. A conflict means another enqueue won the race; if that
+            // job already finished by the time we look, the key is free again, so try once more.
+            for (var attempt = 0; attempt < MaxEnqueueAttempts; attempt++)
             {
-                var existingId = new JobId(existing.Id);
-                var existingStatus = ParseStatus(existing.Status);
+                await using var tx = await conn.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
-                var existingResult = ResolveDuplicate(existingId, existingStatus, duplicatePolicy);
-                if (existingResult.WasRejected || IsActiveState(existingStatus))
-                {
-                    await tx.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                    return existingResult;
-                }
-            }
-
-            try
-            {
-                await conn.ExecuteAsync(
+                var existing = await conn.QueryFirstOrDefaultAsync<(Guid Id, string Status)>(
                     """
-                    INSERT INTO nexjob_jobs
-                        (id, job_type, input_type, input_json, schema_version, queue, priority, status,
-                         idempotency_key, attempts, max_attempts, created_at, scheduled_at, parent_job_id, recurring_job_id, tags)
-                    VALUES
-                        (@Id, @JobType, @InputType, @InputJson, @SchemaVersion, @Queue, @Priority,
-                         @Status, @IdempotencyKey, @Attempts, @MaxAttempts, @CreatedAt, @ScheduledAt, @ParentJobId, @RecurringJobId, @Tags)
+                    SELECT TOP 1 id, status FROM nexjob_jobs WITH (UPDLOCK, ROWLOCK)
+                    WHERE idempotency_key = @key
+                    ORDER BY created_at DESC
                     """,
-                    new
-                    {
-                        Id = job.Id.Value,
-                        job.JobType,
-                        job.InputType,
-                        job.InputJson,
-                        job.SchemaVersion,
-                        job.Queue,
-                        Priority = (int)job.Priority,
-                        Status = job.Status.ToString(),
-                        job.IdempotencyKey,
-                        job.Attempts,
-                        job.MaxAttempts,
-                        job.CreatedAt,
-                        job.ScheduledAt,
-                        ParentJobId = job.ParentJobId?.Value,
-                        job.RecurringJobId,
-                        Tags = System.Text.Json.JsonSerializer.Serialize(job.Tags),
-                    },
+                    new { key = job.IdempotencyKey },
                     tx);
 
-                await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
-                return new EnqueueResult(job.Id, WasRejected: false);
-            }
-            catch (SqlException ex) when (IsUniqueConstraintViolation(ex))
-            {
-                // Race condition: unique constraint violation on idempotency_key.
-                // Another thread inserted a job with the same idempotency key after our check.
-                // Fetch the winning job and apply duplicate policy.
-                await tx.RollbackAsync(cancellationToken).ConfigureAwait(false);
-
-                var winner = await conn.QueryFirstOrDefaultAsync<(Guid Id, string Status)>(
-                    """
-                    SELECT TOP 1 id, status FROM nexjob_jobs
-                    WHERE idempotency_key = @key
-                    ORDER BY created_at ASC
-                    """,
-                    new { key = job.IdempotencyKey });
-
-                if (winner.Id == Guid.Empty)
+                if (existing.Id != Guid.Empty)
                 {
-                    throw; // Should not happen; rethrow
+                    var existingId = new JobId(existing.Id);
+                    var existingStatus = ParseStatus(existing.Status);
+
+                    var existingResult = ResolveDuplicate(existingId, existingStatus, duplicatePolicy);
+                    if (existingResult.WasRejected || IsActiveState(existingStatus))
+                    {
+                        await tx.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                        return existingResult;
+                    }
                 }
 
-                var winnerId = new JobId(winner.Id);
-                var winnerStatus = ParseStatus(winner.Status);
+                try
+                {
+                    await conn.ExecuteAsync(
+                        """
+                        INSERT INTO nexjob_jobs
+                            (id, job_type, input_type, input_json, schema_version, queue, priority, status,
+                             idempotency_key, attempts, max_attempts, created_at, scheduled_at, parent_job_id, recurring_job_id, tags)
+                        VALUES
+                            (@Id, @JobType, @InputType, @InputJson, @SchemaVersion, @Queue, @Priority,
+                             @Status, @IdempotencyKey, @Attempts, @MaxAttempts, @CreatedAt, @ScheduledAt, @ParentJobId, @RecurringJobId, @Tags)
+                        """,
+                        new
+                        {
+                            Id = job.Id.Value,
+                            job.JobType,
+                            job.InputType,
+                            job.InputJson,
+                            job.SchemaVersion,
+                            job.Queue,
+                            Priority = (int)job.Priority,
+                            Status = job.Status.ToString(),
+                            job.IdempotencyKey,
+                            job.Attempts,
+                            job.MaxAttempts,
+                            job.CreatedAt,
+                            job.ScheduledAt,
+                            ParentJobId = job.ParentJobId?.Value,
+                            job.RecurringJobId,
+                            Tags = System.Text.Json.JsonSerializer.Serialize(job.Tags),
+                        },
+                        tx);
 
-                return ResolveDuplicate(winnerId, winnerStatus, duplicatePolicy);
+                    await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
+                    return new EnqueueResult(job.Id, WasRejected: false);
+                }
+                catch (SqlException ex) when (IsUniqueConstraintViolation(ex))
+                {
+                    await tx.RollbackAsync(cancellationToken).ConfigureAwait(false);
+
+                    var winner = await conn.QueryFirstOrDefaultAsync<(Guid Id, string Status)>(
+                        """
+                        SELECT TOP 1 id, status FROM nexjob_jobs
+                        WHERE idempotency_key = @key
+                          AND status IN ('Enqueued', 'Processing', 'Scheduled', 'AwaitingContinuation')
+                        ORDER BY created_at DESC
+                        """,
+                        new { key = job.IdempotencyKey });
+
+                    if (winner.Id != Guid.Empty)
+                    {
+                        return ResolveDuplicate(new JobId(winner.Id), ParseStatus(winner.Status), duplicatePolicy);
+                    }
+                }
             }
+
+            throw new InvalidOperationException(
+                $"Could not enqueue a job with idempotency key '{job.IdempotencyKey}' after {MaxEnqueueAttempts} attempts.");
         }
 
         await conn.ExecuteAsync(
@@ -800,14 +803,22 @@ public sealed class SqlServerStorageProvider : IStorageProvider
     {
         await using var conn = Open();
         await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await conn.ExecuteAsync(
-            """
-            UPDATE nexjob_jobs
-            SET status = 'Enqueued', attempts = 0, retry_at = NULL,
-                completed_at = NULL, exception_message = NULL, exception_stack_trace = NULL
-            WHERE id = @id
-            """,
-            new { id = id.Value });
+        try
+        {
+            await conn.ExecuteAsync(
+                """
+                UPDATE nexjob_jobs
+                SET status = 'Enqueued', attempts = 0, retry_at = NULL,
+                    completed_at = NULL, exception_message = NULL, exception_stack_trace = NULL
+                WHERE id = @id
+                """,
+                new { id = id.Value });
+        }
+        catch (SqlException ex) when (IsUniqueConstraintViolation(ex))
+        {
+            throw new InvalidOperationException(
+                $"Cannot requeue job {id.Value}: another active job already holds its idempotency key.", ex);
+        }
     }
 
     /// <inheritdoc/>

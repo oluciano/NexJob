@@ -150,6 +150,25 @@ internal static class SqlServerSchemaSql
             WHERE idempotency_key IS NOT NULL;
         """;
 
+    /// <summary>
+    /// V10: The idempotency key must be unique only among active jobs, so a finished job never blocks a new one
+    /// (DuplicatePolicy.AllowAfterFailed). Adds a plain lookup index for the duplicate pre-check.
+    /// </summary>
+    internal const string V10IdempotencyKeyUniqueForActiveJobsOnly =
+        """
+        IF EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ux_nexjob_jobs_idempotency_key' AND object_id = OBJECT_ID('nexjob_jobs'))
+            DROP INDEX ux_nexjob_jobs_idempotency_key ON nexjob_jobs;
+
+        IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ux_nexjob_jobs_idempotency_key_active' AND object_id = OBJECT_ID('nexjob_jobs'))
+            CREATE UNIQUE INDEX ux_nexjob_jobs_idempotency_key_active ON nexjob_jobs (idempotency_key)
+                WHERE idempotency_key IS NOT NULL
+                  AND status IN ('Enqueued', 'Processing', 'Scheduled', 'AwaitingContinuation');
+
+        IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_nexjob_jobs_idempotency_key' AND object_id = OBJECT_ID('nexjob_jobs'))
+            CREATE INDEX ix_nexjob_jobs_idempotency_key ON nexjob_jobs (idempotency_key)
+                WHERE idempotency_key IS NOT NULL;
+        """;
+
     /// <summary>V9: Add checkpoint_json column to nexjob_jobs for batch job progress checkpointing.</summary>
     internal const string V9AddCheckpointColumn =
         """

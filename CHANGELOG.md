@@ -27,6 +27,13 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`NexJob.Postgres`, `NexJob.SqlServer`, `NexJob.MongoDB` — `DuplicatePolicy.AllowAfterFailed` no longer drops the enqueue after a finished job (Issue #234, #176)**:
+  - Enqueuing with the same idempotency key after the previous job reached `Succeeded`, `Failed` or `Expired` silently did nothing: the unique index covered every job, so the insert failed and the old job's id was returned as accepted. Default recurring jobs (`SkipIfRunning`) fired once and then stopped until the old job was purged.
+  - The idempotency key is now unique only among **active** jobs (`Enqueued`, `Processing`, `Scheduled`, `AwaitingContinuation`). PostgreSQL and SQL Server get migration **V10** (drops the old index, creates the active-only unique index and a lookup index); MongoDB replaces the `idempotency_key` index at startup.
+  - A concurrent-enqueue conflict now resolves to the **active** winner and retries if that job already finished; the duplicate pre-check looks at the latest job per key.
+  - `RequeueJobAsync` now throws `InvalidOperationException` ("another active job already holds its idempotency key") instead of a raw database error when re-activating a finished job whose key is held by a newer active job.
+  - `docs/wiki/17-Idempotency.md`: the `AllowAfterFailed` matrix now matches the code (allowed after every terminal state) and warns that the policy does not prevent duplicate side effects.
+
 - **`NexJob.MongoDB` — `FetchNextAsync` and `FetchBatchAsync` now honor the queue order (Issue #235)**:
   - Queues are claimed in the order given, and inside a queue the highest job priority and oldest job win, matching PostgreSQL, SQL Server and InMemory. Each claim stays an atomic `FindOneAndUpdate`.
   - Previously a high-priority job in a later queue was returned before a normal job in the first queue.
