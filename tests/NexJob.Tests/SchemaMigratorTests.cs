@@ -18,7 +18,8 @@ public sealed class SchemaMigratorTests
     public void Postgres_GetPending_AllApplied_ReturnsEmpty()
     {
         // Behavior changed in v5.6: Added V9AddCheckpointColumn migration
-        var applied = new HashSet<int> { 1, 2, 3, 4, 5, 6, 7, 8, 9 };
+        // Behavior changed in v5.6: Added V10 (idempotency key unique for active jobs only, issue #234)
+        var applied = new HashSet<int> { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 };
 
         var pending = NexJob.Postgres.SchemaMigrator
             .GetPendingMigrations(NexJob.Postgres.SchemaMigrator.AllMigrations, applied);
@@ -47,8 +48,9 @@ public sealed class SchemaMigratorTests
             .ToList();
 
         // Behavior changed in v5.6: 7 pending migrations (3..9)
-        pending.Should().HaveCount(7);
-        pending.Select(m => m.Version).Should().Equal(3, 4, 5, 6, 7, 8, 9);
+        // Behavior changed in v5.6: 8 pending migrations (3..10) after adding V10 (issue #234)
+        pending.Should().HaveCount(8);
+        pending.Select(m => m.Version).Should().Equal(3, 4, 5, 6, 7, 8, 9, 10);
     }
 
     [Fact]
@@ -62,7 +64,8 @@ public sealed class SchemaMigratorTests
             .ToList();
 
         // Behavior changed in v5.6: Added V9
-        pending.Select(m => m.Version).Should().Equal(2, 4, 5, 6, 7, 8, 9);
+        // Behavior changed in v5.6: Added V10 (issue #234)
+        pending.Select(m => m.Version).Should().Equal(2, 4, 5, 6, 7, 8, 9, 10);
     }
 
     [Fact]
@@ -87,7 +90,8 @@ public sealed class SchemaMigratorTests
     public void SqlServer_GetPending_AllApplied_ReturnsEmpty()
     {
         // Behavior changed in v5.6: Added V9AddCheckpointColumn migration
-        var applied = new HashSet<int> { 1, 2, 3, 4, 5, 6, 7, 8, 9 };
+        // Behavior changed in v5.6: Added V10 (idempotency key unique for active jobs only, issue #234)
+        var applied = new HashSet<int> { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 };
 
         var pending = NexJob.SqlServer.SchemaMigrator
             .GetPendingMigrations(NexJob.SqlServer.SchemaMigrator.AllMigrations, applied);
@@ -116,8 +120,9 @@ public sealed class SchemaMigratorTests
             .ToList();
 
         // Behavior changed in v5.6: 7 pending migrations (3..9)
-        pending.Should().HaveCount(7);
-        pending.Select(m => m.Version).Should().Equal(3, 4, 5, 6, 7, 8, 9);
+        // Behavior changed in v5.6: 8 pending migrations (3..10) after adding V10 (issue #234)
+        pending.Should().HaveCount(8);
+        pending.Select(m => m.Version).Should().Equal(3, 4, 5, 6, 7, 8, 9, 10);
     }
 
     [Fact]
@@ -131,7 +136,8 @@ public sealed class SchemaMigratorTests
             .ToList();
 
         // Behavior changed in v5.6: Added V9
-        pending.Select(m => m.Version).Should().Equal(2, 4, 5, 6, 7, 8, 9);
+        // Behavior changed in v5.6: Added V10 (issue #234)
+        pending.Select(m => m.Version).Should().Equal(2, 4, 5, 6, 7, 8, 9, 10);
     }
 
     [Fact]

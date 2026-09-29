@@ -1,3 +1,4 @@
+using FluentAssertions;
 using MongoDB.Bson;
 using MongoDB.Driver;
 using NexJob.MongoDB;
@@ -51,4 +52,56 @@ public sealed class MongoStorageProviderTests : StorageProviderTestsBase, IClass
 
         return (provider, provider, provider, provider);
     }
+
+    // ── Upgrade from the broad idempotency index (issue #234) ─────────────────
+
+    [Fact]
+    public async Task Existing_broad_idempotency_index_is_replaced_and_finished_jobs_no_longer_block_the_key()
+    {
+        var client = new MongoClient(_fixture.Container.GetConnectionString());
+        var database = client.GetDatabase($"nexjob_test_{Guid.NewGuid():N}");
+
+        // The index older versions created: unique over every job that has a key, whatever its status.
+        await database.RunCommandAsync<BsonDocument>(new BsonDocument
+        {
+            { "createIndexes", "nexjob_jobs" },
+            {
+                "indexes", new BsonArray
+                {
+                    new BsonDocument
+                    {
+                        { "key", new BsonDocument { { "IdempotencyKey", 1 } } },
+                        { "name", "idempotency_key" },
+                        { "unique", true },
+                        { "partialFilterExpression", new BsonDocument { { "IdempotencyKey", new BsonDocument { { "$type", "string" } } } } },
+                    },
+                }
+            },
+        });
+
+        var provider = new MongoStorageProvider(database);
+
+        var key = $"upgrade-{Guid.NewGuid()}";
+        var first = NewKeyedJob(key);
+        await provider.EnqueueAsync(first, DuplicatePolicy.AllowAfterFailed);
+        var fetched = (await provider.FetchNextAsync(["default"]))!;
+        await provider.CommitJobResultAsync(fetched.Id, new JobExecutionResult { Succeeded = true, Logs = [] });
+
+        var second = NewKeyedJob(key);
+        var result = await provider.EnqueueAsync(second, DuplicatePolicy.AllowAfterFailed);
+
+        result.JobId.Should().Be(second.Id, "the upgraded index must not be blocked by the finished job");
+    }
+
+    private static JobRecord NewKeyedJob(string key) => new()
+    {
+        Id = new JobId(Guid.NewGuid()),
+        JobType = "T",
+        InputType = "I",
+        InputJson = "{}",
+        Queue = "default",
+        MaxAttempts = 3,
+        CreatedAt = DateTimeOffset.UtcNow,
+        IdempotencyKey = key,
+    };
 }

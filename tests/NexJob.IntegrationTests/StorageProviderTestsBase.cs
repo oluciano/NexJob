@@ -816,6 +816,145 @@ public abstract class StorageProviderTestsBase
         final.ExecutionLogs[0].Message.Should().Be("First call");
     }
 
+    // ── Idempotency key after a terminal state (issue #234) ────────────────────
+
+    [Theory]
+    [InlineData("Succeeded")]
+    [InlineData("Failed")]
+    [InlineData("Expired")]
+    public async Task EnqueueAsync_AllowAfterFailed_CreatesNewJobAfterTerminalState(string terminalState)
+    {
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
+        var key = $"key-{Guid.NewGuid()}";
+        await EnqueueWithKeyAndFinishAsync(storage, key, terminalState);
+
+        var second = MakeJob(idempotencyKey: key);
+        var result = await storage.EnqueueAsync(second, DuplicatePolicy.AllowAfterFailed);
+
+        result.WasRejected.Should().BeFalse();
+        result.JobId.Should().Be(second.Id, "a new job must be created, not the finished one returned");
+        (await dashboard.GetJobByIdAsync(second.Id)).Should().NotBeNull();
+        var fetched = await storage.FetchNextAsync(["default"]);
+        fetched.Should().NotBeNull();
+        fetched!.Id.Should().Be(second.Id);
+    }
+
+    [Fact]
+    public async Task EnqueueAsync_RepeatedCyclesWithTheSameKeyKeepCreatingNewJobs()
+    {
+        var (storage, _, _, _) = await CreateStorageAsync();
+        var key = $"recurring:{Guid.NewGuid()}";
+
+        for (var cycle = 0; cycle < 3; cycle++)
+        {
+            var job = MakeJob(idempotencyKey: key);
+            var result = await storage.EnqueueAsync(job, DuplicatePolicy.AllowAfterFailed);
+            result.JobId.Should().Be(job.Id, $"cycle {cycle} must create a new job");
+
+            var fetched = (await storage.FetchNextAsync(["default"]))!;
+            fetched.Id.Should().Be(job.Id);
+            await storage.CommitJobResultAsync(fetched.Id, new JobExecutionResult { Succeeded = true, Logs = [] });
+        }
+    }
+
+    [Fact]
+    public async Task EnqueueAsync_RejectIfFailed_AfterFailed_ReturnsTheExistingJobAsRejected()
+    {
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
+        var key = $"key-{Guid.NewGuid()}";
+        var first = await EnqueueWithKeyAndFinishAsync(storage, key, "Failed");
+
+        var second = MakeJob(idempotencyKey: key);
+        var result = await storage.EnqueueAsync(second, DuplicatePolicy.RejectIfFailed);
+
+        result.WasRejected.Should().BeTrue();
+        result.JobId.Should().Be(first.Id);
+        (await dashboard.GetJobByIdAsync(second.Id)).Should().BeNull("a rejected enqueue must not create a job");
+    }
+
+    [Fact]
+    public async Task EnqueueAsync_RejectIfFailed_AfterSucceeded_CreatesNewJob()
+    {
+        var (storage, _, _, _) = await CreateStorageAsync();
+        var key = $"key-{Guid.NewGuid()}";
+        await EnqueueWithKeyAndFinishAsync(storage, key, "Succeeded");
+
+        var second = MakeJob(idempotencyKey: key);
+        var result = await storage.EnqueueAsync(second, DuplicatePolicy.RejectIfFailed);
+
+        result.WasRejected.Should().BeFalse();
+        result.JobId.Should().Be(second.Id);
+    }
+
+    [Theory]
+    [InlineData("Succeeded")]
+    [InlineData("Failed")]
+    [InlineData("Expired")]
+    public async Task EnqueueAsync_RejectAlways_AfterAnyTerminalState_ReturnsTheExistingJobAsRejected(string terminalState)
+    {
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
+        var key = $"key-{Guid.NewGuid()}";
+        var first = await EnqueueWithKeyAndFinishAsync(storage, key, terminalState);
+
+        var second = MakeJob(idempotencyKey: key);
+        var result = await storage.EnqueueAsync(second, DuplicatePolicy.RejectAlways);
+
+        result.WasRejected.Should().BeTrue();
+        result.JobId.Should().Be(first.Id);
+        (await dashboard.GetJobByIdAsync(second.Id)).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task EnqueueAsync_SameKeyWhileTheJobIsActive_ReturnsTheExistingJobWithoutRejecting()
+    {
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
+        var key = $"key-{Guid.NewGuid()}";
+        var first = MakeJob(idempotencyKey: key);
+        await storage.EnqueueAsync(first, DuplicatePolicy.AllowAfterFailed);
+
+        var second = MakeJob(idempotencyKey: key);
+        var result = await storage.EnqueueAsync(second, DuplicatePolicy.AllowAfterFailed);
+
+        result.WasRejected.Should().BeFalse();
+        result.JobId.Should().Be(first.Id, "an active job with the same key deduplicates");
+        (await dashboard.GetJobByIdAsync(second.Id)).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task EnqueueAsync_WithoutIdempotencyKey_AlwaysCreatesANewJob()
+    {
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
+        var first = MakeJob();
+        var second = MakeJob();
+
+        var firstResult = await storage.EnqueueAsync(first, DuplicatePolicy.RejectAlways);
+        var secondResult = await storage.EnqueueAsync(second, DuplicatePolicy.RejectAlways);
+
+        firstResult.JobId.Should().Be(first.Id);
+        secondResult.JobId.Should().Be(second.Id);
+        (await dashboard.GetJobByIdAsync(second.Id)).Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task RequeueJobAsync_WhenANewerActiveJobHoldsTheSameKey_FailsWithAClearError()
+    {
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
+        if (!EnforcesUniqueActiveIdempotencyKey(storage))
+        {
+            return;
+        }
+
+        var key = $"key-{Guid.NewGuid()}";
+        var old = await EnqueueWithKeyAndFinishAsync(storage, key, "Failed");
+        await storage.EnqueueAsync(MakeJob(idempotencyKey: key), DuplicatePolicy.AllowAfterFailed);
+
+        var requeue = async () => await dashboard.RequeueJobAsync(old.Id);
+
+        (await requeue.Should().ThrowAsync<InvalidOperationException>())
+            .WithMessage("*idempotency key*");
+        (await dashboard.GetJobByIdAsync(old.Id))!.Status.Should().Be(JobStatus.Failed, "the failed job must stay untouched");
+    }
+
     // ── Queue order beats job priority across queues (issue #235) ──────────────
 
     [Fact]
@@ -1083,6 +1222,36 @@ public abstract class StorageProviderTestsBase
     }
 
     // ── Helpers ────────────────────────────────────────────────────────────────
+
+    /// <summary>Enqueues a job with the key, runs it and drives it to the given terminal state.</summary>
+    private static async Task<JobRecord> EnqueueWithKeyAndFinishAsync(IJobStorage storage, string key, string terminalState)
+    {
+        var record = MakeJob(idempotencyKey: key);
+        await storage.EnqueueAsync(record, DuplicatePolicy.AllowAfterFailed);
+
+        var fetched = (await storage.FetchNextAsync(["default"]))!;
+
+        // The dispatcher fetches a job first and expires it (deadline passed) before executing it.
+        if (string.Equals(terminalState, "Expired", StringComparison.Ordinal))
+        {
+            await storage.SetExpiredAsync(fetched.Id);
+            return record;
+        }
+
+        await storage.CommitJobResultAsync(fetched.Id, new JobExecutionResult
+        {
+            Succeeded = string.Equals(terminalState, "Succeeded", StringComparison.Ordinal),
+            Exception = string.Equals(terminalState, "Failed", StringComparison.Ordinal) ? new InvalidOperationException("boom") : null,
+            Logs = [],
+        });
+        return record;
+    }
+
+    private static bool EnforcesUniqueActiveIdempotencyKey(IJobStorage storage)
+    {
+        var name = storage.GetType().Name;
+        return name.Contains("Postgres") || name.Contains("SqlServer") || name.Contains("Mongo");
+    }
 
     /// <summary>Fails attempt 1 with "original-boom" (retry due now), then fetches attempt 2 so the job is Processing.</summary>
     private static async Task<JobRecord> EnqueueFailOnceThenProcessAsync(IJobStorage storage, int maxAttempts)

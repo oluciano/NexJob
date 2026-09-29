@@ -132,6 +132,22 @@ internal static class SchemaSql
             WHERE idempotency_key IS NOT NULL;
         """;
 
+    /// <summary>
+    /// V10: The idempotency key must be unique only among active jobs, so a finished job never blocks a new one
+    /// (DuplicatePolicy.AllowAfterFailed). Adds a plain lookup index for the duplicate pre-check.
+    /// </summary>
+    internal const string V10IdempotencyKeyUniqueForActiveJobsOnly =
+        """
+        DROP INDEX IF EXISTS ux_nexjob_jobs_idempotency_key;
+
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_nexjob_jobs_idempotency_key_active ON nexjob_jobs (idempotency_key)
+            WHERE idempotency_key IS NOT NULL
+              AND status IN ('Enqueued', 'Processing', 'Scheduled', 'AwaitingContinuation');
+
+        CREATE INDEX IF NOT EXISTS ix_nexjob_jobs_idempotency_key ON nexjob_jobs (idempotency_key)
+            WHERE idempotency_key IS NOT NULL;
+        """;
+
     /// <summary>V9: Add checkpoint_json column to nexjob_jobs for batch job progress checkpointing.</summary>
     internal const string V9AddCheckpointColumn =
         """
