@@ -816,6 +816,43 @@ public abstract class StorageProviderTestsBase
         final.ExecutionLogs[0].Message.Should().Be("First call");
     }
 
+    // ── FetchNext with an empty or unusual queue list (issue #236) ─────────────
+
+    [Fact]
+    public async Task FetchNextAsync_WithEmptyQueueList_ReturnsNullEvenWhenJobsExist()
+    {
+        var (storage, _, _, _) = await CreateStorageAsync();
+        await storage.EnqueueAsync(MakeJob());
+
+        var fetched = await storage.FetchNextAsync([]);
+
+        fetched.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task FetchBatchAsync_WithEmptyQueueList_ReturnsEmpty()
+    {
+        var (storage, _, _, _) = await CreateStorageAsync();
+        await storage.EnqueueAsync(MakeJob());
+
+        var batch = await storage.FetchBatchAsync([], 5);
+
+        batch.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task FetchNextAsync_FindsJobInQueueWhoseNameContainsAQuote()
+    {
+        var (storage, _, _, _) = await CreateStorageAsync();
+        var record = MakeJob(queue: "o'brien");
+        await storage.EnqueueAsync(record);
+
+        var fetched = await storage.FetchNextAsync(["o'brien"]);
+
+        fetched.Should().NotBeNull();
+        fetched!.Id.Should().Be(record.Id);
+    }
+
     // ── Orphan requeue keeps the original error (issue #232) ───────────────────
 
     [Fact]

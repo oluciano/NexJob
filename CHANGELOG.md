@@ -27,6 +27,9 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`NexJob.SqlServer` — `FetchNextAsync` returns `null` for an empty queue list instead of throwing (Issue #236)**:
+  - With no queues the generated `VALUES` list was empty and the call failed with `SqlException: Incorrect syntax near ')'`. It now returns `null` without touching the database, like `FetchBatchAsync` and the other providers.
+
 - **`NexJob.Redis` — `PurgeJobsAsync` no longer leaks `nexjob:logs:{id}` keys and counts purged jobs exactly (Issue #233)**:
   - Retention purge now deletes each job's separate logs key together with its job hash, so memory no longer grows for jobs that were purged.
   - The returned count is the number of job hashes actually removed; it is no longer inflated when a delete reports zero.
