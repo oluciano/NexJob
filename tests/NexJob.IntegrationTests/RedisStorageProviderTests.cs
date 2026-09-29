@@ -186,6 +186,92 @@ public sealed class RedisStorageProviderTests : StorageProviderTestsBase, IClass
         return (mux, new RedisStorageProvider(mux.GetDatabase()));
     }
 
+    // ── Enqueue inserts hash and queue entry atomically (issue #239) ──────────
+
+    private static JobRecord NewEnqueueJob(string queue = "default", string? key = null, JobStatus status = JobStatus.Enqueued, DateTimeOffset? scheduledAt = null, JobId? parent = null) => new()
+    {
+        Id = new JobId(Guid.NewGuid()),
+        JobType = "T",
+        InputType = "I",
+        InputJson = "{}",
+        Queue = queue,
+        MaxAttempts = 3,
+        CreatedAt = DateTimeOffset.UtcNow,
+        IdempotencyKey = key,
+        Status = status,
+        ScheduledAt = scheduledAt,
+        ParentJobId = parent,
+    };
+
+    [Fact]
+    public async Task EnqueueAsync_PutsTheJobInItsQueueExactlyOnce()
+    {
+        var (mux, provider) = await ConnectAsync();
+        var db = mux.GetDatabase();
+        var job = NewEnqueueJob();
+
+        await provider.EnqueueAsync(job);
+
+        (await db.SortedSetScoreAsync("nexjob:queue:default:z", job.Id.Value.ToString())).Should().NotBeNull();
+        (await db.SortedSetLengthAsync("nexjob:queue:default:z")).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task EnqueueAsync_ScheduledJob_GoesToTheScheduledSetAndNotToTheQueue()
+    {
+        var (mux, provider) = await ConnectAsync();
+        var db = mux.GetDatabase();
+        var at = DateTimeOffset.UtcNow.AddHours(1);
+        var job = NewEnqueueJob(status: JobStatus.Scheduled, scheduledAt: at);
+
+        await provider.EnqueueAsync(job);
+
+        var score = await db.SortedSetScoreAsync("nexjob:scheduled", job.Id.Value.ToString());
+        score.Should().Be(at.ToUnixTimeMilliseconds());
+        (await db.SortedSetLengthAsync("nexjob:queue:default:z")).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task EnqueueAsync_ContinuationJob_GoesToTheParentContinuationSet()
+    {
+        var (mux, provider) = await ConnectAsync();
+        var db = mux.GetDatabase();
+        var parent = Guid.NewGuid();
+        var job = NewEnqueueJob(status: JobStatus.AwaitingContinuation, parent: new JobId(parent));
+
+        await provider.EnqueueAsync(job);
+
+        (await db.SetContainsAsync($"nexjob:continuations:{parent}", job.Id.Value.ToString())).Should().BeTrue();
+        (await db.SortedSetLengthAsync("nexjob:queue:default:z")).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task EnqueueAsync_DuplicateKey_DoesNotCreateASecondQueueEntry()
+    {
+        var (mux, provider) = await ConnectAsync();
+        var db = mux.GetDatabase();
+        var key = $"k-{Guid.NewGuid()}";
+
+        var first = NewEnqueueJob(key: key);
+        await provider.EnqueueAsync(first, DuplicatePolicy.RejectAlways);
+        var second = await provider.EnqueueAsync(NewEnqueueJob(key: key), DuplicatePolicy.RejectAlways);
+
+        second.JobId.Should().Be(first.Id, "an active duplicate resolves to the existing job");
+        (await db.SortedSetLengthAsync("nexjob:queue:default:z")).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task EnqueueAsync_QueueNameWithColonsAndUnicode_IsInsertedUnderThatQueue()
+    {
+        var (mux, provider) = await ConnectAsync();
+        var db = mux.GetDatabase();
+        var job = NewEnqueueJob(queue: "a:b:fila-ç");
+
+        await provider.EnqueueAsync(job);
+
+        (await db.SortedSetScoreAsync("nexjob:queue:a:b:fila-ç:z", job.Id.Value.ToString())).Should().NotBeNull();
+    }
+
     private static async Task<Guid> CreateSucceededJobAsync(RedisStorageProvider provider)
     {
         var job = new JobRecord
