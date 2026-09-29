@@ -27,6 +27,10 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`NexJob.Redis` — Idempotency key lives as long as the job (Issue #238)**:
+  - The `nexjob:idempotency:{key}` key no longer expires after a fixed 7 days, which let `DuplicatePolicy.RejectAlways` enqueue the same key again while the job was still retained. It now has no TTL and is released together with the job by retention purge, `DeleteJobAsync` and `PurgeOnSuccess`, only while it still points to that job.
+  - Keys created before this change keep their existing 7-day expiry.
+
 - **`NexJob.Redis` — Enqueue is atomic: job hash and queue entry are created together (Issue #239)**:
   - `EnqueueAsync` now inserts the job id into its queue, the scheduled set or the parent's continuation set inside the same Lua script that creates the hash and idempotency key. A crash between the two steps can no longer leave an `Enqueued` job that is in no queue.
 

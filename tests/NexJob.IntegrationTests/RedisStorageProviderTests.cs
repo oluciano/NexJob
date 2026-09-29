@@ -272,6 +272,125 @@ public sealed class RedisStorageProviderTests : StorageProviderTestsBase, IClass
         (await db.SortedSetScoreAsync("nexjob:queue:a:b:fila-ç:z", job.Id.Value.ToString())).Should().NotBeNull();
     }
 
+    // ── Idempotency key lives as long as the job (issue #238) ─────────────────
+
+    private static async Task<JobId> EnqueueAndSucceedAsync(RedisStorageProvider provider, string key, bool purgeOnSuccess = false)
+    {
+        var job = NewEnqueueJob(key: key);
+        await provider.EnqueueAsync(job, DuplicatePolicy.RejectAlways);
+        var fetched = (await provider.FetchNextAsync(["default"]))!;
+        await provider.CommitJobResultAsync(
+            fetched.Id, new JobExecutionResult { Succeeded = true, Logs = [], PurgeOnSuccess = purgeOnSuccess });
+        return job.Id;
+    }
+
+    [Fact]
+    public async Task EnqueueAsync_IdempotencyKey_HasNoExpiry()
+    {
+        var (mux, provider) = await ConnectAsync();
+        var db = mux.GetDatabase();
+        var key = $"k-{Guid.NewGuid()}";
+
+        await provider.EnqueueAsync(NewEnqueueJob(key: key), DuplicatePolicy.RejectAlways);
+
+        (await db.KeyTimeToLiveAsync($"nexjob:idempotency:{key}")).Should().BeNull("RejectAlways promises exactly-once across the full job lifetime");
+    }
+
+    [Fact]
+    public async Task PurgeJobsAsync_ReleasesTheIdempotencyKeyOfThePurgedJob()
+    {
+        var (mux, provider) = await ConnectAsync();
+        var db = mux.GetDatabase();
+        var key = $"k-{Guid.NewGuid()}";
+        await EnqueueAndSucceedAsync(provider, key);
+        await Task.Delay(200);
+
+        (await provider.PurgeJobsAsync(new RetentionPolicy { RetainSucceeded = TimeSpan.FromMilliseconds(50) })).Should().Be(1);
+
+        (await db.KeyExistsAsync($"nexjob:idempotency:{key}")).Should().BeFalse();
+        var again = await provider.EnqueueAsync(NewEnqueueJob(key: key), DuplicatePolicy.RejectAlways);
+        again.WasRejected.Should().BeFalse("the retained job is gone, so the key is free again");
+    }
+
+    [Fact]
+    public async Task PurgeJobsAsync_KeepsTheIdempotencyKeyWhileTheJobIsRetained()
+    {
+        var (mux, provider) = await ConnectAsync();
+        var key = $"k-{Guid.NewGuid()}";
+        await EnqueueAndSucceedAsync(provider, key);
+
+        await provider.PurgeJobsAsync(new RetentionPolicy { RetainSucceeded = TimeSpan.FromDays(7) });
+
+        (await mux.GetDatabase().KeyExistsAsync($"nexjob:idempotency:{key}")).Should().BeTrue();
+        var again = await provider.EnqueueAsync(NewEnqueueJob(key: key), DuplicatePolicy.RejectAlways);
+        again.WasRejected.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task PurgeJobsAsync_DoesNotReleaseAKeyOwnedByANewerJob()
+    {
+        var (mux, provider) = await ConnectAsync();
+        var db = mux.GetDatabase();
+        var key = $"k-{Guid.NewGuid()}";
+        await EnqueueAndSucceedAsync(provider, key);
+        var newerOwner = Guid.NewGuid().ToString();
+        await db.StringSetAsync($"nexjob:idempotency:{key}", newerOwner);
+        await Task.Delay(200);
+
+        await provider.PurgeJobsAsync(new RetentionPolicy { RetainSucceeded = TimeSpan.FromMilliseconds(50) });
+
+        ((string?)await db.StringGetAsync($"nexjob:idempotency:{key}")).Should().Be(newerOwner);
+    }
+
+    [Fact]
+    public async Task DeleteJobAsync_ReleasesTheIdempotencyKey()
+    {
+        var (mux, provider) = await ConnectAsync();
+        var key = $"k-{Guid.NewGuid()}";
+        var job = NewEnqueueJob(key: key);
+        await provider.EnqueueAsync(job, DuplicatePolicy.RejectAlways);
+
+        await provider.DeleteJobAsync(job.Id);
+
+        (await mux.GetDatabase().KeyExistsAsync($"nexjob:idempotency:{key}")).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task CommitJobResultAsync_PurgeOnSuccess_ReleasesTheIdempotencyKey()
+    {
+        var (mux, provider) = await ConnectAsync();
+        var key = $"k-{Guid.NewGuid()}";
+
+        await EnqueueAndSucceedAsync(provider, key, purgeOnSuccess: true);
+
+        (await mux.GetDatabase().KeyExistsAsync($"nexjob:idempotency:{key}")).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task EnqueueAsync_WithoutIdempotencyKey_CreatesNoIdempotencyKey()
+    {
+        var (mux, provider) = await ConnectAsync();
+        await provider.EnqueueAsync(NewEnqueueJob());
+
+        var keys = mux.GetServer(mux.GetEndPoints()[0]).Keys(pattern: "nexjob:idempotency:*").ToArray();
+
+        keys.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task EnqueueAsync_IdempotencyKeyWithSpecialCharacters_IsStoredAndRejectsDuplicates()
+    {
+        var (mux, provider) = await ConnectAsync();
+        var key = $"ordem:{Guid.NewGuid()} çãé *[]? " + new string('x', 500);
+
+        var first = NewEnqueueJob(key: key);
+        await provider.EnqueueAsync(first, DuplicatePolicy.RejectAlways);
+        var second = await provider.EnqueueAsync(NewEnqueueJob(key: key), DuplicatePolicy.RejectAlways);
+
+        (await mux.GetDatabase().KeyExistsAsync($"nexjob:idempotency:{key}")).Should().BeTrue();
+        second.JobId.Should().Be(first.Id);
+    }
+
     private static async Task<Guid> CreateSucceededJobAsync(RedisStorageProvider provider)
     {
         var job = new JobRecord

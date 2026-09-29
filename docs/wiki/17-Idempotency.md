@@ -89,6 +89,8 @@ Re-enqueue is rejected if the existing job is in any terminal state.
 
 **When to use:** One-time operations like sending a legal notice, where neither success nor failure should be retried automatically.
 
+**Lifetime:** the guarantee holds while the job is retained. Once retention purges the job (or it is deleted, or removed by `PurgeOnSuccess`), its idempotency key is released and the same key can be enqueued again. This is the same on every storage provider, including Redis, where the key has no separate expiry.
+
 ---
 
 ## DuplicateJobException

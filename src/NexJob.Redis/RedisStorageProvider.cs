@@ -192,14 +192,23 @@ public sealed class RedisStorageProvider : IStorageProvider
         return 1
         """);
 
+    // Deletes the idempotency key only while it still points at the given job, so releasing the key
+    // of a purged job never removes the key of a newer job that re-used it.
+    private static readonly LuaScript ReleaseIdempotencyScript = LuaScript.Prepare(
+        """
+        if redis.call('GET', ARGV[1]) == ARGV[2] then
+          return redis.call('DEL', ARGV[1])
+        end
+        return 0
+        """);
+
     private static readonly LuaScript EnqueueScript = LuaScript.Prepare(
         """
         local idemKey = ARGV[1]
         local jobId = ARGV[2]
-        local ttl = tonumber(ARGV[3])
-        local targetKind = ARGV[4]
-        local targetKey = ARGV[5]
-        local targetScore = ARGV[6]
+        local targetKind = ARGV[3]
+        local targetKey = ARGV[4]
+        local targetScore = ARGV[5]
         local jobKey = 'nexjob:jobs:' .. jobId
 
         -- Only check idempotency if a key was provided
@@ -210,9 +219,9 @@ public sealed class RedisStorageProvider : IStorageProvider
           end
         end
 
-        -- Set job hash fields (ARGV[7], ARGV[8], ...)
+        -- Set job hash fields (ARGV[6], ARGV[7], ...)
         local hashArgs = {}
-        for i = 7, #ARGV do
+        for i = 6, #ARGV do
           table.insert(hashArgs, ARGV[i])
         end
 
@@ -220,9 +229,9 @@ public sealed class RedisStorageProvider : IStorageProvider
           redis.call('HSET', jobKey, unpack(hashArgs))
         end
 
-        -- Set idempotency key atomically if provided
+        -- The key has no TTL: it lives as long as the job and is released when the job is deleted
         if idemKey ~= '' then
-          redis.call('SET', idemKey, jobId, 'EX', ttl)
+          redis.call('SET', idemKey, jobId)
         end
 
         -- Insert into queue / scheduled set / continuation set in the same atomic step
@@ -250,7 +259,6 @@ public sealed class RedisStorageProvider : IStorageProvider
     {
         var id = job.Id.Value.ToString();
         var idemKey = job.IdempotencyKey is not null ? IdempotencyRedisKey(job.IdempotencyKey) : string.Empty;
-        var idemTtlSeconds = (int)TimeSpan.FromDays(7).TotalSeconds;
 
         var hashFields = BuildJobHash(job);
         var hashArgs = new List<RedisValue>();
@@ -293,7 +301,6 @@ public sealed class RedisStorageProvider : IStorageProvider
         {
             idemKey,
             id,
-            idemTtlSeconds.ToString(CultureInfo.InvariantCulture),
             targetKind,
             targetKey,
             targetScore,
@@ -879,9 +886,11 @@ public sealed class RedisStorageProvider : IStorageProvider
     public async Task DeleteJobAsync(JobId id, CancellationToken cancellationToken = default)
     {
         var idStr = id.Value.ToString();
+        var idempotencyKey = (string?)await _db.HashGetAsync(JobKey(idStr), "idempotencyKey").ConfigureAwait(false);
         await _db.KeyDeleteAsync(JobKey(idStr)).ConfigureAwait(false);
         await _db.KeyDeleteAsync(LogsKey(idStr)).ConfigureAwait(false);
         await _db.HashDeleteAsync(ProcessingKey, idStr).ConfigureAwait(false);
+        await ReleaseIdempotencyKeyAsync(_db, idempotencyKey, idStr).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -984,8 +993,10 @@ public sealed class RedisStorageProvider : IStorageProvider
 
         if (result.Succeeded && result.PurgeOnSuccess)
         {
+            var idempotencyKey = (string?)await _db.HashGetAsync(JobKey(idStr), "idempotencyKey").ConfigureAwait(false);
             await _db.KeyDeleteAsync(JobKey(idStr)).ConfigureAwait(false);
             await _db.KeyDeleteAsync(LogsKey(idStr)).ConfigureAwait(false);
+            await ReleaseIdempotencyKeyAsync(_db, idempotencyKey, idStr).ConfigureAwait(false);
         }
         else
         {
@@ -1377,9 +1388,32 @@ public sealed class RedisStorageProvider : IStorageProvider
             logKeys[i] = LogsKey(jobKeys[i].ToString()[jobKeyPrefix.Length..]);
         }
 
+        // Read the idempotency keys before the hashes are gone.
+        var idemFields = await Task.WhenAll(jobKeys.Select(k => db.HashGetAsync(k, "idempotencyKey"))).ConfigureAwait(false);
+
         var removed = (int)await db.KeyDeleteAsync(jobKeys.ToArray()).ConfigureAwait(false);
         await db.KeyDeleteAsync(logKeys).ConfigureAwait(false);
+
+        for (var i = 0; i < jobKeys.Count; i++)
+        {
+            await ReleaseIdempotencyKeyAsync(db, (string?)idemFields[i], jobKeys[i].ToString()[jobKeyPrefix.Length..]).ConfigureAwait(false);
+        }
+
         return removed;
+    }
+
+    // Releases the idempotency key of a deleted job; a no-op for jobs without a key or when a newer job owns it.
+    private static async Task ReleaseIdempotencyKeyAsync(IDatabase db, string? idempotencyKey, string jobId)
+    {
+        if (string.IsNullOrEmpty(idempotencyKey))
+        {
+            return;
+        }
+
+        await db.ScriptEvaluateAsync(
+            ReleaseIdempotencyScript.ExecutableScript,
+            keys: null,
+            values: [IdempotencyRedisKey(idempotencyKey), jobId]).ConfigureAwait(false);
     }
 
     // ── Private static helpers ────────────────────────────────────────────────
