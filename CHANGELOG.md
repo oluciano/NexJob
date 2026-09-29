@@ -27,6 +27,9 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`NexJob.Redis` — Enqueue is atomic: job hash and queue entry are created together (Issue #239)**:
+  - `EnqueueAsync` now inserts the job id into its queue, the scheduled set or the parent's continuation set inside the same Lua script that creates the hash and idempotency key. A crash between the two steps can no longer leave an `Enqueued` job that is in no queue.
+
 - **`NexJob.Redis` — Orphan requeue is atomic and no longer re-enqueues finished jobs (Issue #240)**:
   - `RequeueOrphanedJobsAsync` now decides in one Lua script: it requeues (or fails, when attempts are exhausted) only a job whose processing entry still has the heartbeat the scan read **and** whose status is still `Processing`.
   - Previously a job committed between the scan and the write was flipped back to `Enqueued` and could run twice; a stale processing entry of a finished job is now just removed.

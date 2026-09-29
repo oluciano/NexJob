@@ -197,8 +197,10 @@ public sealed class RedisStorageProvider : IStorageProvider
         local idemKey = ARGV[1]
         local jobId = ARGV[2]
         local ttl = tonumber(ARGV[3])
+        local targetKind = ARGV[4]
+        local targetKey = ARGV[5]
+        local targetScore = ARGV[6]
         local jobKey = 'nexjob:jobs:' .. jobId
-        local hashFieldCount = (#{ARGV} - 3) / 2
 
         -- Only check idempotency if a key was provided
         if idemKey ~= '' then
@@ -208,9 +210,9 @@ public sealed class RedisStorageProvider : IStorageProvider
           end
         end
 
-        -- Set job hash fields (ARGV[4], ARGV[5], ARGV[6], ARGV[7], ...)
+        -- Set job hash fields (ARGV[7], ARGV[8], ...)
         local hashArgs = {}
-        for i = 4, #ARGV do
+        for i = 7, #ARGV do
           table.insert(hashArgs, ARGV[i])
         end
 
@@ -221,6 +223,13 @@ public sealed class RedisStorageProvider : IStorageProvider
         -- Set idempotency key atomically if provided
         if idemKey ~= '' then
           redis.call('SET', idemKey, jobId, 'EX', ttl)
+        end
+
+        -- Insert into queue / scheduled set / continuation set in the same atomic step
+        if targetKind == 'zset' then
+          redis.call('ZADD', targetKey, tonumber(targetScore), jobId)
+        elseif targetKind == 'set' then
+          redis.call('SADD', targetKey, jobId)
         end
 
         return { 'NEW', jobId }
@@ -251,11 +260,43 @@ public sealed class RedisStorageProvider : IStorageProvider
             hashArgs.Add(field.Value.ToString());
         }
 
+        // Queue insertion is part of the script so hash + queue entry are created atomically.
+        string targetKind;
+        string targetKey;
+        string targetScore;
+        if (job.Status == JobStatus.AwaitingContinuation && job.ParentJobId.HasValue)
+        {
+            targetKind = "set";
+            targetKey = ContinuationSetKey(job.ParentJobId.Value.Value);
+            targetScore = string.Empty;
+        }
+        else if (job.Status == JobStatus.Scheduled && job.ScheduledAt.HasValue)
+        {
+            targetKind = "zset";
+            targetKey = ScheduledKey;
+            targetScore = job.ScheduledAt.Value.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture);
+        }
+        else if (job.Status == JobStatus.Enqueued)
+        {
+            targetKind = "zset";
+            targetKey = QueueKey(job.Queue);
+            targetScore = QueueScore((int)job.Priority, job.CreatedAt).ToString("R", CultureInfo.InvariantCulture);
+        }
+        else
+        {
+            targetKind = string.Empty;
+            targetKey = string.Empty;
+            targetScore = string.Empty;
+        }
+
         var scriptArgs = new RedisValue[]
         {
             idemKey,
             id,
             idemTtlSeconds.ToString(CultureInfo.InvariantCulture),
+            targetKind,
+            targetKey,
+            targetScore,
         };
         var combinedArgs = scriptArgs.Concat(hashArgs).ToArray();
 
@@ -302,20 +343,7 @@ public sealed class RedisStorageProvider : IStorageProvider
             break; // new job created — proceed to queue/schedule
         }
 
-        // New job was created by the script — add to appropriate queue/scheduled set
-        if (job.Status == JobStatus.AwaitingContinuation && job.ParentJobId.HasValue)
-        {
-            await _db.SetAddAsync(ContinuationSetKey(job.ParentJobId.Value.Value), id).ConfigureAwait(false);
-        }
-        else if (job.Status == JobStatus.Scheduled && job.ScheduledAt.HasValue)
-        {
-            await _db.SortedSetAddAsync(ScheduledKey, id, job.ScheduledAt.Value.ToUnixTimeMilliseconds()).ConfigureAwait(false);
-        }
-        else if (job.Status == JobStatus.Enqueued)
-        {
-            await _db.SortedSetAddAsync(QueueKey(job.Queue), id, QueueScore((int)job.Priority, job.CreatedAt)).ConfigureAwait(false);
-        }
-
+        // New job (hash, idempotency key and queue entry) was created atomically by the script.
         return new EnqueueResult(job.Id, WasRejected: false);
     }
 
