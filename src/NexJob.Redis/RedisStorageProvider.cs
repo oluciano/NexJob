@@ -20,6 +20,54 @@ public sealed class RedisStorageProvider : IStorageProvider
 
     private static readonly JsonSerializerOptions JsonOpts = new();
 
+    /// <summary>
+    /// Requeues (or fails, when attempts are exhausted) one orphaned job atomically. ARGV: job id, the heartbeat the
+    /// scan read, now (ISO 8601), queue name, queue score. Returns 0 when skipped (heartbeat refreshed or entry gone),
+    /// 1 requeued, 2 stale entry of a job that is no longer Processing (job untouched), 3 job hash missing, 4 failed.
+    /// </summary>
+    private static readonly LuaScript RequeueOrphanScript = LuaScript.Prepare(
+        """
+        local id = ARGV[1]
+        local jobKey = 'nexjob:jobs:' .. id
+        local current = redis.call('HGET', 'nexjob:processing', id)
+
+        -- Entry gone, or heartbeat refreshed since the scan read it: the worker is alive or the job was handled.
+        if not current or current ~= ARGV[2] then
+          return 0
+        end
+
+        if redis.call('EXISTS', jobKey) == 0 then
+          redis.call('HDEL', 'nexjob:processing', id)
+          return 3
+        end
+
+        -- A finished job can still have a stale processing entry: clean the entry, never touch the job.
+        if redis.call('HGET', jobKey, 'status') ~= 'Processing' then
+          redis.call('HDEL', 'nexjob:processing', id)
+          return 2
+        end
+
+        local attempts = tonumber(redis.call('HGET', jobKey, 'attempts')) or 0
+        local maxAttempts = tonumber(redis.call('HGET', jobKey, 'maxAttempts')) or 10
+
+        if attempts >= maxAttempts then
+          local message = redis.call('HGET', jobKey, 'exceptionMessage')
+          if not message or message == '' then
+            message = 'Orphaned execution exceeded maximum attempts.'
+          end
+
+          redis.call('HSET', jobKey, 'status', 'Failed', 'heartbeatAt', '', 'processingStartedAt', '',
+                     'completedAt', ARGV[3], 'exceptionMessage', message)
+          redis.call('HDEL', 'nexjob:processing', id)
+          return 4
+        end
+
+        redis.call('HSET', jobKey, 'status', 'Enqueued', 'heartbeatAt', '', 'processingStartedAt', '')
+        redis.call('HDEL', 'nexjob:processing', id)
+        redis.call('ZADD', 'nexjob:queue:' .. ARGV[4] .. ':z', tonumber(ARGV[5]), id)
+        return 1
+        """);
+
     private static readonly LuaScript FetchNextScript = LuaScript.Prepare(
         """
         for i = 1, #KEYS do
@@ -631,7 +679,8 @@ public sealed class RedisStorageProvider : IStorageProvider
         foreach (var entry in processingEntries)
         {
             var id = entry.Name.ToString();
-            if (!DateTimeOffset.TryParse(entry.Value.ToString(), CultureInfo.InvariantCulture,
+            var heartbeatText = entry.Value.ToString();
+            if (!DateTimeOffset.TryParse(heartbeatText, CultureInfo.InvariantCulture,
                     DateTimeStyles.RoundtripKind, out var heartbeat))
             {
                 continue;
@@ -642,6 +691,8 @@ public sealed class RedisStorageProvider : IStorageProvider
                 continue;
             }
 
+            // Queue, priority and creation time do not change while a job is Processing, so reading them here is
+            // safe. Everything that can change (status, heartbeat, attempts) is re-checked inside the script.
             var jobHash = await _db.HashGetAllAsync(JobKey(id)).ConfigureAwait(false);
             if (jobHash.Length == 0)
             {
@@ -657,39 +708,7 @@ public sealed class RedisStorageProvider : IStorageProvider
             var createdAt = DateTimeOffset.TryParse(createdAtStr, CultureInfo.InvariantCulture,
                 DateTimeStyles.RoundtripKind, out var ca) ? ca : DateTimeOffset.UtcNow;
 
-            var attemptsStr = dict.GetValueOrDefault("attempts", "0");
-            var maxAttemptsStr = dict.GetValueOrDefault("maxAttempts", "10");
-            var attempts = int.TryParse(attemptsStr, NumberStyles.Integer, CultureInfo.InvariantCulture, out var att) ? att : 0;
-            var maxAttempts = int.TryParse(maxAttemptsStr, NumberStyles.Integer, CultureInfo.InvariantCulture, out var ma) ? ma : 10;
-
-            if (attempts >= maxAttempts)
-            {
-                var existingError = dict.GetValueOrDefault("exceptionMessage");
-                var errorMsg = string.IsNullOrEmpty(existingError)
-                    ? "Orphaned execution exceeded maximum attempts."
-                    : existingError;
-
-                await _db.HashSetAsync(JobKey(id), new[]
-                {
-                    new HashEntry("status", "Failed"),
-                    new HashEntry("heartbeatAt", string.Empty),
-                    new HashEntry("processingStartedAt", string.Empty),
-                    new HashEntry("completedAt", DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture)),
-                    new HashEntry("exceptionMessage", errorMsg),
-                }).ConfigureAwait(false);
-                await _db.HashDeleteAsync(ProcessingKey, id).ConfigureAwait(false);
-            }
-            else
-            {
-                await _db.HashSetAsync(JobKey(id), new[]
-                {
-                    new HashEntry("status", "Enqueued"),
-                    new HashEntry("heartbeatAt", string.Empty),
-                    new HashEntry("processingStartedAt", string.Empty),
-                }).ConfigureAwait(false);
-                await _db.HashDeleteAsync(ProcessingKey, id).ConfigureAwait(false);
-                await _db.SortedSetAddAsync(QueueKey(queue), id, QueueScore(priority, createdAt)).ConfigureAwait(false);
-            }
+            await RunRequeueOrphanScriptAsync(_db, id, heartbeatText, queue, QueueScore(priority, createdAt)).ConfigureAwait(false);
         }
     }
 
@@ -1296,6 +1315,28 @@ public sealed class RedisStorageProvider : IStorageProvider
         }
 
         return deleted;
+    }
+
+    /// <summary>
+    /// Runs the atomic orphan requeue for one job. Internal so the tests can exercise the guards directly.
+    /// </summary>
+    /// <returns>0 skipped, 1 requeued, 2 stale entry of a job that is no longer Processing, 3 job hash missing, 4 failed.</returns>
+    internal static async Task<int> RunRequeueOrphanScriptAsync(
+        IDatabase db, string id, string expectedHeartbeat, string queue, double queueScore)
+    {
+        var result = await db.ScriptEvaluateAsync(
+            RequeueOrphanScript.ExecutableScript,
+            keys: null,
+            values:
+            [
+                id,
+                expectedHeartbeat,
+                DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture),
+                queue,
+                queueScore.ToString("R", CultureInfo.InvariantCulture),
+            ]).ConfigureAwait(false);
+
+        return (int)result;
     }
 
     // Deletes the job hashes and their separate logs keys; returns how many job hashes were actually removed.

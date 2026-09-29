@@ -27,6 +27,10 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`NexJob.Redis` — Orphan requeue is atomic and no longer re-enqueues finished jobs (Issue #240)**:
+  - `RequeueOrphanedJobsAsync` now decides in one Lua script: it requeues (or fails, when attempts are exhausted) only a job whose processing entry still has the heartbeat the scan read **and** whose status is still `Processing`.
+  - Previously a job committed between the scan and the write was flipped back to `Enqueued` and could run twice; a stale processing entry of a finished job is now just removed.
+
 - **`NexJob.Postgres`, `NexJob.SqlServer`, `NexJob.MongoDB` — `DuplicatePolicy.AllowAfterFailed` no longer drops the enqueue after a finished job (Issue #234, #176)**:
   - Enqueuing with the same idempotency key after the previous job reached `Succeeded`, `Failed` or `Expired` silently did nothing: the unique index covered every job, so the insert failed and the old job's id was returned as accepted. Default recurring jobs (`SkipIfRunning`) fired once and then stopped until the old job was purged.
   - The idempotency key is now unique only among **active** jobs (`Enqueued`, `Processing`, `Scheduled`, `AwaitingContinuation`). PostgreSQL and SQL Server get migration **V10** (drops the old index, creates the active-only unique index and a lookup index); MongoDB replaces the `idempotency_key` index at startup.
