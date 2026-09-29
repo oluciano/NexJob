@@ -62,9 +62,11 @@ public static class SalesforceStreamingNexJobExtensions
         });
 
         services.AddHttpClient<ISalesforceStreamingAuthService, SalesforceStreamingAuthService>();
-        services.AddHttpClient<ISalesforceBayeuxClient, SalesforceBayeuxClient>(client =>
+        services.AddHttpClient<ISalesforceBayeuxClient, SalesforceBayeuxClient>((sp, client) =>
         {
-            client.Timeout = TimeSpan.FromSeconds(150);
+            // Long-polling holds the request open for ConnectTimeout, so the HTTP timeout must exceed it.
+            var options = sp.GetRequiredService<IOptions<SalesforceStreamingTriggerOptions>>().Value;
+            client.Timeout = options.ConnectTimeout + TimeSpan.FromSeconds(30);
         });
 
         services.AddHostedService<SalesforceStreamingTriggerHandler>();

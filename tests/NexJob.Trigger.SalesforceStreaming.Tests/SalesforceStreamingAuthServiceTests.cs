@@ -327,6 +327,92 @@ public sealed class SalesforceStreamingAuthServiceTests
         await Assert.ThrowsAsync<ArgumentNullException>(() => authService.GetTokenAsync(null!));
     }
 
+    // ── Cached token honours expires_in (issue #230) ──────────────────────────
+
+    private static async Task<int> CountTokenRequestsAsync(string? expiresInJson, int calls = 2)
+    {
+        var callCount = 0;
+        var responseJson = "{ \"access_token\": \"tok\", \"instance_url\": \"https://test.salesforce.com\"" + expiresInJson + " }";
+        var handler = new MockHttpMessageHandler((req, ct) =>
+        {
+            callCount++;
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(responseJson, Encoding.UTF8, "application/json"),
+            });
+        });
+        using var httpClient = new HttpClient(handler);
+        using var authService = new SalesforceStreamingAuthService(httpClient);
+        var options = new SalesforceStreamingAuthOptions
+        {
+            AuthType = SalesforceStreamingAuthType.OAuth2ClientCredentials,
+            ClientId = "c",
+            ClientSecret = "s",
+        };
+
+        for (var i = 0; i < calls; i++)
+        {
+            await authService.GetTokenAsync(options);
+        }
+
+        return callCount;
+    }
+
+    [Fact]
+    public async Task GetTokenAsync_CachedTokenNotExpired_ReturnsCacheWithoutRefresh()
+    {
+        (await CountTokenRequestsAsync(", \"expires_in\": 3600")).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task GetTokenAsync_CachedTokenExpired_RefreshesToken()
+    {
+        (await CountTokenRequestsAsync(", \"expires_in\": 1")).Should().Be(2);
+    }
+
+    [Fact]
+    public async Task GetTokenAsync_CachedTokenExpiringWithinSafetyMargin_RefreshesToken()
+    {
+        (await CountTokenRequestsAsync(", \"expires_in\": 30")).Should().Be(2);
+    }
+
+    [Fact]
+    public async Task GetTokenAsync_ExpiresInAsString_IsHonoured()
+    {
+        (await CountTokenRequestsAsync(", \"expires_in\": \"30\"")).Should().Be(2);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData(", \"expires_in\": 0")]
+    [InlineData(", \"expires_in\": -5")]
+    [InlineData(", \"expires_in\": \"abc\"")]
+    [InlineData(", \"expires_in\": null")]
+    public async Task GetTokenAsync_MissingOrInvalidExpiresIn_FallsBackToTwoHourLifetime(string expiresInJson)
+    {
+        (await CountTokenRequestsAsync(expiresInJson)).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task GetTokenAsync_OAuthToken_ExposesExpiresAt()
+    {
+        var handler = new MockHttpMessageHandler((req, ct) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("{ \"access_token\": \"tok\", \"instance_url\": \"https://t.salesforce.com\", \"expires_in\": 3600 }", Encoding.UTF8, "application/json"),
+        }));
+        using var httpClient = new HttpClient(handler);
+        using var authService = new SalesforceStreamingAuthService(httpClient);
+
+        var result = await authService.GetTokenAsync(new SalesforceStreamingAuthOptions
+        {
+            AuthType = SalesforceStreamingAuthType.OAuth2ClientCredentials,
+            ClientId = "c",
+            ClientSecret = "s",
+        });
+
+        result.ExpiresAt.Should().BeCloseTo(DateTimeOffset.UtcNow.AddHours(1), TimeSpan.FromSeconds(10));
+    }
+
     private sealed class MockHttpMessageHandler(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> sendAsyncFunc)
         : HttpMessageHandler
     {

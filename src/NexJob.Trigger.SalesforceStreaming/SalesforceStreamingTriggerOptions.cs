@@ -128,6 +128,13 @@ public sealed class SalesforceStreamingTriggerOptions : IValidatableObject
                 new[] { nameof(ReconnectDelay), });
         }
 
+        if (ConnectTimeout <= TimeSpan.Zero)
+        {
+            yield return new ValidationResult(
+                "ConnectTimeout must be greater than zero.",
+                new[] { nameof(ConnectTimeout), });
+        }
+
         if (MaxReconnectDelay < ReconnectDelay)
         {
             yield return new ValidationResult(

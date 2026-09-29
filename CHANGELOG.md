@@ -27,6 +27,11 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`NexJob.Trigger.SalesforceStreaming` — OAuth token expiry and `ConnectTimeout` are honoured (Issue #230)**:
+  - The cached OAuth token is no longer reused forever. It records `ExpiresAt` from the response `expires_in` (default 2 hours when missing or invalid) and is refreshed once it is within 60 seconds of expiry, matching `NexJob.Trigger.Salesforce`. `SalesforceStreamingTokenResult` gains an optional `ExpiresAt` init property; its constructor is unchanged.
+  - `SalesforceStreamingTriggerOptions.ConnectTimeout` was ignored (the Bayeux `HttpClient` used a fixed 150 s). The client timeout is now `ConnectTimeout + 30 s`, so the default still yields 150 s.
+  - `ConnectTimeout` must now be greater than zero; a zero or negative value fails options validation at startup.
+
 - **`NexJob.Redis` — Idempotency key lives as long as the job (Issue #238)**:
   - The `nexjob:idempotency:{key}` key no longer expires after a fixed 7 days, which let `DuplicatePolicy.RejectAlways` enqueue the same key again while the job was still retained. It now has no TTL and is released together with the job by retention purge, `DeleteJobAsync` and `PurgeOnSuccess`, only while it still points to that job.
   - Keys created before this change keep their existing 7-day expiry.
