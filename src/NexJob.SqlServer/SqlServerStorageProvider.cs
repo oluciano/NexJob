@@ -177,6 +177,11 @@ public sealed class SqlServerStorageProvider : IStorageProvider
     public async Task<JobRecord?> FetchNextAsync(
         IReadOnlyList<string> queues, CancellationToken cancellationToken = default)
     {
+        if (queues.Count == 0)
+        {
+            return null;
+        }
+
         await using var conn = Open();
         await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var tx = await conn.BeginTransactionAsync(cancellationToken);
