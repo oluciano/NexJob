@@ -1283,8 +1283,7 @@ public sealed class RedisStorageProvider : IStorageProvider
                 keysToDelete.Add(key);
                 if (keysToDelete.Count >= batchSize)
                 {
-                    var count = (int)await _db.KeyDeleteAsync(keysToDelete.ToArray()).ConfigureAwait(false);
-                    deleted += count > 0 ? count : keysToDelete.Count;
+                    deleted += await DeleteJobsWithLogsAsync(_db, keysToDelete).ConfigureAwait(false);
                     keysToDelete.Clear();
                     await Task.Yield();
                 }
@@ -1293,11 +1292,25 @@ public sealed class RedisStorageProvider : IStorageProvider
 
         if (keysToDelete.Count > 0)
         {
-            var count = (int)await _db.KeyDeleteAsync(keysToDelete.ToArray()).ConfigureAwait(false);
-            deleted += count > 0 ? count : keysToDelete.Count;
+            deleted += await DeleteJobsWithLogsAsync(_db, keysToDelete).ConfigureAwait(false);
         }
 
         return deleted;
+    }
+
+    // Deletes the job hashes and their separate logs keys; returns how many job hashes were actually removed.
+    private static async Task<int> DeleteJobsWithLogsAsync(IDatabase db, List<RedisKey> jobKeys)
+    {
+        var jobKeyPrefix = JobKey(string.Empty);
+        var logKeys = new RedisKey[jobKeys.Count];
+        for (var i = 0; i < jobKeys.Count; i++)
+        {
+            logKeys[i] = LogsKey(jobKeys[i].ToString()[jobKeyPrefix.Length..]);
+        }
+
+        var removed = (int)await db.KeyDeleteAsync(jobKeys.ToArray()).ConfigureAwait(false);
+        await db.KeyDeleteAsync(logKeys).ConfigureAwait(false);
+        return removed;
     }
 
     // ── Private static helpers ────────────────────────────────────────────────

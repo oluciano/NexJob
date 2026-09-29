@@ -27,6 +27,10 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`NexJob.Redis` — `PurgeJobsAsync` no longer leaks `nexjob:logs:{id}` keys and counts purged jobs exactly (Issue #233)**:
+  - Retention purge now deletes each job's separate logs key together with its job hash, so memory no longer grows for jobs that were purged.
+  - The returned count is the number of job hashes actually removed; it is no longer inflated when a delete reports zero.
+
 - **`NexJob.MongoDB` — Orphan requeue no longer overwrites the original error message (Issue #232)**:
   - When an orphaned job has exhausted its attempts, `RequeueOrphanedJobsAsync` now sets "Orphaned execution exceeded maximum attempts." only if the job has no recorded error, matching PostgreSQL, SQL Server, Redis and InMemory.
   - Previously the real exception message from the last attempt was replaced by the generic text.
