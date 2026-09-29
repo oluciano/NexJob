@@ -27,6 +27,10 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`NexJob.MongoDB` — Orphan requeue no longer overwrites the original error message (Issue #232)**:
+  - When an orphaned job has exhausted its attempts, `RequeueOrphanedJobsAsync` now sets "Orphaned execution exceeded maximum attempts." only if the job has no recorded error, matching PostgreSQL, SQL Server, Redis and InMemory.
+  - Previously the real exception message from the last attempt was replaced by the generic text.
+
 - **`NexJob` Core — InMemory `PurgeJobsAsync` no longer deletes `Failed` jobs early via `RetainDeadLetter` (Issue #231)**:
   - `Failed` jobs are now purged by `RetainDeadLetter` only when `RetainFailed` is zero, matching PostgreSQL, SQL Server and Redis.
   - Previously a `Failed` job still within `RetainFailed` could be deleted as soon as it exceeded the shorter `RetainDeadLetter`.

@@ -816,6 +816,52 @@ public abstract class StorageProviderTestsBase
         final.ExecutionLogs[0].Message.Should().Be("First call");
     }
 
+    // ── Orphan requeue keeps the original error (issue #232) ───────────────────
+
+    [Fact]
+    public async Task RequeueOrphanedJobsAsync_ExhaustedJobKeepsOriginalErrorMessage()
+    {
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
+        var record = await EnqueueFailOnceThenProcessAsync(storage, maxAttempts: 2);
+
+        await Task.Delay(10);
+        await storage.RequeueOrphanedJobsAsync(TimeSpan.Zero);
+
+        var updated = await dashboard.GetJobByIdAsync(record.Id);
+        updated!.Status.Should().Be(JobStatus.Failed);
+        updated.LastErrorMessage.Should().Be("original-boom");
+    }
+
+    [Fact]
+    public async Task RequeueOrphanedJobsAsync_ExhaustedJobWithoutPriorErrorGetsGenericMessage()
+    {
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
+        var record = MakeJob(maxAttempts: 1);
+        await storage.EnqueueAsync(record);
+        (await storage.FetchNextAsync(["default"]))!.Attempts.Should().Be(1);
+
+        await Task.Delay(10);
+        await storage.RequeueOrphanedJobsAsync(TimeSpan.Zero);
+
+        var updated = await dashboard.GetJobByIdAsync(record.Id);
+        updated!.Status.Should().Be(JobStatus.Failed);
+        updated.LastErrorMessage.Should().Be("Orphaned execution exceeded maximum attempts.");
+    }
+
+    [Fact]
+    public async Task RequeueOrphanedJobsAsync_JobWithAttemptsLeftIsRequeuedAndKeepsPriorError()
+    {
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
+        var record = await EnqueueFailOnceThenProcessAsync(storage, maxAttempts: 3);
+
+        await Task.Delay(10);
+        await storage.RequeueOrphanedJobsAsync(TimeSpan.Zero);
+
+        var updated = await dashboard.GetJobByIdAsync(record.Id);
+        updated!.Status.Should().Be(JobStatus.Enqueued);
+        updated.LastErrorMessage.Should().Be("original-boom");
+    }
+
     // ── Failed-job retention vs dead-letter retention (issue #231) ─────────────
 
     [Fact]
@@ -939,6 +985,19 @@ public abstract class StorageProviderTestsBase
     }
 
     // ── Helpers ────────────────────────────────────────────────────────────────
+
+    /// <summary>Fails attempt 1 with "original-boom" (retry due now), then fetches attempt 2 so the job is Processing.</summary>
+    private static async Task<JobRecord> EnqueueFailOnceThenProcessAsync(IJobStorage storage, int maxAttempts)
+    {
+        var record = MakeJob(maxAttempts: maxAttempts);
+        await storage.EnqueueAsync(record);
+        var first = (await storage.FetchNextAsync(["default"]))!;
+        await storage.SetFailedAsync(first.Id, new InvalidOperationException("original-boom"), DateTimeOffset.UtcNow.AddSeconds(-1));
+        var second = await storage.FetchNextAsync(["default"]);
+        second.Should().NotBeNull();
+        second!.Attempts.Should().Be(2);
+        return record;
+    }
 
     private static async Task<JobRecord> EnqueueAndFailPermanentlyAsync(IJobStorage storage)
     {

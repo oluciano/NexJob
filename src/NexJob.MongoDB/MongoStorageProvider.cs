@@ -420,10 +420,23 @@ public sealed class MongoStorageProvider : IStorageProvider
             Builders<JobDocument>.Filter.Lt(d => d.HeartbeatAt, cutoff),
             new BsonDocument("$expr", new BsonDocument("$gte", new BsonArray { "$Attempts", "$MaxAttempts" })));
 
-        var exhaustedUpdate = Builders<JobDocument>.Update
+        // Exhausted jobs that never recorded an error get the generic message; those that did keep the original.
+        var exhaustedWithoutErrorFilter = Builders<JobDocument>.Filter.And(
+            exhaustedFilter,
+            Builders<JobDocument>.Filter.Eq(d => d.LastErrorMessage, null));
+
+        var exhaustedWithoutErrorUpdate = Builders<JobDocument>.Update
             .Set(d => d.Status, JobStatus.Failed)
             .Set(d => d.CompletedAt, now)
             .Set(d => d.LastErrorMessage, "Orphaned execution exceeded maximum attempts.")
+            .Unset(d => d.HeartbeatAt)
+            .Unset(d => d.ProcessingStartedAt);
+
+        await _jobs.UpdateManyAsync(exhaustedWithoutErrorFilter, exhaustedWithoutErrorUpdate, cancellationToken: cancellationToken).ConfigureAwait(false);
+
+        var exhaustedUpdate = Builders<JobDocument>.Update
+            .Set(d => d.Status, JobStatus.Failed)
+            .Set(d => d.CompletedAt, now)
             .Unset(d => d.HeartbeatAt)
             .Unset(d => d.ProcessingStartedAt);
 
