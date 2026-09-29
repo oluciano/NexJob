@@ -816,6 +816,76 @@ public abstract class StorageProviderTestsBase
         final.ExecutionLogs[0].Message.Should().Be("First call");
     }
 
+    // ── Failed-job retention vs dead-letter retention (issue #231) ─────────────
+
+    [Fact]
+    public async Task PurgeJobsAsync_PurgesFailedJobBeyondRetainFailed()
+    {
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
+        var record = await EnqueueAndFailPermanentlyAsync(storage);
+        await Task.Delay(300);
+
+        var deleted = await storage.PurgeJobsAsync(new RetentionPolicy
+        {
+            RetainFailed = TimeSpan.FromMilliseconds(100),
+            RetainDeadLetter = TimeSpan.FromDays(7),
+        });
+
+        deleted.Should().Be(1);
+        (await dashboard.GetJobByIdAsync(record.Id)).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task PurgeJobsAsync_KeepsFailedJobWithinRetainFailedEvenIfBeyondRetainDeadLetter()
+    {
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
+        var record = await EnqueueAndFailPermanentlyAsync(storage);
+        await Task.Delay(300);
+
+        var deleted = await storage.PurgeJobsAsync(new RetentionPolicy
+        {
+            RetainFailed = TimeSpan.FromDays(7),
+            RetainDeadLetter = TimeSpan.FromMilliseconds(100),
+        });
+
+        deleted.Should().Be(0, "RetainDeadLetter only applies to Failed jobs when RetainFailed is zero");
+        (await dashboard.GetJobByIdAsync(record.Id)).Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task PurgeJobsAsync_PurgesFailedJobByRetainDeadLetterWhenRetainFailedIsZero()
+    {
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
+        var record = await EnqueueAndFailPermanentlyAsync(storage);
+        await Task.Delay(300);
+
+        var deleted = await storage.PurgeJobsAsync(new RetentionPolicy
+        {
+            RetainFailed = TimeSpan.Zero,
+            RetainDeadLetter = TimeSpan.FromMilliseconds(100),
+        });
+
+        deleted.Should().Be(1);
+        (await dashboard.GetJobByIdAsync(record.Id)).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task PurgeJobsAsync_PurgesNothingWhenAllFailedRetentionsAreZero()
+    {
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
+        var record = await EnqueueAndFailPermanentlyAsync(storage);
+        await Task.Delay(300);
+
+        var deleted = await storage.PurgeJobsAsync(new RetentionPolicy
+        {
+            RetainFailed = TimeSpan.Zero,
+            RetainDeadLetter = TimeSpan.Zero,
+        });
+
+        deleted.Should().Be(0);
+        (await dashboard.GetJobByIdAsync(record.Id)).Should().NotBeNull();
+    }
+
     // ── InputJson round trip (issue #237) ──────────────────────────────────────
 
     [Theory]
@@ -869,6 +939,20 @@ public abstract class StorageProviderTestsBase
     }
 
     // ── Helpers ────────────────────────────────────────────────────────────────
+
+    private static async Task<JobRecord> EnqueueAndFailPermanentlyAsync(IJobStorage storage)
+    {
+        var record = MakeJob();
+        await storage.EnqueueAsync(record);
+        var fetched = (await storage.FetchNextAsync(["default"]))!;
+        await storage.CommitJobResultAsync(fetched.Id, new JobExecutionResult
+        {
+            Succeeded = false,
+            Exception = new InvalidOperationException("boom"),
+            Logs = [],
+        });
+        return record;
+    }
 
     private static JobRecord MakeJob(
         string queue = "default",

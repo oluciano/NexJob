@@ -912,7 +912,8 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
             JobStatus.Failed when policy.RetainFailed > TimeSpan.Zero
                 && job.CompletedAt.HasValue
                 && now - job.CompletedAt.Value > policy.RetainFailed => true,
-            JobStatus.Failed when policy.RetainDeadLetter > TimeSpan.Zero
+            JobStatus.Failed when policy.RetainFailed == TimeSpan.Zero
+                && policy.RetainDeadLetter > TimeSpan.Zero
                 && job.CompletedAt.HasValue
                 && now - job.CompletedAt.Value > policy.RetainDeadLetter => true,
             JobStatus.Expired when policy.RetainExpired > TimeSpan.Zero
