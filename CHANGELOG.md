@@ -6,6 +6,8 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [5.6.1] - 2026-09-30
+
 ### Fixed
 
 - **Broker triggers (AwsSqs, AzureServiceBus, GooglePubSub, Kafka, RabbitMQ) — message body now reaches `IJob<string>` verbatim (issue #287)**:
