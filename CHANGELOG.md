@@ -6,6 +6,8 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [5.6.0] - 2026-09-30
+
 ### Added
 
 - **`NexJob` Core — Structured Logging Scope via `ILogger.BeginScope` during Job Execution (Issue #204)**:
