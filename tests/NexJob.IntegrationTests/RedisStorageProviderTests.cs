@@ -13,6 +13,8 @@ namespace NexJob.IntegrationTests;
 /// </summary>
 public sealed class RedisStorageProviderTests : StorageProviderTestsBase, IClassFixture<RedisFixture>
 {
+    private const string IndexKey = "nexjob:index:all";
+
     private readonly RedisFixture _fixture;
 
     public RedisStorageProviderTests(RedisFixture fixture)
@@ -661,15 +663,152 @@ public sealed class RedisStorageProviderTests : StorageProviderTestsBase, IClass
     [Fact]
     public async Task Metrics_DoNotScanJobHashes_LegacyFinishedJobsWithoutStatusSetsAreNotCounted()
     {
+        // Behavior changed in v5.6: jobs stored before the status sets existed used to be ignored by the metrics
+        // (issue #262 part 1). Part 2 backfills them once, so they are now counted, but only once: a hash written
+        // afterwards without going through the provider is still not read (no repeated scans).
         var (mux, provider) = await ConnectAsync();
-        await mux.GetDatabase().HashSetAsync(
-            $"nexjob:jobs:{Guid.NewGuid()}",
-            [new("status", "Failed"), new("queue", "legacy"), new("completedAt", DateTimeOffset.UtcNow.ToString("O"))]);
+        var db = mux.GetDatabase();
+        var legacyId = Guid.NewGuid();
+        await db.HashSetAsync($"nexjob:jobs:{legacyId}", LegacyJobHash(legacyId, "Failed", "legacy"));
 
+        var first = await provider.GetMetricsAsync();
+        var lateId = Guid.NewGuid();
+        await db.HashSetAsync($"nexjob:jobs:{lateId}", LegacyJobHash(lateId, "Failed", "legacy"));
+        var second = await provider.GetMetricsAsync();
+
+        first.Failed.Should().Be(1, "the one-time backfill counts jobs that finished before the status sets existed");
+        first.RecentFailures.Should().ContainSingle();
+        second.Failed.Should().Be(1, "counts come from the sets, not from reading every job hash");
+    }
+
+    // ── Job index replaces keyspace scans in dashboard queries (issue #262, part 2) ──
+
+    private static StackExchange.Redis.HashEntry[] LegacyJobHash(Guid id, string status, string queue = "default", DateTimeOffset? createdAt = null) =>
+    [
+        new("id", id.ToString()),
+        new("jobType", "T"),
+        new("inputType", "I"),
+        new("inputJson", "{}"),
+        new("queue", queue),
+        new("priority", "3"),
+        new("status", status),
+        new("attempts", "0"),
+        new("maxAttempts", "3"),
+        new("createdAt", (createdAt ?? DateTimeOffset.UtcNow).ToString("O", System.Globalization.CultureInfo.InvariantCulture)),
+        new("completedAt", DateTimeOffset.UtcNow.ToString("O", System.Globalization.CultureInfo.InvariantCulture)),
+    ];
+
+    [Fact]
+    public async Task EnqueueAsync_AddsTheJobToTheIndex()
+    {
+        var (mux, provider) = await ConnectAsync();
+        var job = NewEnqueueJob();
+
+        await provider.EnqueueAsync(job);
+
+        (await mux.GetDatabase().SortedSetScoreAsync(IndexKey, job.Id.Value.ToString())).Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task GetJobsAsync_Unfiltered_PagesNewestFirst()
+    {
+        var (_, provider) = await ConnectAsync();
+        var ids = new List<JobId>();
+        for (var i = 0; i < 5; i++)
+        {
+            var job = NewEnqueueJob();
+            ids.Add(job.Id);
+            await provider.EnqueueAsync(job);
+            await Task.Delay(5);
+        }
+
+        var second = await provider.GetJobsAsync(new JobFilter(), page: 2, pageSize: 2);
+
+        second.TotalCount.Should().Be(5);
+        second.Items.Select(j => j.Id).Should().Equal(ids[2], ids[1]);
+    }
+
+    [Fact]
+    public async Task GetJobsAsync_QueueAndSearchFilters_StillWork()
+    {
+        var (_, provider) = await ConnectAsync();
+        var keep = NewEnqueueJob("reports");
+        await provider.EnqueueAsync(keep);
+        await provider.EnqueueAsync(NewEnqueueJob("default"));
+        await provider.EnqueueAsync(NewEnqueueJob("reports"));
+
+        var byQueue = await provider.GetJobsAsync(new JobFilter { Queue = "reports" }, 1, 10);
+        var bySearch = await provider.GetJobsAsync(new JobFilter { Search = keep.Id.Value.ToString() }, 1, 10);
+
+        byQueue.TotalCount.Should().Be(2);
+        bySearch.Items.Should().ContainSingle().Which.Id.Should().Be(keep.Id);
+    }
+
+    [Fact]
+    public async Task GetJobsAsync_EmptyStoreAndPageBeyondRange_ReturnNoItems()
+    {
+        var (_, provider) = await ConnectAsync();
+        (await provider.GetJobsAsync(new JobFilter(), 1, 10)).Items.Should().BeEmpty();
+
+        await provider.EnqueueAsync(NewEnqueueJob());
+        var beyond = await provider.GetJobsAsync(new JobFilter(), page: 9, pageSize: 10);
+
+        beyond.Items.Should().BeEmpty();
+        beyond.TotalCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task LegacyJobs_AreBackfilledOnceOnFirstUse()
+    {
+        var (mux, provider) = await ConnectAsync();
+        var db = mux.GetDatabase();
+        await db.HashSetAsync($"nexjob:jobs:{Guid.NewGuid()}", LegacyJobHash(Guid.NewGuid(), "Succeeded"));
+        var failedId = Guid.NewGuid();
+        await db.HashSetAsync($"nexjob:jobs:{failedId}", LegacyJobHash(failedId, "Failed"));
+
+        var first = await provider.GetJobsAsync(new JobFilter(), 1, 10);
         var metrics = await provider.GetMetricsAsync();
 
-        metrics.Failed.Should().Be(0, "counts come from the status sets, not from reading every job hash");
-        metrics.RecentFailures.Should().BeEmpty();
+        first.TotalCount.Should().Be(2, "jobs stored before the index existed are indexed on first use");
+        metrics.Failed.Should().Be(1, "the backfill also fills the Succeeded/Failed sets");
+        metrics.Succeeded.Should().Be(1);
+
+        var lateId = Guid.NewGuid();
+        await db.HashSetAsync($"nexjob:jobs:{lateId}", LegacyJobHash(lateId, "Succeeded"));
+        (await provider.GetJobsAsync(new JobFilter(), 1, 10)).TotalCount.Should().Be(2, "the backfill runs only once");
+    }
+
+    [Fact]
+    public async Task StaleIndexEntry_IsSkippedAndCleaned()
+    {
+        var (mux, provider) = await ConnectAsync();
+        var db = mux.GetDatabase();
+        await provider.EnqueueAsync(NewEnqueueJob());
+        var ghost = Guid.NewGuid().ToString();
+        await db.SortedSetAddAsync(IndexKey, ghost, DateTimeOffset.UtcNow.AddMinutes(1).ToUnixTimeMilliseconds());
+
+        var page = await provider.GetJobsAsync(new JobFilter(), 1, 10);
+
+        page.Items.Should().ContainSingle();
+        page.TotalCount.Should().Be(1);
+        (await db.SortedSetScoreAsync(IndexKey, ghost)).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task DeleteAndPurge_RemoveJobsFromTheIndex()
+    {
+        var (mux, provider) = await ConnectAsync();
+        var db = mux.GetDatabase();
+        var deleted = NewEnqueueJob("other");
+        await provider.EnqueueAsync(deleted);
+        var purgedId = await CreateSucceededJobAsync(provider);
+
+        await provider.DeleteJobAsync(deleted.Id);
+        await Task.Delay(200);
+        await provider.PurgeJobsAsync(new RetentionPolicy { RetainSucceeded = TimeSpan.FromMilliseconds(50) });
+
+        (await db.SortedSetScoreAsync(IndexKey, deleted.Id.Value.ToString())).Should().BeNull();
+        (await db.SortedSetScoreAsync(IndexKey, purgedId.ToString())).Should().BeNull();
     }
 
     private static async Task<Guid> CreateSucceededJobAsync(RedisStorageProvider provider)

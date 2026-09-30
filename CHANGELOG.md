@@ -27,6 +27,11 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`NexJob.Redis` — Dashboard queries and retention no longer scan the keyspace (Issue #262, part 2)**:
+  - Every job is now listed in a `nexjob:index:all` sorted set (score = creation time), written atomically by the enqueue script and removed on delete and purge. `GetJobsAsync` without filters pages straight from the index (cost proportional to the page); filtered listing, `GetJobsByTagAsync`, `GetJobCatalogAsync` and `PurgeJobsAsync` walk the index with pipelined reads instead of `SCAN`ning every key.
+  - Jobs stored before this version are indexed once, on first use, by an idempotent backfill guarded by a `nexjob:index:ready` marker. The same backfill fills the Succeeded/Failed sets, so the **upgrade note of part 1 no longer applies**: Succeeded/Failed totals are exact after the first metrics call.
+  - Index entries whose job hash disappeared (for example after a crash between two writes) are skipped and removed as they are found.
+
 - **All providers — Batch acknowledgment releases continuations (Issue #257)**:
   - `AcknowledgeAsync` and `AcknowledgeBatchAsync` now move every child waiting on the acknowledged parent from `AwaitingContinuation` to `Enqueued` in InMemory, PostgreSQL, SQL Server, MongoDB and Redis (SQL providers do it in the same transaction; Redis in the same Lua script). With `EnableBatchAcknowledgment = true`, `ContinueWith` children now run.
   - The startup warning and the documented limitation from the previous step are removed.
