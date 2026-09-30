@@ -14,6 +14,8 @@ public sealed class RedisStorageProvider : IStorageProvider
 {
     private const string ProcessingKey = "nexjob:processing";
     private const string ScheduledKey = "nexjob:scheduled";
+    private const int PromotionBatchSize = 100;
+    private const int MaxPromotionRounds = 5;
     private const string RecurringAllKey = "nexjob:recurring:all";
     private const string ThroughputKey = "nexjob:throughput";
     private const string ServersAllKey = "nexjob:servers:all";
@@ -203,6 +205,32 @@ public sealed class RedisStorageProvider : IStorageProvider
         end
 
         return 1
+        """);
+
+    // Promotes due scheduled jobs into their queues atomically. ZREM runs first so two nodes can never
+    // promote the same entry, and only jobs still Scheduled are moved (stale entries are just dropped).
+    private static readonly LuaScript PromoteScheduledScript = LuaScript.Prepare(
+        """
+        local due = redis.call('ZRANGEBYSCORE', 'nexjob:scheduled', '-inf', ARGV[1], 'LIMIT', 0, tonumber(ARGV[2]))
+        for i = 1, #due do
+          local id = due[i]
+          redis.call('ZREM', 'nexjob:scheduled', id)
+          local jobKey = 'nexjob:jobs:' .. id
+          if redis.call('HGET', jobKey, 'status') == 'Scheduled' then
+            redis.call('HSET', jobKey, 'status', 'Enqueued')
+            local score = tonumber(redis.call('HGET', jobKey, 'queueScore'))
+            if not score then
+              -- Legacy job written before queueScore existed: derive it from priority and now
+              score = (tonumber(redis.call('HGET', jobKey, 'priority')) or 3) * 10000000000000 + tonumber(ARGV[3])
+            end
+            local queue = redis.call('HGET', jobKey, 'queue')
+            if not queue or queue == '' then
+              queue = 'default'
+            end
+            redis.call('ZADD', 'nexjob:queue:' .. queue .. ':z', score, id)
+          end
+        end
+        return #due
         """);
 
     // Deletes the idempotency key only while it still points at the given job, so releasing the key
@@ -1687,31 +1715,22 @@ public sealed class RedisStorageProvider : IStorageProvider
 
     private async Task PromoteScheduledJobsAsync()
     {
-        var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-        var dueMembers = await _db.SortedSetRangeByScoreWithScoresAsync(
-            ScheduledKey, double.NegativeInfinity, nowMs).ConfigureAwait(false);
-
-        foreach (var member in dueMembers)
+        // Bounded drain: each call promotes at most PromotionBatchSize entries inside one atomic script.
+        for (var round = 0; round < MaxPromotionRounds; round++)
         {
-            var id = member.Element.ToString();
-            var jobHash = await _db.HashGetAllAsync(JobKey(id)).ConfigureAwait(false);
-            if (jobHash.Length == 0)
+            var now = DateTimeOffset.UtcNow;
+            var args = new RedisValue[]
             {
-                await _db.SortedSetRemoveAsync(ScheduledKey, id).ConfigureAwait(false);
-                continue;
+                now.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture),
+                PromotionBatchSize,
+                now.UtcTicks.ToString(CultureInfo.InvariantCulture),
+            };
+
+            var due = (long)await _db.ScriptEvaluateAsync(PromoteScheduledScript.ExecutableScript, keys: null, values: args).ConfigureAwait(false);
+            if (due < PromotionBatchSize)
+            {
+                return;
             }
-
-            var dict = ParseHash(jobHash);
-            var queue = dict.GetValueOrDefault("queue", "default");
-            var priorityStr = dict.GetValueOrDefault("priority", "3");
-            var createdAtStr = dict.GetValueOrDefault("createdAt", DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture));
-            var priority = int.TryParse(priorityStr, NumberStyles.Integer, CultureInfo.InvariantCulture, out var p) ? p : 3;
-            var createdAt = DateTimeOffset.TryParse(createdAtStr, CultureInfo.InvariantCulture,
-                DateTimeStyles.RoundtripKind, out var ca) ? ca : DateTimeOffset.UtcNow;
-
-            await _db.HashSetAsync(JobKey(id), "status", "Enqueued").ConfigureAwait(false);
-            await _db.SortedSetRemoveAsync(ScheduledKey, id).ConfigureAwait(false);
-            await _db.SortedSetAddAsync(QueueKey(queue), id, QueueScore(priority, createdAt)).ConfigureAwait(false);
         }
     }
 }
