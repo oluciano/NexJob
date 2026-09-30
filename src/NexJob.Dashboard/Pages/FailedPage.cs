@@ -88,7 +88,7 @@ internal sealed class FailedPage : IComponent
                 HtmlFragments.Breadcrumbs(PathPrefix, ("Failed", null)) +
                 HtmlFragments.PageHeader("Failed Jobs", subtitle) +
                 HtmlFragments.FilterBar(PathPrefix, currentStatus, Search, null, null, queues) +
-                HtmlFragments.EmptyState("12 22s10-9 10-9-9-9-9 9 10 9z", emptyMsg + " — " + emptySub) +
+                HtmlFragments.EmptyState(HtmlFragments.EmptyIconCheck, emptyMsg + " — " + emptySub) +
                 "</div>";
             return HtmlShell.Wrap(Title, PathPrefix, "failed", emptyBody, Counters, clusters: Clusters, activeCluster: ActiveCluster);
         }

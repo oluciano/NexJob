@@ -6,6 +6,11 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Dashboard — empty-state icons (issue #284)**: the empty states on the Jobs, Queues, Recurring, Catalog, Listeners, Failed, Servers and Job detail pages passed invalid SVG path data (a `viewBox`, or a list of points), so the icon was never drawn and the browser logged `Expected moveto path command` errors. Each page now uses valid icon path data, and `HtmlFragments.EmptyState` HTML-encodes it.
+- **Standalone dashboard — network exposure warning (issue #294)**: when `LocalhostOnly` is `false` (the default), a warning is now logged at startup saying the dashboard is reachable from the network and has no authorization in standalone mode, and pointing to `LocalhostOnly = true`. The listening address and defaults are unchanged; the wiki (`10-Dashboard.md`) documents the exposure.
+
 ### Changed
 
 - **`NexJob` package README**: the package now ships its own short README (`src/NexJob/README.md`: what it is, install, quick start, which packages to add, links to the documentation) instead of the full repository README, matching every other NexJob package.

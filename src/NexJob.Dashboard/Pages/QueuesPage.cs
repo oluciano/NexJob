@@ -119,7 +119,7 @@ internal sealed class QueuesPage : IComponent
             var emptyBody =
                 HtmlFragments.Breadcrumbs(PathPrefix, ("Queues", null)) +
                 HtmlFragments.PageHeader("Queues", "Active processing queues") +
-                HtmlFragments.EmptyState("0 0 24 24", "No active queues.");
+                HtmlFragments.EmptyState(HtmlFragments.EmptyIconInbox, "No active queues.");
             return HtmlShell.Wrap(Title, PathPrefix, "queues", emptyBody, Counters, clusters: Clusters, activeCluster: ActiveCluster);
         }
 
