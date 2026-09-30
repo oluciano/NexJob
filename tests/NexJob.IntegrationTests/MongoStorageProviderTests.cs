@@ -95,6 +95,114 @@ public sealed class MongoStorageProviderTests : StorageProviderTestsBase, IClass
         result.JobId.Should().Be(second.Id, "the upgraded index must not be blocked by the finished job");
     }
 
+    // ── Non-UTC offsets must not change scheduling (issue #263) ───────────────
+
+    private static JobRecord NewScheduledJob(DateTimeOffset scheduledAt) => new()
+    {
+        Id = new JobId(Guid.NewGuid()),
+        JobType = "T",
+        InputType = "I",
+        InputJson = "{}",
+        Queue = "default",
+        MaxAttempts = 3,
+        CreatedAt = DateTimeOffset.UtcNow,
+        Status = JobStatus.Scheduled,
+        ScheduledAt = scheduledAt,
+    };
+
+    [Fact]
+    public async Task ScheduleAt_NonUtcOffset_RunsAtCorrectInstant()
+    {
+        var (_, _, _, provider) = await CreateStorageAsync();
+        await provider.EnqueueAsync(NewScheduledJob(DateTimeOffset.UtcNow.AddHours(1).ToOffset(TimeSpan.FromHours(-3))));
+
+        (await provider.FetchNextAsync(["default"])).Should().BeNull("one hour ahead is one hour ahead in any offset");
+    }
+
+    [Fact]
+    public async Task ScheduleAt_PositiveOffset_NotDelayed()
+    {
+        var (_, _, _, provider) = await CreateStorageAsync();
+        var job = NewScheduledJob(DateTimeOffset.UtcNow.AddMinutes(-1).ToOffset(TimeSpan.FromHours(9)));
+        await provider.EnqueueAsync(job);
+
+        var fetched = await provider.FetchNextAsync(["default"]);
+
+        fetched.Should().NotBeNull("a job that is already due must run regardless of the offset it was scheduled with");
+        fetched!.Id.Should().Be(job.Id);
+    }
+
+    [Fact]
+    public async Task RetryAt_NonUtcOffset_IsNotPromotedEarly()
+    {
+        var (_, _, _, provider) = await CreateStorageAsync();
+        await provider.EnqueueAsync(NewScheduledJob(DateTimeOffset.UtcNow.AddMinutes(-1)));
+        var running = (await provider.FetchNextAsync(["default"]))!;
+
+        await provider.SetFailedAsync(running.Id, new InvalidOperationException("boom"), DateTimeOffset.UtcNow.AddHours(1).ToOffset(TimeSpan.FromHours(-3)));
+
+        (await provider.FetchNextAsync(["default"])).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task DateTimeOffsetMinMax_RoundTrip()
+    {
+        var (_, _, dashboard, provider) = await CreateStorageAsync();
+        var job = NewScheduledJob(DateTimeOffset.MaxValue);
+        await provider.EnqueueAsync(job);
+
+        var stored = await dashboard.GetJobByIdAsync(job.Id);
+
+        stored!.ScheduledAt.Should().Be(DateTimeOffset.MaxValue);
+        (await provider.FetchNextAsync(["default"])).Should().BeNull("a job scheduled at the maximum instant never becomes due");
+    }
+
+    [Fact]
+    public async Task CreatedAt_NonUtcOffset_KeepsTheSameInstant()
+    {
+        var (_, _, dashboard, provider) = await CreateStorageAsync();
+        var createdAt = new DateTimeOffset(2026, 3, 1, 10, 30, 0, TimeSpan.FromHours(-3));
+        var withOffset = new JobRecord
+        {
+            Id = new JobId(Guid.NewGuid()),
+            JobType = "T",
+            InputType = "I",
+            InputJson = "{}",
+            Queue = "default",
+            MaxAttempts = 3,
+            CreatedAt = createdAt,
+            Status = JobStatus.Scheduled,
+            ScheduledAt = DateTimeOffset.UtcNow.AddHours(1),
+        };
+        await provider.EnqueueAsync(withOffset);
+
+        (await dashboard.GetJobByIdAsync(withOffset.Id))!.CreatedAt.Should().Be(createdAt);
+    }
+
+    [Fact]
+    public async Task RecurringNextExecution_NonUtcOffset_DueOnlyWhenTheInstantHasPassed()
+    {
+        var (_, recurring, _, _) = await CreateStorageAsync();
+        await recurring.UpsertRecurringJobAsync(NewRecurring("due", DateTimeOffset.UtcNow.AddMinutes(-1).ToOffset(TimeSpan.FromHours(9))));
+        await recurring.UpsertRecurringJobAsync(NewRecurring("later", DateTimeOffset.UtcNow.AddHours(1).ToOffset(TimeSpan.FromHours(-3))));
+
+        var due = await recurring.GetDueRecurringJobsAsync(DateTimeOffset.UtcNow);
+
+        due.Select(r => r.RecurringJobId).Should().BeEquivalentTo("due");
+    }
+
+    private static RecurringJobRecord NewRecurring(string id, DateTimeOffset nextExecution) => new()
+    {
+        RecurringJobId = id,
+        JobType = "T",
+        InputType = "I",
+        InputJson = "{}",
+        Cron = "* * * * *",
+        Queue = "default",
+        NextExecution = nextExecution,
+        CreatedAt = DateTimeOffset.UtcNow,
+    };
+
     private static JobRecord NewKeyedJob(string key) => new()
     {
         Id = new JobId(Guid.NewGuid()),

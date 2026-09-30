@@ -239,7 +239,7 @@ public sealed class MongoStorageProvider : IStorageProvider
         {
             update = Builders<JobDocument>.Update
                 .Set(d => d.Status, JobStatus.Scheduled)
-                .Set(d => d.RetryAt, retryAt.Value)
+                .Set(d => d.RetryAt, retryAt.Value.ToUniversalTime())
                 .Set(d => d.LastErrorMessage, exception.Message)
                 .Set(d => d.LastErrorStackTrace, exception.StackTrace)
                 .Unset(d => d.HeartbeatAt);
@@ -295,8 +295,8 @@ public sealed class MongoStorageProvider : IStorageProvider
             .Set(d => d.Cron, recurringJob.Cron)
             .Set(d => d.TimeZoneId, recurringJob.TimeZoneId)
             .Set(d => d.Queue, recurringJob.Queue)
-            .Set(d => d.NextExecution, recurringJob.NextExecution)
-            .Set(d => d.CreatedAt, recurringJob.CreatedAt)
+            .Set(d => d.NextExecution, recurringJob.NextExecution?.ToUniversalTime())
+            .Set(d => d.CreatedAt, recurringJob.CreatedAt.ToUniversalTime())
             .Set(d => d.ConcurrencyPolicy, recurringJob.ConcurrencyPolicy)
             .SetOnInsert(d => d.CronOverride, (string?)null)
             .SetOnInsert(d => d.Enabled, true)
@@ -309,7 +309,7 @@ public sealed class MongoStorageProvider : IStorageProvider
     /// <inheritdoc/>
     public async Task<IReadOnlyList<RecurringJobRecord>> GetDueRecurringJobsAsync(DateTimeOffset utcNow, CancellationToken cancellationToken = default)
     {
-        var filter = Builders<RecurringJobDocument>.Filter.Lte(d => d.NextExecution, utcNow);
+        var filter = Builders<RecurringJobDocument>.Filter.Lte(d => d.NextExecution, utcNow.ToUniversalTime());
         var docs = await _recurringJobs.Find(filter).ToListAsync(cancellationToken).ConfigureAwait(false);
         return docs.Select(d => d.ToRecord()).ToList();
     }
@@ -319,7 +319,7 @@ public sealed class MongoStorageProvider : IStorageProvider
     {
         var filter = Builders<RecurringJobDocument>.Filter.Eq(d => d.RecurringJobId, recurringJobId);
         var update = Builders<RecurringJobDocument>.Update
-            .Set(d => d.NextExecution, nextExecution)
+            .Set(d => d.NextExecution, nextExecution.ToUniversalTime())
             .Set(d => d.LastExecutedAt, DateTimeOffset.UtcNow);
 
         await _recurringJobs.UpdateOneAsync(filter, update, cancellationToken: cancellationToken).ConfigureAwait(false);
@@ -476,7 +476,7 @@ public sealed class MongoStorageProvider : IStorageProvider
         var update = Builders<ServerDocument>.Update
             .Set(d => d.WorkerCount, server.WorkerCount)
             .Set(d => d.Queues, server.Queues)
-            .Set(d => d.HeartbeatAt, server.HeartbeatAt)
+            .Set(d => d.HeartbeatAt, server.HeartbeatAt.ToUniversalTime())
             .SetOnInsert(d => d.StartedAt, server.StartedAt);
 
         var options = new UpdateOptions { IsUpsert = true };
@@ -670,7 +670,7 @@ public sealed class MongoStorageProvider : IStorageProvider
     {
         var entries = logs.Select(e => new ExecutionLogEntry
         {
-            Timestamp = e.Timestamp,
+            Timestamp = e.Timestamp.ToUniversalTime(),
             Level = e.Level,
             Message = e.Message,
         }).ToList();
@@ -688,7 +688,7 @@ public sealed class MongoStorageProvider : IStorageProvider
         var now = DateTimeOffset.UtcNow;
         var entries = result.Logs.Select(e => new ExecutionLogEntry
         {
-            Timestamp = e.Timestamp,
+            Timestamp = e.Timestamp.ToUniversalTime(),
             Level = e.Level,
             Message = e.Message,
         }).ToList();
@@ -1066,7 +1066,7 @@ public sealed class MongoStorageProvider : IStorageProvider
     {
         var jobUpdate = Builders<JobDocument>.Update
             .Set(d => d.Status, JobStatus.Scheduled)
-            .Set(d => d.RetryAt, result.RetryAt!.Value)
+            .Set(d => d.RetryAt, result.RetryAt!.Value.ToUniversalTime())
             .Set(d => d.LastErrorMessage, result.Exception?.Message)
             .Set(d => d.LastErrorStackTrace, result.Exception?.StackTrace)
             .Unset(d => d.HeartbeatAt)

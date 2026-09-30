@@ -27,8 +27,8 @@ internal sealed class ServerDocument
         Id = record.Id,
         WorkerCount = record.WorkerCount,
         Queues = record.Queues,
-        StartedAt = record.StartedAt,
-        HeartbeatAt = record.HeartbeatAt,
+        StartedAt = record.StartedAt.ToUniversalTime(),
+        HeartbeatAt = record.HeartbeatAt.ToUniversalTime(),
     };
 
     public ServerRecord ToRecord() => new()
