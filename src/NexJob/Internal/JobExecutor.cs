@@ -60,6 +60,14 @@ internal sealed class JobExecutor : IDisposable, IAsyncDisposable
         _ackFlusherTask = Task.Run(RunBatchAckFlusherAsync);
     }
 
+    /// <summary>Gets the delays between retries of a failed success commit. Overridable for tests.</summary>
+    internal TimeSpan[] CommitRetryDelays { get; init; } =
+    [
+        TimeSpan.FromMilliseconds(100),
+        TimeSpan.FromMilliseconds(500),
+        TimeSpan.FromSeconds(2),
+    ];
+
     /// <inheritdoc/>
     public void Dispose()
     {
@@ -118,6 +126,8 @@ internal sealed class JobExecutor : IDisposable, IAsyncDisposable
         activity?.SetTag("nexjob.job_id", job.Id.Value.ToString());
         activity?.SetTag("nexjob.attempt", job.Attempts);
         var sw = Stopwatch.StartNew();
+        JobExecutionResult? successResult = null;
+        var useBatchAck = false;
 
         try
         {
@@ -131,23 +141,15 @@ internal sealed class JobExecutor : IDisposable, IAsyncDisposable
             var purgeOnSuccess = context.RetentionAttribute?.PurgeOnSuccess == true;
             var trimPayloadOnSuccess = context.RetentionAttribute?.TrimPayloadOnSuccess == true;
 
-            if (_options.EnableBatchAcknowledgment && !purgeOnSuccess && !trimPayloadOnSuccess && job.RecurringJobId is null && job.ParentJobId is null && logScope.Entries.Count == 0)
+            useBatchAck = _options.EnableBatchAcknowledgment && !purgeOnSuccess && !trimPayloadOnSuccess && job.RecurringJobId is null && job.ParentJobId is null && logScope.Entries.Count == 0;
+            successResult = new JobExecutionResult
             {
-                _ackChannel.Writer.TryWrite(job.Id);
-            }
-            else
-            {
-                await _storage.CommitJobResultAsync(job.Id, new JobExecutionResult
-                {
-                    Succeeded = true,
-                    Logs = logScope.Entries,
-                    RecurringJobId = job.RecurringJobId,
-                    PurgeOnSuccess = purgeOnSuccess,
-                    TrimPayloadOnSuccess = trimPayloadOnSuccess,
-                }, CancellationToken.None).ConfigureAwait(false);
-            }
-
-            _logger.LogDebug("Job {JobId} completed successfully", job.Id);
+                Succeeded = true,
+                Logs = logScope.Entries,
+                RecurringJobId = job.RecurringJobId,
+                PurgeOnSuccess = purgeOnSuccess,
+                TrimPayloadOnSuccess = trimPayloadOnSuccess,
+            };
         }
         catch (ForeignJobTypeException ex)
         {
@@ -229,7 +231,21 @@ internal sealed class JobExecutor : IDisposable, IAsyncDisposable
         finally
         {
             await cts.CancelAsync().ConfigureAwait(false);
-            await heartbeatTask.ConfigureAwait(false);
+            try
+            {
+                await heartbeatTask.ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Heartbeat loop for job {JobId} ended with an error", job.Id);
+            }
+
+            // Committed outside the job try/catch: a storage error here must never turn a job that
+            // ran successfully into a failure or a dead-letter.
+            if (successResult is not null)
+            {
+                await CommitSuccessAsync(job, successResult, useBatchAck).ConfigureAwait(false);
+            }
         }
     }
 
@@ -239,6 +255,47 @@ internal sealed class JobExecutor : IDisposable, IAsyncDisposable
             new TagList { { "nexjob.job_type", jobType }, { "nexjob.status", "succeeded" } });
         NexJobMetrics.JobsSucceeded.Add(1,
             new TagList { { "nexjob.job_type", jobType } });
+    }
+
+    private async Task CommitSuccessAsync(JobRecord job, JobExecutionResult result, bool useBatchAck)
+    {
+        if (useBatchAck)
+        {
+            _ackChannel.Writer.TryWrite(job.Id);
+            _logger.LogDebug("Job {JobId} completed successfully", job.Id);
+            return;
+        }
+
+        for (var attempt = 0; attempt <= CommitRetryDelays.Length; attempt++)
+        {
+            try
+            {
+                await _storage.CommitJobResultAsync(job.Id, result, CancellationToken.None).ConfigureAwait(false);
+                _logger.LogDebug("Job {JobId} completed successfully", job.Id);
+                return;
+            }
+            catch (Exception ex)
+            {
+                if (attempt >= CommitRetryDelays.Length)
+                {
+                    // At-least-once: leave the job Processing so the orphan watcher runs it again, as after a crash.
+                    _logger.LogError(
+                        ex,
+                        "Job {JobId} succeeded but its result could not be committed after {Attempts} attempts. It stays Processing and will be re-run by the orphan watcher.",
+                        job.Id,
+                        attempt + 1);
+                    return;
+                }
+
+                _logger.LogWarning(
+                    ex,
+                    "Committing the success of job {JobId} failed (attempt {Attempt}). Retrying in {Delay}ms.",
+                    job.Id,
+                    attempt + 1,
+                    CommitRetryDelays[attempt].TotalMilliseconds);
+                await Task.Delay(CommitRetryDelays[attempt], CancellationToken.None).ConfigureAwait(false);
+            }
+        }
     }
 
     private async Task<bool> TryHandleExpirationAsync(JobRecord job)
@@ -361,7 +418,15 @@ internal sealed class JobExecutor : IDisposable, IAsyncDisposable
             while (!cancellationToken.IsCancellationRequested)
             {
                 await Task.Delay(_options.HeartbeatInterval, cancellationToken).ConfigureAwait(false);
-                await _storage.UpdateHeartbeatAsync(jobId, CancellationToken.None).ConfigureAwait(false);
+                try
+                {
+                    await _storage.UpdateHeartbeatAsync(jobId, CancellationToken.None).ConfigureAwait(false);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    // A transient storage error must not end the heartbeat, or the orphan watcher would re-run a healthy job.
+                    _logger.LogWarning(ex, "Heartbeat update for job {JobId} failed; will retry on the next interval", jobId);
+                }
             }
         }
         catch (OperationCanceledException)

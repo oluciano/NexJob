@@ -27,6 +27,11 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`NexJob` Core — Storage errors no longer fail successful jobs or kill the heartbeat (Issue #256)**:
+  - A storage error while updating the heartbeat is logged as a warning and the loop keeps running, so a transient blip no longer lets the orphan watcher re-run a healthy job.
+  - The success commit now runs outside the job failure path. If it fails it is retried up to 3 times (100 ms, 500 ms, 2 s); if it still fails the error is logged and the job stays `Processing` for the orphan watcher (at-least-once). It is never marked failed, retried by the policy, or dead-lettered because of it.
+  - The dispatcher worker task logs any unhandled execution error instead of leaving an unobserved task exception.
+
 - **`NexJob` Core — Graceful shutdown stops fetching and no longer burns attempts on interrupted jobs (Issue #259)**:
   - `JobDispatcherService` stops polling and fetching as soon as `StopAsync` begins, so no new job is claimed while the drain runs. Running jobs still receive the host stopping token only after `ShutdownTimeout` expires.
   - A job that throws `OperationCanceledException` while the shutdown token is cancelled is requeued immediately (`RetryAt = now`) without consuming its attempt and is never dead-lettered. An `OperationCanceledException` thrown without a shutdown request remains a normal failure.
