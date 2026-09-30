@@ -37,7 +37,7 @@ await scheduler.ScheduleAsync<SendReminderJob>(
 
 ```csharp
 // Run tomorrow at 8 AM UTC
-var runAt = DateTimeOffset.UtcNow.AddDays(1).Date.AddHours(8);
+var runAt = new DateTimeOffset(DateTimeOffset.UtcNow.Date.AddDays(1).AddHours(8), TimeSpan.Zero);
 await scheduler.ScheduleAtAsync<GenerateReportJob>(
     runAt: runAt,
     cancellationToken: ct);
@@ -170,14 +170,20 @@ The table below summarizes all scheduling methods and available optional paramet
 | `ScheduleAsync<TJob, TInput>(input, delay, ...)` | Run with input after a time delay | `input`, `delay` (`TimeSpan`), `queue`, `idempotencyKey`, `ct` |
 | `ScheduleAtAsync<TJob>(runAt, ...)` | Run at a fixed UTC timestamp | `runAt` (`DateTimeOffset`), `queue`, `idempotencyKey`, `ct` |
 | `ScheduleAtAsync<TJob, TInput>(input, runAt, ...)` | Run with input at a fixed UTC timestamp | `input`, `runAt` (`DateTimeOffset`), `queue`, `idempotencyKey`, `ct` |
-| `AddOrUpdateRecurringJobAsync<TJob>(...)` | Schedule a recurring cron job | `recurringJobId`, `cron`, `timeZone`, `queue`, `concurrencyPolicy`, `ct` |
-| `AddOrUpdateRecurringJobAsync<TJob, TInput>(...)`| Recurring cron job with typed payload | `recurringJobId`, `input`, `cron`, `timeZone`, `queue`, `concurrencyPolicy`, `ct` |
+| `RecurringAsync<TJob>(recurringJobId, cron, ...)` | Create or update a recurring cron job | `recurringJobId`, `cron`, `timeZone` (`TimeZoneInfo?`), `queue`, `concurrencyPolicy`, `ct` |
+| `RecurringAsync<TJob, TInput>(recurringJobId, input, cron, ...)` | Recurring cron job with typed payload | `recurringJobId`, `input`, `cron`, `timeZone` (`TimeZoneInfo?`), `queue`, `concurrencyPolicy`, `ct` |
+| `RemoveRecurringAsync(recurringJobId, ct)` | Remove a recurring schedule | `recurringJobId`, `ct` |
+| `ContinueWithAsync<TJob>(parentJobId, ...)` / `<TJob, TInput>(parentJobId, input, ...)` | Run after a parent job succeeds | `parentJobId`, `input`, `queue`, `ct` (see [Continuations](05-Continuations.md)) |
+| `GetJobsByTagAsync(tag, ct)` | Find jobs by tag | `tag`, `ct` |
+| `EnqueueAsync(JobRecord, duplicatePolicy, ct)` | Low-level: enqueue a prebuilt `JobRecord` (used by the broker triggers) | `job`, `duplicatePolicy`, `ct` |
+
+Recurring jobs can also be declared without an `IScheduler` call, with `options.AddRecurringJob<TJob>(id, cron, ...)` or in `appsettings.json`; see [Recurring Jobs](04-Recurring-Jobs.md).
 
 ### Parameter Quick Reference
 - **`queue`** *(string?)*: Queue name. Defaults to `"default"`.
 - **`priority`** *(JobPriority)*: `JobPriority.Critical` (1), `High` (2), `Normal` (3 - default), `Low` (4).
 - **`idempotencyKey`** *(string?)*: Unique deduplication key. Returns existing `JobId` if active.
-- **`duplicatePolicy`** *(DuplicatePolicy)*: `AllowAfterFailed` (default), `AllowAfterTerminal`, `RejectAlways`.
+- **`duplicatePolicy`** *(DuplicatePolicy)*: `AllowAfterFailed` (default), `RejectIfFailed`, `RejectAlways`. See [Idempotency](17-Idempotency.md).
 - **`deadlineAfter`** *(TimeSpan?)*: Maximum time before job expires if not picked up by a worker.
 - **`tags`** *(IReadOnlyList&lt;string&gt;?)*: Searchable metadata tags for dashboard and querying.
 

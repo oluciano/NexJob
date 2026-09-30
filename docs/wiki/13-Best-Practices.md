@@ -108,7 +108,7 @@ Deploy separate worker instances with different queue configurations:
 ### Multi-Service Architecture & Dedicated Ops Host
 
 In multi-service ecosystems sharing a database cluster:
-1. **Dedicated Ops Host:** Run a dedicated dashboard container with `DisableWorkers = true` so operational monitoring does not consume worker threads or take lock slots from backend workers.
+1. **Dedicated Ops Host:** Run a dedicated dashboard container (`AddNexJobStandaloneDashboard` with `DisableWorkers = true`) so operational monitoring does not consume worker threads or take lock slots from backend workers.
 2. **Dashboard Queue Scoping:** Scope the UI via `options.Queues = ["serviceA-queue"]` so engineering teams only view jobs, metrics, and queues relevant to their bounded context.
 3. **Foreign Job Safe Deferral:** While queue separation (`options.Queues`) is the recommended best practice, if workers encounter foreign job types, NexJob automatically rolls back attempt counts and defers the job via `options.ForeignJobRetryDelay` rather than failing or dead-lettering it.
 
@@ -147,7 +147,7 @@ public sealed class HeavyReportGenerationJob : IJob<LargeReportInput>
 | Strategy | Attribute Setting | Storage Impact | Auditability |
 |---|---|---|---|
 | **Default** | *(None)* | Job retained until `JobRetentionService` runs | Full job record and payload intact |
-| **Immediate Purge** | `PurgeOnSuccess = true` | Zero row bloat on success; row is deleted atomically | Succeeded jobs vanish from `/jobs`; lifetime stats preserved in `/catalog` |
+| **Immediate Purge** | `PurgeOnSuccess = true` | Zero row bloat on success; the row is deleted right after the success is committed | Succeeded jobs vanish from `/jobs`; lifetime stats preserved in `/catalog` |
 | **Payload Stripping** | `TrimPayloadOnSuccess = true` | Massive space savings (payload set to empty string) | Job record, state, duration, and logs preserved; payload stripped |
 
 > [!NOTE]
@@ -173,8 +173,8 @@ builder.Services.AddNexJob(options =>
     {
         queue.EnableCircuitBreaker(cb =>
         {
-            cb.FailureThreshold = 5;
-            cb.InitialOpenDuration = TimeSpan.FromSeconds(30);
+            cb.ConsecutiveFailuresThreshold = 5;
+            cb.OpenDuration = TimeSpan.FromSeconds(30);
             cb.BackoffMultiplier = 2.0;
             cb.MaxOpenDuration = TimeSpan.FromMinutes(10);
             cb.RecoveryDuration = TimeSpan.FromMinutes(2);
@@ -222,7 +222,7 @@ Collect traces and metrics from day one. See [OpenTelemetry](12-OpenTelemetry.md
 
 Alert on:
 
-- `nexjob.jobs.failed` increases — jobs hitting dead-letter
+- `nexjob.jobs.failed` increases — failed executions (it counts every failed attempt, including ones that will still be retried; the dashboard's Failed count shows the jobs that exhausted their attempts)
 - `nexjob.jobs.expired` increases — deadlines too tight or workers insufficient
 - `nexjob.job.duration` p99 spikes — jobs getting slower
 

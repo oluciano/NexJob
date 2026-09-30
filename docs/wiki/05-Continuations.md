@@ -71,9 +71,9 @@ To handle this, either:
 
 ## Trace Context
 
-The W3C `traceparent` context is propagated from parent to child. This means:
+A continuation records the W3C `traceparent` that is current **when you call `ContinueWithAsync`** (the ambient `Activity`), not the parent job's execution span. When you enqueue the parent and create its continuations in the same request, both carry the same trace, so:
 
-- OpenTelemetry traces show the full job chain as a single trace
+- OpenTelemetry traces show the chain under the trace of the request that created it
 - You can follow the complete execution path in your APM tool
 
 See [OpenTelemetry](12-OpenTelemetry.md) for details.

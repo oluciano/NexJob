@@ -15,7 +15,7 @@ dotnet add package NexJob.Kafka
 ## Capabilities Overview
 
 1. **Kafka Trigger (Consumer):** Ingests messages from Kafka topics and automatically enqueues them as background jobs with guaranteed delivery, deduplication, and OpenTelemetry trace extraction.
-2. **Resilient Outbox Producer:** Durably publishes messages from your domain logic to Kafka topics, leveraging NexJob's persistence, exponential retries with jitter, dead-letter dispatch, and OpenTelemetry trace injection.
+2. **Resilient Outbox Producer:** Durably publishes messages from your domain logic to Kafka topics, leveraging NexJob's persistence, retries with backoff and jitter, dead-letter dispatch, and OpenTelemetry trace injection.
 
 ---
 
@@ -32,9 +32,9 @@ Bind a specific topic directly to a job handler class (`IJob<string>`). The job 
 
 ```csharp
 // Program.cs
+builder.Services.AddNexJobPostgres(builder.Configuration.GetConnectionString("NexJobConnection")!); // or any other storage provider
 builder.Services.AddNexJob()
-    .UsePostgreSqlStorage(...)
-    .AddNexJobKafkaTrigger<ProcessOrderJob>(options =>
+    .AddKafkaTrigger<ProcessOrderJob>(options =>
     {
         options.BootstrapServers = builder.Configuration["KAFKA_BOOTSTRAP_SERVERS"] ?? "localhost:9092";
         options.Topic = "incoming-orders";
@@ -55,7 +55,7 @@ public sealed class ProcessOrderJob : IJob<string>
 ```
 
 #### Option B: Dynamic Message Header (`nexjob.job_type`)
-If multiple job types share the same topic, register the trigger without generic arguments. Each incoming Kafka message must include the `nexjob.job_type` header containing the assembly-qualified name of the target job:
+If multiple job types share the same topic, register the trigger without generic arguments. Each incoming Kafka message carries a `nexjob.job_type` header with the assembly-qualified name of the target job. When a message has no such header, `options.JobType` (the fallback) is used; a message with neither can never become a job and is handled as a permanent failure (see *Inbound Guarantees* below):
 
 ```csharp
 builder.Services.AddNexJob()
@@ -64,7 +64,7 @@ builder.Services.AddNexJob()
         options.BootstrapServers = "localhost:9092";
         options.Topic = "incoming-events";
         options.GroupId = "events-consumer";
-        // Or specify a fallback JobType:
+        // Fallback for messages without the header:
         // options.JobType = typeof(DefaultEventJob).AssemblyQualifiedName;
     });
 ```
@@ -100,8 +100,8 @@ The Producer allows applications to publish messages to Kafka backed by NexJob s
 
 ```csharp
 // Program.cs
+builder.Services.AddNexJobPostgres(builder.Configuration.GetConnectionString("NexJobConnection")!); // or any other storage provider
 builder.Services.AddNexJob()
-    .UsePostgreSqlStorage(...)
     .AddKafkaProducer(options =>
     {
         options.BootstrapServers = builder.Configuration["KAFKA_BOOTSTRAP_SERVERS"] 
@@ -114,7 +114,7 @@ builder.Services.AddNexJob()
 
 ### Publishing Messages
 
-Inject `IScheduler` into any service, controller, or handler:
+Inject `IScheduler` into any service, controller, or handler. Messages go to the `"kafka-producer"` queue unless you pass `queue:`. `EnqueueKafkaAsync` sends a `string` or `byte[]` value as it is and serializes any other object as JSON (`EnqueueKafkaRawAsync` is an alias for the `string`/`byte[]` cases):
 
 ```csharp
 public class OrderService(IScheduler scheduler)
@@ -223,16 +223,23 @@ builder.Services.AddNexJob()
     });
 ```
 
-### Option C: Hierarchical Binding (`appsettings.json` or `NexJob__Kafka__*`)
+### Option C: Bind from a configuration section you choose
+
+`NexJob.Kafka` does not read a `NexJob:Kafka` section or any `KAFKA_*` variable by itself. To keep the settings in `appsettings.json`, bind them yourself:
+
 ```json
 {
-  "NexJob": {
-    "Kafka": {
-      "BootstrapServers": "localhost:9092",
-      "Topic": "orders"
-    }
+  "Kafka": {
+    "BootstrapServers": "localhost:9092",
+    "Topic": "orders",
+    "GroupId": "orders-consumer"
   }
 }
+```
+
+```csharp
+builder.Services.AddNexJob()
+    .AddKafkaTrigger(options => builder.Configuration.GetSection("Kafka").Bind(options));
 ```
 
 ---
@@ -242,9 +249,7 @@ builder.Services.AddNexJob()
 In Apache Kafka, message ordering is guaranteed **per partition** via the message `Key`.
 
 When producing via NexJob:
-- If strict FIFO ordering per partition key is required:
-  - Configure the producer queue in NexJob with concurrency limit: `options.QueueSettings["kafka-producer"] = new QueueOptions { Workers = 1 };`
-  - Or apply `[Throttle("kafka-partition-{key}")]` to prevent concurrent dispatch of records with the same partition key.
+- If strict FIFO ordering per partition key is required, run the producer queue on a single worker: publish with a dedicated queue (`queue: "kafka-ordered"`) and process that queue on a node with `options.Workers = 1` and `options.Queues = ["kafka-ordered"]`. NexJob does not guarantee execution order across workers, so ordering per key also depends on a single job running at a time.
 - If high throughput with eventual delivery is sufficient, default worker concurrency publishes multiple messages concurrently across available workers.
 
 ---
@@ -253,15 +258,15 @@ When producing via NexJob:
 
 | Failure Scenario | NexJob Producer Behavior |
 |---|---|
-| **Kafka Broker Down** | The job throws `ProduceException` and NexJob's exponential retry policy is triggered. The message remains safe in NexJob storage. |
+| **Kafka Broker Down** | The job throws `ProduceException` and NexJob's retry policy is triggered. The message remains safe in NexJob storage. |
 | **Retries Exhausted** | The message is dispatched to the Dead-Letter pipeline (`IDeadLetterHandler`) and surfaced on the Dashboard. |
 | **Host Shutdown** | The registered `IKafkaProducerClient` automatically invokes `Flush()` to ensure all in-flight messages are delivered before exit. |
 | **Serialization Error** | Serialization errors fail fast and route to dead-letter without crashing the worker host. |
-+
-+---
-+
-+## 6. Sagas & Advanced Stream Orchestration (qKafka)
-+
-+NexJob is designed for background job processing, resilient polling/wake-up loops, and reliable transactional outbox publishing.
-+
-+If your architecture requires complex **Event-Driven Choreographies**, **Distributed Sagas with Compensating Transactions**, and state-machine transitions over Kafka topics, consider pairing NexJob with **[qKafka](https://github.com/oluciano/QKafka)**. NexJob and qKafka complement each other naturally: NexJob manages local task deadlines, retries, and persistence, while qKafka handles distributed stream correlations and compensations.
+
+---
+
+## 6. Sagas & Advanced Stream Orchestration (qKafka)
+
+NexJob is designed for background job processing, resilient polling/wake-up loops, and reliable transactional outbox publishing.
+
+If your architecture requires complex **Event-Driven Choreographies**, **Distributed Sagas with Compensating Transactions**, and state-machine transitions over Kafka topics, consider pairing NexJob with **[qKafka](https://github.com/oluciano/QKafka)**. NexJob and qKafka complement each other naturally: NexJob manages local task deadlines, retries, and persistence, while qKafka handles distributed stream correlations and compensations.

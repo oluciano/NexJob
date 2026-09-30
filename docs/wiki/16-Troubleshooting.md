@@ -64,15 +64,15 @@ options.Workers = 50; // Increase from default 10
 
 ## Job Stuck in Queue
 
-**Symptoms:** Job is `Enqueued` but never transitions to `Processing`.
+**Symptoms:** Job shows `Processing` but no worker is actually running it (or it never leaves that state).
 
 ### Cause: Orphaned Worker
 
-A previous worker crashed while processing this job. The job is stuck in `Processing` state.
+A previous worker crashed while processing this job, so the job is stuck in `Processing`.
 
 **Diagnose:** Check `JobRecord.ProcessingStartedAt` and `JobRecord.HeartbeatAt`. If `UtcNow - HeartbeatAt > HeartbeatTimeout`, the job is orphaned.
 
-**Fix:** The `OrphanedJobWatcherService` handles this automatically (default: 5 minutes). Wait for the orphan watcher to re-enqueue it, or manually reduce the timeout:
+**Fix:** The `OrphanedJobWatcherService` handles this automatically (default: 5 minutes). Wait for the orphan watcher to re-enqueue it (a job that had already used all its attempts is marked `Failed` instead), or reduce the timeout:
 
 ```csharp
 options.HeartbeatTimeout = TimeSpan.FromMinutes(2); // Faster detection
@@ -104,12 +104,17 @@ await scheduler.EnqueueAsync<MyJob>(
 
 **Diagnose:** Check if you used `ScheduleAsync` or `ScheduleAtAsync` with `deadlineAfter`.
 
-**Fix:** Use `ScheduledAt` as your deadline — calculate the latest acceptable execution time at schedule time.
+**Fix:** There is no built-in deadline for scheduled jobs (`ScheduledAt` is the *earliest* time the job may run, not a deadline). If a late run is useless, put the deadline in the job's input and check it when the job starts:
 
 ```csharp
-// Instead of deadlineAfter, schedule at the latest acceptable time
-var latestExecutionTime = DateTimeOffset.UtcNow.AddMinutes(30);
-await scheduler.ScheduleAtAsync<MyJob>(latestExecutionTime, cancellationToken: ct);
+var runAt = DateTimeOffset.UtcNow.AddMinutes(30);
+await scheduler.ScheduleAtAsync<MyJob, MyInput>(
+    new MyInput(NotAfter: runAt.AddMinutes(10)),
+    runAt,
+    cancellationToken: ct);
+
+// In the job:
+// if (DateTimeOffset.UtcNow > input.NotAfter) return; // too late, skip
 ```
 
 ---
@@ -209,9 +214,9 @@ And add `using NexJob.Dashboard;` (or `using NexJob.Dashboard.Standalone;`).
 
 **Symptom:** Runtime exception at startup: `InvalidOperationException: No service for type 'Microsoft.Extensions.Caching.Memory.IMemoryCache' has been registered.`
 
-**Diagnose:** The dashboard requires `IMemoryCache` to aggregate and cache metrics.
+**Diagnose:** The dashboard requires `IMemoryCache` to aggregate and cache metrics. `AddNexJob()` (and `AddNexJobStandaloneDashboard()`) already register it, so you only see this when the dashboard is mounted in a host that never called either of them.
 
-**Fix:** Register memory cache before building the host in `Program.cs`:
+**Fix:** Call `AddNexJob()`, or register the cache yourself in `Program.cs`:
 ```csharp
 builder.Services.AddMemoryCache();
 ```

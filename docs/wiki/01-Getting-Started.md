@@ -32,7 +32,15 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddNexJob()
                .AddNexJobJobs(typeof(Program).Assembly);
 
-// Or with a persistent storage provider (e.g. PostgreSQL)
+var app = builder.Build();
+app.Run();
+```
+
+Or with a persistent storage provider (for example PostgreSQL). Register the provider **before** `AddNexJob()` so it replaces the default InMemory storage, and call `AddNexJob()` only once:
+
+```csharp
+using NexJob.Postgres;   // the storage extension methods live in each package's own namespace
+
 builder.Services.AddNexJobPostgres("Host=localhost;Database=nexjob;Username=postgres;Password=secret");
 builder.Services.AddNexJob(options =>
 {
@@ -40,9 +48,6 @@ builder.Services.AddNexJob(options =>
     options.MaxAttempts = 5;
 })
 .AddNexJobJobs(typeof(Program).Assembly);
-
-var app = builder.Build();
-app.Run();
 ```
 
 ---
@@ -112,11 +117,16 @@ var host = Host.CreateDefaultBuilder(args)
     {
         services.AddNexJob();
         services.AddNexJobJobs(typeof(Program).Assembly);
-        services.AddSingleton<ILogger>(new ConsoleLogger());
     })
     .Build();
 
-await host.RunAsync();
+await host.StartAsync();
+
+// Nothing runs until a job is enqueued
+var scheduler = host.Services.GetRequiredService<IScheduler>();
+await scheduler.EnqueueAsync<HelloJob>();
+
+await host.WaitForShutdownAsync();
 ```
 
 ```csharp
@@ -152,6 +162,9 @@ If you prefer learning by inspecting a live, working project, the repository inc
 - **[NexJob.Sample.WebApi](https://github.com/oluciano/NexJob/tree/develop/samples/NexJob.Sample.WebApi)**: Web API with PostgreSQL storage and `.http` test files.
 - **[NexJob.Sample.WorkerService](https://github.com/oluciano/NexJob/tree/develop/samples/NexJob.Sample.WorkerService)**: Headless console background worker with standalone embedded HTTP dashboard.
 - **[NexJob.Sample.CloudTriggers](https://github.com/oluciano/NexJob/tree/develop/samples/NexJob.Sample.CloudTriggers)**: Event-driven cloud consumers for AWS SQS, Azure Service Bus, GCP Pub/Sub, and Salesforce.
+- **[NexJob.Sample.ConfiguredRecurring](https://github.com/oluciano/NexJob/tree/develop/samples/NexJob.Sample.ConfiguredRecurring)**: Recurring jobs declared entirely in `appsettings.json`, with no registration code.
+- **[NexJob.Sample.Kafka](https://github.com/oluciano/NexJob/tree/develop/samples/NexJob.Sample.Kafka)** and **[NexJob.Sample.RabbitMQ](https://github.com/oluciano/NexJob/tree/develop/samples/NexJob.Sample.RabbitMQ)**: The resilient outbox producer and the trigger consumer for each broker.
+- **[NexJob.Sample.Storage](https://github.com/oluciano/NexJob/tree/develop/samples/NexJob.Sample.Storage)**: A production-style topology with a dashboard read replica, distributed throttling, OpenTelemetry and execution filters.
 
 ---
 

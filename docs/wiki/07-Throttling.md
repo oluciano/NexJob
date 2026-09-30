@@ -71,8 +71,11 @@ the effective limit is 15 concurrent jobs across the cluster.
 Install `NexJob.Redis` and enable distributed throttling:
 
 ```csharp
-services.AddNexJob(opt => opt.UseRedis("localhost:6379"))
-        .UseDistributedThrottle();
+using NexJob.Redis;   // AddNexJobRedis, AddNexJobDistributedThrottle
+
+services.AddNexJobRedis("localhost:6379");   // Redis storage; also registers the Redis IDatabase
+services.AddNexJobDistributedThrottle();     // cluster-wide [Throttle] limits
+services.AddNexJob();
 ```
 
 With distributed throttling enabled, `[Throttle("api", maxConcurrent: 5)]`
@@ -85,20 +88,18 @@ default), not after an hour. `DistributedThrottleTtl` (default: 1 hour) is the m
 a slot, so it should exceed your longest job:
 
 ```csharp
-services.AddNexJob(opt =>
-{
-    opt.UseRedis("localhost:6379");
-    opt.DistributedThrottleTtl = TimeSpan.FromHours(4);
-})
-.UseDistributedThrottle();
+services.AddNexJobRedis("localhost:6379");
+services.AddNexJobDistributedThrottle();
+services.AddNexJob(opt => opt.DistributedThrottleTtl = TimeSpan.FromHours(4));
 ```
 
 **Upgrade note:** slots are now stored under `nexjob:throttle:holders:{resource}`. During a rolling upgrade, nodes
 on the old version keep counting in the previous key, so the global limit can be exceeded until every node runs
 the new version.
 
-**Note:** `UseDistributedThrottle()` requires `NexJob.Redis`. If Redis is
-unavailable, the system degrades to per-process throttling automatically.
+**Note:** `AddNexJobDistributedThrottle()` requires `NexJob.Redis` and an `IDatabase` in the container.
+`AddNexJobRedis` registers one; if you use another storage provider, register the Redis `IDatabase` yourself.
+If Redis is unavailable, the system degrades to per-process throttling automatically.
 
 ---
 
@@ -108,7 +109,7 @@ While `[Throttle]` controls steady-state concurrency, the **Queue Circuit Breake
 
 ### Circuit States
 - **Closed**: Normal processing. All jobs in the queue execute according to worker concurrency.
-- **Open**: Consecutive downstream failures reached `FailureThreshold`. Queue is paused; jobs accumulate safely in storage without burning retries. Exponential backoff multiplies the cooldown duration on repeated probe failures up to `MaxOpenDuration`.
+- **Open**: Consecutive downstream failures reached `ConsecutiveFailuresThreshold`. Queue is paused; jobs accumulate safely in storage without burning retries. Exponential backoff multiplies the cooldown duration on repeated probe failures up to `MaxOpenDuration`.
 - **Half-Open**: Cooldown elapsed. Exactly one canary job is dispatched to probe downstream health.
 - **Recovering (Anti-Thundering Herd)**: Canary succeeded! Instead of releasing full concurrency immediately ("metralhadora" effect), concurrency is capped at `RecoveryConcurrency` for `RecoveryDuration` to let the downstream service stabilize.
 
@@ -123,18 +124,19 @@ builder.Services.AddNexJob(options =>
     {
         queue.EnableCircuitBreaker(cb =>
         {
-            cb.FailureThreshold = 5;
-            cb.InitialOpenDuration = TimeSpan.FromSeconds(30);
-            cb.BackoffMultiplier = 2.0;
-            cb.MaxOpenDuration = TimeSpan.FromMinutes(10);
-            cb.RecoveryDuration = TimeSpan.FromMinutes(2);
-            cb.RecoveryConcurrency = 2;
+            cb.ConsecutiveFailuresThreshold = 5;   // default 5
+            cb.OpenDuration = TimeSpan.FromSeconds(30);   // first cooldown, default 1 minute
+            cb.BackoffMultiplier = 2.0;            // default 2.0
+            cb.MaxOpenDuration = TimeSpan.FromMinutes(10);   // default 15 minutes
+            cb.RecoveryDuration = TimeSpan.FromMinutes(2);   // default 2 minutes
+            cb.RecoveryConcurrency = 2;            // default 2
 
             // Automatically break on 5xx, timeouts, 429 (Rate Limits), 401 Unauthorized (expired tokens), and network drops
             // while safely ignoring client bugs (400 Bad Request, 403 Forbidden, 404 Not Found, 422)
             cb.BreakOnTransientHttpErrors(includeAuthErrors: true);
 
-            // Or register custom exception types with an optional predicate
+            // Or register custom exception types with an optional predicate.
+            // With no BreakOn* rule registered, every exception counts toward the threshold.
             cb.BreakOn<TimeoutException>();
             cb.BreakOn<InvalidOperationException>(ex => ex.Message.Contains("Rate limit exceeded", StringComparison.OrdinalIgnoreCase));
         });

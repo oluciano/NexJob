@@ -21,7 +21,7 @@ Everything persists to storage. Nothing lives in memory between dispatch cycles.
 
 The dispatcher has no memory of what it processed. Each polling cycle:
 
-1. Fetch the next available job from storage
+1. Fetch the available jobs from storage (as many as there are free worker slots)
 2. Execute it
 3. Write the result back to storage
 4. Repeat
@@ -37,33 +37,21 @@ There is no in-memory queue, no cached state, no local tracking of running jobs.
 Every job moves through these states. All transitions are persisted.
 
 ```
-                  ┌──────────┐
-                  │ Enqueued │
-                  └────┬─────┘
-                       │
-            ┌──────────┼──────────────┐
-            │          │              │
-            ▼          ▼              ▼
-     ┌──────────┐ ┌─────────┐ ┌──────────────┐
-     │Scheduled │ │Processing│ │AwaitingCont. │
-     └────┬─────┘ └────┬─────┘ └──────┬───────┘
-          │            │              │
-          │     ┌──────┼───────┐      │
-          │     │      │       │      │
-          ▼     ▼      ▼       ▼      ▼
-     ┌─────────┐ ┌──────────┐ ┌──────────┐
-     │Succeeded│ │Failed    │ │Succeeded │
-     └─────────┘ └────┬─────┘ └──────────┘
-                      │
-               ┌──────┼──────┐
-               │             │
-               ▼             ▼
-        ┌──────────┐  ┌──────────┐
-        │Retried   │  │DeadLetter│
-        └──────────┘  └──────────┘
+  EnqueueAsync ─────────────────────► Enqueued ◄──────────── Scheduled ◄── ScheduleAsync / ScheduleAtAsync
+                                          │  ▲                    ▲
+                    ContinueWithAsync     │  │ orphaned or        │ failure with attempts left
+                           │              │  │ interrupted by     │ (RetryAt = next attempt)
+                           ▼              ▼  │ shutdown           │
+                 AwaitingContinuation   Processing ───────────────┘
+                           │              │
+                           │ parent       ├──► Succeeded
+                           │ succeeded    │
+                           └──► Enqueued  └──► Failed   (attempts exhausted → dead-letter handler runs)
 
-Enqueued ──► Expired (if deadline exceeded before execution)
+  Enqueued / Scheduled ──► Expired   (deadline passed before execution began)
 ```
+
+There is no separate "retried" or "dead-letter" status: a retry is a job back in `Scheduled` with a `RetryAt`, and a job whose attempts are exhausted is `Failed` (its `IDeadLetterHandler<T>`, if registered, runs at that moment).
 
 ### State Definitions
 
@@ -76,7 +64,7 @@ Enqueued ──► Expired (if deadline exceeded before execution)
 | `Failed` | All retries exhausted (terminal) |
 | `Expired` | Deadline passed before execution began (terminal) |
 | `Deleted` | Explicitly removed (terminal) |
-| `AwaitingContinuation` | Waiting for parent job to complete |
+| `AwaitingContinuation` | Waiting for parent job to complete; becomes `Enqueued` when the parent succeeds |
 
 ### Terminal States
 
@@ -182,8 +170,10 @@ All state transitions are persisted atomically in step 6-7 via `CommitJobResultA
 
 1. Worker was processing job → status is `Processing` with a `HeartbeatAt` timestamp
 2. `OrphanedJobWatcherService` scans for jobs where `UtcNow - HeartbeatAt > HeartbeatTimeout` (default: 5 minutes)
-3. Orphaned jobs are re-enqueued automatically
+3. Orphaned jobs are re-enqueued automatically; if the job had already used all its attempts it is marked `Failed` instead of being requeued forever
 4. A fresh dispatcher picks them up
+
+A graceful shutdown is not a crash: the dispatcher stops fetching, waits up to `ShutdownTimeout` for running jobs, and a job cancelled by the shutdown is requeued right away **without consuming an attempt** (see [Best Practices](13-Best-Practices.md#graceful-shutdown)).
 
 **Implication:** Jobs are at-least-once delivered. If your job is not idempotent, see [Idempotency](17-Idempotency.md).
 
