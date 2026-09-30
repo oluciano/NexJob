@@ -120,29 +120,49 @@ internal sealed class RecurringJobSchedulerService : BackgroundService
 
             try
             {
+                // The due list may be stale: another instance can have fired this occurrence and released the
+                // lock between our read and our acquire. Re-read under the lock and only fire what is still due.
+                var current = await _recurringStorage
+                    .GetRecurringJobByIdAsync(recurring.RecurringJobId, cancellationToken)
+                    .ConfigureAwait(false);
+
+                if (current is null
+                    || current.DeletedByUser
+                    || !current.Enabled
+                    || !current.NextExecution.HasValue
+                    || current.NextExecution.Value > DateTimeOffset.UtcNow)
+                {
+                    _logger.LogDebug(
+                        "Recurring job '{Id}' is no longer due — another instance already fired it.",
+                        recurring.RecurringJobId);
+                    continue;
+                }
+
+                // Computed before enqueuing: an invalid cron or time zone throws here, so nothing is
+                // enqueued and the job is not re-fired on every polling cycle.
+                var nextExecution = CalculateNextExecution(current);
+
                 var jobRecord = new JobRecord
                 {
                     Id = JobId.New(),
-                    JobType = recurring.JobType,
-                    InputType = recurring.InputType,
-                    InputJson = recurring.InputJson,
-                    Queue = recurring.Queue,
+                    JobType = current.JobType,
+                    InputType = current.InputType,
+                    InputJson = current.InputJson,
+                    Queue = current.Queue,
                     Priority = JobPriority.Normal,
                     Status = JobStatus.Enqueued,
                     CreatedAt = DateTimeOffset.UtcNow,
                     MaxAttempts = _options.MaxAttempts,
-                    RecurringJobId = recurring.RecurringJobId,
+                    RecurringJobId = current.RecurringJobId,
                     // SkipIfRunning: idempotency key blocks a second instance while
                     // the first is Enqueued or Processing.
                     // AllowConcurrent: no key — every firing creates a new instance.
-                    IdempotencyKey = recurring.ConcurrencyPolicy == RecurringConcurrencyPolicy.SkipIfRunning
-                        ? $"recurring:{recurring.RecurringJobId}"
+                    IdempotencyKey = current.ConcurrencyPolicy == RecurringConcurrencyPolicy.SkipIfRunning
+                        ? $"recurring:{current.RecurringJobId}"
                         : null,
                 };
 
                 await _jobStorage.EnqueueAsync(jobRecord, DuplicatePolicy.AllowAfterFailed, cancellationToken).ConfigureAwait(false);
-
-                var nextExecution = CalculateNextExecution(recurring);
 
                 if (nextExecution.HasValue)
                 {

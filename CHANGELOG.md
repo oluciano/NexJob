@@ -27,6 +27,10 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`NexJob` Core — Recurring jobs fire once per occurrence and an invalid time zone no longer causes an enqueue storm (Issue #260)**:
+  - `RecurringJobSchedulerService` re-reads the recurring job after taking the lock and only fires it if it is still due, so a second instance holding a stale due list no longer fires an occurrence another instance already fired.
+  - The next execution is now computed before the job is enqueued. An unresolvable time zone or invalid cron logs an error and enqueues nothing, instead of enqueuing the job on every polling cycle.
+
 - **`NexJob.Redis` — Due scheduled and retry jobs are promoted atomically (Issue #255)**:
   - Promotion used a client-side read/`HSET`/`ZREM`/`ZADD` sequence, so two nodes could both promote (and run) the same job, and a crash mid-way could lose it. It is now a single Lua script that removes the `nexjob:scheduled` entry first and only enqueues jobs still in `Scheduled` state; stale entries (missing hash, job already running) are just dropped.
   - Large backlogs drain in bounded batches of 100 per script call, up to 5 calls per fetch.
