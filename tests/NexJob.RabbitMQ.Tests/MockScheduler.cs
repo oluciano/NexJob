@@ -14,11 +14,23 @@ internal sealed class MockScheduler : IScheduler
     private readonly TaskCompletionSource<bool> _enqueueTcs = new();
     private readonly TaskCompletionSource<bool> _enqueueAttemptTcs = new();
     private readonly object _lock = new();
+    private int _enqueueAttempts;
+    private int _succeededEnqueues;
 
     /// <summary>
     /// Gets or sets a value indicating whether enqueue should fail.
     /// </summary>
     public bool ShouldFailEnqueue { get; set; }
+
+    /// <summary>
+    /// Gets or sets how many of the first enqueue calls fail before calls start to succeed.
+    /// </summary>
+    public int FailFirstEnqueues { get; set; }
+
+    /// <summary>
+    /// Gets the number of enqueue calls that completed without failing.
+    /// </summary>
+    public int SucceededEnqueues => Volatile.Read(ref _succeededEnqueues);
 
     /// <summary>
     /// Gets or sets the delay for enqueue operations.
@@ -61,10 +73,12 @@ internal sealed class MockScheduler : IScheduler
         // On simulated failure, EnqueueCalls will contain the job even though enqueue
         // did not succeed. Tests checking failure scenarios should assert on the
         // broker ack/nack behaviour, not on EnqueueCalls count.
-        if (ShouldFailEnqueue)
+        if (ShouldFailEnqueue || Interlocked.Increment(ref _enqueueAttempts) <= FailFirstEnqueues)
         {
             throw new InvalidOperationException("Simulated enqueue failure");
         }
+
+        Interlocked.Increment(ref _succeededEnqueues);
 
         _enqueueTcs.TrySetResult(true);
         return job.Id;

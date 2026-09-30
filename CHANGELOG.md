@@ -6,6 +6,273 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [5.6.0] - 2026-09-30
+
+### Added
+
+- **`NexJob` Core — Structured Logging Scope via `ILogger.BeginScope` during Job Execution (Issue #204)**:
+  - `JobExecutor` now automatically opens an `ILogger.BeginScope` at the start of every job execution, injecting structured keys (`NexJob.JobId`, `NexJob.JobType`, `NexJob.Queue`, `NexJob.Attempt`, `NexJob.TraceParent`) as ambient properties.
+  - Every log entry emitted inside `IJob.ExecuteAsync` — or internally by `JobExecutor` — automatically inherits all 5 structured fields, enabling instant correlation in Splunk, Grafana Loki, Datadog, and Elastic/Kibana without additional configuration.
+  - Scope is established before job invocation and covers both the success path and all failure/retry paths.
+  - `NexJob.TraceParent` is set to an empty string when no W3C `traceparent` was propagated (never null).
+  - Documentation added in `docs/wiki/12-OpenTelemetry.md` with structured log sample output and query examples for Splunk, Loki, and Datadog.
+
+- **`NexJob.Dashboard` — Operational Warning Confirmation on Inactive/Paused Queues (Issue #226)**:
+  - All trigger and requeue action points now check active worker queues before allowing the operation to proceed.
+  - Catalog **parameterless** direct trigger (`IJob`): a blocking `window.confirm()` dialog is shown before form submission when the target queue has no active worker nodes.
+  - Catalog **parameterized modal** (`IJob<T>`): the existing passive inline warning is now a mandatory confirmation gate — the modal submit is intercepted by JS and shows a `window.confirm()` if the queue warning box is visible.
+  - **Job Detail** `▶ Run Now` and `↺ Requeue` buttons: confirmation message dynamically includes a queue orphan/paused warning when the job's target queue has no active workers.
+  - **Recurring Job Detail** `▶ Trigger Now` button: confirmation dialog includes queue warning when no workers listen to the recurring job's queue.
+  - **Recurring Jobs list** (inline ⚡ icon): trigger icon intercepts click with a queue-aware `confirm()` per row.
+  - **Failed Jobs** `↺ Requeue All`: confirmation now includes a warning when any visible queue lacks active workers.
+  - All pages receive `ActiveWorkerQueues` (the set already computed once per request in `DashboardMiddleware`) — zero additional I/O per page.
+
+- **`NexJob.Dashboard` — UX Polish, Action Ergonomics & Filter Indicators (Issues #214, #220)**:
+  - Added Job Detail actions: Enqueued and Scheduled states now expose Cancel & Delete operations directly from the job detail view.
+  - Added Job Checkpoint Inspector: collapsible `💾 Checkpoint State` panel on Job Detail view displaying formatted progress JSON when `CheckpointJson` is present.
+  - Added Retention Payload Indicator: Job Detail displays an informational badge (`Payload stripped by retention policy (TrimPayloadOnSuccess)`) when payload is trimmed.
+  - Added Destructive Action Safety: Added browser confirmation dialog (`Pause ALL recurring jobs cluster-wide?`) to the Settings page Pause All button.
+  - Added Sidebar Orphan Queue Alert: Added alert badge (`.nav-counter.alert`) to the Queues sidebar item when enqueued jobs exist in queues without active listening workers.
+  - Added Job Catalog Ergonomics: Enqueuing a job from the catalog redirects with `?triggered={jobId}` displaying a success notification banner with direct navigation to the job; added sort controls (`failure-rate`, `duration`, `runs`).
+  - Added Active Filter Breadcrumb Chips: Active filters (status, queue, tag, search) render removable badge chips with individual `[x]` clear links and a `Clear all` button in `FilterBar`.
+  - Added Circuit Breaker Drill-down Links: Direct `View Errors` navigation link to `/failed?queue={q}` for `HalfOpen` and `Recovering` circuit states.
+  - Added Topology Diagram Responsiveness: Responsive layout media query wrapping topology nodes on mobile viewports and rotating connection arrows.
+
+- **`NexJob.IntegrationTests` & Storage Providers — Integration Test Suite Synchronization for v5.6 Features (Issue #219)**:
+  - Extended shared `StorageProviderTestsBase` contract suite with real-database integration tests across all 5 providers (`InMemory`, `PostgreSQL`, `SQL Server`, `MongoDB`, `Redis`).
+  - Added integration contract coverage for Checkpoints (`SaveCheckpointAsync`, state persistence, and auto-clear on `AcknowledgeAsync` / `AcknowledgeBatchAsync`).
+  - Hardened `AcknowledgeAsync` and `AcknowledgeBatchAsync` across `PostgresStorageProvider`, `SqlServerStorageProvider`, `RedisStorageProvider`, and `MongoStorageProvider` to automatically reset `checkpoint_json = NULL` / unset upon job acknowledgment.
+  - Added integration contract coverage for Retention strategies (`PurgeOnSuccess` physical deletion and `TrimPayloadOnSuccess` payload stripping).
+  - Added integration contract coverage for Job Catalog native aggregations (`GetJobCatalogAsync`).
+
+- **`NexJob` Core & Storage Providers — Progress Checkpoints & State Saving for Long-Running Jobs (Issue #206)**:
+  - Added `CheckpointJson` property to `JobRecord` for serializing and preserving arbitrary checkpoint state.
+  - Extended `IJobContext` with `TState? GetCheckpoint<TState>()` and `Task SaveCheckpointAsync<TState>(TState state, int? percent, string? message, CancellationToken ct)`.
+  - Added `SaveCheckpointAsync(JobId, string, int?, string?, CancellationToken)` to `IJobStorage` with default interface implementation.
+  - Implemented checkpoint persistence across all 5 storage providers: `InMemoryStorageProvider`, `PostgresStorageProvider`, `SqlServerStorageProvider`, `RedisStorageProvider`, and `MongoStorageProvider`.
+  - Added schema migrations V9 for PostgreSQL (`V9AddCheckpointColumn`) and SQL Server (`V9AddCheckpointColumn`) adding nullable `checkpoint_json` column.
+  - Enforced state persistence on retry: `CheckpointJson` is preserved across retry attempts (`Scheduled`) and dead-letter moves (`Failed`) so interrupted jobs resume exactly from the last saved state.
+  - Enforced anti-bloat cleanup: `checkpoint_json` is automatically cleared (`NULL` / unset) upon successful execution (`Succeeded`) across all storage providers.
+  - Added 3N unit testing matrix (Positive, Negative, Boundary) in `tests/NexJob.Tests/JobCheckpointTests.cs` and updated `tests/NexJob.Tests/SchemaMigratorTests.cs`.
+  - Documented in `docs/wiki/08-IJobContext.md` and `docs/wiki/15-Common-Scenarios.md`.
+
+- **`NexJob` Core & `NexJob.Dashboard` — Dynamic Circuit Breaker & Queue Auto-Pausing (Issue #207)**:
+  - Added declarative queue-level circuit breaker via `NexJobOptions.ConfigureQueue(queue, q => q.EnableCircuitBreaker(...))`.
+  - Added 4-state lifecycle (`Closed`, `Open`, `HalfOpen`, `Recovering`) to prevent thundering herds ("metralhadora" effect) when downstream APIs experience severe outages.
+  - Implemented progressive exponential backoff multiplier on cooldown for repeated probe failures up to `MaxOpenDuration`.
+  - Added selective exception filtering with predicate support (`cb.BreakOn<TException>(predicate)`) and out-of-the-box helper `cb.BreakOnTransientHttpErrors()`: automatically trips on 5xx, timeouts, 429 Too Many Requests (Rate Limits), and network drops while safely ignoring client/payload bugs (400 Bad Request, 404 Not Found, 422).
+  - Added `Recovering` gradual ramp-up state capping concurrency to `RecoveryConcurrency` during `RecoveryDuration` when downstream recovers.
+  - Integrated with `JobDispatcherService` to bypass open queues and dispatch canary in `HalfOpen`.
+  - Integrated with `IJobControlService.ResetQueueCircuitAsync` and `DashboardMiddleware` (`POST /queues/{queue}/reset-circuit`) for manual reset.
+  - Updated Dashboard `/queues` cards with real-time badges (`⚡ CIRCUIT OPEN (Xs)`, `🟡 CANARY TESTING`, `🟢 RECOVERING`) and manual reset action.
+  - Added 3N unit testing matrix using `TimeProvider` / `FakeTimeProvider` in `tests/NexJob.Tests/QueueCircuitBreakerTests.cs`.
+  - Documented in `docs/wiki/07-Throttling.md` and `docs/wiki/13-Best-Practices.md`.
+
+- **`NexJob` Core & Storage Providers — Anti-Bloat Retention Strategies (Issue #203)**:
+   - Added declarative `[Retention(PurgeOnSuccess = bool, TrimPayloadOnSuccess = bool)]` attribute to decorate job classes.
+   - Implemented immediate row purge (`PurgeOnSuccess = true`) upon successful job execution across all storage providers (`InMemory`, `PostgreSQL`, `SQL Server`, `MongoDB`, `Redis`), preventing table growth and WAL bloat in high-frequency streaming workloads.
+   - Implemented payload stripping (`TrimPayloadOnSuccess = true`), wiping `InputJson` upon successful execution while preserving job state, timestamps, tags, and logs for auditability.
+   - Hardened `JobExecutor` to propagate retention metadata in `JobExecutionResult` and bypass delayed batch acknowledgment when purge or trim operations are requested.
+   - Preserved lifetime job catalog statistics (`/catalog`) in `InMemoryStorageProvider` via aggregated lifetime tracking counters even when individual job instances are immediately purged.
+   - Documented retention strategies in `docs/wiki/06-Retry-And-Dead-Letter.md` and `docs/wiki/13-Best-Practices.md`.
+   - Added 3N unit testing matrix (Positive, Negative, Boundary) in `tests/NexJob.Tests/RetentionHardeningTests.cs`.
+
+
+- **`NexJob.Dashboard` — Orphan Queues & Inactive Worker Indicators (Issue #212)**:
+  - Added real-time tracking of queue coverage against active worker nodes registered via `IJobStorage.GetActiveServersAsync()`.
+  - Added warning badge `⚠️ NO WORKERS` and warning subtitle on `QueuesPage` cards whenever a queue has pending jobs (`Enqueued > 0`) but no active worker nodes in the cluster configured to process it.
+  - Added unserved queues alert banner on `ServersPage` highlighting queues that have accumulated work without any online worker nodes.
+  - Added live queue coverage check in the `CatalogPage` Trigger Modal, alerting operators before enqueuing a job if the chosen queue currently lacks active workers.
+  - Added 3N unit testing matrix (Positive, Negative, Boundary) in `tests/NexJob.Tests/StandaloneDashboardTests.cs`.
+  - Documented behavior in `docs/wiki/10-Dashboard.md`.
+
+- **`NexJob` Core & `NexJob.Dashboard` — Job Catalog & Definitions View and On-Demand Triggering (Issue #202)**:
+  - Added `JobCatalogItem` record encapsulating job definitions with aggregated execution telemetry (`JobType`, `Queue`, `TotalRuns`, `SucceededRuns`, `FailedRuns`, `LastExecutedAt`, `AvgDurationSeconds`).
+  - Extended `IDashboardStorage` with `GetJobCatalogAsync` featuring a default interface implementation for backward compatibility with external providers (with deprecation notice for v6.0).
+  - Implemented high-performance native aggregated queries (`GROUP BY job_type, queue`) in `InMemoryStorageProvider`, `PostgresStorageProvider`, and `SqlServerStorageProvider`.
+  - Added `/catalog` page in `NexJob.Dashboard` rendering an interactive table under the `MONITORING` sidebar section with instant search filtering, queue filtering, failure rate badges, average duration calculations, and deep-linking to filtered execution history in `/jobs`.
+  - Added on-demand ad-hoc execution (`POST /catalog/{jobType}/trigger`) for jobs directly from the catalog table, adhering to multi-cluster active selection (`?cluster={id}`) and `IsReadOnly` safety guards.
+  - Added Swagger-style interactive Trigger modal for parameterized jobs (`IJob<T>`): clicking "Trigger" opens a dialog pre-filled with an automatically generated sample JSON schema for the input type (and target queue), allowing operators to edit the payload or reset to sample before triggering. Parameterless `IJob`s trigger immediately with 1 click.
+  - Added 3N testing matrix (Positive, Negative, Boundary) in `tests/NexJob.Tests/InMemoryStorageProviderTests.cs` and `tests/NexJob.Tests/StandaloneDashboardTests.cs`.
+  - Updated documentation in `docs/wiki/10-Dashboard.md`, root `README.md`, `src/NexJob.Dashboard/README.md`, and `samples/NexJob.Sample.WorkerService`.
+
+
+- **`NexJob.Dashboard` & `NexJob.Dashboard.Standalone` — Multi-Cluster Dashboard Federation (Issue #200)**:
+  - Added `DashboardCluster` descriptor encapsulating cluster identity (`Id`, `Name`), isolated storage contracts (`DashboardStorage`, `JobStorage`, `RecurringStorage`, `ControlService`, `RuntimeStore`), cluster-scoped `Queues`, and `IsReadOnly` safety mode.
+  - Added `Clusters` collection and fluent `AddCluster(...)` API to `DashboardOptions` and `StandaloneDashboardOptions`.
+  - Added multi-cluster switcher dropdown in Maxton header when `Clusters.Count > 1`, with active cluster selection controlled via `?cluster={id}` and seamless URL parameter preservation across redirects and actions.
+  - Isolated SSE metrics stream and IMemoryCache keys by cluster (`$"nexjob:dashboard:metrics:{clusterId}"`), preventing cross-cluster cache collision.
+  - Enforced `IsReadOnly` mutation guard returning `403 Forbidden` on POST actions for read-only clusters.
+  - Added 3N testing matrix (Positive, Negative, Boundary) in `tests/NexJob.Tests/StandaloneDashboardTests.cs`.
+
+- **`NexJob.Dashboard` & `NexJob.Dashboard.Standalone` — Dedicated Ops Host Mode and Queue Scoping (Issue #199)**:
+  - Added `DisableWorkers` (bool, default `false`) to `StandaloneDashboardOptions`. When set to `true`, `NexJobOptions.Workers` is configured to `0`, allowing a headless worker to function as a dedicated monitoring/ops host without taking processing slots from background workers.
+  - Added `Queues` (`IReadOnlyList<string>?`) to `DashboardOptions` and `StandaloneDashboardOptions` for queue scoping and isolation.
+  - Scoped dashboard navigation counters, queue cards, and default `/jobs` filter exclusively to the configured queues when `Queues` is specified.
+  - Added comprehensive documentation and architectural guidelines in `docs/wiki/10-Dashboard.md`, `docs/wiki/13-Best-Practices.md`, and `src/NexJob.Dashboard.Standalone/README.md`.
+  - Added 3N unit testing matrix in `tests/NexJob.Tests/StandaloneDashboardTests.cs` (positive, negative, and boundary scenarios).
+
+### Changed
+
+- **Documentation — Wiki, package READMEs and XML docs audited against the code (Issues #173, #174, #175, #178)**:
+  - Removed APIs that do not exist (`opt.UseRedis`, `UseDistributedThrottle()`, `UsePostgreSqlStorage`, `IRetryDelayFactory`, `QueueOptions`, `AddOrUpdateRecurringJobAsync`, `GetInput<T>()`, `IJobContextAccessor`) and fixed parameter and option names (`AddRecurringJob(id:, timeZoneId:)`, circuit breaker `ConsecutiveFailuresThreshold`/`OpenDuration`, dashboard options).
+  - Corrected behaviour descriptions: job filters (`context.Succeeded` is only set after the pipeline; filters are singletons), `AddNexJobJobs` (internal jobs are registered), dashboard requeue (same job, attempts reset), single dashboard authorization handler, retention (`RetentionFailed` governs failed jobs), telemetry tag and metric names, and the state diagram (no `Retried`/`DeadLetter` status).
+  - Documented what the code really does for the broker triggers (job type precedence, idempotency key and failure handling per broker), appsettings-bindable options versus code-only options (retention is code-only), the dashboard settings page, and the `using` namespaces of each storage package.
+  - Rewrote the testing guide so its examples run (they use a started host and fast retry delays) and added the v5.5.0 to v5.6.0 upgrade notes to the migration guide.
+  - `IRecurringStorage`: the XML documentation of `DeleteRecurringJobAsync` and `ForceDeleteRecurringJobAsync` described the two methods the other way round; corrected (no behaviour change).
+  - The `[Unreleased]` section no longer has a duplicated `### Added` heading.
+
+- **`NexJob.MongoDB` — The `DateTimeOffset` serializer is no longer registered globally (Issue #263, step 2)**:
+  - NexJob used to register a process-wide `DateTimeOffsetSerializer` (string representation), which silently changed how the host application serialized its own `DateTimeOffset` values. The same representation is now applied through a convention to NexJob's own documents only (jobs, recurring jobs, servers, execution logs). The stored format is unchanged (ISO 8601 string at `+00:00`), so **no data migration is needed** and old and new nodes can run together.
+  - Applications that unknowingly depended on the old global registration can pass `keepLegacyGlobalDateTimeOffsetSerializer: true` to `AddNexJobMongoDB` for one release; the flag will be removed afterwards.
+  - Storing BSON `DateTime` instead of strings is deliberately not part of this change: it would require migrating existing documents, because range filters on dates do not match string-typed values.
+
+### Fixed
+
+- **`NexJob` Core — Recurring jobs from `appsettings.json` follow the configuration on every start (Issue #261)**:
+  - `RecurringJobRegistrar` used to skip an entry that already existed in storage, so changing a cron, queue or input in configuration had no effect after the first start. It now always upserts the definition; the storage keeps what an operator changed in the dashboard (cron override, paused, deleted).
+  - The first run is now the next cron occurrence, like a job registered from code. Before, `NextExecution` was set one second in the past, so every configured job fired immediately on the first registration.
+  - The time zone is resolved before anything is stored, so an invalid `TimeZoneId` fails that entry's registration with an error log instead of storing a job whose next run cannot be computed.
+  - **Behaviour change:** configured jobs no longer run once at startup.
+
+- **`NexJob.Kafka`, `NexJob.RabbitMQ`, `NexJob.Trigger.AzureServiceBus` — Transient enqueue failures no longer lose or dead-letter messages (Issue #265)**:
+  - Enqueue failures are classified. **Permanent** ones (missing `nexjob.job_type`, malformed payload) can never succeed; **transient** ones (storage or network errors, timeouts) can.
+  - Kafka used to commit the *next* record's offset after a failed enqueue when a dead-letter topic was configured, dead-lettering (and skipping) messages on any storage blip. It now retries the same record in place with a 1 s / 2 s / 5 s / ... / 30 s backoff and does not consume the next record meanwhile. A permanent failure goes to the dead-letter topic and is committed; without a topic it is logged at `Error` and committed so a poison message cannot block the partition (previously it was never committed and was redelivered forever).
+  - RabbitMQ nacks a transient failure with `requeue: true` after a one-second pause (no hot loop) instead of `requeue: false`, which discarded the message. A permanent failure is still nacked without requeue.
+  - Azure Service Bus abandons a transient failure so it is delivered again (the entity's `MaxDeliveryCount` decides when it is dead-lettered) instead of dead-lettering it immediately; permanent failures are still dead-lettered.
+  - A failed Kafka offset commit after a successful enqueue is no longer treated as an enqueue failure.
+
+- **`NexJob.RabbitMQ` — Only `MessageId` is used as the idempotency key (Issue #266)**:
+  - The trigger used `CorrelationId`, falling back to a SHA-256 of the body, as the idempotency key. Messages sharing a correlation id (a whole order flow, a request/reply chain) or carrying identical bodies were silently deduplicated and acknowledged without running. The key is now `MessageId` when it is set and non-blank; otherwise there is no key and every delivery creates a job.
+  - **Behaviour change:** publishers that relied on `CorrelationId` for deduplication must set a unique `MessageId`.
+
+- **`NexJob.Kafka` — The idempotency key is the record position, not the message key (Issue #264)**:
+  - The trigger used the Kafka message key as the job idempotency key, so every later record sharing a key with an active job (for example the same customer id) was silently dropped, and its offset committed. The key is now `kafka:{topic}:{partition}:{offset}`: redelivery of the same record is still deduplicated, and different records always produce different jobs.
+  - **Behaviour change:** applications that relied on key-based deduplication must deduplicate in the job itself.
+
+- **`NexJob.Redis` — Distributed throttle slots survive node crashes without leaking (Issue #267, part 2)**:
+  - The single global counter (INCR/DECR with a one-hour TTL) is replaced by a sorted set of holders in `nexjob:throttle:holders:{resource}`. Each running job owns one entry with an expiry; the owning node refreshes it every `HeartbeatInterval`, and expired entries are dropped before every acquire (using the Redis clock).
+  - A slot left by a crashed node is reclaimed after `3 x HeartbeatInterval` (90 s by default) instead of up to an hour. Releasing removes only the caller's own holder, so a node can never free another node's slot.
+  - `DistributedThrottleTtl` is not deprecated: it now caps how long a single job may hold a slot (a slot older than that stops being refreshed).
+  - **Rolling upgrade:** old nodes keep counting in the previous key, so the global limit can be exceeded until all nodes run this version.
+
+- **`NexJob.Redis` — Dashboard queries and retention no longer scan the keyspace (Issue #262, part 2)**:
+  - Every job is now listed in a `nexjob:index:all` sorted set (score = creation time), written atomically by the enqueue script and removed on delete and purge. `GetJobsAsync` without filters pages straight from the index (cost proportional to the page); filtered listing, `GetJobsByTagAsync`, `GetJobCatalogAsync` and `PurgeJobsAsync` walk the index with pipelined reads instead of `SCAN`ning every key.
+  - Jobs stored before this version are indexed once, on first use, by an idempotent backfill guarded by a `nexjob:index:ready` marker. The same backfill fills the Succeeded/Failed sets, so the **upgrade note of part 1 no longer applies**: Succeeded/Failed totals are exact after the first metrics call.
+  - Index entries whose job hash disappeared (for example after a crash between two writes) are skipped and removed as they are found.
+
+- **All providers — Batch acknowledgment releases continuations (Issue #257)**:
+  - `AcknowledgeAsync` and `AcknowledgeBatchAsync` now move every child waiting on the acknowledged parent from `AwaitingContinuation` to `Enqueued` in InMemory, PostgreSQL, SQL Server, MongoDB and Redis (SQL providers do it in the same transaction; Redis in the same Lua script). With `EnableBatchAcknowledgment = true`, `ContinueWith` children now run.
+  - The startup warning and the documented limitation from the previous step are removed.
+
+- **`NexJob` Core — `EnableBatchAcknowledgment` limitation with continuations is documented and warned about (Issue #257, documentation step)**:
+  - Jobs acknowledged in a batch do not release their `ContinueWith` children. The wiki (`05-Continuations.md`, `11-Configuration-Reference.md`) and the option's XML documentation now say so, and `JobDispatcherService` logs one warning at startup when the option is enabled.
+  - The provider-side fix (releasing children from `AcknowledgeAsync`/`AcknowledgeBatchAsync`) is still open in #257.
+
+- **`NexJob` Core — Distributed throttle no longer busy-spins or over-releases slots (Issue #267, part 1)**:
+  - A job waiting on a full `[Throttle]` used to retry in a tight `Task.Yield()` loop, hammering Redis with acquire calls and ignoring cancellation. It now backs off 250 ms plus 0-100 ms of jitter between attempts and observes the cancellation token.
+  - `ThrottleRegistry` tracks the slots it really took from the distributed store, so a release only decrements the global counter for those. When the store is unavailable and the registry degrades to local-only throttling, releases no longer push the Redis counter down.
+  - The holder-set redesign (crash-safe slots with TTL) is not part of this change.
+
+- **`NexJob.MongoDB` — Dates are stored and compared in UTC (Issue #263, step 1)**:
+  - MongoDB stores `DateTimeOffset` as an ISO string, and scheduling filters and sorts compare those strings, so a value written with a non-UTC offset (for example `-03:00`) was compared as the wrong instant: jobs scheduled or retried with a local offset ran hours early, and jobs with a positive offset ran late. Every date written for jobs, recurring jobs, servers and execution logs, and every date used in a filter or update, is now normalised to UTC.
+  - Documents already stored with a non-UTC offset are not migrated and stay wrong until rewritten; only future-scheduled jobs created with a local offset are affected.
+  - Step 2 (a BSON `DateTime` serializer and removing the global `DateTimeOffset` registration) is not part of this change.
+
+- **`NexJob.Redis` — Metrics no longer scan every job hash (Issue #262, part 1)**:
+  - `GetMetricsAsync` and `GetQueueMetricsAsync` (run every 15 s by each node's heartbeat and on every health probe) previously read the whole job keyspace. They now derive counts from structures that already exist: queue sorted sets (Enqueued), `nexjob:processing` (Processing), `nexjob:scheduled` (Scheduled), plus two new sorted sets, `nexjob:status:Succeeded` and `nexjob:status:Failed`, maintained by every path that finishes, deletes, purges or requeues a job. Recent failures come from the Failed set.
+  - **Upgrade note:** jobs that finished before this version are not in the new sets, so `Succeeded`/`Failed` totals start at 0 and grow as jobs finish; older jobs drop out of nothing (they are simply not counted) and disappear from the store through normal retention. Enqueued, Processing and Scheduled are exact immediately.
+  - Dashboard list queries (`GetJobsAsync` and similar) still scan; that is tracked for part 2.
+
+- **`NexJob` Core — Recurring jobs fire once per occurrence and an invalid time zone no longer causes an enqueue storm (Issue #260)**:
+  - `RecurringJobSchedulerService` re-reads the recurring job after taking the lock and only fires it if it is still due, so a second instance holding a stale due list no longer fires an occurrence another instance already fired.
+  - The next execution is now computed before the job is enqueued. An unresolvable time zone or invalid cron logs an error and enqueues nothing, instead of enqueuing the job on every polling cycle.
+
+- **`NexJob.Redis` — Due scheduled and retry jobs are promoted atomically (Issue #255)**:
+  - Promotion used a client-side read/`HSET`/`ZREM`/`ZADD` sequence, so two nodes could both promote (and run) the same job, and a crash mid-way could lose it. It is now a single Lua script that removes the `nexjob:scheduled` entry first and only enqueues jobs still in `Scheduled` state; stale entries (missing hash, job already running) are just dropped.
+  - Large backlogs drain in bounded batches of 100 per script call, up to 5 calls per fetch.
+
+- **`NexJob.Redis` — Released continuations are queued atomically on commit (Issue #254)**:
+  - Committing a parent successfully marked its `ContinueWith` children `Enqueued` but never added them to a queue, so they were never fetched. The commit script now moves every child still `AwaitingContinuation` into its queue ZSET in the same atomic step (children in any other state are left untouched) and deletes the continuation set.
+  - Job hashes now store a precomputed `queueScore`; children written before this field existed fall back to priority and the commit time.
+
+- **`NexJob` Core — Storage errors no longer fail successful jobs or kill the heartbeat (Issue #256)**:
+  - A storage error while updating the heartbeat is logged as a warning and the loop keeps running, so a transient blip no longer lets the orphan watcher re-run a healthy job.
+  - The success commit now runs outside the job failure path. If it fails it is retried up to 3 times (100 ms, 500 ms, 2 s); if it still fails the error is logged and the job stays `Processing` for the orphan watcher (at-least-once). It is never marked failed, retried by the policy, or dead-lettered because of it.
+  - The dispatcher worker task logs any unhandled execution error instead of leaving an unobserved task exception.
+
+- **`NexJob` Core — Graceful shutdown stops fetching and no longer burns attempts on interrupted jobs (Issue #259)**:
+  - `JobDispatcherService` stops polling and fetching as soon as `StopAsync` begins, so no new job is claimed while the drain runs. Running jobs still receive the host stopping token only after `ShutdownTimeout` expires.
+  - A job that throws `OperationCanceledException` while the shutdown token is cancelled is requeued immediately (`RetryAt = now`) without consuming its attempt and is never dead-lettered. An `OperationCanceledException` thrown without a shutdown request remains a normal failure.
+  - Docs: `HostOptions.ShutdownTimeout` must be greater than `NexJobOptions.ShutdownTimeout` (see `docs/wiki/13-Best-Practices.md`).
+
+- **`NexJob.Trigger.SalesforceStreaming` — OAuth token expiry and `ConnectTimeout` are honoured (Issue #230)**:
+  - The cached OAuth token is no longer reused forever. It records `ExpiresAt` from the response `expires_in` (default 2 hours when missing or invalid) and is refreshed once it is within 60 seconds of expiry, matching `NexJob.Trigger.Salesforce`. `SalesforceStreamingTokenResult` gains an optional `ExpiresAt` init property; its constructor is unchanged.
+  - `SalesforceStreamingTriggerOptions.ConnectTimeout` was ignored (the Bayeux `HttpClient` used a fixed 150 s). The client timeout is now `ConnectTimeout + 30 s`, so the default still yields 150 s.
+  - `ConnectTimeout` must now be greater than zero; a zero or negative value fails options validation at startup.
+
+- **`NexJob.Redis` — Idempotency key lives as long as the job (Issue #238)**:
+  - The `nexjob:idempotency:{key}` key no longer expires after a fixed 7 days, which let `DuplicatePolicy.RejectAlways` enqueue the same key again while the job was still retained. It now has no TTL and is released together with the job by retention purge, `DeleteJobAsync` and `PurgeOnSuccess`, only while it still points to that job.
+  - Keys created before this change keep their existing 7-day expiry.
+
+- **`NexJob.Redis` — Enqueue is atomic: job hash and queue entry are created together (Issue #239)**:
+  - `EnqueueAsync` now inserts the job id into its queue, the scheduled set or the parent's continuation set inside the same Lua script that creates the hash and idempotency key. A crash between the two steps can no longer leave an `Enqueued` job that is in no queue.
+
+- **`NexJob.Redis` — Orphan requeue is atomic and no longer re-enqueues finished jobs (Issue #240)**:
+  - `RequeueOrphanedJobsAsync` now decides in one Lua script: it requeues (or fails, when attempts are exhausted) only a job whose processing entry still has the heartbeat the scan read **and** whose status is still `Processing`.
+  - Previously a job committed between the scan and the write was flipped back to `Enqueued` and could run twice; a stale processing entry of a finished job is now just removed.
+
+- **`NexJob.Postgres`, `NexJob.SqlServer`, `NexJob.MongoDB` — `DuplicatePolicy.AllowAfterFailed` no longer drops the enqueue after a finished job (Issue #234, #176)**:
+  - Enqueuing with the same idempotency key after the previous job reached `Succeeded`, `Failed` or `Expired` silently did nothing: the unique index covered every job, so the insert failed and the old job's id was returned as accepted. Default recurring jobs (`SkipIfRunning`) fired once and then stopped until the old job was purged.
+  - The idempotency key is now unique only among **active** jobs (`Enqueued`, `Processing`, `Scheduled`, `AwaitingContinuation`). PostgreSQL and SQL Server get migration **V10** (drops the old index, creates the active-only unique index and a lookup index); MongoDB replaces the `idempotency_key` index at startup.
+  - A concurrent-enqueue conflict now resolves to the **active** winner and retries if that job already finished; the duplicate pre-check looks at the latest job per key.
+  - `RequeueJobAsync` now throws `InvalidOperationException` ("another active job already holds its idempotency key") instead of a raw database error when re-activating a finished job whose key is held by a newer active job.
+  - `docs/wiki/17-Idempotency.md`: the `AllowAfterFailed` matrix now matches the code (allowed after every terminal state) and warns that the policy does not prevent duplicate side effects.
+
+- **`NexJob.MongoDB` — `FetchNextAsync` and `FetchBatchAsync` now honor the queue order (Issue #235)**:
+  - Queues are claimed in the order given, and inside a queue the highest job priority and oldest job win, matching PostgreSQL, SQL Server and InMemory. Each claim stays an atomic `FindOneAndUpdate`.
+  - Previously a high-priority job in a later queue was returned before a normal job in the first queue.
+
+- **`NexJob.SqlServer` — `FetchNextAsync` returns `null` for an empty queue list instead of throwing (Issue #236)**:
+  - With no queues the generated `VALUES` list was empty and the call failed with `SqlException: Incorrect syntax near ')'`. It now returns `null` without touching the database, like `FetchBatchAsync` and the other providers.
+
+- **`NexJob.Redis` — `PurgeJobsAsync` no longer leaks `nexjob:logs:{id}` keys and counts purged jobs exactly (Issue #233)**:
+  - Retention purge now deletes each job's separate logs key together with its job hash, so memory no longer grows for jobs that were purged.
+  - The returned count is the number of job hashes actually removed; it is no longer inflated when a delete reports zero.
+
+- **`NexJob.MongoDB` — Orphan requeue no longer overwrites the original error message (Issue #232)**:
+  - When an orphaned job has exhausted its attempts, `RequeueOrphanedJobsAsync` now sets "Orphaned execution exceeded maximum attempts." only if the job has no recorded error, matching PostgreSQL, SQL Server, Redis and InMemory.
+  - Previously the real exception message from the last attempt was replaced by the generic text.
+
+- **`NexJob` Core — InMemory `PurgeJobsAsync` no longer deletes `Failed` jobs early via `RetainDeadLetter` (Issue #231)**:
+  - `Failed` jobs are now purged by `RetainDeadLetter` only when `RetainFailed` is zero, matching PostgreSQL, SQL Server and Redis.
+  - Previously a `Failed` job still within `RetainFailed` could be deleted as soon as it exceeded the shorter `RetainDeadLetter`.
+
+- **`NexJob.Postgres` — Job input `{}` / `null` was read back as an empty string, so the job failed to deserialize (Issue #237)**:
+  - `PostgresJobRow.ToRecord()` now reports an empty payload only for `Succeeded` jobs (where `TrimPayloadOnSuccess` can have stripped it). Every other state returns the stored JSON unchanged.
+  - Fixes jobs with an empty-record input, `IJob` without input, and no-input recurring jobs failing with `JsonException` on PostgreSQL.
+  - Known limitation: a `Succeeded` job with a legitimate `{}` input is shown as "payload stripped" in the dashboard.
+
+- **`NexJob.Postgres`, `NexJob.Redis`, `NexJob.MongoDB` — Storage Catalog and Payload Trimming Alignment (Issue #222)**:
+  - Fixed PostgreSQL `TrimPayloadOnSuccess` to update `input_json = '{}'::jsonb`, eliminating PostgreSQL error `22P02: invalid input syntax for type json`.
+  - Added `JobCatalogRow` mapping in `PostgresStorageProvider.GetJobCatalogAsync` to ensure reliable Dapper materialization into `JobCatalogItem`.
+  - Implemented `GetJobCatalogAsync` in `RedisStorageProvider` by scanning `nexjob:jobs:*`, grouping by `(JobType, Queue)`, and aggregating run statistics (totals, successes, failures, last execution, and average duration).
+  - Implemented `GetJobCatalogAsync` in `MongoStorageProvider` by querying and grouping jobs by `(JobType, Queue)` to calculate catalog metrics.
+
+
+- **`NexJob.Dashboard` — Multi-Cluster Navigation & Action URL Preservation and Read-Only UI Guard**:
+  - Ensured active cluster parameter (`?cluster={id}`) is systematically preserved across sidebar navigation, header logo, search bar, breadcrumbs, and pagination.
+  - Implemented client-side navigation interceptor in `HtmlShell` that automatically propagates the active cluster ID across internal page transitions when browsing a non-default cluster.
+  - Fixed form action URLs across `RecurringJobDetailPage`, `JobDetailPage`, `RecurringPage`, `FailedPage`, and `SettingsPage` to append and preserve the `?cluster={id}` query parameter, preventing mutations on remote clusters from inadvertently hitting the default cluster.
+  - Enforced client-side UI `IsReadOnly` guards across all dashboard pages: mutating buttons (`Trigger Now`, `Pause`, `Force Delete`, `Requeue`, `Apply`, `Reset`, bulk actions) are cleanly hidden when viewing a read-only cluster and a `ReadOnlyBanner` is displayed.
+  - Preserved active cluster parameter in log streaming and execution modal fetches.
+
+- **`NexJob` Core — Worker Poisons Foreign Jobs on Shared Queue (Issue #201)**:
+  - Introduced `ForeignJobTypeException` in `NexJob.Exceptions` thrown by `DefaultJobInvokerFactory` when a worker dequeues a job whose type or input type cannot be resolved in the local assembly/runtime.
+  - Hardened `JobExecutor.ExecuteJobAsync` to catch `ForeignJobTypeException` separately from standard execution failures: the worker rolls back the attempt increment, defers the job with a configurable `ForeignJobRetryDelay` (default 5s) via `CommitJobResultAsync`, and avoids dead-lettering (`IDeadLetterDispatcher` is never invoked).
+  - Added `ForeignJobRetryDelay` option to `NexJobOptions` (default 5s).
+  - Added 3N unit testing matrix in `tests/NexJob.Tests/JobExecutorHardeningTests.cs` and `tests/NexJob.Tests/DefaultJobInvokerFactoryHardeningTests.cs`.
+
 ## [5.5.0] - 2026-09-25
 
 ### Fixed
@@ -720,30 +987,3 @@ The project has entered an official **Reliability Lock**. Development is focused
 - Idempotency keys
 - Recurring concurrency policy: `SkipIfRunning` / `AllowConcurrent`
 - CI/CD pipeline publishing all packages on `v*` tag push
-
-<<<<<<< HEAD
-[Unreleased]: https://github.com/oluciano/NexJob/compare/v5.3.0...HEAD
-[5.3.0]: https://github.com/oluciano/NexJob/compare/v5.2.0...v5.3.0
-[5.2.0]: https://github.com/oluciano/NexJob/compare/v5.1.0...v5.2.0
-=======
-[Unreleased]: https://github.com/oluciano/NexJob/compare/v5.1.0...HEAD
->>>>>>> origin/main
-[5.1.0]: https://github.com/oluciano/NexJob/compare/v5.0.0...v5.1.0
-[5.0.0]: https://github.com/oluciano/NexJob/compare/v4.0.1...v5.0.0
-[4.0.1]: https://github.com/oluciano/NexJob/compare/v4.0.0...v4.0.1
-[4.0.0]: https://github.com/oluciano/NexJob/compare/v3.0.0...v4.0.0
-[2.0.0]: https://github.com/oluciano/NexJob/compare/v1.0.0...v2.0.0
-[1.0.0]: https://github.com/oluciano/NexJob/compare/v0.8.0...v1.0.0
-[0.8.0]: https://github.com/oluciano/NexJob/compare/v0.7.0...v0.8.0
-[0.7.0]: https://github.com/oluciano/NexJob/compare/v0.6.0...v0.7.0
-[0.6.0]: https://github.com/oluciano/NexJob/compare/v0.5.1...v0.6.0
-[0.5.2]: https://github.com/oluciano/NexJob/compare/v0.5.1...v0.5.2
-[0.5.1]: https://github.com/oluciano/NexJob/compare/v0.5.0...v0.5.1
-[0.5.0]: https://github.com/oluciano/NexJob/compare/v0.4.0...v0.5.0
-[0.4.0]: https://github.com/oluciano/NexJob/compare/v0.3.3...v0.4.0
-[0.3.3]: https://github.com/oluciano/NexJob/compare/v0.3.2...v0.3.3
-[0.3.2]: https://github.com/oluciano/NexJob/compare/v0.3.1...v0.3.2
-[0.3.1]: https://github.com/oluciano/NexJob/compare/v0.3.0...v0.3.1
-[0.3.0]: https://github.com/oluciano/NexJob/compare/v0.2.0...v0.3.0
-[0.2.0]: https://github.com/oluciano/NexJob/compare/v0.1.0-alpha...v0.2.0
-[0.1.0-alpha]: https://github.com/oluciano/NexJob/releases/tag/v0.1.0-alpha

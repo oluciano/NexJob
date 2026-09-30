@@ -17,7 +17,9 @@ public sealed class SchemaMigratorTests
     [Fact]
     public void Postgres_GetPending_AllApplied_ReturnsEmpty()
     {
-        var applied = new HashSet<int> { 1, 2, 3, 4, 5, 6, 7, 8 };
+        // Behavior changed in v5.6: Added V9AddCheckpointColumn migration
+        // Behavior changed in v5.6: Added V10 (idempotency key unique for active jobs only, issue #234)
+        var applied = new HashSet<int> { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 };
 
         var pending = NexJob.Postgres.SchemaMigrator
             .GetPendingMigrations(NexJob.Postgres.SchemaMigrator.AllMigrations, applied);
@@ -45,8 +47,10 @@ public sealed class SchemaMigratorTests
             .GetPendingMigrations(NexJob.Postgres.SchemaMigrator.AllMigrations, applied)
             .ToList();
 
-        pending.Should().HaveCount(6);
-        pending.Select(m => m.Version).Should().Equal(3, 4, 5, 6, 7, 8);
+        // Behavior changed in v5.6: 7 pending migrations (3..9)
+        // Behavior changed in v5.6: 8 pending migrations (3..10) after adding V10 (issue #234)
+        pending.Should().HaveCount(8);
+        pending.Select(m => m.Version).Should().Equal(3, 4, 5, 6, 7, 8, 9, 10);
     }
 
     [Fact]
@@ -59,7 +63,9 @@ public sealed class SchemaMigratorTests
             .GetPendingMigrations(NexJob.Postgres.SchemaMigrator.AllMigrations, applied)
             .ToList();
 
-        pending.Select(m => m.Version).Should().Equal(2, 4, 5, 6, 7, 8);
+        // Behavior changed in v5.6: Added V9
+        // Behavior changed in v5.6: Added V10 (issue #234)
+        pending.Select(m => m.Version).Should().Equal(2, 4, 5, 6, 7, 8, 9, 10);
     }
 
     [Fact]
@@ -83,7 +89,9 @@ public sealed class SchemaMigratorTests
     [Fact]
     public void SqlServer_GetPending_AllApplied_ReturnsEmpty()
     {
-        var applied = new HashSet<int> { 1, 2, 3, 4, 5, 6, 7, 8 };
+        // Behavior changed in v5.6: Added V9AddCheckpointColumn migration
+        // Behavior changed in v5.6: Added V10 (idempotency key unique for active jobs only, issue #234)
+        var applied = new HashSet<int> { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 };
 
         var pending = NexJob.SqlServer.SchemaMigrator
             .GetPendingMigrations(NexJob.SqlServer.SchemaMigrator.AllMigrations, applied);
@@ -111,20 +119,25 @@ public sealed class SchemaMigratorTests
             .GetPendingMigrations(NexJob.SqlServer.SchemaMigrator.AllMigrations, applied)
             .ToList();
 
-        pending.Should().HaveCount(6);
-        pending.Select(m => m.Version).Should().Equal(3, 4, 5, 6, 7, 8);
+        // Behavior changed in v5.6: 7 pending migrations (3..9)
+        // Behavior changed in v5.6: 8 pending migrations (3..10) after adding V10 (issue #234)
+        pending.Should().HaveCount(8);
+        pending.Select(m => m.Version).Should().Equal(3, 4, 5, 6, 7, 8, 9, 10);
     }
 
     [Fact]
     public void SqlServer_GetPending_OutOfOrderApplied_ReturnsCorrect()
     {
+        // Versions 1 and 3 applied; 2, 4, 5, 6, 7, 8, 9 missing
         var applied = new HashSet<int> { 1, 3 };
 
         var pending = NexJob.SqlServer.SchemaMigrator
             .GetPendingMigrations(NexJob.SqlServer.SchemaMigrator.AllMigrations, applied)
             .ToList();
 
-        pending.Select(m => m.Version).Should().Equal(2, 4, 5, 6, 7, 8);
+        // Behavior changed in v5.6: Added V9
+        // Behavior changed in v5.6: Added V10 (issue #234)
+        pending.Select(m => m.Version).Should().Equal(2, 4, 5, 6, 7, 8, 9, 10);
     }
 
     [Fact]

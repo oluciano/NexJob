@@ -119,8 +119,13 @@ public sealed class DistributedThrottleTests
     public async Task ThrottleRegistry_ReleaseAsync_ReleasesBoth()
     {
         // Arrange
+        // Behavior changed in v5.6: a release only reaches the distributed store when the slot was really acquired
+        // from it (issue #267). The test now acquires first; releasing a never-acquired slot is covered by
+        // ThrottleSpinAndReleaseTests.ReleaseWithoutAcquire_DoesNotCallStore.
         var store = new Mock<IDistributedThrottleStore>();
+        store.Setup(x => x.TryAcquireAsync("res", 1, It.IsAny<CancellationToken>())).ReturnsAsync(true);
         var registry = new ThrottleRegistry(store.Object);
+        await registry.TryAcquireAsync("res", 1, CancellationToken.None);
 
         // Act
         await registry.ReleaseAsync("res", CancellationToken.None);

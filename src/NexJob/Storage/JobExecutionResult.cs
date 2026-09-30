@@ -29,4 +29,16 @@ public sealed class JobExecutionResult
     /// <see langword="null"/> for manually enqueued jobs.
     /// </summary>
     public string? RecurringJobId { get; init; }
+
+    /// <summary>
+    /// Gets a value indicating whether the job should be purged immediately upon successful completion.
+    /// Derived from <see cref="RetentionAttribute.PurgeOnSuccess"/>.
+    /// </summary>
+    public bool PurgeOnSuccess { get; init; }
+
+    /// <summary>
+    /// Gets a value indicating whether the job's input payload should be trimmed upon successful completion.
+    /// Derived from <see cref="RetentionAttribute.TrimPayloadOnSuccess"/>.
+    /// </summary>
+    public bool TrimPayloadOnSuccess { get; init; }
 }

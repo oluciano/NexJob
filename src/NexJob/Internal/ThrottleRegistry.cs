@@ -15,6 +15,10 @@ internal sealed class ThrottleRegistry
     private readonly IDistributedThrottleStore? _distributedStore;
     private readonly ILogger _logger;
 
+    // Slots currently held in the distributed store, per resource. A release only reaches the store when a
+    // distributed slot was really taken, so degraded (local-only) acquisitions never decrement the global counter.
+    private readonly Dictionary<string, int> _distributedHolds = new(StringComparer.Ordinal);
+
     /// <summary>
     /// Initializes a new instance of the <see cref="ThrottleRegistry"/> class.
     /// </summary>
@@ -85,6 +89,11 @@ internal sealed class ThrottleRegistry
             return false;
         }
 
+        if (distributedAcquired)
+        {
+            AddDistributedHold(resource);
+        }
+
         return true;
     }
 
@@ -152,6 +161,11 @@ internal sealed class ThrottleRegistry
             return false;
         }
 
+        if (distributedAcquired)
+        {
+            AddDistributedHold(resource);
+        }
+
         return true;
     }
 
@@ -168,9 +182,32 @@ internal sealed class ThrottleRegistry
             sem.Release();
         }
 
-        if (_distributedStore is not null)
+        if (_distributedStore is not null && TryTakeDistributedHold(resource))
         {
             await SafeReleaseDistributedAsync(resource, ct).ConfigureAwait(false);
+        }
+    }
+
+    private void AddDistributedHold(string resource)
+    {
+        lock (_distributedHolds)
+        {
+            _distributedHolds.TryGetValue(resource, out var holds);
+            _distributedHolds[resource] = holds + 1;
+        }
+    }
+
+    private bool TryTakeDistributedHold(string resource)
+    {
+        lock (_distributedHolds)
+        {
+            if (!_distributedHolds.TryGetValue(resource, out var holds) || holds <= 0)
+            {
+                return false;
+            }
+
+            _distributedHolds[resource] = holds - 1;
+            return true;
         }
     }
 

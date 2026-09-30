@@ -22,6 +22,8 @@ internal sealed class SchemaMigrator
         new(6, "add nexjob_servers table for active server tracking", SqlServerSchemaSql.V6CreateServersTable),
         new(7, "create nexjob_settings table for runtime configuration", SqlServerSchemaSql.V7CreateSettingsTable),
         new(8, "add unique sparse index for idempotency_key", SqlServerSchemaSql.V8AddIdempotencyKeyIndex),
+        new(9, "add checkpoint_json column to nexjob_jobs", SqlServerSchemaSql.V9AddCheckpointColumn),
+        new(10, "idempotency key unique for active jobs only", SqlServerSchemaSql.V10IdempotencyKeyUniqueForActiveJobsOnly),
     ];
 
     /// <summary>

@@ -7,7 +7,7 @@ Production-ready sample demonstrating enterprise storage topology, distributed t
 1. **Read Replica Segregation (`UseDashboardReadReplica`)**:
    - Primary PostgreSQL database handles transactional job state transitions (`IJobStorage`).
    - Read replica offloads heavy dashboard analytics and queue inspection queries (`IDashboardStorage`).
-2. **Global Distributed Throttling (`UseDistributedThrottle`)**:
+2. **Global Distributed Throttling (`AddNexJobDistributedThrottle`)**:
    - `[Throttle("payment-gateway", 2)]` limits concurrency across **all** worker instances using Redis atomic counters.
 3. **OpenTelemetry Instrumentation**:
    - Distributed tracing and metrics exports out-of-the-box (`AddNexJobInstrumentation`).

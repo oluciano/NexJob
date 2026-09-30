@@ -17,6 +17,12 @@ internal sealed class FailedPage : IComponent
     [Parameter] public JobStatus? StatusFilter { get; set; }
     [Parameter] public string? Search { get; set; }
     [Parameter] public int Page { get; set; } = 1;
+    [Parameter] public IReadOnlyList<string>? Queues { get; set; }
+    [Parameter] public IReadOnlyList<DashboardCluster>? Clusters { get; set; }
+    [Parameter] public DashboardCluster? ActiveCluster { get; set; }
+
+    /// <summary>Gets or sets the set of queue names that currently have at least one active worker listening.</summary>
+    [Parameter] public IReadOnlySet<string>? ActiveWorkerQueues { get; set; }
 
     void IComponent.Attach(RenderHandle renderHandle) => _handle = renderHandle;
 
@@ -27,7 +33,19 @@ internal sealed class FailedPage : IComponent
         // NOTE (Blazor Dispatcher Invariant):
         // Do NOT use .ConfigureAwait(false) here. Rendering via _handle.Render requires execution on the Dispatcher.
         // Fetch queues for the filter dropdown
-        var queues = await Storage.GetQueueMetricsAsync(CancellationToken.None);
+        var rawQueues = await Storage.GetQueueMetricsAsync(CancellationToken.None);
+        IReadOnlyList<QueueMetrics> queues;
+        if (Queues is { Count: > 0 })
+        {
+            var rawMap = rawQueues.ToDictionary(q => q.Queue, StringComparer.OrdinalIgnoreCase);
+            queues = Queues.Select(qName => rawMap.TryGetValue(qName, out var qm)
+                ? qm
+                : new QueueMetrics { Queue = qName, Enqueued = 0, Processing = 0 }).ToList();
+        }
+        else
+        {
+            queues = rawQueues;
+        }
 
         // Default to Failed if no status specified; allow Expired as override
         var status = StatusFilter ?? JobStatus.Failed;
@@ -63,30 +81,47 @@ internal sealed class FailedPage : IComponent
                 _ => "No matching jobs.",
             };
 
+            var isReadOnlyEmpty = ActiveCluster?.IsReadOnly == true;
             var emptyBody =
                 "<div id=\"failed-page-content\" data-refresh=\"true\">" +
+                (isReadOnlyEmpty ? HtmlFragments.ReadOnlyBanner() : string.Empty) +
                 HtmlFragments.Breadcrumbs(PathPrefix, ("Failed", null)) +
                 HtmlFragments.PageHeader("Failed Jobs", subtitle) +
                 HtmlFragments.FilterBar(PathPrefix, currentStatus, Search, null, null, queues) +
                 HtmlFragments.EmptyState("12 22s10-9 10-9-9-9-9 9 10 9z", emptyMsg + " — " + emptySub) +
                 "</div>";
-            return HtmlShell.Wrap(Title, PathPrefix, "failed", emptyBody, Counters);
+            return HtmlShell.Wrap(Title, PathPrefix, "failed", emptyBody, Counters, clusters: Clusters, activeCluster: ActiveCluster);
         }
 
-        var headerActions =
-            $"<form method=\"post\" action=\"{PathPrefix}/jobs/bulk\" style=\"display:inline\">" +
-            $"<input type=\"hidden\" name=\"status\" value=\"{currentStatus}\" />" +
-            "<button type=\"submit\" name=\"bulkAction\" value=\"requeue\" class=\"btn btn-primary\">↺ Requeue All</button></form> " +
-            $"<form method=\"post\" action=\"{PathPrefix}/jobs/bulk\" style=\"display:inline\">" +
-            $"<input type=\"hidden\" name=\"status\" value=\"{currentStatus}\" />" +
-            $"<button type=\"submit\" name=\"bulkAction\" value=\"delete\" class=\"btn btn-danger\" onclick=\"return confirm('Delete all {currentStatus.ToLower()} jobs?')\">✕ Delete All</button></form>";
+        var isReadOnly = ActiveCluster?.IsReadOnly == true;
+        var clusterSuffix = ActiveCluster is not null ? $"?cluster={Uri.EscapeDataString(ActiveCluster.Id)}" : string.Empty;
 
-        var rows = string.Join(string.Empty, result.Items.Select(j => HtmlFragments.JobRowFailed(j, PathPrefix, now)));
+        string? headerActions = null;
+        if (!isReadOnly)
+        {
+            var hasOrphanQueues = ActiveWorkerQueues is { Count: > 0 } &&
+                queues.Any(q => !ActiveWorkerQueues.Contains(q.Queue, StringComparer.OrdinalIgnoreCase));
+            var requeueAllConfirm = hasOrphanQueues
+                ? $"Requeue all {currentStatus.ToLower()} jobs?\\n\\n⚠ Warning: Some target queues have no active workers. Requeued jobs will remain stalled until workers start."
+                : $"Requeue all {currentStatus.ToLower()} jobs?";
+            var requeueAllConfirmJs = System.Web.HttpUtility.JavaScriptStringEncode(requeueAllConfirm, addDoubleQuotes: true);
+
+            headerActions =
+                $"<form method=\"post\" action=\"{PathPrefix}/jobs/bulk{clusterSuffix}\" style=\"display:inline\">" +
+                $"<input type=\"hidden\" name=\"status\" value=\"{currentStatus}\" />" +
+                $"<button type=\"submit\" name=\"bulkAction\" value=\"requeue\" class=\"btn btn-primary\" onclick=\"return confirm({requeueAllConfirmJs})\">↺ Requeue All</button></form> " +
+                $"<form method=\"post\" action=\"{PathPrefix}/jobs/bulk{clusterSuffix}\" style=\"display:inline\">" +
+                $"<input type=\"hidden\" name=\"status\" value=\"{currentStatus}\" />" +
+                $"<button type=\"submit\" name=\"bulkAction\" value=\"delete\" class=\"btn btn-danger\" onclick=\"return confirm('Delete all {currentStatus.ToLower()} jobs?')\">✕ Delete All</button></form>";
+        }
+
+        var rows = string.Join(string.Empty, result.Items.Select(j => HtmlFragments.JobRowFailed(j, PathPrefix, now, ActiveCluster)));
         var baseUrl = $"{PathPrefix}/failed?search={Uri.EscapeDataString(Search ?? string.Empty)}";
         var pagination = HtmlFragments.Pagination(result, baseUrl);
 
         var body =
             "<div id=\"failed-page-content\" data-refresh=\"true\">" +
+            (isReadOnly ? HtmlFragments.ReadOnlyBanner() : string.Empty) +
             HtmlFragments.Breadcrumbs(PathPrefix, ("Failed", null)) +
             HtmlFragments.PageHeader("Failed Jobs", subtitle, headerActions) +
             HtmlFragments.FilterBar(PathPrefix, currentStatus, Search, null, null, queues) +
@@ -100,6 +135,6 @@ internal sealed class FailedPage : IComponent
             $"</div>" +
             "</div>";
 
-        return HtmlShell.Wrap(Title, PathPrefix, "failed", body, Counters);
+        return HtmlShell.Wrap(Title, PathPrefix, "failed", body, Counters, clusters: Clusters, activeCluster: ActiveCluster);
     }
 }

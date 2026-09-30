@@ -5,7 +5,7 @@ a composed interface of `IJobStorage`, `IRecurringStorage`, and `IDashboardStora
 
 ---
 
-## Storage interfaces (v3)
+## Storage interfaces
 
 `IStorageProvider` is composed of three focused interfaces:
 
@@ -16,7 +16,7 @@ a composed interface of `IJobStorage`, `IRecurringStorage`, and `IDashboardStora
 | `IDashboardStorage` | Dashboard queries and control | Custom reporting or admin |
 
 For most applications, inject `IStorageProvider` or use `IJobControlService`
-(see [IJobControlService](#ijobcontrolservice) below).
+(see [Programmatic Control](#programmatic-control-with-ijobcontrolservice) below).
 Built-in providers implement all three — no registration changes needed.
 
 ---
@@ -43,6 +43,8 @@ dotnet add package NexJob.Postgres
 ```
 
 ```csharp
+using NexJob.Postgres;   // AddNexJobPostgres, UseDashboardReadReplica
+
 // 1. Register PostgreSQL storage
 builder.Services.AddNexJobPostgres(
     builder.Configuration.GetConnectionString("NexJobConnection")!);
@@ -104,6 +106,8 @@ dotnet add package NexJob.SqlServer
 ```
 
 ```csharp
+using NexJob.SqlServer;   // AddNexJobSqlServer, UseDashboardReadReplica
+
 // 1. Register SQL Server storage
 builder.Services.AddNexJobSqlServer(
     builder.Configuration.GetConnectionString("NexJobConnection")!);
@@ -165,6 +169,8 @@ dotnet add package NexJob.Redis
 ```
 
 ```csharp
+using NexJob.Redis;   // AddNexJobRedis, AddNexJobDistributedThrottle
+
 // 1. Register Redis storage
 builder.Services.AddNexJobRedis("localhost:6379,abortConnect=false");
 
@@ -208,9 +214,10 @@ builder.Services.AddNexJob(options =>
 - Lowest latency of all providers (microsecond dispatch)
 - High-throughput batch fetching and acknowledgment via optimized server-side Lua scripts (`FetchBatchScript`, `AcknowledgeBatchScript`)
 - Atomic state transitions via server-side Lua scripts
-- Global distributed sliding-window throttling
+- Optional cluster-wide `[Throttle]` limits (`AddNexJobDistributedThrottle()`): every running job holds an expiring entry that its node keeps refreshing, so slots left by a crashed node are reclaimed automatically
 - Distributed lock via `SET NX` with expiry
 - Priority queues via Redis Sorted Sets (`ZSET`)
+- A sorted-set job index keeps dashboard lists, metrics and retention from scanning the whole keyspace
 
 ---
 
@@ -221,6 +228,8 @@ dotnet add package NexJob.MongoDB
 ```
 
 ```csharp
+using NexJob.MongoDB;   // AddNexJobMongoDB
+
 // 1. Register MongoDB storage
 builder.Services.AddNexJobMongoDB(
     connectionString: builder.Configuration.GetConnectionString("MongoConnection")!,
@@ -260,6 +269,8 @@ builder.Services.AddNexJob(options =>
 - High-throughput batch claim and vectorized acknowledgment (`UpdateManyAsync` by ID set)
 - Atomic state transitions via `FindOneAndUpdate` with optimistic filter criteria
 - Distributed recurring locks via atomic collections
+- NexJob no longer registers a global `DateTimeOffset` serializer: the string representation applies to NexJob's own documents only, so your application's `DateTimeOffset` values are serialized the way *you* configured them. If your application unknowingly relied on the old global registration, pass `keepLegacyGlobalDateTimeOffsetSerializer: true` to `AddNexJobMongoDB` (temporary; it will be removed in a later release)
+- Every date is stored as an ISO 8601 string at `+00:00` (UTC), so scheduling comparisons are correct whatever offset the caller used. Documents written by older versions with a non-UTC offset keep that offset until they are rewritten; only future-scheduled jobs created with a local offset are affected
 - Automatic index creation on first use
 
 ---
@@ -288,11 +299,9 @@ All persistent providers implement `IRuntimeSettingsStore`. This stores dashboar
 
 ---
 
----
-
 ## Programmatic Control with `IJobControlService`
 
-To pause/resume queues or delete/requeue jobs programmatically outside of the dashboard UI, inject `IJobControlService`:
+To pause/resume queues, delete/requeue jobs or reset a queue's circuit breaker programmatically outside of the dashboard UI, inject `IJobControlService`. It exposes `RequeueJobAsync`, `DeleteJobAsync`, `PauseQueueAsync`, `ResumeQueueAsync` and `ResetQueueCircuitAsync`:
 
 ```csharp
 public sealed class MaintenanceService(IJobControlService control)

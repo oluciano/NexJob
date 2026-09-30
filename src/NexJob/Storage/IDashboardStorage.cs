@@ -61,4 +61,19 @@ public interface IDashboardStorage
     Task<IReadOnlyList<JobRecord>> GetJobsByTagAsync(
         string tag,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Retrieves aggregated job definitions and execution metrics for the job catalog.
+    /// </summary>
+    /// <param name="cancellationToken">Token to cancel the operation.</param>
+    /// <returns>A collection of aggregated job catalog items.</returns>
+    /// <remarks>
+    /// This default implementation returns an empty collection for backward compatibility with external providers
+    /// and is planned to become an abstract interface member in NexJob v6.0. Custom storage providers should override this method.
+    /// </remarks>
+    Task<IReadOnlyList<JobCatalogItem>> GetJobCatalogAsync(
+        CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult<IReadOnlyList<JobCatalogItem>>(Array.Empty<JobCatalogItem>());
+    }
 }

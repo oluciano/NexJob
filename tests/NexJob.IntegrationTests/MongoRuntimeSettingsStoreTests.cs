@@ -10,9 +10,10 @@ namespace NexJob.IntegrationTests;
 /// Requires Docker to be available on the host.
 /// </summary>
 public sealed class MongoRuntimeSettingsStoreTests
-    : RuntimeSettingsStoreTestsBase, IClassFixture<MongoFixture>
+    : RuntimeSettingsStoreTestsBase, IClassFixture<MongoFixture>, IAsyncLifetime
 {
     private readonly MongoFixture _fixture;
+    private readonly MongoTestDatabases _databases = new();
 
     public MongoRuntimeSettingsStoreTests(MongoFixture fixture)
     {
@@ -21,9 +22,11 @@ public sealed class MongoRuntimeSettingsStoreTests
 
     protected override async Task<IRuntimeSettingsStore> CreateStoreAsync()
     {
-        var client = new MongoClient(_fixture.Container.GetConnectionString());
-        var dbName = $"nexjob_rt_{Guid.NewGuid():N}";
-        var database = client.GetDatabase(dbName);
+        var database = _databases.Create(_fixture.Container.GetConnectionString(), "nexjob_rt");
         return await Task.FromResult(new MongoRuntimeSettingsStore(database));
     }
+
+    public Task InitializeAsync() => Task.CompletedTask;
+
+    public async Task DisposeAsync() => await _databases.DisposeAsync();
 }

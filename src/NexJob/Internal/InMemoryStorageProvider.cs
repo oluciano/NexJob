@@ -19,6 +19,7 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
     private readonly ConcurrentDictionary<string, RecurringJobRecord> _recurringJobs = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, DateTimeOffset> _recurringLocks = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, ServerRecord> _servers = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<(string JobType, string Queue), (long Succeeded, long Failed, DateTimeOffset? LastExecuted, double? TotalDurationSeconds, long DurationCount)> _lifetimeCatalogStats = new();
 
     // Indexed as: _queues[queueName][priorityIndex]
     // Priority indices: 0=Critical, 1=High, 2=Normal, 3=Low
@@ -189,7 +190,10 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
             {
                 job.Status = JobStatus.Succeeded;
                 job.CompletedAt = DateTimeOffset.UtcNow;
+                job.CheckpointJson = null;
             }
+
+            PromoteContinuations(jobId);
         }
 
         return Task.CompletedTask;
@@ -207,7 +211,10 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
                 {
                     job.Status = JobStatus.Succeeded;
                     job.CompletedAt = now;
+                    job.CheckpointJson = null;
                 }
+
+                PromoteContinuations(jobIds[i]);
             }
         }
 
@@ -679,7 +686,32 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
 
             if (result.Succeeded)
             {
-                ApplySuccess(job, result);
+                if (result.PurgeOnSuccess)
+                {
+                    var duration = (job.CompletedAt ?? DateTimeOffset.UtcNow) - (job.ProcessingStartedAt ?? job.CreatedAt);
+                    var durationSec = duration.TotalSeconds >= 0 ? duration.TotalSeconds : 0;
+                    _lifetimeCatalogStats.AddOrUpdate(
+                        (job.JobType, job.Queue),
+                        _ => (1, 0, DateTimeOffset.UtcNow, durationSec, 1),
+                        (_, cur) => (cur.Succeeded + 1, cur.Failed, DateTimeOffset.UtcNow, (cur.TotalDurationSeconds ?? 0) + durationSec, cur.DurationCount + 1));
+
+                    _jobs.TryRemove(jobId.Value, out _);
+                    if (job.IdempotencyKey is not null)
+                    {
+                        _idempotencyIndex.TryRemove(job.IdempotencyKey, out _);
+                    }
+
+                    if (result.RecurringJobId is not null
+                        && _recurringJobs.TryGetValue(result.RecurringJobId, out var rj))
+                    {
+                        rj.LastExecutionStatus = JobStatus.Succeeded;
+                        rj.LastExecutionError = null;
+                    }
+                }
+                else
+                {
+                    ApplySuccess(job, result);
+                }
             }
             else if (result.RetryAt.HasValue)
             {
@@ -738,12 +770,100 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
     }
 
     /// <inheritdoc/>
+    public Task SaveCheckpointAsync(
+        JobId jobId,
+        string checkpointJson,
+        int? percent,
+        string? message,
+        CancellationToken ct = default)
+    {
+        if (_jobs.TryGetValue(jobId.Value, out var job))
+        {
+            lock (job)
+            {
+                job.CheckpointJson = checkpointJson;
+                if (percent.HasValue)
+                {
+                    job.ProgressPercent = percent.Value;
+                }
+
+                if (message is not null)
+                {
+                    job.ProgressMessage = message;
+                }
+            }
+        }
+
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc/>
     public Task<IReadOnlyList<JobRecord>> GetJobsByTagAsync(string tag, CancellationToken cancellationToken = default)
     {
         IReadOnlyList<JobRecord> result = _jobs.Values
             .Where(j => j.Tags.Contains(tag, StringComparer.Ordinal))
             .ToList();
         return Task.FromResult(result);
+    }
+
+    /// <inheritdoc/>
+    public Task<IReadOnlyList<JobCatalogItem>> GetJobCatalogAsync(CancellationToken cancellationToken = default)
+    {
+        var allKeys = _jobs.Values
+            .Select(j => (j.JobType, j.Queue))
+            .Concat(_lifetimeCatalogStats.Keys)
+            .Distinct()
+            .ToList();
+
+        var items = new List<JobCatalogItem>();
+
+        foreach (var key in allKeys)
+        {
+            var activeJobs = _jobs.Values
+                .Where(j => string.Equals(j.JobType, key.JobType, StringComparison.Ordinal)
+                         && string.Equals(j.Queue, key.Queue, StringComparison.Ordinal))
+                .ToList();
+
+            _lifetimeCatalogStats.TryGetValue(key, out var lifetime);
+
+            var activeSucceeded = (long)activeJobs.Count(j => j.Status == JobStatus.Succeeded);
+            var activeFailed = (long)activeJobs.Count(j => j.Status == JobStatus.Failed);
+            var totalSucceeded = lifetime.Succeeded + activeSucceeded;
+            var totalFailed = lifetime.Failed + activeFailed;
+            var totalRuns = totalSucceeded + totalFailed + activeJobs.Count(j => j.Status != JobStatus.Succeeded && j.Status != JobStatus.Failed);
+
+            DateTimeOffset? lastExecuted = activeJobs
+                .Select(j => j.CompletedAt ?? j.ProcessingStartedAt)
+                .Concat(new[] { lifetime.LastExecuted })
+                .Where(t => t.HasValue)
+                .OrderByDescending(t => t!.Value)
+                .FirstOrDefault();
+
+            var activeDurations = activeJobs
+                .Where(j => j.ProcessingStartedAt.HasValue && j.CompletedAt.HasValue && j.CompletedAt >= j.ProcessingStartedAt)
+                .Select(j => (j.CompletedAt!.Value - j.ProcessingStartedAt!.Value).TotalSeconds)
+                .ToList();
+
+            var totalDurationSum = (lifetime.TotalDurationSeconds ?? 0) + activeDurations.Sum();
+            var totalDurationCount = lifetime.DurationCount + activeDurations.Count;
+            double? avgDuration = totalDurationCount > 0 ? totalDurationSum / totalDurationCount : null;
+
+            items.Add(new JobCatalogItem(
+                JobType: key.JobType,
+                Queue: key.Queue,
+                TotalRuns: totalRuns,
+                SucceededRuns: totalSucceeded,
+                FailedRuns: totalFailed,
+                LastExecutedAt: lastExecuted,
+                AvgDurationSeconds: avgDuration));
+        }
+
+        IReadOnlyList<JobCatalogItem> sorted = items
+            .OrderBy(c => c.JobType, StringComparer.Ordinal)
+            .ThenBy(c => c.Queue, StringComparer.Ordinal)
+            .ToList();
+
+        return Task.FromResult(sorted);
     }
 
     /// <inheritdoc/>
@@ -796,7 +916,8 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
             JobStatus.Failed when policy.RetainFailed > TimeSpan.Zero
                 && job.CompletedAt.HasValue
                 && now - job.CompletedAt.Value > policy.RetainFailed => true,
-            JobStatus.Failed when policy.RetainDeadLetter > TimeSpan.Zero
+            JobStatus.Failed when policy.RetainFailed == TimeSpan.Zero
+                && policy.RetainDeadLetter > TimeSpan.Zero
                 && job.CompletedAt.HasValue
                 && now - job.CompletedAt.Value > policy.RetainDeadLetter => true,
             JobStatus.Expired when policy.RetainExpired > TimeSpan.Zero
@@ -857,6 +978,12 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
         job.CompletedAt = DateTimeOffset.UtcNow;
         job.HeartbeatAt = null;
         job.ExecutionLogs = result.Logs;
+        job.CheckpointJson = null;
+
+        if (result.TrimPayloadOnSuccess)
+        {
+            job.InputJson = string.Empty;
+        }
 
         if (result.RecurringJobId is not null
             && _recurringJobs.TryGetValue(result.RecurringJobId, out var rj))

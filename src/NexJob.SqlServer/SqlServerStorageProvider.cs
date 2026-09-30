@@ -14,6 +14,8 @@ namespace NexJob.SqlServer;
 /// </summary>
 public sealed class SqlServerStorageProvider : IStorageProvider
 {
+    private const int MaxEnqueueAttempts = 3;
+
     private readonly string _connectionString;
     private readonly SqlConnection? _connection;
 
@@ -53,90 +55,91 @@ public sealed class SqlServerStorageProvider : IStorageProvider
 
         if (job.IdempotencyKey is not null)
         {
-            await using var tx = await conn.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
-
-            var existing = await conn.QueryFirstOrDefaultAsync<(Guid Id, string Status)>(
-                """
-                SELECT TOP 1 id, status FROM nexjob_jobs WITH (UPDLOCK, ROWLOCK)
-                WHERE idempotency_key = @key
-                ORDER BY created_at DESC
-                """,
-                new { key = job.IdempotencyKey },
-                tx);
-
-            if (existing.Id != Guid.Empty)
+            // The unique index only covers active jobs. A conflict means another enqueue won the race; if that
+            // job already finished by the time we look, the key is free again, so try once more.
+            for (var attempt = 0; attempt < MaxEnqueueAttempts; attempt++)
             {
-                var existingId = new JobId(existing.Id);
-                var existingStatus = ParseStatus(existing.Status);
+                await using var tx = await conn.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
-                var existingResult = ResolveDuplicate(existingId, existingStatus, duplicatePolicy);
-                if (existingResult.WasRejected || IsActiveState(existingStatus))
-                {
-                    await tx.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                    return existingResult;
-                }
-            }
-
-            try
-            {
-                await conn.ExecuteAsync(
+                var existing = await conn.QueryFirstOrDefaultAsync<(Guid Id, string Status)>(
                     """
-                    INSERT INTO nexjob_jobs
-                        (id, job_type, input_type, input_json, schema_version, queue, priority, status,
-                         idempotency_key, attempts, max_attempts, created_at, scheduled_at, parent_job_id, recurring_job_id, tags)
-                    VALUES
-                        (@Id, @JobType, @InputType, @InputJson, @SchemaVersion, @Queue, @Priority,
-                         @Status, @IdempotencyKey, @Attempts, @MaxAttempts, @CreatedAt, @ScheduledAt, @ParentJobId, @RecurringJobId, @Tags)
+                    SELECT TOP 1 id, status FROM nexjob_jobs WITH (UPDLOCK, ROWLOCK)
+                    WHERE idempotency_key = @key
+                    ORDER BY created_at DESC
                     """,
-                    new
-                    {
-                        Id = job.Id.Value,
-                        job.JobType,
-                        job.InputType,
-                        job.InputJson,
-                        job.SchemaVersion,
-                        job.Queue,
-                        Priority = (int)job.Priority,
-                        Status = job.Status.ToString(),
-                        job.IdempotencyKey,
-                        job.Attempts,
-                        job.MaxAttempts,
-                        job.CreatedAt,
-                        job.ScheduledAt,
-                        ParentJobId = job.ParentJobId?.Value,
-                        job.RecurringJobId,
-                        Tags = System.Text.Json.JsonSerializer.Serialize(job.Tags),
-                    },
+                    new { key = job.IdempotencyKey },
                     tx);
 
-                await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
-                return new EnqueueResult(job.Id, WasRejected: false);
-            }
-            catch (SqlException ex) when (IsUniqueConstraintViolation(ex))
-            {
-                // Race condition: unique constraint violation on idempotency_key.
-                // Another thread inserted a job with the same idempotency key after our check.
-                // Fetch the winning job and apply duplicate policy.
-                await tx.RollbackAsync(cancellationToken).ConfigureAwait(false);
-
-                var winner = await conn.QueryFirstOrDefaultAsync<(Guid Id, string Status)>(
-                    """
-                    SELECT TOP 1 id, status FROM nexjob_jobs
-                    WHERE idempotency_key = @key
-                    ORDER BY created_at ASC
-                    """,
-                    new { key = job.IdempotencyKey });
-
-                if (winner.Id == Guid.Empty)
+                if (existing.Id != Guid.Empty)
                 {
-                    throw; // Should not happen; rethrow
+                    var existingId = new JobId(existing.Id);
+                    var existingStatus = ParseStatus(existing.Status);
+
+                    var existingResult = ResolveDuplicate(existingId, existingStatus, duplicatePolicy);
+                    if (existingResult.WasRejected || IsActiveState(existingStatus))
+                    {
+                        await tx.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                        return existingResult;
+                    }
                 }
 
-                var winnerId = new JobId(winner.Id);
-                var winnerStatus = ParseStatus(winner.Status);
+                try
+                {
+                    await conn.ExecuteAsync(
+                        """
+                        INSERT INTO nexjob_jobs
+                            (id, job_type, input_type, input_json, schema_version, queue, priority, status,
+                             idempotency_key, attempts, max_attempts, created_at, scheduled_at, parent_job_id, recurring_job_id, tags)
+                        VALUES
+                            (@Id, @JobType, @InputType, @InputJson, @SchemaVersion, @Queue, @Priority,
+                             @Status, @IdempotencyKey, @Attempts, @MaxAttempts, @CreatedAt, @ScheduledAt, @ParentJobId, @RecurringJobId, @Tags)
+                        """,
+                        new
+                        {
+                            Id = job.Id.Value,
+                            job.JobType,
+                            job.InputType,
+                            job.InputJson,
+                            job.SchemaVersion,
+                            job.Queue,
+                            Priority = (int)job.Priority,
+                            Status = job.Status.ToString(),
+                            job.IdempotencyKey,
+                            job.Attempts,
+                            job.MaxAttempts,
+                            job.CreatedAt,
+                            job.ScheduledAt,
+                            ParentJobId = job.ParentJobId?.Value,
+                            job.RecurringJobId,
+                            Tags = System.Text.Json.JsonSerializer.Serialize(job.Tags),
+                        },
+                        tx);
 
-                return ResolveDuplicate(winnerId, winnerStatus, duplicatePolicy);
+                    await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
+                    return new EnqueueResult(job.Id, WasRejected: false);
+                }
+                catch (SqlException ex) when (IsUniqueConstraintViolation(ex))
+                {
+                    await tx.RollbackAsync(cancellationToken).ConfigureAwait(false);
+
+                    var winner = await conn.QueryFirstOrDefaultAsync<(Guid Id, string Status)>(
+                        """
+                        SELECT TOP 1 id, status FROM nexjob_jobs
+                        WHERE idempotency_key = @key
+                          AND status IN ('Enqueued', 'Processing', 'Scheduled', 'AwaitingContinuation')
+                        ORDER BY created_at DESC
+                        """,
+                        new { key = job.IdempotencyKey });
+
+                    if (winner.Id != Guid.Empty)
+                    {
+                        return ResolveDuplicate(new JobId(winner.Id), ParseStatus(winner.Status), duplicatePolicy);
+                    }
+                }
             }
+
+            throw new InvalidOperationException(
+                $"Could not enqueue a job with idempotency key '{job.IdempotencyKey}' after {MaxEnqueueAttempts} attempts.");
         }
 
         await conn.ExecuteAsync(
@@ -177,6 +180,11 @@ public sealed class SqlServerStorageProvider : IStorageProvider
     public async Task<JobRecord?> FetchNextAsync(
         IReadOnlyList<string> queues, CancellationToken cancellationToken = default)
     {
+        if (queues.Count == 0)
+        {
+            return null;
+        }
+
         await using var conn = Open();
         await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var tx = await conn.BeginTransactionAsync(cancellationToken);
@@ -287,13 +295,26 @@ public sealed class SqlServerStorageProvider : IStorageProvider
     {
         await using var conn = Open();
         await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var tx = await conn.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
         await conn.ExecuteAsync(
             """
             UPDATE nexjob_jobs
-            SET status = 'Succeeded', completed_at = SYSUTCDATETIME(), heartbeat_at = NULL
+            SET status = 'Succeeded', completed_at = SYSUTCDATETIME(), heartbeat_at = NULL, checkpoint_json = NULL
             WHERE id = @id
             """,
-            new { id = jobId.Value });
+            new { id = jobId.Value },
+            transaction: tx).ConfigureAwait(false);
+
+        // A parent acknowledged outside CommitJobResultAsync must still release its continuations.
+        await conn.ExecuteAsync(
+            """
+            UPDATE nexjob_jobs
+            SET status = 'Enqueued', scheduled_at = NULL
+            WHERE parent_job_id = @id AND status = 'AwaitingContinuation'
+            """,
+            new { id = jobId.Value },
+            transaction: tx).ConfigureAwait(false);
+        await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -312,15 +333,27 @@ public sealed class SqlServerStorageProvider : IStorageProvider
 
         await using var conn = Open();
         await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var tx = await conn.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
         var idList = jobIds.Select(j => j.Value).ToArray();
 
         await conn.ExecuteAsync(
             """
             UPDATE nexjob_jobs
-            SET status = 'Succeeded', completed_at = SYSUTCDATETIME(), heartbeat_at = NULL
+            SET status = 'Succeeded', completed_at = SYSUTCDATETIME(), heartbeat_at = NULL, checkpoint_json = NULL
             WHERE id IN @Ids
             """,
-            new { Ids = idList });
+            new { Ids = idList },
+            transaction: tx).ConfigureAwait(false);
+
+        await conn.ExecuteAsync(
+            """
+            UPDATE nexjob_jobs
+            SET status = 'Enqueued', scheduled_at = NULL
+            WHERE parent_job_id IN @Ids AND status = 'AwaitingContinuation'
+            """,
+            new { Ids = idList },
+            transaction: tx).ConfigureAwait(false);
+        await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
     }
 
     // ── SetFailedAsync ────────────────────────────────────────────────────────
@@ -795,14 +828,22 @@ public sealed class SqlServerStorageProvider : IStorageProvider
     {
         await using var conn = Open();
         await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await conn.ExecuteAsync(
-            """
-            UPDATE nexjob_jobs
-            SET status = 'Enqueued', attempts = 0, retry_at = NULL,
-                completed_at = NULL, exception_message = NULL, exception_stack_trace = NULL
-            WHERE id = @id
-            """,
-            new { id = id.Value });
+        try
+        {
+            await conn.ExecuteAsync(
+                """
+                UPDATE nexjob_jobs
+                SET status = 'Enqueued', attempts = 0, retry_at = NULL,
+                    completed_at = NULL, exception_message = NULL, exception_stack_trace = NULL
+                WHERE id = @id
+                """,
+                new { id = id.Value });
+        }
+        catch (SqlException ex) when (IsUniqueConstraintViolation(ex))
+        {
+            throw new InvalidOperationException(
+                $"Cannot requeue job {id.Value}: another active job already holds its idempotency key.", ex);
+        }
     }
 
     /// <inheritdoc/>
@@ -925,6 +966,23 @@ public sealed class SqlServerStorageProvider : IStorageProvider
     }
 
     /// <inheritdoc/>
+    public async Task SaveCheckpointAsync(
+        JobId jobId, string checkpointJson, int? percent, string? message, CancellationToken ct = default)
+    {
+        await using var conn = Open();
+        await conn.OpenAsync(ct).ConfigureAwait(false);
+        await conn.ExecuteAsync(
+            """
+            UPDATE nexjob_jobs
+            SET checkpoint_json = @chk,
+                progress_percent = COALESCE(@p, progress_percent),
+                progress_message = COALESCE(@m, progress_message)
+            WHERE id = @id
+            """,
+            new { id = jobId.Value, chk = checkpointJson, p = percent, m = message });
+    }
+
+    /// <inheritdoc/>
     public async Task<IReadOnlyList<JobRecord>> GetJobsByTagAsync(
         string tag, CancellationToken cancellationToken = default)
     {
@@ -935,6 +993,35 @@ public sealed class SqlServerStorageProvider : IStorageProvider
             "SELECT * FROM nexjob_jobs WHERE tags LIKE @pattern",
             new { pattern = $"%\"{tag}\"%" });
         return rows.Select(r => r.ToRecord()).ToList();
+    }
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<JobCatalogItem>> GetJobCatalogAsync(
+        CancellationToken cancellationToken = default)
+    {
+        await using var conn = Open();
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+
+        const string sql = """
+            SELECT
+                job_type AS JobType,
+                queue AS Queue,
+                CAST(COUNT(*) AS BIGINT) AS TotalRuns,
+                CAST(SUM(CASE WHEN status = 'Succeeded' THEN 1 ELSE 0 END) AS BIGINT) AS SucceededRuns,
+                CAST(SUM(CASE WHEN status = 'Failed' THEN 1 ELSE 0 END) AS BIGINT) AS FailedRuns,
+                MAX(COALESCE(completed_at, processing_started_at)) AS LastExecutedAt,
+                AVG(CASE
+                    WHEN processing_started_at IS NOT NULL AND completed_at IS NOT NULL AND completed_at >= processing_started_at
+                    THEN CAST(DATEDIFF_BIG(MILLISECOND, processing_started_at, completed_at) AS FLOAT) / 1000.0
+                    ELSE NULL
+                END) AS AvgDurationSeconds
+            FROM nexjob_jobs
+            GROUP BY job_type, queue
+            ORDER BY job_type ASC, queue ASC
+            """;
+
+        var rows = await conn.QueryAsync<JobCatalogItem>(sql).ConfigureAwait(false);
+        return rows.ToList();
     }
 
     /// <inheritdoc/>
@@ -1081,14 +1168,32 @@ public sealed class SqlServerStorageProvider : IStorageProvider
         IDbConnection conn, IDbTransaction tx, JobId jobId, JobExecutionResult result,
         string logsJson)
     {
-        await conn.ExecuteAsync(
-            """
-            UPDATE nexjob_jobs
-            SET status = 'Succeeded', completed_at = SYSUTCDATETIME(), heartbeat_at = NULL, execution_logs = @Logs
-            WHERE id = @id
-            """,
-            new { id = jobId.Value, Logs = logsJson },
-            transaction: tx);
+        if (result.PurgeOnSuccess)
+        {
+            await conn.ExecuteAsync(
+                "DELETE FROM nexjob_jobs WHERE id = @id",
+                new { id = jobId.Value },
+                transaction: tx);
+        }
+        else
+        {
+            var updateSql = result.TrimPayloadOnSuccess
+                ? """
+                  UPDATE nexjob_jobs
+                  SET status = 'Succeeded', completed_at = SYSUTCDATETIME(), heartbeat_at = NULL, execution_logs = @Logs, input_json = '', checkpoint_json = NULL
+                  WHERE id = @id
+                  """
+                : """
+                  UPDATE nexjob_jobs
+                  SET status = 'Succeeded', completed_at = SYSUTCDATETIME(), heartbeat_at = NULL, execution_logs = @Logs, checkpoint_json = NULL
+                  WHERE id = @id
+                  """;
+
+            await conn.ExecuteAsync(
+                updateSql,
+                new { id = jobId.Value, Logs = logsJson },
+                transaction: tx);
+        }
 
         await conn.ExecuteAsync(
             """

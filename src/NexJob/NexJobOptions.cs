@@ -31,9 +31,10 @@ public sealed class NexJobOptions
     public int MaxAttempts { get; set; } = 10;
 
     /// <summary>
-    /// TTL for distributed throttle slots in Redis.
-    /// Serves as a dead-man switch: if a worker crashes without releasing a slot,
-    /// the slot expires automatically after this duration.
+    /// Maximum time a job may hold a distributed throttle slot in Redis.
+    /// A node keeps refreshing the slots of its running jobs, so a slot left behind by a crashed node is
+    /// reclaimed after three <see cref="HeartbeatInterval"/> periods; this value only caps how long a live job
+    /// can keep a slot (a slot older than this is no longer refreshed and expires).
     /// Must be greater than the longest expected job execution time.
     /// Defaults to 1 hour.
     /// </summary>
@@ -49,6 +50,14 @@ public sealed class NexJobOptions
     /// Reduce this for multi-node setups where latency matters.
     /// </remarks>
     public TimeSpan PollingInterval { get; set; } = TimeSpan.FromSeconds(15);
+
+    /// <summary>
+    /// Delay applied when deferring a foreign job (a job whose type or input type is not loaded
+    /// in the current application runtime). This releases the job back to storage so another node
+    /// that owns the job type can execute it, while preventing immediate hot-loop re-fetching.
+    /// Defaults to <c>5 seconds</c>.
+    /// </summary>
+    public TimeSpan ForeignJobRetryDelay { get; set; } = TimeSpan.FromSeconds(5);
 
     /// <summary>
     /// How often active workers refresh their heartbeat timestamp.
@@ -167,8 +176,8 @@ public sealed class NexJobOptions
     public int RetentionBatchSize { get; set; } = 1000;
 
     /// <summary>
-    /// Per-queue settings loaded from <c>appsettings.json</c>, used for execution windows.
-    /// Populated by <see cref="ApplySettings"/>.
+    /// Per-queue settings loaded from <c>appsettings.json</c>, used for execution windows and circuit breakers.
+    /// Populated by <see cref="ApplySettings"/> or configured programmatically via <see cref="ConfigureQueue"/>.
     /// </summary>
     public List<QueueSettings> QueueSettings { get; set; } = [];
 
@@ -182,6 +191,28 @@ public sealed class NexJobOptions
     /// Internal flag indicating whether a storage provider has been explicitly configured.
     /// </summary>
     internal bool StorageConfigured { get; set; }
+
+    /// <summary>
+    /// Configures queue-level behavior, such as execution windows or dynamic circuit breakers.
+    /// </summary>
+    /// <param name="queueName">The name of the queue to configure.</param>
+    /// <param name="configure">The configuration delegate.</param>
+    /// <returns>This options instance for method chaining.</returns>
+    public NexJobOptions ConfigureQueue(string queueName, Action<QueueSettings> configure)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(queueName);
+        ArgumentNullException.ThrowIfNull(configure);
+
+        var existing = QueueSettings.Find(q => string.Equals(q.Name, queueName, StringComparison.OrdinalIgnoreCase));
+        if (existing is null)
+        {
+            existing = new QueueSettings { Name = queueName };
+            QueueSettings.Add(existing);
+        }
+
+        configure(existing);
+        return this;
+    }
 
     /// <summary>
     /// Marks the in-memory storage provider as explicitly configured, enabling fluent chaining.

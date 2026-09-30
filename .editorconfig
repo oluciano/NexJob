@@ -149,7 +149,7 @@ dotnet_diagnostic.SA1202.severity = none
 dotnet_diagnostic.SA1204.severity = none
 
 # Suppress documentation rules for internal storage rows/documents
-[src/NexJob.*/{JobRow,RecurringJobRow,JobDocument,RecurringJobDocument,ServerDocument,ExecutionLogEntry,SchemaSQL,SchemaMigration,SqlServerSchemaSql}.cs]
+[src/NexJob.*/{JobRow,JobCatalogRow,RecurringJobRow,JobDocument,RecurringJobDocument,ServerDocument,ExecutionLogEntry,SchemaSQL,SchemaMigration,SqlServerSchemaSql}.cs]
 dotnet_diagnostic.SA1600.severity = none
 dotnet_diagnostic.SA1601.severity = none
 dotnet_diagnostic.SA1602.severity = none

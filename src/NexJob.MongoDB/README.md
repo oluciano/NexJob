@@ -78,6 +78,7 @@ builder.Services.AddNexJob(options =>
 - **Document-Oriented Storage:** Flexible document schema for job arguments, execution metadata, and logs.
 - **Distributed Recurring Locks:** Manages cron recurring job execution safely across replica sets using atomic collection locks (`nexjob_recurring_locks`).
 - **Runtime Settings Store:** Persists dynamic queue limits and pause status in MongoDB.
+- **Scoped Date Serialization:** `DateTimeOffset` is stored as a UTC ISO 8601 string for NexJob documents only; NexJob no longer registers a global serializer that would change how your own types are stored. If your application relied on the old global registration, pass `keepLegacyGlobalDateTimeOffsetSerializer: true` to `AddNexJobMongoDB` for one release.
 
 ---
 

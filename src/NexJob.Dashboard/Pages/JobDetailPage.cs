@@ -17,6 +17,11 @@ internal sealed class JobDetailPage : IComponent
     [Parameter] public NavCounters? Counters { get; set; }
     [Parameter] public JobId JobId { get; set; }
     [Parameter] public bool IsReadOnly { get; set; }
+    [Parameter] public IReadOnlyList<DashboardCluster>? Clusters { get; set; }
+    [Parameter] public DashboardCluster? ActiveCluster { get; set; }
+
+    /// <summary>Gets or sets the set of queue names that currently have at least one active worker listening.</summary>
+    [Parameter] public IReadOnlySet<string>? ActiveWorkerQueues { get; set; }
 
     void IComponent.Attach(RenderHandle renderHandle) => _handle = renderHandle;
 
@@ -38,29 +43,44 @@ internal sealed class JobDetailPage : IComponent
                 HtmlFragments.Breadcrumbs(PathPrefix, ("Jobs", $"{PathPrefix}/jobs"), ("Not Found", null)) +
                 HtmlFragments.EmptyState("0 0 24 24", "Job not found") +
                 $"<div style=\"text-align:center;margin-top:12px\"><a href=\"{PathPrefix}/jobs\" class=\"btn btn-ghost btn-sm\">← Back to Jobs</a></div>";
-            return HtmlShell.Wrap(Title, PathPrefix, "jobs", notFoundHtml, Counters);
+            return HtmlShell.Wrap(Title, PathPrefix, "jobs", notFoundHtml, Counters, clusters: Clusters, activeCluster: ActiveCluster);
         }
 
         var now = DateTimeOffset.UtcNow;
         var vm = new JobDetailViewModel { Job = job, PathPrefix = PathPrefix, Now = now };
 
+        var clusterSuffix = ActiveCluster is not null ? $"?cluster={Uri.EscapeDataString(ActiveCluster.Id)}" : string.Empty;
+
         // Action buttons
         var actions = string.Empty;
         if (!IsReadOnly)
         {
+            var queueOrphanWarning = ActiveWorkerQueues is { Count: > 0 } && !ActiveWorkerQueues.Contains(job.Queue, StringComparer.OrdinalIgnoreCase)
+                ? $"\\n\\n⚠ Warning: Queue '{job.Queue}' has no active workers. The job will remain queued until a worker starts."
+                : string.Empty;
+
             if (job.Status == JobStatus.Scheduled)
             {
+                var runNowConfirm = $"Run this job now (bypass schedule)?{queueOrphanWarning}";
                 actions +=
-                    $"<form method=\"post\" action=\"{PathPrefix}/jobs/{job.Id.Value}/runnow\" style=\"display:inline\">" +
-                    "<button type=\"submit\" class=\"btn btn-primary btn-sm\">▶ Run Now</button></form> ";
+                    $"<form method=\"post\" action=\"{PathPrefix}/jobs/{job.Id.Value}/runnow{clusterSuffix}\" style=\"display:inline\">" +
+                    $"<button type=\"submit\" class=\"btn btn-primary btn-sm\" onclick=\"return confirm({System.Web.HttpUtility.JavaScriptStringEncode(runNowConfirm, addDoubleQuotes: true)}\">▶ Run Now</button></form> " +
+                    $"<form method=\"post\" action=\"{PathPrefix}/jobs/{job.Id.Value}/delete{clusterSuffix}\" style=\"display:inline\">" +
+                    "<button type=\"submit\" class=\"btn btn-danger btn-sm\" onclick=\"return confirm('Cancel and delete this scheduled job?')\">Delete</button></form>";
             }
-
-            if (job.Status == JobStatus.Failed)
+            else if (job.Status == JobStatus.Enqueued)
             {
                 actions +=
-                    $"<form method=\"post\" action=\"{PathPrefix}/jobs/{job.Id.Value}/requeue\" style=\"display:inline\">" +
-                    "<button type=\"submit\" class=\"btn btn-primary btn-sm\" onclick=\"return confirm('Requeue this job?')\">↺ Requeue</button></form> " +
-                    $"<form method=\"post\" action=\"{PathPrefix}/jobs/{job.Id.Value}/delete\" style=\"display:inline\">" +
+                    $"<form method=\"post\" action=\"{PathPrefix}/jobs/{job.Id.Value}/delete{clusterSuffix}\" style=\"display:inline\">" +
+                    "<button type=\"submit\" class=\"btn btn-danger btn-sm\" onclick=\"return confirm('Cancel and delete this enqueued job?')\">Delete</button></form>";
+            }
+            else if (job.Status == JobStatus.Failed)
+            {
+                var requeueConfirm = $"Requeue this job?{queueOrphanWarning}";
+                actions +=
+                    $"<form method=\"post\" action=\"{PathPrefix}/jobs/{job.Id.Value}/requeue{clusterSuffix}\" style=\"display:inline\">" +
+                    $"<button type=\"submit\" class=\"btn btn-primary btn-sm\" onclick=\"return confirm({System.Web.HttpUtility.JavaScriptStringEncode(requeueConfirm, addDoubleQuotes: true)})\">↺ Requeue</button></form> " +
+                    $"<form method=\"post\" action=\"{PathPrefix}/jobs/{job.Id.Value}/delete{clusterSuffix}\" style=\"display:inline\">" +
                     "<button type=\"submit\" class=\"btn btn-danger btn-sm\" onclick=\"return confirm('Delete this job?')\">Delete</button></form>";
             }
         }
@@ -145,6 +165,10 @@ internal sealed class JobDetailPage : IComponent
                 ("Recurring", job.RecurringJobId is not null ? $"<a href=\"{PathPrefix}/recurring/{Uri.EscapeDataString(job.RecurringJobId)}\">{HttpUtility.HtmlEncode(job.RecurringJobId)}</a>" : "—"));
 
         // Payload
+        var payloadStrippedNotice = (job.Status == JobStatus.Succeeded && string.IsNullOrEmpty(job.InputJson))
+            ? "<div class=\"alert alert-info\" style=\"margin-top:8px;font-size:12px\">ℹ️ Payload stripped by retention policy (TrimPayloadOnSuccess)</div>"
+            : string.Empty;
+
         var payloadSection =
             "<div style=\"margin-bottom:28px\">" +
             "<div style=\"display:flex;justify-content:space-between;align-items:center;margin-bottom:8px\">" +
@@ -154,7 +178,26 @@ internal sealed class JobDetailPage : IComponent
             "<div class=\"terminal-header\"><div class=\"terminal-dots\"><span></span><span></span><span></span></div><span class=\"terminal-title\">payload.json</span><button class=\"copy-btn\" onclick=\"navigator.clipboard.writeText(this.parentElement.nextElementSibling.innerText);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)\">Copy</button></div>" +
             $"<div class=\"terminal-body\"><pre style=\"margin:0;font-size:12px;color:#e2e8f0;overflow-x:auto;font-family:monospace;white-space:pre-wrap\">{Helpers.FormatJson(job.InputJson)}</pre></div>" +
             "</div>" +
+            payloadStrippedNotice +
             "</div>";
+
+        // Checkpoint state section (for long-running/batch checkpoints)
+        var checkpointSection = string.Empty;
+        if (!string.IsNullOrWhiteSpace(job.CheckpointJson))
+        {
+            checkpointSection =
+                "<div style=\"margin-bottom:28px\">" +
+                "<details class=\"card\" open style=\"padding:0;overflow:hidden\">" +
+                "<summary style=\"padding:14px 18px;font-weight:600;font-size:14px;cursor:pointer;background:var(--bg-secondary);display:flex;align-items:center;gap:8px\">💾 Checkpoint State <span style=\"font-size:12px;font-weight:400;color:var(--text-tertiary)\">(Progress snapshot)</span></summary>" +
+                "<div style=\"padding:16px\">" +
+                "<div class=\"terminal-window\">" +
+                "<div class=\"terminal-header\"><div class=\"terminal-dots\"><span></span><span></span><span></span></div><span class=\"terminal-title\">checkpoint.json</span><button class=\"copy-btn\" onclick=\"navigator.clipboard.writeText(this.parentElement.nextElementSibling.innerText);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)\">Copy</button></div>" +
+                $"<div class=\"terminal-body\"><pre style=\"margin:0;font-size:12px;color:#e2e8f0;overflow-x:auto;font-family:monospace;white-space:pre-wrap\">{Helpers.FormatJson(job.CheckpointJson)}</pre></div>" +
+                "</div>" +
+                "</div>" +
+                "</details>" +
+                "</div>";
+        }
 
         // Error section
         var errorSection = HtmlFragments.ErrorSection(job.LastErrorMessage, job.LastErrorStackTrace);
@@ -199,7 +242,7 @@ internal sealed class JobDetailPage : IComponent
             $"var logsBadge=document.getElementById('logs-count-badge');" +
             $"var isRunning={(job.Status == JobStatus.Processing ? "true" : "false")};" +
             $"var lastLogsCount={job.ExecutionLogs.Count};" +
-            $"var es=new EventSource('{PathPrefix}/stream');" +
+            $"var es=new EventSource('{PathPrefix}/stream{clusterSuffix}');" +
             $"es.onmessage=function(e){{" +
             $"var d=JSON.parse(e.data);" +
             $"var jobs=d.activeJobs||[];" +
@@ -210,7 +253,7 @@ internal sealed class JobDetailPage : IComponent
             $"if(msgEl&&j.progressMessage)msgEl.textContent=j.progressMessage;" +
             $"}}" +
             $"if(isRunning){{" +
-            $"fetch('{PathPrefix}/jobs/'+jobId+'/logs').then(r=>r.json()).then(logs=>{{" +
+            $"fetch('{PathPrefix}/jobs/'+jobId+'/logs{clusterSuffix}').then(r=>r.json()).then(logs=>{{" +
             $"if(Array.isArray(logs)&&logs.length>lastLogsCount&&logsBody){{" +
             $"lastLogsCount=logs.length;" +
             $"if(logsBadge)logsBadge.textContent='('+logs.length+' entries)';" +
@@ -239,10 +282,11 @@ internal sealed class JobDetailPage : IComponent
             relationships +
             "</div>" +
             payloadSection +
+            checkpointSection +
             errorSection +
             logsSection +
             sseScript;
 
-        return HtmlShell.Wrap(Title, PathPrefix, "jobs", body, Counters);
+        return HtmlShell.Wrap(Title, PathPrefix, "jobs", body, Counters, clusters: Clusters, activeCluster: ActiveCluster);
     }
 }

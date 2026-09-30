@@ -127,6 +127,27 @@ public interface IJobStorage
         string? message,
         CancellationToken ct = default);
 
+    /// <summary>Persists an execution checkpoint and updates visual progress for an active job.</summary>
+    /// <param name="jobId">The unique identifier of the job.</param>
+    /// <param name="checkpointJson">Serialized JSON checkpoint payload.</param>
+    /// <param name="percent">Optional progress percentage (0-100).</param>
+    /// <param name="message">Optional status message.</param>
+    /// <param name="ct">Token to cancel the operation.</param>
+    Task SaveCheckpointAsync(
+        JobId jobId,
+        string checkpointJson,
+        int? percent,
+        string? message,
+        CancellationToken ct = default)
+    {
+        if (percent.HasValue)
+        {
+            return ReportProgressAsync(jobId, percent.Value, message, ct);
+        }
+
+        return Task.CompletedTask;
+    }
+
     /// <summary>Permanently deletes terminal jobs (Succeeded, Failed, Expired) based on the specified retention policy.</summary>
     /// <param name="policy">Retention thresholds for each terminal state.</param>
     /// <param name="cancellationToken">Token to cancel the operation.</param>

@@ -105,6 +105,111 @@ Deploy separate worker instances with different queue configurations:
 - Worker A: `["default", "emails"]` with 20 workers
 - Worker B: `["heavy-compute"]` with 5 workers
 
+### Multi-Service Architecture & Dedicated Ops Host
+
+In multi-service ecosystems sharing a database cluster:
+1. **Dedicated Ops Host:** Run a dedicated dashboard container (`AddNexJobStandaloneDashboard` with `DisableWorkers = true`) so operational monitoring does not consume worker threads or take lock slots from backend workers.
+2. **Dashboard Queue Scoping:** Scope the UI via `options.Queues = ["serviceA-queue"]` so engineering teams only view jobs, metrics, and queues relevant to their bounded context.
+3. **Foreign Job Safe Deferral:** While queue separation (`options.Queues`) is the recommended best practice, if workers encounter foreign job types, NexJob automatically rolls back attempt counts and defers the job via `options.ForeignJobRetryDelay` rather than failing or dead-lettering it.
+
+### Anti-Bloat Retention Strategies (High-Throughput Workloads)
+
+In high-throughput environments (e.g., event streaming via Kafka, SQS, or RabbitMQ processing millions of jobs daily), table growth and storage bloat can become problematic even with scheduled chunked purging.
+
+Use the `[Retention]` attribute on job classes to enforce immediate pruning or payload stripping upon successful completion:
+
+```csharp
+// 1. Ephemeral Jobs: Delete record immediately upon success
+[Retention(PurgeOnSuccess = true)]
+public sealed class HighFrequencyTelemetryJob : IJob<TelemetryPayload>
+{
+    public async Task ExecuteAsync(TelemetryPayload payload, CancellationToken ct)
+    {
+        // Process telemetry...
+        // On success, the job row is immediately deleted from storage.
+        // Catalog lifetime statistics (/catalog) are preserved!
+    }
+}
+
+// 2. Payload Stripping: Keep metadata & logs for auditing, strip heavy JSON payloads
+[Retention(TrimPayloadOnSuccess = true)]
+public sealed class HeavyReportGenerationJob : IJob<LargeReportInput>
+{
+    public async Task ExecuteAsync(LargeReportInput input, CancellationToken ct)
+    {
+        // Process heavy input...
+        // On success, InputJson is stripped (''), saving massive storage space
+        // while preserving duration, state, queue, and execution logs.
+    }
+}
+```
+
+| Strategy | Attribute Setting | Storage Impact | Auditability |
+|---|---|---|---|
+| **Default** | *(None)* | Job retained until `JobRetentionService` runs | Full job record and payload intact |
+| **Immediate Purge** | `PurgeOnSuccess = true` | Zero row bloat on success; the row is deleted right after the success is committed | Succeeded jobs vanish from `/jobs`; lifetime stats preserved in `/catalog` |
+| **Payload Stripping** | `TrimPayloadOnSuccess = true` | Massive space savings (payload set to empty string) | Job record, state, duration, and logs preserved; payload stripped |
+
+> [!NOTE]
+> If a job with `PurgeOnSuccess = true` fails, it is **never** purged immediately: it follows normal retry policies and dead-letter retention so operators can diagnose and requeue errors.
+
+---
+
+## Downstream Outage Protection & Circuit Breakers
+
+When communicating with external partners (payment gateways, CRM APIs, shipping providers), outages can quickly cause cascading failures:
+1. Retries burn rapidly across thousands of jobs.
+2. The failing service gets hammered ("metralhadora" effect), worsening their downtime.
+3. Storage gets polluted with dead-lettered jobs that were otherwise completely valid.
+
+### Protect Queues with Circuit Breakers
+
+Group external-facing jobs into dedicated queues (e.g., `payments`, `erp-sync`) and enable the queue-level circuit breaker:
+
+```csharp
+builder.Services.AddNexJob(options =>
+{
+    options.ConfigureQueue("payments", queue =>
+    {
+        queue.EnableCircuitBreaker(cb =>
+        {
+            cb.ConsecutiveFailuresThreshold = 5;
+            cb.OpenDuration = TimeSpan.FromSeconds(30);
+            cb.BackoffMultiplier = 2.0;
+            cb.MaxOpenDuration = TimeSpan.FromMinutes(10);
+            cb.RecoveryDuration = TimeSpan.FromMinutes(2);
+            cb.RecoveryConcurrency = 2; // Anti-thundering herd ramp-up
+
+            // Protect downstream API: trips on 5xx, timeouts, 429 Too Many Requests (Rate Limits),
+            // 401 Unauthorized (expired tokens), and network connection drops, while safely ignoring client bugs (400, 403, 404, 422)
+            cb.BreakOnTransientHttpErrors(includeAuthErrors: true);
+            cb.BreakOn<TimeoutException>();
+        });
+    });
+});
+```
+
+### Why Ramp-Up Concurrency Matters
+
+When an external API comes back online after an outage, NexJob transitions the queue to **Recovering** mode rather than immediately unleashing full concurrency. With `RecoveryConcurrency = 2`, only 2 jobs execute concurrently for the duration of `RecoveryDuration`. This gentle ramp-up protects recovering external services from an immediate thundering herd crash.
+
+---
+
+## Graceful Shutdown
+
+When the host stops, NexJob stops fetching new jobs immediately and waits up to `NexJobOptions.ShutdownTimeout` (default 30s) for running jobs to finish. Jobs still running after that are cancelled through the `CancellationToken` passed to `ExecuteAsync`.
+
+A job that is cancelled by shutdown is **not** treated as a failure: it is requeued right away, its attempt is not consumed, and it is never sent to a dead-letter handler. An `OperationCanceledException` thrown while the host is *not* stopping (for example an internal timeout) is still an ordinary failure and follows your retry policy.
+
+**`HostOptions.ShutdownTimeout` must be greater than `NexJobOptions.ShutdownTimeout`** (recommended: add 10 seconds). The .NET host defaults to 30s (5s on older templates), so with the NexJob default the host can kill the process before the drain finishes.
+
+```csharp
+builder.Services.Configure<HostOptions>(o => o.ShutdownTimeout = TimeSpan.FromSeconds(40));
+builder.Services.AddNexJob(o => o.ShutdownTimeout = TimeSpan.FromSeconds(30));
+```
+
+Write cancellable jobs: honour the `CancellationToken` so they can be interrupted and requeued quickly instead of being abandoned to the orphan watcher.
+
 ---
 
 ## Monitoring
@@ -117,7 +222,7 @@ Collect traces and metrics from day one. See [OpenTelemetry](12-OpenTelemetry.md
 
 Alert on:
 
-- `nexjob.jobs.failed` increases — jobs hitting dead-letter
+- `nexjob.jobs.failed` increases — failed executions (it counts every failed attempt, including ones that will still be retried; the dashboard's Failed count shows the jobs that exhausted their attempts)
 - `nexjob.jobs.expired` increases — deadlines too tight or workers insufficient
 - `nexjob.job.duration` p99 spikes — jobs getting slower
 
@@ -143,6 +248,7 @@ Check the dashboard regularly for:
 - [ ] Retention policies set (prevent storage growth)
 - [ ] Idempotent jobs (see [Idempotency](17-Idempotency.md))
 - [ ] Health check configured (`NexJobHealthCheck`)
+- [ ] `HostOptions.ShutdownTimeout` greater than `NexJobOptions.ShutdownTimeout`
 
 ---
 

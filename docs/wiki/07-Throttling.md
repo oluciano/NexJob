@@ -71,27 +71,83 @@ the effective limit is 15 concurrent jobs across the cluster.
 Install `NexJob.Redis` and enable distributed throttling:
 
 ```csharp
-services.AddNexJob(opt => opt.UseRedis("localhost:6379"))
-        .UseDistributedThrottle();
+using NexJob.Redis;   // AddNexJobRedis, AddNexJobDistributedThrottle
+
+services.AddNexJobRedis("localhost:6379");   // Redis storage; also registers the Redis IDatabase
+services.AddNexJobDistributedThrottle();     // cluster-wide [Throttle] limits
+services.AddNexJob();
 ```
 
 With distributed throttling enabled, `[Throttle("api", maxConcurrent: 5)]`
 enforces a **global limit of 5** across all nodes — regardless of how many
 workers are running.
 
-Configure the slot TTL (default: 1 hour — should exceed your longest job):
+Each running job holds one slot, and its node keeps refreshing that slot while the job runs. If a node
+crashes, its slots are reclaimed automatically after three `HeartbeatInterval` periods (90 seconds with the
+default), not after an hour. `DistributedThrottleTtl` (default: 1 hour) is the maximum time a single job may hold
+a slot, so it should exceed your longest job:
 
 ```csharp
-services.AddNexJob(opt =>
-{
-    opt.UseRedis("localhost:6379");
-    opt.DistributedThrottleTtl = TimeSpan.FromHours(4);
-})
-.UseDistributedThrottle();
+services.AddNexJobRedis("localhost:6379");
+services.AddNexJobDistributedThrottle();
+services.AddNexJob(opt => opt.DistributedThrottleTtl = TimeSpan.FromHours(4));
 ```
 
-**Note:** `UseDistributedThrottle()` requires `NexJob.Redis`. If Redis is
-unavailable, the system degrades to per-process throttling automatically.
+**Upgrade note:** slots are now stored under `nexjob:throttle:holders:{resource}`. During a rolling upgrade, nodes
+on the old version keep counting in the previous key, so the global limit can be exceeded until every node runs
+the new version.
+
+**Note:** `AddNexJobDistributedThrottle()` requires `NexJob.Redis` and an `IDatabase` in the container.
+`AddNexJobRedis` registers one; if you use another storage provider, register the Redis `IDatabase` yourself.
+If Redis is unavailable, the system degrades to per-process throttling automatically.
+
+---
+
+## Queue-Level Dynamic Circuit Breaker
+
+While `[Throttle]` controls steady-state concurrency, the **Queue Circuit Breaker** protects downstream APIs during severe outages or degradation. When downstream failures spike, NexJob automatically pauses the affected queue, preventing thundering herds and endless retries, and gradually ramps traffic back up when the service recovers.
+
+### Circuit States
+- **Closed**: Normal processing. All jobs in the queue execute according to worker concurrency.
+- **Open**: Consecutive downstream failures reached `ConsecutiveFailuresThreshold`. Queue is paused; jobs accumulate safely in storage without burning retries. Exponential backoff multiplies the cooldown duration on repeated probe failures up to `MaxOpenDuration`.
+- **Half-Open**: Cooldown elapsed. Exactly one canary job is dispatched to probe downstream health.
+- **Recovering (Anti-Thundering Herd)**: Canary succeeded! Instead of releasing full concurrency immediately ("metralhadora" effect), concurrency is capped at `RecoveryConcurrency` for `RecoveryDuration` to let the downstream service stabilize.
+
+### Configuration
+
+Configure the circuit breaker per queue via `ConfigureQueue`:
+
+```csharp
+builder.Services.AddNexJob(options =>
+{
+    options.ConfigureQueue("payments", queue =>
+    {
+        queue.EnableCircuitBreaker(cb =>
+        {
+            cb.ConsecutiveFailuresThreshold = 5;   // default 5
+            cb.OpenDuration = TimeSpan.FromSeconds(30);   // first cooldown, default 1 minute
+            cb.BackoffMultiplier = 2.0;            // default 2.0
+            cb.MaxOpenDuration = TimeSpan.FromMinutes(10);   // default 15 minutes
+            cb.RecoveryDuration = TimeSpan.FromMinutes(2);   // default 2 minutes
+            cb.RecoveryConcurrency = 2;            // default 2
+
+            // Automatically break on 5xx, timeouts, 429 (Rate Limits), 401 Unauthorized (expired tokens), and network drops
+            // while safely ignoring client bugs (400 Bad Request, 403 Forbidden, 404 Not Found, 422)
+            cb.BreakOnTransientHttpErrors(includeAuthErrors: true);
+
+            // Or register custom exception types with an optional predicate.
+            // With no BreakOn* rule registered, every exception counts toward the threshold.
+            cb.BreakOn<TimeoutException>();
+            cb.BreakOn<InvalidOperationException>(ex => ex.Message.Contains("Rate limit exceeded", StringComparison.OrdinalIgnoreCase));
+        });
+    });
+});
+```
+
+### Dashboard & Programmatic Control
+
+- **Dashboard UI**: Visual indicators appear on `/queues` (`⚡ CIRCUIT OPEN (Xs)`, `🟡 CANARY TESTING`, `🟢 RECOVERING`). Operators can manually trip or reset the circuit via the **Reset Circuit** button.
+- **Programmatic Reset**: Use `IJobControlService.ResetQueueCircuitAsync(queueName)` to manually reset the circuit upon receiving recovery webhooks or alerts.
 
 ---
 

@@ -12,9 +12,12 @@ internal sealed class ServersPage : IComponent
     private RenderHandle _handle;
 
     [Parameter] public IJobStorage Storage { get; set; } = default!;
+    [Parameter] public IDashboardStorage? DashboardStorage { get; set; }
     [Parameter] public string PathPrefix { get; set; } = "/dashboard";
     [Parameter] public string Title { get; set; } = "NexJob";
     [Parameter] public NavCounters? Counters { get; set; }
+    [Parameter] public IReadOnlyList<DashboardCluster>? Clusters { get; set; }
+    [Parameter] public DashboardCluster? ActiveCluster { get; set; }
 
     void IComponent.Attach(RenderHandle renderHandle) => _handle = renderHandle;
 
@@ -26,18 +29,43 @@ internal sealed class ServersPage : IComponent
         // Do NOT use .ConfigureAwait(false) here. Rendering via _handle.Render requires execution on the Dispatcher.
         // Default to a 1-minute timeout to consider a server active
         var activeServers = await Storage.GetActiveServersAsync(TimeSpan.FromMinutes(1));
-        _handle.Render(b => b.AddMarkupContent(0, BuildHtml(activeServers)));
+
+        var unservedQueues = new List<QueueMetrics>();
+        var effectiveDashboardStorage = DashboardStorage ?? ActiveCluster?.DashboardStorage ?? (Storage as IDashboardStorage);
+        if (effectiveDashboardStorage != null)
+        {
+            var servedQueues = new HashSet<string>(activeServers.SelectMany(s => s.Queues), StringComparer.OrdinalIgnoreCase);
+            var queueMetrics = await effectiveDashboardStorage.GetQueueMetricsAsync();
+            unservedQueues = queueMetrics.Where(q => q.Enqueued > 0 && !servedQueues.Contains(q.Queue)).ToList();
+        }
+
+        _handle.Render(b => b.AddMarkupContent(0, BuildHtml(activeServers, unservedQueues)));
     }
 
-    private string BuildHtml(IReadOnlyList<ServerRecord> servers)
+    private string BuildHtml(IReadOnlyList<ServerRecord> servers, IReadOnlyList<QueueMetrics> unservedQueues)
     {
+        var warningBanner = string.Empty;
+        if (unservedQueues.Count > 0)
+        {
+            var queueNames = string.Join(", ", unservedQueues.Select(q => $"<strong>{HttpUtility.HtmlEncode(q.Queue)}</strong> ({q.Enqueued} enqueued)"));
+            warningBanner =
+                $"<div style=\"background:var(--warning-light);border:1px solid var(--warning);border-radius:8px;padding:14px 18px;margin-bottom:20px;display:flex;align-items:flex-start;gap:12px;color:var(--text-primary)\">" +
+                $"<span style=\"font-size:20px;line-height:1\">⚠️</span>" +
+                $"<div>" +
+                $"<div style=\"font-weight:600;color:var(--warning);margin-bottom:2px\">Unattended Queues Detected</div>" +
+                $"<div style=\"font-size:13px;line-height:1.5\">The following queues have pending jobs waiting, but no active worker nodes in this cluster are configured to process them: {queueNames}. Jobs will remain enqueued until a worker listening to these queues is started.</div>" +
+                $"</div>" +
+                $"</div>";
+        }
+
         if (servers.Count == 0)
         {
             var emptyBody =
                 HtmlFragments.Breadcrumbs(PathPrefix, ("Servers", null)) +
                 HtmlFragments.PageHeader("Servers", "Active worker nodes across the cluster") +
+                warningBanner +
                 HtmlFragments.EmptyState("2 2 20 8 2 2 2 14 20 8 2 2 6 6 6.01 6 6 18 6.01 18", "No active servers running.");
-            return HtmlShell.Wrap(Title, PathPrefix, "servers", emptyBody, Counters);
+            return HtmlShell.Wrap(Title, PathPrefix, "servers", emptyBody, Counters, clusters: Clusters, activeCluster: ActiveCluster);
         }
 
         var tableBody = string.Join(string.Empty, servers.Select(s =>
@@ -90,6 +118,7 @@ internal sealed class ServersPage : IComponent
             "<div id=\"servers-page-content\" data-refresh=\"true\">" +
             HtmlFragments.Breadcrumbs(PathPrefix, ("Servers", null)) +
             HtmlFragments.PageHeader("Servers", "Active worker nodes across the cluster") +
+            warningBanner +
             "<div class=\"card\">" +
             $"<div class=\"card-header\"><h3>{servers.Count} active node{(servers.Count == 1 ? string.Empty : "s")} processing {totalWorkers} concurrent jobs</h3></div>" +
             "<div class=\"table-container\"><table class=\"table\">" +
@@ -106,6 +135,6 @@ internal sealed class ServersPage : IComponent
             "</div>" +
             "</div>";
 
-        return HtmlShell.Wrap(Title, PathPrefix, "servers", body, Counters);
+        return HtmlShell.Wrap(Title, PathPrefix, "servers", body, Counters, clusters: Clusters, activeCluster: ActiveCluster);
     }
 }

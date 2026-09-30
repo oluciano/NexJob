@@ -1,3 +1,4 @@
+using FluentAssertions;
 using MongoDB.Bson;
 using MongoDB.Driver;
 using NexJob.MongoDB;
@@ -12,22 +13,25 @@ namespace NexJob.IntegrationTests;
 /// MongoDB instance spun up via Testcontainers.
 /// Requires Docker to be available on the host.
 /// </summary>
-public sealed class MongoStorageProviderTests : StorageProviderTestsBase, IClassFixture<MongoFixture>
+public sealed class MongoStorageProviderTests : StorageProviderTestsBase, IClassFixture<MongoFixture>, IAsyncLifetime
 {
     private readonly MongoFixture _fixture;
+    private readonly MongoTestDatabases _databases = new();
 
     public MongoStorageProviderTests(MongoFixture fixture)
     {
         _fixture = fixture;
     }
 
+    public Task InitializeAsync() => Task.CompletedTask;
+
+    public async Task DisposeAsync() => await _databases.DisposeAsync();
+
     protected override async Task<(IJobStorage Job, IRecurringStorage Recurring, IDashboardStorage Dashboard, IStorageProvider Full)> CreateStorageAsync()
     {
-        var client = new MongoClient(_fixture.Container.GetConnectionString());
-
-        // Create a unique database for each test — ensures complete isolation like PostgreSQL tests
-        var dbName = $"nexjob_test_{Guid.NewGuid():N}";
-        var database = client.GetDatabase(dbName);
+        // Create a unique database for each test — ensures complete isolation like PostgreSQL tests.
+        // It is dropped when the test finishes (see DisposeAsync).
+        var database = _databases.Create(_fixture.Container.GetConnectionString(), "nexjob_test");
 
         var provider = new MongoStorageProvider(database);
 
@@ -51,4 +55,215 @@ public sealed class MongoStorageProviderTests : StorageProviderTestsBase, IClass
 
         return (provider, provider, provider, provider);
     }
+
+    // ── Upgrade from the broad idempotency index (issue #234) ─────────────────
+
+    [Fact]
+    public async Task Existing_broad_idempotency_index_is_replaced_and_finished_jobs_no_longer_block_the_key()
+    {
+        var database = _databases.Create(_fixture.Container.GetConnectionString(), "nexjob_test");
+
+        // The index older versions created: unique over every job that has a key, whatever its status.
+        await database.RunCommandAsync<BsonDocument>(new BsonDocument
+        {
+            { "createIndexes", "nexjob_jobs" },
+            {
+                "indexes", new BsonArray
+                {
+                    new BsonDocument
+                    {
+                        { "key", new BsonDocument { { "IdempotencyKey", 1 } } },
+                        { "name", "idempotency_key" },
+                        { "unique", true },
+                        { "partialFilterExpression", new BsonDocument { { "IdempotencyKey", new BsonDocument { { "$type", "string" } } } } },
+                    },
+                }
+            },
+        });
+
+        var provider = new MongoStorageProvider(database);
+
+        var key = $"upgrade-{Guid.NewGuid()}";
+        var first = NewKeyedJob(key);
+        await provider.EnqueueAsync(first, DuplicatePolicy.AllowAfterFailed);
+        var fetched = (await provider.FetchNextAsync(["default"]))!;
+        await provider.CommitJobResultAsync(fetched.Id, new JobExecutionResult { Succeeded = true, Logs = [] });
+
+        var second = NewKeyedJob(key);
+        var result = await provider.EnqueueAsync(second, DuplicatePolicy.AllowAfterFailed);
+
+        result.JobId.Should().Be(second.Id, "the upgraded index must not be blocked by the finished job");
+    }
+
+    // ── Non-UTC offsets must not change scheduling (issue #263) ───────────────
+
+    private static JobRecord NewScheduledJob(DateTimeOffset scheduledAt) => new()
+    {
+        Id = new JobId(Guid.NewGuid()),
+        JobType = "T",
+        InputType = "I",
+        InputJson = "{}",
+        Queue = "default",
+        MaxAttempts = 3,
+        CreatedAt = DateTimeOffset.UtcNow,
+        Status = JobStatus.Scheduled,
+        ScheduledAt = scheduledAt,
+    };
+
+    [Fact]
+    public async Task ScheduleAt_NonUtcOffset_RunsAtCorrectInstant()
+    {
+        var (_, _, _, provider) = await CreateStorageAsync();
+        await provider.EnqueueAsync(NewScheduledJob(DateTimeOffset.UtcNow.AddHours(1).ToOffset(TimeSpan.FromHours(-3))));
+
+        (await provider.FetchNextAsync(["default"])).Should().BeNull("one hour ahead is one hour ahead in any offset");
+    }
+
+    [Fact]
+    public async Task ScheduleAt_PositiveOffset_NotDelayed()
+    {
+        var (_, _, _, provider) = await CreateStorageAsync();
+        var job = NewScheduledJob(DateTimeOffset.UtcNow.AddMinutes(-1).ToOffset(TimeSpan.FromHours(9)));
+        await provider.EnqueueAsync(job);
+
+        var fetched = await provider.FetchNextAsync(["default"]);
+
+        fetched.Should().NotBeNull("a job that is already due must run regardless of the offset it was scheduled with");
+        fetched!.Id.Should().Be(job.Id);
+    }
+
+    [Fact]
+    public async Task RetryAt_NonUtcOffset_IsNotPromotedEarly()
+    {
+        var (_, _, _, provider) = await CreateStorageAsync();
+        await provider.EnqueueAsync(NewScheduledJob(DateTimeOffset.UtcNow.AddMinutes(-1)));
+        var running = (await provider.FetchNextAsync(["default"]))!;
+
+        await provider.SetFailedAsync(running.Id, new InvalidOperationException("boom"), DateTimeOffset.UtcNow.AddHours(1).ToOffset(TimeSpan.FromHours(-3)));
+
+        (await provider.FetchNextAsync(["default"])).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task DateTimeOffsetMinMax_RoundTrip()
+    {
+        var (_, _, dashboard, provider) = await CreateStorageAsync();
+        var job = NewScheduledJob(DateTimeOffset.MaxValue);
+        await provider.EnqueueAsync(job);
+
+        var stored = await dashboard.GetJobByIdAsync(job.Id);
+
+        stored!.ScheduledAt.Should().Be(DateTimeOffset.MaxValue);
+        (await provider.FetchNextAsync(["default"])).Should().BeNull("a job scheduled at the maximum instant never becomes due");
+    }
+
+    [Fact]
+    public async Task CreatedAt_NonUtcOffset_KeepsTheSameInstant()
+    {
+        var (_, _, dashboard, provider) = await CreateStorageAsync();
+        var createdAt = new DateTimeOffset(2026, 3, 1, 10, 30, 0, TimeSpan.FromHours(-3));
+        var withOffset = new JobRecord
+        {
+            Id = new JobId(Guid.NewGuid()),
+            JobType = "T",
+            InputType = "I",
+            InputJson = "{}",
+            Queue = "default",
+            MaxAttempts = 3,
+            CreatedAt = createdAt,
+            Status = JobStatus.Scheduled,
+            ScheduledAt = DateTimeOffset.UtcNow.AddHours(1),
+        };
+        await provider.EnqueueAsync(withOffset);
+
+        (await dashboard.GetJobByIdAsync(withOffset.Id))!.CreatedAt.Should().Be(createdAt);
+    }
+
+    [Fact]
+    public async Task RecurringNextExecution_NonUtcOffset_DueOnlyWhenTheInstantHasPassed()
+    {
+        var (_, recurring, _, _) = await CreateStorageAsync();
+        await recurring.UpsertRecurringJobAsync(NewRecurring("due", DateTimeOffset.UtcNow.AddMinutes(-1).ToOffset(TimeSpan.FromHours(9))));
+        await recurring.UpsertRecurringJobAsync(NewRecurring("later", DateTimeOffset.UtcNow.AddHours(1).ToOffset(TimeSpan.FromHours(-3))));
+
+        var due = await recurring.GetDueRecurringJobsAsync(DateTimeOffset.UtcNow);
+
+        due.Select(r => r.RecurringJobId).Should().BeEquivalentTo("due");
+    }
+
+    // ── The DateTimeOffset serializer is scoped to NexJob documents (issue #263, step 2) ──
+
+    private sealed class HostAppDocument
+    {
+        public DateTimeOffset At { get; set; }
+    }
+
+    private (MongoStorageProvider Provider, IMongoCollection<BsonDocument> RawJobs) NewProviderWithRawAccess()
+    {
+        var database = _databases.Create(_fixture.Container.GetConnectionString(), "nexjob_test");
+        return (new MongoStorageProvider(database), database.GetCollection<BsonDocument>("nexjob_jobs"));
+    }
+
+    [Fact]
+    public void HostAppDateTimeOffset_IsNotAffectedByNexJob()
+    {
+        var (_, _) = NewProviderWithRawAccess(); // loads the provider and its serializer setup
+
+        var bson = new HostAppDocument { At = new DateTimeOffset(2026, 3, 1, 10, 30, 0, TimeSpan.FromHours(-3)) }.ToBsonDocument();
+
+        bson["At"].BsonType.Should().NotBe(BsonType.String, "NexJob must not change how the host application serializes its own DateTimeOffset");
+    }
+
+    [Fact]
+    public async Task NexJobDocuments_StoreDatesAsUtcStrings()
+    {
+        var (provider, rawJobs) = NewProviderWithRawAccess();
+        var job = NewScheduledJob(DateTimeOffset.UtcNow.AddHours(1).ToOffset(TimeSpan.FromHours(-3)));
+        await provider.EnqueueAsync(job);
+
+        var raw = await rawJobs.Find(FilterDefinition<BsonDocument>.Empty).SingleAsync();
+
+        raw["ScheduledAt"].BsonType.Should().Be(BsonType.String);
+        raw["ScheduledAt"].AsString.Should().EndWith("+00:00");
+        raw["CreatedAt"].AsString.Should().EndWith("+00:00");
+    }
+
+    [Fact]
+    public async Task LegacyDocumentWithNonUtcOffsetString_IsStillReadable()
+    {
+        var (provider, rawJobs) = NewProviderWithRawAccess();
+        var job = NewScheduledJob(DateTimeOffset.UtcNow.AddHours(1));
+        await provider.EnqueueAsync(job);
+        await rawJobs.UpdateOneAsync(
+            FilterDefinition<BsonDocument>.Empty,
+            new BsonDocument("$set", new BsonDocument("CreatedAt", "2026-03-01T10:30:00.0000000-03:00")));
+
+        var read = await provider.GetJobByIdAsync(job.Id);
+
+        read!.CreatedAt.Should().Be(new DateTimeOffset(2026, 3, 1, 13, 30, 0, TimeSpan.Zero));
+    }
+
+    private static RecurringJobRecord NewRecurring(string id, DateTimeOffset nextExecution) => new()
+    {
+        RecurringJobId = id,
+        JobType = "T",
+        InputType = "I",
+        InputJson = "{}",
+        Cron = "* * * * *",
+        Queue = "default",
+        NextExecution = nextExecution,
+        CreatedAt = DateTimeOffset.UtcNow,
+    };
+
+    private static JobRecord NewKeyedJob(string key) => new()
+    {
+        Id = new JobId(Guid.NewGuid()),
+        JobType = "T",
+        InputType = "I",
+        InputJson = "{}",
+        Queue = "default",
+        MaxAttempts = 3,
+        CreatedAt = DateTimeOffset.UtcNow,
+        IdempotencyKey = key,
+    };
 }

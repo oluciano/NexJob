@@ -30,13 +30,14 @@ internal sealed class JobRow
     public string[]? Tags { get; set; }
     public int? ProgressPercent { get; set; }
     public string? ProgressMessage { get; set; }
+    public string? CheckpointJson { get; set; }
 
     public JobRecord ToRecord() => new()
     {
         Id = new JobId(Id),
         JobType = JobType,
         InputType = InputType,
-        InputJson = InputJson,
+        InputJson = IsPayloadStripped() ? string.Empty : InputJson,
         SchemaVersion = SchemaVersion,
         Queue = Queue,
         Priority = (JobPriority)Priority,
@@ -60,5 +61,14 @@ internal sealed class JobRow
         Tags = (IReadOnlyList<string>?)Tags ?? [],
         ProgressPercent = ProgressPercent,
         ProgressMessage = ProgressMessage,
+        CheckpointJson = CheckpointJson,
     };
+
+    // TrimPayloadOnSuccess rewrites input_json to '{}', so an empty payload only means "stripped"
+    // on a Succeeded job. Any other state must return the stored JSON, or the executor cannot deserialize it.
+    private bool IsPayloadStripped() =>
+        string.Equals(Status, nameof(JobStatus.Succeeded), StringComparison.Ordinal)
+        && (string.IsNullOrEmpty(InputJson)
+            || string.Equals(InputJson, "{}", StringComparison.Ordinal)
+            || string.Equals(InputJson, "null", StringComparison.Ordinal));
 }

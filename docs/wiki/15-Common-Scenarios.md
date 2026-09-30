@@ -124,7 +124,9 @@ public sealed record WebhookInput(string Url, object Payload);
 - Attempt 2: fails → wait 20s
 - Attempt 3: fails → wait 40s
 - Attempt 4: fails → wait 80s
-- Attempt 5: fails → dead-letter
+- Attempt 5: fails → dead-letter (no more retries)
+
+Each delay also gets a random ±10% jitter.
 
 ---
 
@@ -136,7 +138,7 @@ Run a cleanup job daily at 2 AM.
 builder.Services.AddNexJob(options =>
 {
     options.AddRecurringJob<CleanupOldLogsJob>(
-        recurringJobId: "cleanup-daily",
+        id: "cleanup-daily",
         cron: "0 2 * * *");
 });
 
@@ -165,14 +167,23 @@ public sealed class CleanupOldLogsJob : IJob
 An order payment webhook may fire twice. Use idempotency to prevent duplicate processing.
 
 ```csharp
-// Webhook endpoint — may be called twice by the payment provider
+// Webhook endpoint — may be called twice by the payment provider (DuplicateJobException is in NexJob.Exceptions)
 app.MapPost("/webhooks/payment", async (PaymentEvent evt, IScheduler scheduler) =>
 {
-    await scheduler.EnqueueAsync<ProcessPaymentJob, PaymentInput>(
-        new PaymentInput(evt.OrderId, evt.Amount),
-        idempotencyKey: $"payment-{evt.OrderId}",
-        duplicatePolicy: DuplicatePolicy.RejectAlways,
-        cancellationToken: CancellationToken.None);
+    try
+    {
+        // While the first job is still active, the second call simply returns its id.
+        // Once it has finished, RejectAlways throws instead of creating a second job.
+        await scheduler.EnqueueAsync<ProcessPaymentJob, PaymentInput>(
+            new PaymentInput(evt.OrderId, evt.Amount),
+            idempotencyKey: $"payment-{evt.OrderId}",
+            duplicatePolicy: DuplicatePolicy.RejectAlways,
+            cancellationToken: CancellationToken.None);
+    }
+    catch (DuplicateJobException)
+    {
+        // Already processed — acknowledge the webhook so the provider stops retrying
+    }
 
     return Results.Ok();
 });
@@ -227,6 +238,60 @@ builder.Services.AddNexJob(options =>
     opt.GroupId = "event-processing-group";
 });
 ```
+
+---
+
+## Resuming Long-Running Jobs with Checkpoints
+
+When running batch imports, external migrations, or long data jobs, network glitches or worker restarts can cause failures after hours of work.
+With `IJobContext.SaveCheckpointAsync` and `GetCheckpoint<TState>`, the job picks up exactly from where it left off on the next retry attempt:
+
+```csharp
+public sealed class DataMigrationJob : IJob<MigrationInput>
+{
+    private readonly IJobContext _context;
+    private readonly ILegacyApiClient _client;
+    private readonly IDb _db;
+
+    public DataMigrationJob(IJobContext context, ILegacyApiClient client, IDb db)
+    {
+        _context = context;
+        _client = client;
+        _db = db;
+    }
+
+    public async Task ExecuteAsync(MigrationInput input, CancellationToken ct)
+    {
+        // 1. Resume from previous checkpoint if this is a retry attempt
+        var checkpoint = _context.GetCheckpoint<MigrationCheckpoint>()
+                         ?? new MigrationCheckpoint(LastProcessedKey: null, RecordsMigrated: 0);
+
+        var page = await _client.FetchRecordsAsync(input.BatchSize, checkpoint.LastProcessedKey, ct);
+        while (page.HasItems)
+        {
+            await _db.BulkInsertAsync(page.Items, ct);
+
+            checkpoint = new MigrationCheckpoint(
+                LastProcessedKey: page.LastKey,
+                RecordsMigrated: checkpoint.RecordsMigrated + page.Items.Count);
+
+            // 2. Persist state atomically
+            await _context.SaveCheckpointAsync(
+                state: checkpoint,
+                percent: null,
+                message: $"Migrated {checkpoint.RecordsMigrated} records so far",
+                ct: ct);
+
+            page = await _client.FetchRecordsAsync(input.BatchSize, checkpoint.LastProcessedKey, ct);
+        }
+    }
+}
+
+public sealed record MigrationCheckpoint(string? LastProcessedKey, int RecordsMigrated);
+public sealed record MigrationInput(int BatchSize);
+```
+
+On success, NexJob automatically cleans up `checkpoint_json` from the database.
 
 ---
 

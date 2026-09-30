@@ -69,6 +69,14 @@ builder.Services.AddNexJob(options =>
 
 ## Read Replica Configuration
 
+### Reusing an `NpgsqlDataSource`
+
+If your application already has an `NpgsqlDataSource` (for example one shared with EF Core or configured with custom type mappings), pass it instead of a connection string:
+
+```csharp
+builder.Services.AddNexJobPostgres(existingDataSource);
+```
+
 If your database topology includes a PostgreSQL read replica, you can isolate dashboard queries from the write path using `UseDashboardReadReplica`:
 
 ```csharp

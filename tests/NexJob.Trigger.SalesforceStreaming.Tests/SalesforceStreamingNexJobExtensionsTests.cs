@@ -141,6 +141,57 @@ public sealed class SalesforceStreamingNexJobExtensionsTests
         provider.GetRequiredService<CustomStreamingJob>().Should().NotBeNull();
     }
 
+    private static ServiceProvider BuildWithConnectTimeout(TimeSpan? connectTimeout)
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddNexJob();
+        services.AddSalesforceStreamingTrigger(options =>
+        {
+            options.Channel = "/topic/InvoiceUpdates";
+            options.Authentication.AuthType = SalesforceStreamingAuthType.SessionId;
+            options.Authentication.InstanceUrl = "https://example.my.salesforce.com";
+            options.Authentication.SessionId = "token-123";
+            if (connectTimeout.HasValue)
+            {
+                options.ConnectTimeout = connectTimeout.Value;
+            }
+        });
+
+        return services.BuildServiceProvider();
+    }
+
+    private static TimeSpan BayeuxHttpTimeout(ServiceProvider provider) =>
+        provider.GetRequiredService<IHttpClientFactory>().CreateClient(nameof(ISalesforceBayeuxClient)).Timeout;
+
+    [Fact]
+    public void AddSalesforceStreamingTrigger_DefaultConnectTimeout_BayeuxHttpTimeoutIsConnectTimeoutPlusMargin()
+    {
+        using var provider = BuildWithConnectTimeout(null);
+
+        BayeuxHttpTimeout(provider).Should().Be(TimeSpan.FromSeconds(150));
+    }
+
+    [Fact]
+    public void AddSalesforceStreamingTrigger_CustomConnectTimeout_IsAppliedToBayeuxHttpClient()
+    {
+        using var provider = BuildWithConnectTimeout(TimeSpan.FromSeconds(40));
+
+        BayeuxHttpTimeout(provider).Should().Be(TimeSpan.FromSeconds(70));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void AddSalesforceStreamingTrigger_NonPositiveConnectTimeout_ThrowsOptionsValidationException(int seconds)
+    {
+        using var provider = BuildWithConnectTimeout(TimeSpan.FromSeconds(seconds));
+
+        var act = () => provider.GetRequiredService<IOptions<SalesforceStreamingTriggerOptions>>().Value;
+
+        act.Should().Throw<OptionsValidationException>().WithMessage("*ConnectTimeout*");
+    }
+
     [Fact]
     public void AddSalesforceStreamingTrigger_InvalidOptions_ThrowsOptionsValidationException()
     {

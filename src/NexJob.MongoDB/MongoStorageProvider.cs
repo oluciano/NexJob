@@ -14,6 +14,16 @@ namespace NexJob.MongoDB;
 /// </summary>
 public sealed class MongoStorageProvider : IStorageProvider
 {
+    private const int MaxEnqueueAttempts = 3;
+
+    private static readonly JobStatus[] ActiveStatuses =
+    [
+        JobStatus.Enqueued,
+        JobStatus.Processing,
+        JobStatus.Scheduled,
+        JobStatus.AwaitingContinuation,
+    ];
+
     private readonly IMongoDatabase _database;
     private readonly IMongoCollection<JobDocument> _jobs;
     private readonly IMongoCollection<RecurringJobDocument> _recurringJobs;
@@ -27,16 +37,15 @@ public sealed class MongoStorageProvider : IStorageProvider
         ConventionRegistry.Register("NexJobEnumAsString", pack, t =>
             t == typeof(JobDocument) || t == typeof(RecurringJobDocument));
 
-        // Store DateTimeOffset as a UTC DateTime tick pair to preserve offset
-        // TryRegisterSerializer may fail if already registered; swallow the exception gracefully
-        try
-        {
-            BsonSerializer.TryRegisterSerializer(new DateTimeOffsetSerializer(BsonType.String));
-        }
-        catch (BsonSerializationException)
-        {
-            // Already registered, likely by another provider or test setup
-        }
+        // DateTimeOffset is stored as an ISO 8601 string at +00:00 for NexJob documents only. It used to be
+        // registered globally, which silently changed how the host application serializes its own DateTimeOffset.
+        ConventionRegistry.Register(
+            "NexJobDateTimeOffsetAsString",
+            new ConventionPack { new DateTimeOffsetAsStringConvention() },
+            t => t == typeof(JobDocument)
+                 || t == typeof(RecurringJobDocument)
+                 || t == typeof(ServerDocument)
+                 || t == typeof(ExecutionLogEntry));
     }
 
     /// <summary>
@@ -59,11 +68,19 @@ public sealed class MongoStorageProvider : IStorageProvider
     /// <inheritdoc/>
     public async Task<EnqueueResult> EnqueueAsync(JobRecord job, DuplicatePolicy duplicatePolicy = DuplicatePolicy.AllowAfterFailed, CancellationToken cancellationToken = default)
     {
-        if (job.IdempotencyKey is not null)
+        if (job.IdempotencyKey is null)
+        {
+            await _jobs.InsertOneAsync(JobDocument.FromRecord(job), cancellationToken: cancellationToken).ConfigureAwait(false);
+            return new EnqueueResult(job.Id, WasRejected: false);
+        }
+
+        // The unique index only covers active jobs. A conflict means another enqueue won the race; if that
+        // job already finished by the time we look, the key is free again, so try once more.
+        for (var attempt = 0; attempt < MaxEnqueueAttempts; attempt++)
         {
             var existing = await _jobs
                 .Find(Builders<JobDocument>.Filter.Eq(d => d.IdempotencyKey, job.IdempotencyKey))
-                .Sort(Builders<JobDocument>.Sort.Ascending(d => d.CreatedAt))
+                .Sort(Builders<JobDocument>.Sort.Descending(d => d.CreatedAt))
                 .Limit(1)
                 .FirstOrDefaultAsync(cancellationToken).ConfigureAwait(false);
 
@@ -75,34 +92,34 @@ public sealed class MongoStorageProvider : IStorageProvider
                     return existingResult;
                 }
             }
-        }
 
-        try
-        {
-            await _jobs.InsertOneAsync(
-                JobDocument.FromRecord(job),
-                cancellationToken: cancellationToken).ConfigureAwait(false);
-
-            return new EnqueueResult(job.Id, WasRejected: false);
-        }
-        catch (MongoWriteException ex) when (
-            ex.WriteError.Category == ServerErrorCategory.DuplicateKey
-            && job.IdempotencyKey is not null)
-        {
-            // Race condition: unique index blocked concurrent insert with same idempotency key
-            var winner = await _jobs
-                .Find(Builders<JobDocument>.Filter.Eq(d => d.IdempotencyKey, job.IdempotencyKey))
-                .Sort(Builders<JobDocument>.Sort.Ascending(d => d.CreatedAt))
-                .Limit(1)
-                .FirstOrDefaultAsync(cancellationToken).ConfigureAwait(false);
-
-            if (winner is not null)
+            try
             {
-                return ResolveDuplicate(winner.Id, winner.Status, duplicatePolicy);
-            }
+                await _jobs.InsertOneAsync(
+                    JobDocument.FromRecord(job),
+                    cancellationToken: cancellationToken).ConfigureAwait(false);
 
-            throw;
+                return new EnqueueResult(job.Id, WasRejected: false);
+            }
+            catch (MongoWriteException ex) when (ex.WriteError.Category == ServerErrorCategory.DuplicateKey)
+            {
+                var winner = await _jobs
+                    .Find(Builders<JobDocument>.Filter.And(
+                        Builders<JobDocument>.Filter.Eq(d => d.IdempotencyKey, job.IdempotencyKey),
+                        Builders<JobDocument>.Filter.In(d => d.Status, ActiveStatuses)))
+                    .Sort(Builders<JobDocument>.Sort.Descending(d => d.CreatedAt))
+                    .Limit(1)
+                    .FirstOrDefaultAsync(cancellationToken).ConfigureAwait(false);
+
+                if (winner is not null)
+                {
+                    return ResolveDuplicate(winner.Id, winner.Status, duplicatePolicy);
+                }
+            }
         }
+
+        throw new InvalidOperationException(
+            $"Could not enqueue a job with idempotency key '{job.IdempotencyKey}' after {MaxEnqueueAttempts} attempts.");
     }
 
     // ── FetchNextAsync ────────────────────────────────────────────────────────
@@ -115,28 +132,17 @@ public sealed class MongoStorageProvider : IStorageProvider
         // Atomically promote any due scheduled/retry jobs first
         await PromoteDueScheduledJobsAsync(now, cancellationToken).ConfigureAwait(false);
 
-        var filter = Builders<JobDocument>.Filter.And(
-            Builders<JobDocument>.Filter.In(d => d.Queue, queues),
-            Builders<JobDocument>.Filter.Eq(d => d.Status, JobStatus.Enqueued));
-
-        var sort = Builders<JobDocument>.Sort
-            .Ascending(d => d.Priority)   // Critical=1 first
-            .Ascending(d => d.CreatedAt);
-
-        var update = Builders<JobDocument>.Update
-            .Set(d => d.Status, JobStatus.Processing)
-            .Set(d => d.ProcessingStartedAt, now)
-            .Set(d => d.HeartbeatAt, now)
-            .Inc(d => d.Attempts, 1);
-
-        var options = new FindOneAndUpdateOptions<JobDocument>
+        // Queues are tried in the order given; inside a queue the highest priority (Critical=1) and oldest job wins.
+        foreach (var queue in queues)
         {
-            Sort = sort,
-            ReturnDocument = ReturnDocument.After,
-        };
+            var doc = await ClaimNextInQueueAsync(queue, now, cancellationToken).ConfigureAwait(false);
+            if (doc is not null)
+            {
+                return doc.ToRecord();
+            }
+        }
 
-        var doc = await _jobs.FindOneAndUpdateAsync(filter, update, options, cancellationToken).ConfigureAwait(false);
-        return doc?.ToRecord();
+        return null;
     }
 
     /// <inheritdoc/>
@@ -159,36 +165,25 @@ public sealed class MongoStorageProvider : IStorageProvider
         var now = DateTimeOffset.UtcNow;
         await PromoteDueScheduledJobsAsync(now, cancellationToken).ConfigureAwait(false);
 
-        var filter = Builders<JobDocument>.Filter.And(
-            Builders<JobDocument>.Filter.In(d => d.Queue, queues),
-            Builders<JobDocument>.Filter.Eq(d => d.Status, JobStatus.Enqueued));
-
-        var sort = Builders<JobDocument>.Sort
-            .Ascending(d => d.Priority)
-            .Ascending(d => d.CreatedAt);
-
-        var update = Builders<JobDocument>.Update
-            .Set(d => d.Status, JobStatus.Processing)
-            .Set(d => d.ProcessingStartedAt, now)
-            .Set(d => d.HeartbeatAt, now)
-            .Inc(d => d.Attempts, 1);
-
-        var options = new FindOneAndUpdateOptions<JobDocument>
-        {
-            Sort = sort,
-            ReturnDocument = ReturnDocument.After,
-        };
-
+        // Drain the queues in the order given, one atomic claim per job.
         var batch = new List<JobRecord>(maxBatchSize);
-        for (var i = 0; i < maxBatchSize; i++)
+        foreach (var queue in queues)
         {
-            var doc = await _jobs.FindOneAndUpdateAsync(filter, update, options, cancellationToken).ConfigureAwait(false);
-            if (doc is null)
+            while (batch.Count < maxBatchSize)
+            {
+                var doc = await ClaimNextInQueueAsync(queue, now, cancellationToken).ConfigureAwait(false);
+                if (doc is null)
+                {
+                    break;
+                }
+
+                batch.Add(doc.ToRecord());
+            }
+
+            if (batch.Count >= maxBatchSize)
             {
                 break;
             }
-
-            batch.Add(doc.ToRecord());
         }
 
         return batch;
@@ -202,9 +197,11 @@ public sealed class MongoStorageProvider : IStorageProvider
         var update = Builders<JobDocument>.Update
             .Set(d => d.Status, JobStatus.Succeeded)
             .Set(d => d.CompletedAt, DateTimeOffset.UtcNow)
-            .Unset(d => d.HeartbeatAt);
+            .Unset(d => d.HeartbeatAt)
+            .Unset(d => d.CheckpointJson);
 
         await _jobs.UpdateOneAsync(ById(jobId), update, cancellationToken: cancellationToken).ConfigureAwait(false);
+        await ReleaseContinuationsAsync([jobId], cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -225,9 +222,11 @@ public sealed class MongoStorageProvider : IStorageProvider
         var update = Builders<JobDocument>.Update
             .Set(d => d.Status, JobStatus.Succeeded)
             .Set(d => d.CompletedAt, DateTimeOffset.UtcNow)
-            .Unset(d => d.HeartbeatAt);
+            .Unset(d => d.HeartbeatAt)
+            .Unset(d => d.CheckpointJson);
 
         await _jobs.UpdateManyAsync(filter, update, cancellationToken: cancellationToken).ConfigureAwait(false);
+        await ReleaseContinuationsAsync(jobIds, cancellationToken).ConfigureAwait(false);
     }
 
     // ── SetFailedAsync ────────────────────────────────────────────────────────
@@ -241,7 +240,7 @@ public sealed class MongoStorageProvider : IStorageProvider
         {
             update = Builders<JobDocument>.Update
                 .Set(d => d.Status, JobStatus.Scheduled)
-                .Set(d => d.RetryAt, retryAt.Value)
+                .Set(d => d.RetryAt, retryAt.Value.ToUniversalTime())
                 .Set(d => d.LastErrorMessage, exception.Message)
                 .Set(d => d.LastErrorStackTrace, exception.StackTrace)
                 .Unset(d => d.HeartbeatAt);
@@ -297,8 +296,8 @@ public sealed class MongoStorageProvider : IStorageProvider
             .Set(d => d.Cron, recurringJob.Cron)
             .Set(d => d.TimeZoneId, recurringJob.TimeZoneId)
             .Set(d => d.Queue, recurringJob.Queue)
-            .Set(d => d.NextExecution, recurringJob.NextExecution)
-            .Set(d => d.CreatedAt, recurringJob.CreatedAt)
+            .Set(d => d.NextExecution, recurringJob.NextExecution?.ToUniversalTime())
+            .Set(d => d.CreatedAt, recurringJob.CreatedAt.ToUniversalTime())
             .Set(d => d.ConcurrencyPolicy, recurringJob.ConcurrencyPolicy)
             .SetOnInsert(d => d.CronOverride, (string?)null)
             .SetOnInsert(d => d.Enabled, true)
@@ -311,7 +310,7 @@ public sealed class MongoStorageProvider : IStorageProvider
     /// <inheritdoc/>
     public async Task<IReadOnlyList<RecurringJobRecord>> GetDueRecurringJobsAsync(DateTimeOffset utcNow, CancellationToken cancellationToken = default)
     {
-        var filter = Builders<RecurringJobDocument>.Filter.Lte(d => d.NextExecution, utcNow);
+        var filter = Builders<RecurringJobDocument>.Filter.Lte(d => d.NextExecution, utcNow.ToUniversalTime());
         var docs = await _recurringJobs.Find(filter).ToListAsync(cancellationToken).ConfigureAwait(false);
         return docs.Select(d => d.ToRecord()).ToList();
     }
@@ -321,7 +320,7 @@ public sealed class MongoStorageProvider : IStorageProvider
     {
         var filter = Builders<RecurringJobDocument>.Filter.Eq(d => d.RecurringJobId, recurringJobId);
         var update = Builders<RecurringJobDocument>.Update
-            .Set(d => d.NextExecution, nextExecution)
+            .Set(d => d.NextExecution, nextExecution.ToUniversalTime())
             .Set(d => d.LastExecutedAt, DateTimeOffset.UtcNow);
 
         await _recurringJobs.UpdateOneAsync(filter, update, cancellationToken: cancellationToken).ConfigureAwait(false);
@@ -418,10 +417,23 @@ public sealed class MongoStorageProvider : IStorageProvider
             Builders<JobDocument>.Filter.Lt(d => d.HeartbeatAt, cutoff),
             new BsonDocument("$expr", new BsonDocument("$gte", new BsonArray { "$Attempts", "$MaxAttempts" })));
 
-        var exhaustedUpdate = Builders<JobDocument>.Update
+        // Exhausted jobs that never recorded an error get the generic message; those that did keep the original.
+        var exhaustedWithoutErrorFilter = Builders<JobDocument>.Filter.And(
+            exhaustedFilter,
+            Builders<JobDocument>.Filter.Eq(d => d.LastErrorMessage, null));
+
+        var exhaustedWithoutErrorUpdate = Builders<JobDocument>.Update
             .Set(d => d.Status, JobStatus.Failed)
             .Set(d => d.CompletedAt, now)
             .Set(d => d.LastErrorMessage, "Orphaned execution exceeded maximum attempts.")
+            .Unset(d => d.HeartbeatAt)
+            .Unset(d => d.ProcessingStartedAt);
+
+        await _jobs.UpdateManyAsync(exhaustedWithoutErrorFilter, exhaustedWithoutErrorUpdate, cancellationToken: cancellationToken).ConfigureAwait(false);
+
+        var exhaustedUpdate = Builders<JobDocument>.Update
+            .Set(d => d.Status, JobStatus.Failed)
+            .Set(d => d.CompletedAt, now)
             .Unset(d => d.HeartbeatAt)
             .Unset(d => d.ProcessingStartedAt);
 
@@ -465,7 +477,7 @@ public sealed class MongoStorageProvider : IStorageProvider
         var update = Builders<ServerDocument>.Update
             .Set(d => d.WorkerCount, server.WorkerCount)
             .Set(d => d.Queues, server.Queues)
-            .Set(d => d.HeartbeatAt, server.HeartbeatAt)
+            .Set(d => d.HeartbeatAt, server.HeartbeatAt.ToUniversalTime())
             .SetOnInsert(d => d.StartedAt, server.StartedAt);
 
         var options = new UpdateOptions { IsUpsert = true };
@@ -621,7 +633,15 @@ public sealed class MongoStorageProvider : IStorageProvider
             .Unset(d => d.LastErrorMessage)
             .Unset(d => d.LastErrorStackTrace);
 
-        await _jobs.UpdateOneAsync(ById(id), update, cancellationToken: cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await _jobs.UpdateOneAsync(ById(id), update, cancellationToken: cancellationToken).ConfigureAwait(false);
+        }
+        catch (MongoWriteException ex) when (ex.WriteError.Category == ServerErrorCategory.DuplicateKey)
+        {
+            throw new InvalidOperationException(
+                $"Cannot requeue job {id.Value}: another active job already holds its idempotency key.", ex);
+        }
     }
 
     /// <inheritdoc/>
@@ -651,7 +671,7 @@ public sealed class MongoStorageProvider : IStorageProvider
     {
         var entries = logs.Select(e => new ExecutionLogEntry
         {
-            Timestamp = e.Timestamp,
+            Timestamp = e.Timestamp.ToUniversalTime(),
             Level = e.Level,
             Message = e.Message,
         }).ToList();
@@ -669,7 +689,7 @@ public sealed class MongoStorageProvider : IStorageProvider
         var now = DateTimeOffset.UtcNow;
         var entries = result.Logs.Select(e => new ExecutionLogEntry
         {
-            Timestamp = e.Timestamp,
+            Timestamp = e.Timestamp.ToUniversalTime(),
             Level = e.Level,
             Message = e.Message,
         }).ToList();
@@ -741,12 +761,76 @@ public sealed class MongoStorageProvider : IStorageProvider
     }
 
     /// <inheritdoc/>
+    public async Task SaveCheckpointAsync(
+        JobId jobId, string checkpointJson, int? percent, string? message, CancellationToken ct = default)
+    {
+        var update = Builders<JobDocument>.Update
+            .Set(d => d.CheckpointJson, checkpointJson);
+
+        if (percent.HasValue)
+        {
+            update = update.Set(d => d.ProgressPercent, percent.Value);
+        }
+
+        if (message is not null)
+        {
+            update = update.Set(d => d.ProgressMessage, message);
+        }
+
+        await _jobs.UpdateOneAsync(ById(jobId), update, cancellationToken: ct).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc/>
     public async Task<IReadOnlyList<JobRecord>> GetJobsByTagAsync(
         string tag, CancellationToken cancellationToken = default)
     {
         var filter = Builders<JobDocument>.Filter.AnyEq(d => d.Tags, tag);
         var docs = await _jobs.Find(filter).ToListAsync(cancellationToken).ConfigureAwait(false);
         return docs.Select(d => d.ToRecord()).ToList();
+    }
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<JobCatalogItem>> GetJobCatalogAsync(CancellationToken cancellationToken = default)
+    {
+        var docs = await _jobs.Find(FilterDefinition<JobDocument>.Empty).ToListAsync(cancellationToken).ConfigureAwait(false);
+
+        var grouped = docs.GroupBy(d => (d.JobType, d.Queue));
+        var items = new List<JobCatalogItem>();
+
+        foreach (var group in grouped)
+        {
+            var jobs = group.ToList();
+            var succeeded = jobs.Count(j => j.Status == JobStatus.Succeeded);
+            var failed = jobs.Count(j => j.Status == JobStatus.Failed);
+            var total = jobs.Count;
+
+            var lastExecuted = jobs
+                .Select(j => j.CompletedAt ?? j.ProcessingStartedAt)
+                .Where(t => t.HasValue)
+                .OrderByDescending(t => t!.Value)
+                .FirstOrDefault();
+
+            var durations = jobs
+                .Where(j => j.ProcessingStartedAt.HasValue && j.CompletedAt.HasValue && j.CompletedAt >= j.ProcessingStartedAt)
+                .Select(j => (j.CompletedAt!.Value - j.ProcessingStartedAt!.Value).TotalSeconds)
+                .ToList();
+
+            double? avgDuration = durations.Count > 0 ? durations.Average() : null;
+
+            items.Add(new JobCatalogItem(
+                JobType: group.Key.JobType,
+                Queue: group.Key.Queue,
+                TotalRuns: total,
+                SucceededRuns: succeeded,
+                FailedRuns: failed,
+                LastExecutedAt: lastExecuted,
+                AvgDurationSeconds: avgDuration));
+        }
+
+        return items
+            .OrderBy(i => i.JobType, StringComparer.Ordinal)
+            .ThenBy(i => i.Queue, StringComparer.Ordinal)
+            .ToList();
     }
 
     /// <inheritdoc/>
@@ -822,6 +906,35 @@ public sealed class MongoStorageProvider : IStorageProvider
     private static bool IsTerminalStatus(JobStatus? status) =>
         status is null or JobStatus.Succeeded or JobStatus.Failed or JobStatus.Expired;
 
+    private static BsonDocument CreateActiveIdempotencyIndexCommand() => new()
+    {
+        { "createIndexes", "nexjob_jobs" },
+        {
+            "indexes", new BsonArray
+            {
+                new BsonDocument
+                {
+                    { "key", new BsonDocument { { "IdempotencyKey", 1 }, } },
+                    { "name", "idempotency_key" },
+                    { "unique", true },
+                    {
+                        "partialFilterExpression",
+                        new BsonDocument
+                        {
+                            { "IdempotencyKey", new BsonDocument { { "$type", "string" }, } },
+                            {
+                                "Status", new BsonDocument
+                                {
+                                    { "$in", new BsonArray(ActiveStatuses.Select(status => status.ToString())) },
+                                }
+                            },
+                        }
+                    },
+                },
+            }
+        },
+    };
+
     private static bool IsActiveState(JobStatus status) =>
         status is JobStatus.Enqueued or JobStatus.Processing or JobStatus.Scheduled or JobStatus.AwaitingContinuation;
 
@@ -861,6 +974,43 @@ public sealed class MongoStorageProvider : IStorageProvider
         return totalDeleted;
     }
 
+    private async Task<JobDocument?> ClaimNextInQueueAsync(string queue, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        var filter = Builders<JobDocument>.Filter.And(
+            Builders<JobDocument>.Filter.Eq(d => d.Queue, queue),
+            Builders<JobDocument>.Filter.Eq(d => d.Status, JobStatus.Enqueued));
+
+        var update = Builders<JobDocument>.Update
+            .Set(d => d.Status, JobStatus.Processing)
+            .Set(d => d.ProcessingStartedAt, now)
+            .Set(d => d.HeartbeatAt, now)
+            .Inc(d => d.Attempts, 1);
+
+        var options = new FindOneAndUpdateOptions<JobDocument>
+        {
+            Sort = Builders<JobDocument>.Sort
+                .Ascending(d => d.Priority)   // Critical=1 first
+                .Ascending(d => d.CreatedAt),
+            ReturnDocument = ReturnDocument.After,
+        };
+
+        return await _jobs.FindOneAndUpdateAsync(filter, update, options, cancellationToken).ConfigureAwait(false);
+    }
+
+    // A parent acknowledged outside CommitJobResultAsync must still release its continuations.
+    private async Task ReleaseContinuationsAsync(IEnumerable<JobId> parentIds, CancellationToken cancellationToken)
+    {
+        var filter = Builders<JobDocument>.Filter.And(
+            Builders<JobDocument>.Filter.Eq(d => d.Status, JobStatus.AwaitingContinuation),
+            Builders<JobDocument>.Filter.In(d => d.ParentJobId, parentIds.Select(id => (JobId?)id)));
+
+        var update = Builders<JobDocument>.Update
+            .Set(d => d.Status, JobStatus.Enqueued)
+            .Unset(d => d.ScheduledAt);
+
+        await _jobs.UpdateManyAsync(filter, update, cancellationToken: cancellationToken).ConfigureAwait(false);
+    }
+
     private async Task PromoteDueScheduledJobsAsync(DateTimeOffset now, CancellationToken ct)
     {
         var filter = Builders<JobDocument>.Filter.And(
@@ -883,13 +1033,26 @@ public sealed class MongoStorageProvider : IStorageProvider
         JobId jobId, JobExecutionResult result,
         List<ExecutionLogEntry> entries, DateTimeOffset now, CancellationToken ct)
     {
-        var update = Builders<JobDocument>.Update
-            .Set(d => d.Status, JobStatus.Succeeded)
-            .Set(d => d.CompletedAt, now)
-            .Unset(d => d.HeartbeatAt)
-            .Set(d => d.ExecutionLogs, entries);
+        if (result.PurgeOnSuccess)
+        {
+            await _jobs.DeleteOneAsync(ById(jobId), cancellationToken: ct).ConfigureAwait(false);
+        }
+        else
+        {
+            var update = Builders<JobDocument>.Update
+                .Set(d => d.Status, JobStatus.Succeeded)
+                .Set(d => d.CompletedAt, now)
+                .Unset(d => d.HeartbeatAt)
+                .Unset(d => d.CheckpointJson)
+                .Set(d => d.ExecutionLogs, entries);
 
-        await _jobs.UpdateOneAsync(ById(jobId), update, cancellationToken: ct).ConfigureAwait(false);
+            if (result.TrimPayloadOnSuccess)
+            {
+                update = update.Set(d => d.InputJson, string.Empty);
+            }
+
+            await _jobs.UpdateOneAsync(ById(jobId), update, cancellationToken: ct).ConfigureAwait(false);
+        }
 
         var contFilter = Builders<JobDocument>.Filter.And(
             Builders<JobDocument>.Filter.Eq(d => d.Status, JobStatus.AwaitingContinuation),
@@ -918,7 +1081,7 @@ public sealed class MongoStorageProvider : IStorageProvider
     {
         var jobUpdate = Builders<JobDocument>.Update
             .Set(d => d.Status, JobStatus.Scheduled)
-            .Set(d => d.RetryAt, result.RetryAt!.Value)
+            .Set(d => d.RetryAt, result.RetryAt!.Value.ToUniversalTime())
             .Set(d => d.LastErrorMessage, result.Exception?.Message)
             .Set(d => d.LastErrorStackTrace, result.Exception?.StackTrace)
             .Unset(d => d.HeartbeatAt)
@@ -966,60 +1129,23 @@ public sealed class MongoStorageProvider : IStorageProvider
                 .Ascending(d => d.CreatedAt),
             new CreateIndexOptions { Name = "queue_status_priority_created" }));
 
-        // Sparse index for idempotency: allows fast querying for idempotency deduplication
-        // Create a partial unique index that only applies to non-null idempotency keys,
-        // allowing multiple jobs without idempotency keys while preventing duplicates for those with keys.
+        // The idempotency key is unique only among active jobs, so a finished job never blocks a new one
+        // (DuplicatePolicy.AllowAfterFailed). Older databases hold the previous, broader index under the same name.
         try
         {
-            var createIndexCommand = new BsonDocument
-            {
-                { "createIndexes", "nexjob_jobs" },
-                {
-                    "indexes", new BsonArray
-                    {
-                        new BsonDocument
-                        {
-                            { "key", new BsonDocument { { "IdempotencyKey", 1 }, } },
-                            { "name", "idempotency_key" },
-                            { "unique", true },
-                            {
-                                "partialFilterExpression",
-                                new BsonDocument { { "IdempotencyKey", new BsonDocument { { "$type", "string" }, } }, }
-                            },
-                        },
-                    }
-                },
-            };
-
-            _database.RunCommand<BsonDocument>(createIndexCommand);
+            _database.RunCommand<BsonDocument>(CreateActiveIdempotencyIndexCommand());
         }
-        catch (MongoCommandException ex) when (string.Equals(ex.CodeName, "IndexOptionsConflict", StringComparison.Ordinal))
+        catch (MongoCommandException ex) when (ex.CodeName is "IndexOptionsConflict" or "IndexKeySpecsConflict")
         {
-            // Index exists with different options; drop and recreate
+            // Same name, different definition: MongoDB reports it as either code depending on what differs.
             _jobs.Indexes.DropOne("idempotency_key");
-
-            var createIndexCommand = new BsonDocument
-            {
-                { "createIndexes", "nexjob_jobs" },
-                {
-                    "indexes", new BsonArray
-                    {
-                        new BsonDocument
-                        {
-                            { "key", new BsonDocument { { "IdempotencyKey", 1 }, } },
-                            { "name", "idempotency_key" },
-                            { "unique", true },
-                            {
-                                "partialFilterExpression",
-                                new BsonDocument { { "IdempotencyKey", new BsonDocument { { "$type", "string" }, } }, }
-                            },
-                        },
-                    }
-                },
-            };
-
-            _database.RunCommand<BsonDocument>(createIndexCommand);
+            _database.RunCommand<BsonDocument>(CreateActiveIdempotencyIndexCommand());
         }
+
+        // Plain lookup index for the duplicate pre-check, which also has to see finished jobs.
+        _jobs.Indexes.CreateOne(new CreateIndexModel<JobDocument>(
+            Builders<JobDocument>.IndexKeys.Ascending(d => d.IdempotencyKey),
+            new CreateIndexOptions { Name = "idempotency_key_lookup", Sparse = true }));
 
         // Index for orphan detection
         _jobs.Indexes.CreateOne(new CreateIndexModel<JobDocument>(

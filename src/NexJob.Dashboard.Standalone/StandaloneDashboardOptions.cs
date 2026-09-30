@@ -39,4 +39,38 @@ public sealed class StandaloneDashboardOptions
     /// Override via <c>NexJob:Dashboard:PollIntervalSeconds</c> in appsettings.json.
     /// </summary>
     public int PollIntervalSeconds { get; set; } = 3;
+
+    /// <summary>
+    /// When <see langword="true"/>, disables background execution workers on this host by setting
+    /// <see cref="NexJobOptions.Workers"/> to <c>0</c>.
+    /// Used to run a dedicated operations/monitoring host (dashboard only) without taking processing slots.
+    /// Defaults to <see langword="false"/>.
+    /// Override via <c>NexJob:Dashboard:DisableWorkers</c> in appsettings.json.
+    /// </summary>
+    public bool DisableWorkers { get; set; } = false;
+
+    /// <summary>
+    /// Optional collection of queue names to scope the dashboard view to.
+    /// When configured, the dashboard filters queue cards, navigation counters, and default job listings
+    /// exclusively to these queues.
+    /// Defaults to <see langword="null"/> (all cluster queues displayed).
+    /// </summary>
+    public IReadOnlyList<string>? Queues { get; set; }
+
+    /// <summary>
+    /// Gets the list of registered clusters for multi-cluster federation.
+    /// </summary>
+    public IList<DashboardCluster> Clusters { get; } = new List<DashboardCluster>();
+
+    /// <summary>
+    /// Registers an isolated cluster in the dashboard.
+    /// </summary>
+    /// <param name="cluster">The cluster definition to register.</param>
+    /// <returns>This options instance for method chaining.</returns>
+    public StandaloneDashboardOptions AddCluster(DashboardCluster cluster)
+    {
+        ArgumentNullException.ThrowIfNull(cluster);
+        Clusters.Add(cluster);
+        return this;
+    }
 }

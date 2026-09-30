@@ -50,15 +50,20 @@ await scheduler.EnqueueAsync<ProcessPaymentJob, PaymentInput>(
 
 ### AllowAfterFailed (Default)
 
-Re-enqueue is allowed if the existing job is `Failed`. Rejected if `Succeeded` or `Expired`.
+Re-enqueue is allowed once the existing job has reached **any** terminal state (`Succeeded`, `Failed` or `Expired`). Only jobs that are still active are deduplicated.
 
 | Existing State | Behavior |
 |---|---|
-| `Succeeded` | Rejected — throws `DuplicateJobException` |
-| `Failed` | **Allowed** — creates new job (assumes failure needs retry) |
-| `Expired` | Rejected — throws `DuplicateJobException` |
+| Active (`Enqueued`, `Processing`, `Scheduled`, `AwaitingContinuation`) | Deduplicated — returns the existing job ID |
+| `Succeeded` | **Allowed** — creates new job |
+| `Failed` | **Allowed** — creates new job |
+| `Expired` | **Allowed** — creates new job |
 
-**When to use:** Payment processing, order fulfillment — cases where a failed job should be retryable but a succeeded job should not repeat.
+This is what lets a recurring job with `SkipIfRunning` fire again after its previous run finished.
+
+> **Warning:** this policy does not prevent duplicate side effects. If the previous job already completed the external work, the new job repeats it. Make the job itself idempotent, or use `RejectAlways` when the work must happen only once.
+
+**When to use:** At-least-once semantics — recurring work, or jobs that are safe to repeat. There is currently no policy that allows a retry after `Failed` while rejecting after `Succeeded`.
 
 ### RejectIfFailed
 
@@ -84,13 +89,17 @@ Re-enqueue is rejected if the existing job is in any terminal state.
 
 **When to use:** One-time operations like sending a legal notice, where neither success nor failure should be retried automatically.
 
+**Lifetime:** the guarantee holds while the job is retained. Once retention purges the job (or it is deleted, or removed by `PurgeOnSuccess`), its idempotency key is released and the same key can be enqueued again. This is the same on every storage provider, including Redis, where the key has no separate expiry.
+
 ---
 
 ## DuplicateJobException
 
-Thrown when enqueue is rejected by the duplicate policy.
+Thrown (from `NexJob.Exceptions`) when enqueue is rejected by the duplicate policy. It is only thrown when the existing job has already reached a terminal state the policy forbids re-enqueueing; while the existing job is still active, the enqueue is deduplicated and returns its id instead.
 
 ```csharp
+using NexJob.Exceptions;
+
 try
 {
     await scheduler.EnqueueAsync<MyJob>(
@@ -100,7 +109,7 @@ try
 }
 catch (DuplicateJobException ex)
 {
-    // Existing job is still active or was completed with this key
+    // The existing job with this key already finished and the policy forbids a new one
     var existingJobId = ex.ExistingJobId;
     var policy = ex.Policy;
 }
@@ -113,7 +122,8 @@ catch (DuplicateJobException ex)
 ### Payment Processing
 
 ```csharp
-// Only one payment per order, but retry if the previous attempt failed
+// Deduplicated while a payment job for this order is active; a new attempt is allowed once it finished.
+// The job must be idempotent itself (e.g. pass the order id to the payment provider as its own idempotency key).
 await scheduler.EnqueueAsync<ProcessPaymentJob, PaymentInput>(
     new PaymentInput(orderId, amount),
     idempotencyKey: $"payment-{orderId}",

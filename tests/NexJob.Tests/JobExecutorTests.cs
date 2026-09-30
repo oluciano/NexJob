@@ -2,6 +2,7 @@ using System.Reflection;
 using System.Text.Json;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using NexJob.Storage;
@@ -348,7 +349,7 @@ public sealed class JobExecutorTests
                ?? throw new InvalidOperationException($"Cannot find ExecuteAsync method on {jobType.Name}");
     }
 
-    private static JobRecord MakeJob<TJob, TInput>(TInput input, int maxAttempts = 5, DateTimeOffset? expiresAt = null)
+    private static JobRecord MakeJob<TJob, TInput>(TInput input, int maxAttempts = 5, DateTimeOffset? expiresAt = null, string queue = "default", string? traceParent = null)
     {
         return new JobRecord
         {
@@ -356,12 +357,13 @@ public sealed class JobExecutorTests
             JobType = typeof(TJob).AssemblyQualifiedName!,
             InputType = typeof(TInput).AssemblyQualifiedName!,
             InputJson = JsonSerializer.Serialize(input),
-            Queue = "default",
+            Queue = queue,
             Attempts = 1,
             MaxAttempts = maxAttempts,
             CreatedAt = DateTimeOffset.UtcNow,
             Status = JobStatus.Enqueued,
             ExpiresAt = expiresAt,
+            TraceParent = traceParent,
         };
     }
 
@@ -404,5 +406,115 @@ public sealed class JobExecutorTests
     private sealed class TestServiceProvider : IServiceProvider
     {
         public object? GetService(Type serviceType) => null;
+    }
+
+    // ── Scope-capturing logger helpers ────────────────────────────────────────
+    // Suppress StyleCop warnings for interface implementation methods that are required but unused.
+#pragma warning disable S1144 // Unused private member
+#pragma warning disable S1172 // Unused parameter
+#pragma warning disable S1186 // Empty method must explain why
+    private sealed class ScopeCapturingLogger : ILogger<JobExecutor>
+    {
+        private readonly List<IReadOnlyDictionary<string, object?>> _capturedScopes = [];
+
+        public IReadOnlyList<IReadOnlyDictionary<string, object?>> CapturedScopes => _capturedScopes;
+
+        // Used via ILogger interface by JobExecutor to capture the logging scope.
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull
+        {
+            if (state is IEnumerable<KeyValuePair<string, object?>> pairs)
+            {
+                _capturedScopes.Add(pairs.ToDictionary(kv => kv.Key, kv => kv.Value));
+            }
+
+            return System.Diagnostics.Activity.Current; // non-null disposable, harmless
+        }
+
+        // Required by ILogger, log level is unused but method must exist.
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        // Required by ILogger; body intentionally left empty because we only need scope capture for these tests.
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+        {
+            // No operation – logger captures only scope, not individual log entries.
+        }
+    }
+#pragma warning restore S1186
+#pragma warning restore S1172
+#pragma warning restore S1144
+
+    private JobExecutor MakeSutWithScopeLogger(ScopeCapturingLogger logger) =>
+        new(
+            _storage.Object,
+            _invokerFactory.Object,
+            _retryPolicy.Object,
+            _deadLetterDispatcher.Object,
+            _throttleRegistry,
+            _options,
+            Enumerable.Empty<IJobExecutionFilter>(),
+            logger);
+
+    // ── 3N: ILogger.BeginScope enrichment ────────────────────────────────────
+
+    [Fact]
+    public async Task ExecuteJobAsync_SuccessfulJob_ScopeContainsAllExpectedKeys()
+    {
+        // Arrange — N1: happy path — scope must carry the 4 structured keys
+        var logger = new ScopeCapturingLogger();
+        var sut = MakeSutWithScopeLogger(logger);
+        var job = MakeJob<TestJob, TestInput>(new TestInput("scope-test"), queue: "payments", traceParent: "00-abc123-01");
+
+        // Act
+        await sut.ExecuteJobAsync(job);
+
+        // Assert
+        logger.CapturedScopes.Should().NotBeEmpty(because: "BeginScope must be called before execution");
+        var scope = logger.CapturedScopes[0];
+        scope.Should().ContainKey("NexJob.JobId").WhoseValue.Should().Be(job.Id.Value);
+        scope.Should().ContainKey("NexJob.JobType").WhoseValue.Should().Be(job.JobType);
+        scope.Should().ContainKey("NexJob.Queue").WhoseValue.Should().Be("payments");
+        scope.Should().ContainKey("NexJob.Attempt").WhoseValue.Should().Be(1);
+        scope.Should().ContainKey("NexJob.TraceParent").WhoseValue.Should().Be("00-abc123-01");
+    }
+
+    [Fact]
+    public async Task ExecuteJobAsync_FailingJob_ScopeIsCreatedBeforeFailurePath()
+    {
+        // Arrange — N2: failure path — scope must be established even when job throws
+        var logger = new ScopeCapturingLogger();
+        var sut = MakeSutWithScopeLogger(logger);
+        var job = MakeJob<FailingJob, TestInput>(new TestInput("fail"), maxAttempts: 3);
+        job.Attempts = 1;
+        _retryPolicy
+            .Setup(x => x.ComputeRetryAt(It.IsAny<JobRecord>(), It.IsAny<Exception>()))
+            .Returns(DateTimeOffset.UtcNow.AddMinutes(5));
+
+        // Act — should not throw
+        await sut.ExecuteJobAsync(job);
+
+        // Assert — scope must have been opened before the job invocation that threw
+        logger.CapturedScopes.Should().NotBeEmpty(because: "BeginScope is called before invoking the job");
+        var scope = logger.CapturedScopes[0];
+        scope.Should().ContainKey("NexJob.JobId");
+        scope.Should().ContainKey("NexJob.Queue");
+    }
+
+    [Fact]
+    public async Task ExecuteJobAsync_NullTraceParent_ScopeCreatedWithEmptyTraceParent()
+    {
+        // Arrange — N3: null TraceParent — must not throw, key must be present with empty string
+        var logger = new ScopeCapturingLogger();
+        var sut = MakeSutWithScopeLogger(logger);
+        var job = MakeJob<TestJob, TestInput>(new TestInput("no-trace")); // traceParent defaults to null
+
+        // Act
+        await sut.ExecuteJobAsync(job);
+
+        // Assert — scope must contain the key and its value must be string.Empty
+        logger.CapturedScopes.Should().NotBeEmpty();
+        var scope = logger.CapturedScopes[0];
+        scope.Should().ContainKey("NexJob.TraceParent")
+            .WhoseValue.Should().Be(string.Empty, because: "null TraceParent must map to empty string, not null");
     }
 }

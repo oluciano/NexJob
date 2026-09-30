@@ -1,6 +1,8 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Text;
 using System.Web;
+using NexJob.Configuration;
+using NexJob.Internal;
 using NexJob.Storage;
 
 namespace NexJob.Dashboard.Pages;
@@ -121,22 +123,40 @@ internal static class HtmlFragments
     }
 
     /// <summary>Renders a job row for the Failed Jobs page (with error snippet and inline actions).</summary>
-    internal static string JobRowFailed(JobRecord job, string pathPrefix, DateTimeOffset now)
+    internal static string JobRowFailed(JobRecord job, string pathPrefix, DateTimeOffset now, DashboardCluster? activeCluster = null)
     {
         var errorSnippet = Helpers.Truncate(job.LastErrorMessage, 90);
+        var clusterSuffix = activeCluster is not null ? $"?cluster={Uri.EscapeDataString(activeCluster.Id)}" : string.Empty;
+        var isReadOnly = activeCluster?.IsReadOnly == true;
+
         var requeueForm =
-            $"<form method=\"post\" action=\"{pathPrefix}/jobs/{job.Id.Value}/requeue\" style=\"display:inline\">" +
+            $"<form method=\"post\" action=\"{pathPrefix}/jobs/{job.Id.Value}/requeue{clusterSuffix}\" style=\"display:inline\">" +
             "<button type=\"submit\" class=\"btn btn-secondary btn-sm\">↺ Requeue</button></form>";
         var deleteForm =
-            $"<form method=\"post\" action=\"{pathPrefix}/jobs/{job.Id.Value}/delete\" style=\"display:inline\" " +
+            $"<form method=\"post\" action=\"{pathPrefix}/jobs/{job.Id.Value}/delete{clusterSuffix}\" style=\"display:inline\" " +
             "onclick=\"return confirm('Delete this job?')\">" +
             "<button type=\"submit\" class=\"btn btn-danger btn-sm\">Delete</button></form>";
 
+        var actionsPart = !isReadOnly
+            ? $"<div style=\"display:flex;gap:8px;justify-content:flex-end\" onclick=\"event.stopPropagation()\">" +
+              requeueForm +
+              deleteForm +
+              $"</div>"
+            : string.Empty;
+
+        var gridCols = !isReadOnly
+            ? "24px 32px 1fr 120px 180px"
+            : "32px 1fr 120px";
+
+        var checkCol = !isReadOnly
+            ? $"<input type=\"checkbox\" class=\"job-check\" value=\"{job.Id.Value}\" onclick=\"event.stopPropagation(); nexJobUpdateSelection()\" />"
+            : string.Empty;
+
         return
-            $"<div class=\"job-row\" style=\"grid-template-columns: 24px 32px 1fr 120px 180px; padding:16px 24px\">" +
-            $"<input type=\"checkbox\" class=\"job-check\" value=\"{job.Id.Value}\" onclick=\"event.stopPropagation(); nexJobUpdateSelection()\" />" +
+            $"<div class=\"job-row\" style=\"grid-template-columns: {gridCols}; padding:16px 24px\">" +
+            checkCol +
             $"<div class=\"job-row-dot\">{Helpers.StatusDot(JobStatus.Failed)}</div>" +
-            $"<a href=\"{pathPrefix}/jobs/{job.Id.Value}\" style=\"text-decoration:none;color:inherit;min-width:0\">" +
+            $"<a href=\"{pathPrefix}/jobs/{job.Id.Value}{clusterSuffix}\" style=\"text-decoration:none;color:inherit;min-width:0\">" +
                 $"<div class=\"job-row-main\">" +
                     $"<div class=\"job-row-title\">{HtmlEncode(Helpers.ShortType(job.JobType))} <span style=\"font-family:monospace;font-size:11px;color:var(--text-secondary)\">#{job.Id.Value.ToString()[..8]}</span></div>" +
                     $"<div style=\"font-size:12px;color:var(--error);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis\">{HtmlEncode(errorSnippet)}</div>" +
@@ -145,10 +165,7 @@ internal static class HtmlFragments
             $"<div class=\"job-row-meta\" style=\"font-size:12px;color:var(--text-secondary)\">" +
                 $"{Helpers.RelativeTime(job.CompletedAt, now)}" +
             $"</div>" +
-            $"<div style=\"display:flex;gap:8px;justify-content:flex-end\" onclick=\"event.stopPropagation()\">" +
-                requeueForm +
-                deleteForm +
-            $"</div>" +
+            actionsPart +
             $"</div>";
     }
 
@@ -248,9 +265,51 @@ internal static class HtmlFragments
             return $"<option value=\"{HttpUtility.HtmlAttributeEncode(o.Item1)}\"{selected}>{o.Item2}</option>";
         }));
 
+        var chips = new List<string>();
+        if (!string.IsNullOrEmpty(search))
+        {
+            var removeUrl = $"{pathPrefix}/jobs?status={Uri.EscapeDataString(currentStatus)}&tag={Uri.EscapeDataString(tag ?? string.Empty)}&queue={Uri.EscapeDataString(queueVal)}&period={Uri.EscapeDataString(periodVal)}";
+            chips.Add($"<span class=\"badge badge-gray\" style=\"display:inline-flex;align-items:center;gap:6px;padding:4px 8px\">Search: <strong>{searchVal}</strong><a href=\"{removeUrl}\" style=\"color:inherit;text-decoration:none;font-weight:700\">✕</a></span>");
+        }
+
+        if (!string.IsNullOrEmpty(currentStatus))
+        {
+            var removeUrl = $"{pathPrefix}/jobs?search={Uri.EscapeDataString(search ?? string.Empty)}&tag={Uri.EscapeDataString(tag ?? string.Empty)}&queue={Uri.EscapeDataString(queueVal)}&period={Uri.EscapeDataString(periodVal)}";
+            chips.Add($"<span class=\"badge badge-gray\" style=\"display:inline-flex;align-items:center;gap:6px;padding:4px 8px\">Status: <strong>{HttpUtility.HtmlEncode(currentStatus)}</strong><a href=\"{removeUrl}\" style=\"color:inherit;text-decoration:none;font-weight:700\">✕</a></span>");
+        }
+
+        if (!string.IsNullOrEmpty(queue))
+        {
+            var removeUrl = $"{pathPrefix}/jobs?status={Uri.EscapeDataString(currentStatus)}&search={Uri.EscapeDataString(search ?? string.Empty)}&tag={Uri.EscapeDataString(tag ?? string.Empty)}&period={Uri.EscapeDataString(periodVal)}";
+            chips.Add($"<span class=\"badge badge-gray\" style=\"display:inline-flex;align-items:center;gap:6px;padding:4px 8px\">Queue: <strong>{HttpUtility.HtmlEncode(queue)}</strong><a href=\"{removeUrl}\" style=\"color:inherit;text-decoration:none;font-weight:700\">✕</a></span>");
+        }
+
+        if (!string.IsNullOrEmpty(period))
+        {
+            var removeUrl = $"{pathPrefix}/jobs?status={Uri.EscapeDataString(currentStatus)}&search={Uri.EscapeDataString(search ?? string.Empty)}&tag={Uri.EscapeDataString(tag ?? string.Empty)}&queue={Uri.EscapeDataString(queueVal)}";
+            chips.Add($"<span class=\"badge badge-gray\" style=\"display:inline-flex;align-items:center;gap:6px;padding:4px 8px\">Period: <strong>{HttpUtility.HtmlEncode(period)}</strong><a href=\"{removeUrl}\" style=\"color:inherit;text-decoration:none;font-weight:700\">✕</a></span>");
+        }
+
+        if (!string.IsNullOrEmpty(tag))
+        {
+            var removeUrl = $"{pathPrefix}/jobs?status={Uri.EscapeDataString(currentStatus)}&search={Uri.EscapeDataString(search ?? string.Empty)}&queue={Uri.EscapeDataString(queueVal)}&period={Uri.EscapeDataString(periodVal)}";
+            chips.Add($"<span class=\"badge badge-gray\" style=\"display:inline-flex;align-items:center;gap:6px;padding:4px 8px\">Tag: <strong>{tagVal}</strong><a href=\"{removeUrl}\" style=\"color:inherit;text-decoration:none;font-weight:700\">✕</a></span>");
+        }
+
+        var activeChipsHtml = string.Empty;
+        if (chips.Count > 0)
+        {
+            activeChipsHtml =
+                $"<div class=\"active-filters\" style=\"display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap;font-size:12px\">" +
+                $"<span style=\"color:var(--text-tertiary);font-weight:600;font-size:11px;text-transform:uppercase\">Active Filters:</span>" +
+                string.Join(string.Empty, chips) +
+                $"<a href=\"{pathPrefix}/jobs\" class=\"btn btn-ghost btn-sm\" style=\"font-size:11px;padding:2px 6px;color:var(--text-secondary)\">Clear all</a>" +
+                $"</div>";
+        }
+
         return
             $"<div class=\"filters\">" +
-            $"<form method=\"get\" action=\"{pathPrefix}/jobs\" style=\"display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;width:100%\">" +
+            $"<form method=\"get\" action=\"{pathPrefix}/jobs\" style=\"display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;width:100%\">" +
             $"<div style=\"display:flex;gap:4px;flex:1;min-width:200px\">" +
             $"<input type=\"text\" name=\"search\" placeholder=\"Search type or ID…\" value=\"{searchVal}\" style=\"flex:1\" />" +
             $"</div>" +
@@ -265,6 +324,7 @@ internal static class HtmlFragments
                 : string.Empty) +
             $"</div>" +
             $"</form>" +
+            activeChipsHtml +
             $"</div>";
     }
 
@@ -411,10 +471,18 @@ internal static class HtmlFragments
     }
 
     /// <summary>Renders a compact queue row for high-density monitoring with control actions.</summary>
-    internal static string QueueCard(QueueMetrics queue, string pathPrefix, bool isPaused = false)
+    internal static string QueueCard(
+        QueueMetrics queue,
+        string pathPrefix,
+        bool isPaused = false,
+        DashboardCluster? activeCluster = null,
+        bool hasActiveWorkers = true,
+        QueueCircuitStatus? circuitStatus = null)
     {
         var total = queue.Enqueued + queue.Processing;
         var utilPct = total > 0 ? (int)(queue.Processing * 100.0 / total) : 0;
+        var clusterSuffix = activeCluster is not null ? $"?cluster={Uri.EscapeDataString(activeCluster.Id)}" : string.Empty;
+        var isReadOnly = activeCluster?.IsReadOnly == true;
 
         var utilColor = utilPct switch
         {
@@ -423,20 +491,69 @@ internal static class HtmlFragments
             _ => "var(--success)",
         };
 
-        var pauseForm = isPaused
-            ? $"<form method=\"post\" action=\"{pathPrefix}/queues/{Uri.EscapeDataString(queue.Queue)}/resume\" style=\"display:inline\">" +
-              $"<button type=\"submit\" class=\"btn btn-primary btn-sm\" title=\"Resume Queue\">▶ Resume</button></form>"
-            : $"<form method=\"post\" action=\"{pathPrefix}/queues/{Uri.EscapeDataString(queue.Queue)}/pause\" style=\"display:inline\" onclick=\"return confirm('Pause queue {HtmlEncode(queue.Queue)}?')\">" +
-              $"<button type=\"submit\" class=\"btn btn-secondary btn-sm\" title=\"Pause Queue\">⏸ Pause</button></form>";
+        var pauseForm = string.Empty;
+        if (!isReadOnly)
+        {
+            var resetForm = string.Empty;
+            if (circuitStatus is not null && circuitStatus.State != QueueCircuitState.Closed)
+            {
+                resetForm = $"<form method=\"post\" action=\"{pathPrefix}/queues/{Uri.EscapeDataString(queue.Queue)}/reset-circuit{clusterSuffix}\" style=\"display:inline\" onclick=\"return confirm('Reset circuit breaker for queue {HtmlEncode(queue.Queue)}? This will immediately resume traffic to downstream API.')\">" +
+                    $"<button type=\"submit\" class=\"btn btn-secondary btn-sm\" title=\"Reset Circuit Breaker\">⚡ Reset Circuit</button></form>";
+            }
+
+            pauseForm = isPaused
+                ? $"<form method=\"post\" action=\"{pathPrefix}/queues/{Uri.EscapeDataString(queue.Queue)}/resume{clusterSuffix}\" style=\"display:inline\">" +
+                  $"<button type=\"submit\" class=\"btn btn-primary btn-sm\" title=\"Resume Queue\">▶ Resume</button></form>"
+                : $"<form method=\"post\" action=\"{pathPrefix}/queues/{Uri.EscapeDataString(queue.Queue)}/pause{clusterSuffix}\" style=\"display:inline\" onclick=\"return confirm('Pause queue {HtmlEncode(queue.Queue)}?')\">" +
+                  $"<button type=\"submit\" class=\"btn btn-secondary btn-sm\" title=\"Pause Queue\">⏸ Pause</button></form>";
+
+            if (!string.IsNullOrEmpty(resetForm))
+            {
+                pauseForm = resetForm + pauseForm;
+            }
+        }
 
         var statusBadge = isPaused
             ? " <span class=\"badge badge-warning\" style=\"font-size:10px;margin-left:6px\">PAUSED</span>"
             : string.Empty;
 
+        var circuitBadge = string.Empty;
+        var failedLink = string.Empty;
+        if (circuitStatus is not null)
+        {
+            var failedUrl = $"{pathPrefix}/failed?queue={Uri.EscapeDataString(queue.Queue)}{(activeCluster is not null ? $"&cluster={Uri.EscapeDataString(activeCluster.Id)}" : string.Empty)}";
+            if (circuitStatus.State == QueueCircuitState.Open)
+            {
+                var remainingSec = circuitStatus.RemainingCooldown.HasValue
+                    ? $" ({(int)circuitStatus.RemainingCooldown.Value.TotalSeconds}s)"
+                    : string.Empty;
+                circuitBadge = $" <a href=\"{failedUrl}\" style=\"text-decoration:none\"><span class=\"badge badge-danger\" style=\"font-size:10px;margin-left:6px;cursor:pointer\" title=\"Circuit is OPEN due to downstream failures. Click to view failed errors.\">⚡ CIRCUIT OPEN{remainingSec}</span></a>";
+                failedLink = $"<a href=\"{failedUrl}\" class=\"btn btn-secondary btn-sm\" style=\"color:var(--error);border-color:var(--error)\">View Errors</a>";
+            }
+            else if (circuitStatus.State == QueueCircuitState.HalfOpen)
+            {
+                circuitBadge = $" <a href=\"{failedUrl}\" style=\"text-decoration:none\"><span class=\"badge badge-warning\" style=\"font-size:10px;margin-left:6px;cursor:pointer\" title=\"Canary probe in flight to test downstream service health. Click to view failed errors.\">🟡 CANARY TESTING</span></a>";
+                failedLink = $"<a href=\"{failedUrl}\" class=\"btn btn-secondary btn-sm\" style=\"color:var(--warning);border-color:var(--warning)\">View Errors</a>";
+            }
+            else if (circuitStatus.State == QueueCircuitState.Recovering)
+            {
+                circuitBadge = $" <a href=\"{failedUrl}\" style=\"text-decoration:none\"><span class=\"badge badge-info\" style=\"font-size:10px;margin-left:6px;cursor:pointer\" title=\"Ramp-up mode active to prevent thundering herd (max concurrency: {circuitStatus.AllowedConcurrency}). Click to view failed errors.\">🟢 RECOVERING</span></a>";
+                failedLink = $"<a href=\"{failedUrl}\" class=\"btn btn-secondary btn-sm\" style=\"color:var(--info);border-color:var(--info)\">View Errors</a>";
+            }
+        }
+
+        var orphanWarning = !hasActiveWorkers && queue.Enqueued > 0
+            ? " <span class=\"badge badge-warning\" style=\"font-size:10px;margin-left:6px\" title=\"No active worker nodes are listening to this queue. Jobs will remain enqueued until a worker configured for this queue is online.\">⚠️ NO WORKERS</span>"
+            : string.Empty;
+
+        var orphanSubtitle = !hasActiveWorkers && queue.Enqueued > 0
+            ? "<div style=\"font-size:11px;color:var(--warning);margin-top:2px;font-weight:400\">⚠️ No active workers listening</div>"
+            : string.Empty;
+
         return
             $"<div style=\"padding:16px 24px;display:flex;align-items:center;gap:24px;border-bottom:1px solid var(--border)\">" +
             $"<div style=\"width:220px;font-weight:600;font-size:15px;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap\">" +
-            $"{HtmlEncode(queue.Queue)}{statusBadge}</div>" +
+            $"{HtmlEncode(queue.Queue)}{statusBadge}{circuitBadge}{orphanWarning}{orphanSubtitle}</div>" +
             $"<div style=\"flex:1;display:flex;gap:40px;align-items:center\">" +
                 $"<div style=\"width:150px;display:flex;align-items:baseline;gap:8px\"><div style=\"font-size:10px;color:var(--text-tertiary);font-weight:700\">ENQUEUED</div><div style=\"font-weight:700;color:var(--info);font-size:18px\">{queue.Enqueued}</div></div>" +
                 $"<div style=\"width:150px;display:flex;align-items:baseline;gap:8px\"><div style=\"font-size:10px;color:var(--text-tertiary);font-weight:700\">PROCESSING</div><div style=\"font-weight:700;color:var(--warning);font-size:18px\">{queue.Processing}</div></div>" +
@@ -446,17 +563,20 @@ internal static class HtmlFragments
                 $"</div>" +
             $"</div>" +
             $"<div style=\"display:flex;gap:8px;align-items:center;justify-content:flex-end\">" +
+                failedLink +
                 pauseForm +
-                $"<a href=\"{pathPrefix}/jobs?queue={Uri.EscapeDataString(queue.Queue)}\" class=\"btn btn-secondary btn-sm\">View Jobs</a>" +
+                $"<a href=\"{pathPrefix}/jobs?queue={Uri.EscapeDataString(queue.Queue)}{(activeCluster is not null ? $"&cluster={Uri.EscapeDataString(activeCluster.Id)}" : string.Empty)}\" class=\"btn btn-secondary btn-sm\">View Jobs</a>" +
             $"</div>" +
             $"</div>";
     }
 
     /// <summary>Renders a high-density table row for a recurring job.</summary>
-    internal static string RecurringRow(RecurringJobRecord job, string pathPrefix, DateTimeOffset now)
+    internal static string RecurringRow(RecurringJobRecord job, string pathPrefix, DateTimeOffset now, DashboardCluster? activeCluster = null, IReadOnlySet<string>? activeWorkerQueues = null)
     {
         var effectiveCron = job.CronOverride ?? job.Cron;
         var encodedIdUrl = Uri.EscapeDataString(job.RecurringJobId);
+        var clusterSuffix = activeCluster is not null ? $"?cluster={Uri.EscapeDataString(activeCluster.Id)}" : string.Empty;
+        var isReadOnly = activeCluster?.IsReadOnly == true;
 
         var rowStyle = !job.Enabled ? "style=\"opacity:0.7;background:var(--bg-secondary)\"" : string.Empty;
         var statusLabel = job.Enabled ? "<span class=\"badge badge-success\">Active</span>" : "<span class=\"badge badge-warning\">Paused</span>";
@@ -505,21 +625,35 @@ internal static class HtmlFragments
         var playIcon = "<svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><polygon points=\"5 3 19 12 5 21 5 3\"/></svg>";
 
         string actionsHtml;
-        if (job.DeletedByUser)
+        if (isReadOnly)
         {
-            actionsHtml = $"<form method=\"post\" action=\"{pathPrefix}/recurring/{encodedIdUrl}/restore\" style=\"display:inline\" onclick=\"event.stopPropagation()\"><button type=\"submit\" class=\"btn btn-secondary btn-sm\">Restore</button></form>";
+            actionsHtml = string.Empty;
+        }
+        else if (job.DeletedByUser)
+        {
+            actionsHtml = $"<form method=\"post\" action=\"{pathPrefix}/recurring/{encodedIdUrl}/restore{clusterSuffix}\" style=\"display:inline\" onclick=\"event.stopPropagation()\"><button type=\"submit\" class=\"btn btn-secondary btn-sm\">Restore</button></form>";
         }
         else
         {
             var pauseResume = job.Enabled
-                ? $"<form method=\"post\" action=\"{pathPrefix}/recurring/{encodedIdUrl}/pause\" style=\"display:inline\" onclick=\"event.stopPropagation()\"><button type=\"submit\" class=\"btn-icon-sm\" title=\"Pause\" style=\"color:var(--warning);background:transparent;border:none\">{pauseIcon}</button></form>"
-                : $"<form method=\"post\" action=\"{pathPrefix}/recurring/{encodedIdUrl}/resume\" style=\"display:inline\" onclick=\"event.stopPropagation()\"><button type=\"submit\" class=\"btn-icon-sm\" title=\"Resume\" style=\"color:var(--success);background:transparent;border:none\">{playIcon}</button></form>";
+                ? $"<form method=\"post\" action=\"{pathPrefix}/recurring/{encodedIdUrl}/pause{clusterSuffix}\" style=\"display:inline\" onclick=\"event.stopPropagation()\"><button type=\"submit\" class=\"btn-icon-sm\" title=\"Pause\" style=\"color:var(--warning);background:transparent;border:none\">{pauseIcon}</button></form>"
+                : $"<form method=\"post\" action=\"{pathPrefix}/recurring/{encodedIdUrl}/resume{clusterSuffix}\" style=\"display:inline\" onclick=\"event.stopPropagation()\"><button type=\"submit\" class=\"btn-icon-sm\" title=\"Resume\" style=\"color:var(--success);background:transparent;border:none\">{playIcon}</button></form>";
 
-            actionsHtml = $"<form method=\"post\" action=\"{pathPrefix}/recurring/{encodedIdUrl}/trigger\" style=\"display:inline\" onclick=\"event.stopPropagation()\"><button type=\"submit\" class=\"btn-icon-sm\" title=\"Trigger Now\" style=\"color:var(--primary);background:transparent;border:none\">{boltIcon}</button></form> {pauseResume}";
+            var queueOrphanWarning = activeWorkerQueues is { Count: > 0 } && !activeWorkerQueues.Contains(job.Queue, StringComparer.OrdinalIgnoreCase)
+                ? $"\\n\\n⚠ Warning: Queue '{job.Queue}' has no active workers. The job will remain queued until a worker starts."
+                : string.Empty;
+            var triggerConfirmJs = System.Web.HttpUtility.JavaScriptStringEncode($"Trigger '{job.RecurringJobId}' now?{queueOrphanWarning}", addDoubleQuotes: true);
+
+            actionsHtml = $"<form method=\"post\" action=\"{pathPrefix}/recurring/{encodedIdUrl}/trigger{clusterSuffix}\" style=\"display:inline\" onclick=\"event.stopPropagation()\">" +
+                          $"<button type=\"submit\" class=\"btn-icon-sm\" title=\"Trigger Now\" style=\"color:var(--primary);background:transparent;border:none\" onclick=\"return confirm({triggerConfirmJs})\">{boltIcon}</button></form> {pauseResume}";
         }
 
+        var actionsTd = !isReadOnly
+            ? $"<td style=\"padding:12px 24px;text-align:right\"><div style=\"display:flex;gap:4px;justify-content:flex-end\">{actionsHtml}</div></td>"
+            : string.Empty;
+
         return
-            $"<tr class=\"table-recurring\" {rowStyle} onclick=\"window.location.href='{pathPrefix}/recurring/{encodedIdUrl}'\" style=\"cursor:pointer\">" +
+            $"<tr class=\"table-recurring\" {rowStyle} onclick=\"window.location.href='{pathPrefix}/recurring/{encodedIdUrl}{clusterSuffix}'\" style=\"cursor:pointer\">" +
             $"<td style=\"padding:12px 24px\"><div style=\"display:flex;align-items:center;gap:8px\">{statusDot}{statusLabel}</div></td>" +
             $"<td style=\"padding:12px 24px\"><div style=\"font-weight:600;color:var(--primary)\">{HtmlEncode(job.RecurringJobId)}</div></td>" +
             $"<td style=\"padding:12px 24px\"><span style=\"font-size:12px;color:var(--text-tertiary)\">{HtmlEncode(Helpers.ShortType(job.JobType))}</span></td>" +
@@ -527,7 +661,7 @@ internal static class HtmlFragments
             $"<td style=\"padding:12px 24px;font-size:13px\">{HtmlEncode(job.Queue)}</td>" +
             $"<td style=\"padding:12px 24px\">{lastRunHtml}</td>" +
             $"<td style=\"padding:12px 24px;font-size:13px\">{nextHtml}</td>" +
-            $"<td style=\"padding:12px 24px;text-align:right\"><div style=\"display:flex;gap:4px;justify-content:flex-end\">{actionsHtml}</div></td>" +
+            actionsTd +
             $"</tr>";
     }
 

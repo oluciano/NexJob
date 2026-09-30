@@ -65,12 +65,14 @@ This trigger registers with `IListenerRegistry` to report live connection states
 
 ## Message Contract
 
-The trigger expects messages with the following properties:
+The trigger reads the following from each message:
 
 - **Body:** The job input as a UTF-8 string (JSON).
 - **ApplicationProperties:**
-  - `nexjob.job_type`: Assembly-qualified name of the job type (required).
+  - `nexjob.job_type`: Assembly-qualified name of the job type. Optional when the subscriber sets `options.JobType` or registers the trigger with `AddNexJobAzureServiceBusTrigger<TJob>()`; the header wins when both are present. A message with neither can never become a job and is dead-lettered.
   - `traceparent`: W3C traceparent for distributed tracing (optional).
+
+The job idempotency key is the message's `MessageId`. A transient enqueue failure (storage or network error) abandons the message so Service Bus delivers it again (`MaxDeliveryCount` decides when it is dead-lettered).
 
 ## Broker Guarantees
 
@@ -78,8 +80,8 @@ This trigger satisfies all 5 NexJob trigger guarantees adapted for Service Bus:
 
 1. **At-least-once delivery** — messages are never lost before enqueue. Uses PeekLock mode.
 2. **Lock renewal** — messages stay locked while processing. The SDK handles lock renewal automatically.
-3. **Explicit ack** — messages completed (`CompleteAsync`) only after `EnqueueAsync` succeeds.
-4. **Dead-letter on failure** — failed enqueues result in `AbandonAsync`, eventually routing to DLQ after max delivery count.
+3. **Explicit ack** — messages completed (`CompleteMessageAsync`) only after `EnqueueAsync` succeeds.
+4. **Dead-letter on failure** — a transient enqueue failure abandons the message (`AbandonMessageAsync`) so it is delivered again and Service Bus routes it to the DLQ after the max delivery count; a message that can never be enqueued (no job type, malformed) is dead-lettered immediately.
 5. **Graceful shutdown** — `CancellationToken` respected, processor stops accepting new messages and waits for in-flight ones.
 
 ## Trace Propagation

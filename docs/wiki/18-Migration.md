@@ -2,6 +2,46 @@
 
 Breaking changes, API updates, and schema migration between NexJob versions.
 
+## v5.5.0 → v5.6.0
+
+> This section covers what to check when upgrading; the [Changelog](../../CHANGELOG.md) is the complete list of changes.
+
+### Behaviour changes to check before upgrading
+
+| Area | What changed | What to do |
+|---|---|---|
+| **Kafka trigger** | The job idempotency key is `kafka:{topic}:{partition}:{offset}`, no longer the message key. Records that share a key used to be silently dropped; now each becomes a job. | If you relied on the message key to deduplicate, deduplicate inside the job. |
+| **RabbitMQ trigger** | The idempotency key is `MessageId` only. `CorrelationId` and the body hash are no longer used; without a `MessageId` there is no deduplication. | Set a unique `MessageId` when publishing if you need deduplication. |
+| **Kafka / RabbitMQ / Azure Service Bus triggers** | Transient enqueue failures (storage down, timeouts) are retried, requeued or abandoned instead of being dead-lettered or lost. Kafka retries the same record in place; a message that can never be enqueued is dead-lettered (or, without a DLT topic, logged and committed). | Configure a dead-letter topic on Kafka if you cannot afford to skip a poison message. |
+| **Recurring jobs in `appsettings.json`** | The configuration is applied on every start and a first-time job runs at its next cron occurrence, no longer immediately. | Nothing to change; configured jobs no longer run once at every startup. Retention is still code-only. |
+| **Graceful shutdown** | The dispatcher stops fetching as soon as shutdown begins. A job cancelled by shutdown is requeued without consuming an attempt. | Make sure `HostOptions.ShutdownTimeout` is larger than `NexJobOptions.ShutdownTimeout` (see [Best Practices](13-Best-Practices.md#graceful-shutdown)). |
+| **`EnableBatchAcknowledgment`** | Batch acknowledgment now releases continuations (`ContinueWith` children) like the default path. | Nothing to change. |
+| **MongoDB** | NexJob no longer registers a global `DateTimeOffset` serializer; dates are stored as UTC strings. | If your application relied on the old global registration, pass `keepLegacyGlobalDateTimeOffsetSerializer: true` to `AddNexJobMongoDB` for this release. |
+| **Redis distributed throttle** | Slots are per-job entries under `nexjob:throttle:holders:{resource}` that expire if their node stops refreshing them. `DistributedThrottleTtl` now caps how long one job may hold a slot. | During a rolling upgrade, old nodes keep counting in the previous key, so the global limit can be exceeded until every node is upgraded. |
+| **Redis dashboard queries** | A job index (`nexjob:index:all`) is built once, on first use, for jobs that already exist. The first dashboard or metrics call after the upgrade scans the keyspace once. | Nothing to change; expect that first call to be slower on a large dataset. |
+| **Job filters** | The documentation was wrong about `context.Succeeded`/`context.Exception` (they are only set after the whole pipeline finished) and about filter lifetime. | If a filter reads them after `await next(ct)`, switch to `try/catch` around `next`. Register filters as singletons. |
+
+### Schema changes
+
+PostgreSQL and SQL Server apply these automatically on startup:
+
+- **V9** — `checkpoint_json` column on `nexjob_jobs` (job progress checkpoints).
+- **V10** — the idempotency key is unique only among active jobs (`Enqueued`, `Processing`, `Scheduled`, `AwaitingContinuation`), so a finished job no longer blocks a new one with the same key.
+
+### New in v5.6
+
+Progress checkpoints (`IJobContext.SaveCheckpointAsync`), the queue circuit breaker, `[Retention]` anti-bloat strategies, the structured logging scope, and the dashboard job catalog, multi-cluster federation, ops-host mode and orphan-queue indicators. See the [Changelog](../../CHANGELOG.md).
+
+---
+
+## v5.4.1 → v5.5.0
+
+- **Batch fetching and acknowledgment** (opt in with `EnableBatchAcknowledgment`) for PostgreSQL, SQL Server, MongoDB, Redis and InMemory: workers fetch as many jobs as they have free slots, and successful jobs are acknowledged in batches.
+- **SQL Server:** scheduled-job promotion is guarded by a non-blocking application lock, so parallel workers no longer contend on it.
+- **Breaking changes:** none.
+
+---
+
 ## v5.4.0 → v5.4.1
  
 ### Highlights & Bug Fixes
@@ -68,10 +108,8 @@ services.TryAddSingleton<IDashboardStorage>(sp => sp.GetRequiredService<MyProvid
 
 - `UseDashboardReadReplica()` — route dashboard queries to a read replica
 - `IJobControlService` — programmatic requeue/delete/pause from application code
-- `UseDistributedThrottle()` — global Redis-backed throttle enforcement
+- `AddNexJobDistributedThrottle()` (`NexJob.Redis`) — global Redis-backed throttle enforcement
 - `NexJobOptions.DistributedThrottleTtl` — configurable slot TTL
-
-See the [full migration guide](migration-v2-to-v3.md) for details.
 
 ---
 
@@ -175,7 +213,7 @@ See [Dashboard](10-Dashboard.md) for authorization examples.
 
 - **`IDashboardAuthorizationHandler`** — pluggable dashboard authorization. Implement and register in DI.
 - **Persistent `IRuntimeSettingsStore`** — all storage providers (PostgreSQL, SQL Server, Redis, MongoDB) now persist runtime settings across restarts. Dashboard overrides survive deploys.
-- **Job Retention** — automatic cleanup of terminal jobs (`Succeeded`, `Failed`, `Expired`) via configurable TTL. Configurable via `NexJobOptions` and the dashboard Settings page.
+- **Job Retention** — automatic cleanup of terminal jobs (`Succeeded`, `Failed`, `Expired`) via configurable TTL. Configurable via `NexJobOptions` (code) and the dashboard Settings page.
 - **`IJobExecutionFilter`** — middleware pipeline for cross-cutting job execution behaviour.
 
 ### Schema Changes

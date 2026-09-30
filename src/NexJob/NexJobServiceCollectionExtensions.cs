@@ -181,6 +181,8 @@ public static class NexJobServiceCollectionExtensions
         services.AddSingleton<JobExecutor>();
         services.AddSingleton<JobCaptureLoggerProvider>();
         services.AddSingleton<ILoggerProvider>(sp => sp.GetRequiredService<JobCaptureLoggerProvider>());
+        services.TryAddSingleton<IQueueCircuitBreakerManager, DefaultQueueCircuitBreakerManager>();
+        services.AddSingleton<IJobExecutionFilter, QueueCircuitBreakerFilter>();
         services.AddSingleton<IJobControlService, DefaultJobControlService>();
         services.AddHostedService<JobDispatcherService>();
         services.AddHostedService<RecurringJobSchedulerService>();

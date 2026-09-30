@@ -38,7 +38,10 @@ internal sealed class JobDocument
     public List<string> Tags { get; set; } = [];
     public int? ProgressPercent { get; set; }
     public string? ProgressMessage { get; set; }
+    public string? CheckpointJson { get; set; }
 
+    // Every DateTimeOffset is stored at +00:00: the string serializer sorts and compares lexically, which is only
+    // correct when all values share one offset.
     public static JobDocument FromRecord(JobRecord r) => new()
     {
         Id = r.Id,
@@ -52,12 +55,12 @@ internal sealed class JobDocument
         IdempotencyKey = r.IdempotencyKey,
         Attempts = r.Attempts,
         MaxAttempts = r.MaxAttempts,
-        CreatedAt = r.CreatedAt,
-        ScheduledAt = r.ScheduledAt,
-        ProcessingStartedAt = r.ProcessingStartedAt,
-        HeartbeatAt = r.HeartbeatAt,
-        CompletedAt = r.CompletedAt,
-        RetryAt = r.RetryAt,
+        CreatedAt = r.CreatedAt.ToUniversalTime(),
+        ScheduledAt = r.ScheduledAt?.ToUniversalTime(),
+        ProcessingStartedAt = r.ProcessingStartedAt?.ToUniversalTime(),
+        HeartbeatAt = r.HeartbeatAt?.ToUniversalTime(),
+        CompletedAt = r.CompletedAt?.ToUniversalTime(),
+        RetryAt = r.RetryAt?.ToUniversalTime(),
         LastErrorMessage = r.LastErrorMessage,
         LastErrorStackTrace = r.LastErrorStackTrace,
         ParentJobId = r.ParentJobId,
@@ -66,13 +69,14 @@ internal sealed class JobDocument
             ? null
             : r.ExecutionLogs.Select(e => new ExecutionLogEntry
             {
-                Timestamp = e.Timestamp,
+                Timestamp = e.Timestamp.ToUniversalTime(),
                 Level = e.Level,
                 Message = e.Message,
             }).ToList(),
         Tags = r.Tags.ToList(),
         ProgressPercent = r.ProgressPercent,
         ProgressMessage = r.ProgressMessage,
+        CheckpointJson = r.CheckpointJson,
     };
 
     public JobRecord ToRecord() => new()
@@ -109,5 +113,6 @@ internal sealed class JobDocument
         Tags = Tags,
         ProgressPercent = ProgressPercent,
         ProgressMessage = ProgressMessage,
+        CheckpointJson = CheckpointJson,
     };
 }

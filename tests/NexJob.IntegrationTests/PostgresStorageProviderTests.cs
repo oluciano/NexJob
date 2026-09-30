@@ -33,6 +33,12 @@ public sealed class PostgresStorageProviderTests : StorageProviderTestsBase, ICl
         var builder = new Npgsql.NpgsqlConnectionStringBuilder(baseConn)
         {
             Database = dbName,
+
+            // A provider (and its pool) is created per test and never disposed; close idle connections quickly
+            // so the growing contract suite does not exhaust the container's max_connections.
+            ConnectionIdleLifetime = 5,
+            ConnectionPruningInterval = 1,
+            MaxPoolSize = 10,
         };
 
         var provider = new PostgresStorageProvider(builder.ConnectionString);

@@ -167,30 +167,31 @@ public sealed class ExecutionLoggingFilter : IJobExecutionFilter
             context.Job.JobType,
             context.Job.Attempts);
 
-        await next(ct);
-
-        if (context.Succeeded)
+        try
+        {
+            await next(ct);
             _logger.LogInformation("Job {JobType} succeeded", context.Job.JobType);
-        else
-            _logger.LogWarning(
-                "Job {JobType} failed: {Error}",
-                context.Job.JobType,
-                context.Exception?.Message);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Job {JobType} failed", context.Job.JobType);
+            throw; // rethrow so retry and dead-letter apply normally
+        }
     }
 }
 
-// Register — multiple filters execute in registration order
+// Register as a singleton — multiple filters execute in registration order
 builder.Services.AddSingleton<IJobExecutionFilter, ExecutionLoggingFilter>();
 ```
 
 **Key behaviours:**
 
 - Call `await next(ct)` to pass control to the next filter or the job itself
-- `context.Succeeded` and `context.Exception` are set after `next` returns — check them after the call
-- Filters are resolved from the job's DI scope — scoped services are available via `context.Services`
+- If the job (or a later filter) throws, the exception propagates out of `await next(ct)`: wrap the call in `try/catch` to react to a failure, and rethrow so retry and dead-letter still apply
+- `context.Succeeded` and `context.Exception` are filled in by NexJob only **after the whole pipeline has finished**, so they are not reliable inside a filter; use `try/catch` instead
+- Filters are created once, when NexJob starts, so register them as **singletons**. Per-execution scoped services (a `DbContext`, `IJobContext`) are available through `context.Services`, which is the job's own scope
 - A filter that throws is treated as a job failure — retry and dead-letter apply normally
-- Multiple filters execute in DI registration order
-- No filters registered = zero overhead on job execution
+- Filters execute in DI registration order. `AddNexJob()` registers NexJob's own circuit-breaker filter, so a filter registered before `AddNexJob()` runs before it and one registered after runs after it
 
 **When to use filters vs dead-letter handlers:**
 
@@ -200,7 +201,7 @@ Use a **filter** when you need to run code before and after every execution rega
 
 ## Auto-Registration
 
-`AddNexJobJobs(assembly)` scans the assembly and registers all `IJob` and `IJob<T>` implementations as transient services. No manual registration needed.
+`AddNexJobJobs(assembly)` scans the assembly and registers all `IJob` and `IJob<T>` implementations as transient services. No manual registration needed. Registration uses `TryAddTransient`, so a job you already registered yourself (for example with a factory) is left as it is.
 
 ```csharp
 // Scans the assembly and registers:
@@ -210,7 +211,7 @@ Use a **filter** when you need to run code before and after every execution rega
 builder.Services.AddNexJobJobs(typeof(Program).Assembly);
 ```
 
-**Rule:** Every public class implementing `IJob` or `IJob<T>` is registered. Internal job classes are ignored.
+**Rule:** Every non-abstract class implementing `IJob` or `IJob<T>` in the assembly is registered, including `internal` ones.
 
 ---
 

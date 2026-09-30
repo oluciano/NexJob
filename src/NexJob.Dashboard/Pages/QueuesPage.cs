@@ -2,6 +2,7 @@ using System.Diagnostics.CodeAnalysis;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Rendering;
 using NexJob.Configuration;
+using NexJob.Internal;
 using NexJob.Storage;
 
 namespace NexJob.Dashboard.Pages;
@@ -12,11 +13,16 @@ internal sealed class QueuesPage : IComponent
     private RenderHandle _handle;
 
     [Parameter] public IDashboardStorage Storage { get; set; } = default!;
+    [Parameter] public IJobStorage? JobStorage { get; set; }
     [Parameter] public string PathPrefix { get; set; } = "/dashboard";
     [Parameter] public string Title { get; set; } = "NexJob";
     [Parameter] public NavCounters? Counters { get; set; }
     [Parameter] public NexJobOptions Options { get; set; } = default!;
     [Parameter] public IRuntimeSettingsStore? RuntimeStore { get; set; }
+    [Parameter] public IQueueCircuitBreakerManager? CircuitBreakerManager { get; set; }
+    [Parameter] public IReadOnlyList<string>? Queues { get; set; }
+    [Parameter] public IReadOnlyList<DashboardCluster>? Clusters { get; set; }
+    [Parameter] public DashboardCluster? ActiveCluster { get; set; }
 
     void IComponent.Attach(RenderHandle renderHandle) => _handle = renderHandle;
 
@@ -26,7 +32,20 @@ internal sealed class QueuesPage : IComponent
 
         // NOTE (Blazor Dispatcher Invariant):
         // Do NOT use .ConfigureAwait(false) here. Rendering via _handle.Render requires execution on the Dispatcher.
-        var queues = await Storage.GetQueueMetricsAsync();
+        var rawQueues = await Storage.GetQueueMetricsAsync();
+        IReadOnlyList<QueueMetrics> queues;
+        if (Queues is { Count: > 0 })
+        {
+            var rawMap = rawQueues.ToDictionary(q => q.Queue, StringComparer.OrdinalIgnoreCase);
+            queues = Queues.Select(qName => rawMap.TryGetValue(qName, out var qm)
+                ? qm
+                : new QueueMetrics { Queue = qName, Enqueued = 0, Processing = 0 }).ToList();
+        }
+        else
+        {
+            queues = rawQueues;
+        }
+
         var processingJobs = await Storage.GetJobsAsync(
             filter: new JobFilter { Status = JobStatus.Processing },
             page: 1,
@@ -42,7 +61,30 @@ internal sealed class QueuesPage : IComponent
             }
         }
 
-        _handle.Render(b => b.AddMarkupContent(0, BuildHtml(queues, processingJobs.Items, pausedQueues)));
+        var activeWorkerQueues = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var effectiveJobStorage = JobStorage ?? ActiveCluster?.JobStorage ?? (Storage as IJobStorage);
+        if (effectiveJobStorage != null)
+        {
+            var activeServers = await effectiveJobStorage.GetActiveServersAsync(TimeSpan.FromMinutes(1));
+            foreach (var s in activeServers)
+            {
+                foreach (var q in s.Queues)
+                {
+                    activeWorkerQueues.Add(q);
+                }
+            }
+        }
+
+        var circuitStatuses = new Dictionary<string, QueueCircuitStatus>(StringComparer.OrdinalIgnoreCase);
+        if (CircuitBreakerManager != null)
+        {
+            foreach (var status in CircuitBreakerManager.GetAllStatuses())
+            {
+                circuitStatuses[status.Queue] = status;
+            }
+        }
+
+        _handle.Render(b => b.AddMarkupContent(0, BuildHtml(queues, processingJobs.Items, pausedQueues, activeWorkerQueues, circuitStatuses)));
     }
 
     private static string FormatElapsed(TimeSpan elapsed)
@@ -65,7 +107,12 @@ internal sealed class QueuesPage : IComponent
         return $"{elapsed.TotalHours:F1}h";
     }
 
-    private string BuildHtml(IReadOnlyList<QueueMetrics> queues, IReadOnlyList<JobRecord> processingJobs, HashSet<string> pausedQueues)
+    private string BuildHtml(
+        IReadOnlyList<QueueMetrics> queues,
+        IReadOnlyList<JobRecord> processingJobs,
+        HashSet<string> pausedQueues,
+        HashSet<string> activeWorkerQueues,
+        IReadOnlyDictionary<string, QueueCircuitStatus> circuitStatuses)
     {
         if (queues.Count == 0)
         {
@@ -73,7 +120,7 @@ internal sealed class QueuesPage : IComponent
                 HtmlFragments.Breadcrumbs(PathPrefix, ("Queues", null)) +
                 HtmlFragments.PageHeader("Queues", "Active processing queues") +
                 HtmlFragments.EmptyState("0 0 24 24", "No active queues.");
-            return HtmlShell.Wrap(Title, PathPrefix, "queues", emptyBody, Counters);
+            return HtmlShell.Wrap(Title, PathPrefix, "queues", emptyBody, Counters, clusters: Clusters, activeCluster: ActiveCluster);
         }
 
         // Sort queues by activity (Processing > Enqueued > Name)
@@ -83,12 +130,24 @@ internal sealed class QueuesPage : IComponent
             .ThenBy(q => q.Queue, StringComparer.Ordinal)
             .ToList();
 
-        var cards = string.Join(string.Empty, sortedQueues.Select(q => HtmlFragments.QueueCard(q, PathPrefix, pausedQueues.Contains(q.Queue))));
+        var isReadOnly = ActiveCluster?.IsReadOnly == true;
+        var cards = string.Join(string.Empty, sortedQueues.Select(q =>
+        {
+            circuitStatuses.TryGetValue(q.Queue, out var cs);
+            return HtmlFragments.QueueCard(
+                q,
+                PathPrefix,
+                pausedQueues.Contains(q.Queue),
+                ActiveCluster,
+                hasActiveWorkers: activeWorkerQueues.Contains(q.Queue),
+                circuitStatus: cs);
+        }));
 
         var heatmap = BuildWorkerHeatmap(processingJobs);
 
         var body =
             "<div id=\"queues-page-content\" data-refresh=\"true\">" +
+            (isReadOnly ? HtmlFragments.ReadOnlyBanner() : string.Empty) +
             HtmlFragments.Breadcrumbs(PathPrefix, ("Queues", null)) +
             HtmlFragments.PageHeader("Queues", "Monitor and manage job processing queues") +
             $"<div class=\"card\">" +
@@ -101,7 +160,7 @@ internal sealed class QueuesPage : IComponent
             heatmap +
             "</div>";
 
-        return HtmlShell.Wrap(Title, PathPrefix, "queues", body, Counters);
+        return HtmlShell.Wrap(Title, PathPrefix, "queues", body, Counters, clusters: Clusters, activeCluster: ActiveCluster);
     }
 
     private string BuildWorkerHeatmap(IReadOnlyList<JobRecord> processingJobs)

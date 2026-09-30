@@ -27,7 +27,7 @@ public sealed class JobRecord
     /// Do not write to this field directly — it is managed by the storage layer.
     /// Use <see cref="IScheduler.EnqueueAsync{TJob,TInput}"/> to supply input at enqueue time.
     /// </remarks>
-    public string InputJson { get; init; } = string.Empty;
+    public string InputJson { get; set; } = string.Empty;
 
     /// <summary>
     /// Schema version of the input payload. Used with <see cref="IJobMigration{TOld,TNew}"/>
@@ -134,4 +134,10 @@ public sealed class JobRecord
 
     /// <summary>Last progress message reported by the job. <see langword="null"/> when not reported.</summary>
     public string? ProgressMessage { get; set; }
+
+    /// <summary>
+    /// JSON-serialized checkpoint payload representing the execution state for long-running batch jobs.
+    /// <see langword="null"/> when no checkpoint has been saved or after successful completion.
+    /// </summary>
+    public string? CheckpointJson { get; set; }
 }

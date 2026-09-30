@@ -14,11 +14,98 @@ public sealed class RedisStorageProvider : IStorageProvider
 {
     private const string ProcessingKey = "nexjob:processing";
     private const string ScheduledKey = "nexjob:scheduled";
+    private const int PromotionBatchSize = 100;
+    private const int MaxPromotionRounds = 5;
     private const string RecurringAllKey = "nexjob:recurring:all";
     private const string ThroughputKey = "nexjob:throughput";
+    private const string SucceededSetKey = "nexjob:status:Succeeded";
+    private const string FailedSetKey = "nexjob:status:Failed";
+    private const string IndexKey = "nexjob:index:all";
+    private const string IndexReadyKey = "nexjob:index:ready";
+    private const int IndexChunkSize = 500;
+    private const string QueueKeyPrefix = "nexjob:queue:";
+    private const string QueueKeySuffix = ":z";
     private const string ServersAllKey = "nexjob:servers:all";
 
+    // Lua function shared by every script that finishes a job successfully: moves each child still waiting on the
+    // parent into its queue in the same atomic step and deletes the continuation set.
+    private const string ReleaseContinuationsFunction =
+        """
+        local function releaseContinuations(parentId, nowTicks)
+          local contKey = 'nexjob:continuations:' .. parentId
+          local continuations = redis.call('SMEMBERS', contKey)
+          for i = 1, #continuations do
+            local childId = continuations[i]
+            local childKey = 'nexjob:jobs:' .. childId
+            if redis.call('HGET', childKey, 'status') == 'AwaitingContinuation' then
+              redis.call('HSET', childKey, 'status', 'Enqueued', 'scheduledAt', '')
+              local score = tonumber(redis.call('HGET', childKey, 'queueScore'))
+              if not score then
+                -- Legacy child written before queueScore existed: derive it from priority and now
+                score = (tonumber(redis.call('HGET', childKey, 'priority')) or 3) * 10000000000000 + tonumber(nowTicks)
+              end
+              local queue = redis.call('HGET', childKey, 'queue')
+              if not queue or queue == '' then
+                queue = 'default'
+              end
+              redis.call('ZADD', 'nexjob:queue:' .. queue .. ':z', score, childId)
+            end
+          end
+          redis.call('DEL', contKey)
+        end
+
+        """;
+
     private static readonly JsonSerializerOptions JsonOpts = new();
+
+    /// <summary>
+    /// Requeues (or fails, when attempts are exhausted) one orphaned job atomically. ARGV: job id, the heartbeat the
+    /// scan read, now (ISO 8601), queue name, queue score. Returns 0 when skipped (heartbeat refreshed or entry gone),
+    /// 1 requeued, 2 stale entry of a job that is no longer Processing (job untouched), 3 job hash missing, 4 failed.
+    /// </summary>
+    private static readonly LuaScript RequeueOrphanScript = LuaScript.Prepare(
+        """
+        local id = ARGV[1]
+        local jobKey = 'nexjob:jobs:' .. id
+        local current = redis.call('HGET', 'nexjob:processing', id)
+
+        -- Entry gone, or heartbeat refreshed since the scan read it: the worker is alive or the job was handled.
+        if not current or current ~= ARGV[2] then
+          return 0
+        end
+
+        if redis.call('EXISTS', jobKey) == 0 then
+          redis.call('HDEL', 'nexjob:processing', id)
+          return 3
+        end
+
+        -- A finished job can still have a stale processing entry: clean the entry, never touch the job.
+        if redis.call('HGET', jobKey, 'status') ~= 'Processing' then
+          redis.call('HDEL', 'nexjob:processing', id)
+          return 2
+        end
+
+        local attempts = tonumber(redis.call('HGET', jobKey, 'attempts')) or 0
+        local maxAttempts = tonumber(redis.call('HGET', jobKey, 'maxAttempts')) or 10
+
+        if attempts >= maxAttempts then
+          local message = redis.call('HGET', jobKey, 'exceptionMessage')
+          if not message or message == '' then
+            message = 'Orphaned execution exceeded maximum attempts.'
+          end
+
+          redis.call('HSET', jobKey, 'status', 'Failed', 'heartbeatAt', '', 'processingStartedAt', '',
+                     'completedAt', ARGV[3], 'exceptionMessage', message)
+          redis.call('HDEL', 'nexjob:processing', id)
+          redis.call('ZADD', 'nexjob:status:Failed', tonumber(ARGV[6]), id)
+          return 4
+        end
+
+        redis.call('HSET', jobKey, 'status', 'Enqueued', 'heartbeatAt', '', 'processingStartedAt', '')
+        redis.call('HDEL', 'nexjob:processing', id)
+        redis.call('ZADD', 'nexjob:queue:' .. ARGV[4] .. ':z', tonumber(ARGV[5]), id)
+        return 1
+        """);
 
     private static readonly LuaScript FetchNextScript = LuaScript.Prepare(
         """
@@ -73,24 +160,30 @@ public sealed class RedisStorageProvider : IStorageProvider
         return fetched
         """);
 
+    private static readonly LuaScript ReleaseContinuationsScript = LuaScript.Prepare(
+        ReleaseContinuationsFunction + "releaseContinuations(ARGV[1], ARGV[2])\nreturn 1");
+
     private static readonly LuaScript AcknowledgeBatchScript = LuaScript.Prepare(
-        """
+        ReleaseContinuationsFunction + """
         local nowIso = ARGV[1]
         local nowMs = tonumber(ARGV[2])
+        local nowTicks = ARGV[3]
 
-        for i = 3, #ARGV do
+        for i = 4, #ARGV do
           local id = ARGV[i]
           local jobKey = 'nexjob:jobs:' .. id
           redis.call('HSET', jobKey, 'status', 'Succeeded', 'completedAt', nowIso, 'heartbeatAt', '')
           redis.call('HDEL', 'nexjob:processing', id)
           redis.call('ZADD', 'nexjob:throughput', nowMs, id)
+          redis.call('ZADD', 'nexjob:status:Succeeded', nowMs, id)
+          releaseContinuations(id, nowTicks)
         end
 
         return 1
         """);
 
     private static readonly LuaScript CommitJobResultScript = LuaScript.Prepare(
-        """
+        ReleaseContinuationsFunction + """
         local jobKey = 'nexjob:jobs:' .. ARGV[1]
         local status = redis.call('HGET', jobKey, 'status')
 
@@ -103,15 +196,9 @@ public sealed class RedisStorageProvider : IStorageProvider
           -- Success path
           redis.call('HSET', jobKey, 'status', 'Succeeded', 'completedAt', ARGV[3], 'heartbeatAt', '')
           redis.call('HDEL', 'nexjob:processing', ARGV[1])
+          redis.call('ZADD', 'nexjob:status:Succeeded', tonumber(ARGV[10]), ARGV[1])
 
-          -- Enqueue continuations
-          local contKey = 'nexjob:continuations:' .. ARGV[1]
-          local continuations = redis.call('SMEMBERS', contKey)
-          for i = 1, #continuations do
-            local childId = continuations[i]
-            redis.call('HSET', 'nexjob:jobs:' .. childId, 'status', 'Enqueued', 'scheduledAt', '')
-            -- Requeue the child (simple approach: add back to queue with priority)
-          end
+          releaseContinuations(ARGV[1], ARGV[9])
 
           -- Update recurring job if applicable
           if ARGV[4] ~= '' then
@@ -132,6 +219,7 @@ public sealed class RedisStorageProvider : IStorageProvider
                        'exceptionMessage', ARGV[6], 'exceptionStackTrace', ARGV[7],
                        'heartbeatAt', '', 'retryAt', '')
             redis.call('HDEL', 'nexjob:processing', ARGV[1])
+            redis.call('ZADD', 'nexjob:status:Failed', tonumber(ARGV[10]), ARGV[1])
 
             -- Update recurring job if applicable and no retry
             if ARGV[4] ~= '' then
@@ -144,13 +232,51 @@ public sealed class RedisStorageProvider : IStorageProvider
         return 1
         """);
 
+    // Promotes due scheduled jobs into their queues atomically. ZREM runs first so two nodes can never
+    // promote the same entry, and only jobs still Scheduled are moved (stale entries are just dropped).
+    private static readonly LuaScript PromoteScheduledScript = LuaScript.Prepare(
+        """
+        local due = redis.call('ZRANGEBYSCORE', 'nexjob:scheduled', '-inf', ARGV[1], 'LIMIT', 0, tonumber(ARGV[2]))
+        for i = 1, #due do
+          local id = due[i]
+          redis.call('ZREM', 'nexjob:scheduled', id)
+          local jobKey = 'nexjob:jobs:' .. id
+          if redis.call('HGET', jobKey, 'status') == 'Scheduled' then
+            redis.call('HSET', jobKey, 'status', 'Enqueued')
+            local score = tonumber(redis.call('HGET', jobKey, 'queueScore'))
+            if not score then
+              -- Legacy job written before queueScore existed: derive it from priority and now
+              score = (tonumber(redis.call('HGET', jobKey, 'priority')) or 3) * 10000000000000 + tonumber(ARGV[3])
+            end
+            local queue = redis.call('HGET', jobKey, 'queue')
+            if not queue or queue == '' then
+              queue = 'default'
+            end
+            redis.call('ZADD', 'nexjob:queue:' .. queue .. ':z', score, id)
+          end
+        end
+        return #due
+        """);
+
+    // Deletes the idempotency key only while it still points at the given job, so releasing the key
+    // of a purged job never removes the key of a newer job that re-used it.
+    private static readonly LuaScript ReleaseIdempotencyScript = LuaScript.Prepare(
+        """
+        if redis.call('GET', ARGV[1]) == ARGV[2] then
+          return redis.call('DEL', ARGV[1])
+        end
+        return 0
+        """);
+
     private static readonly LuaScript EnqueueScript = LuaScript.Prepare(
         """
         local idemKey = ARGV[1]
         local jobId = ARGV[2]
-        local ttl = tonumber(ARGV[3])
+        local targetKind = ARGV[3]
+        local targetKey = ARGV[4]
+        local targetScore = ARGV[5]
+        local createdAtMs = ARGV[6]
         local jobKey = 'nexjob:jobs:' .. jobId
-        local hashFieldCount = (#{ARGV} - 3) / 2
 
         -- Only check idempotency if a key was provided
         if idemKey ~= '' then
@@ -160,9 +286,9 @@ public sealed class RedisStorageProvider : IStorageProvider
           end
         end
 
-        -- Set job hash fields (ARGV[4], ARGV[5], ARGV[6], ARGV[7], ...)
+        -- Set job hash fields (ARGV[7], ARGV[8], ...)
         local hashArgs = {}
-        for i = 4, #ARGV do
+        for i = 7, #ARGV do
           table.insert(hashArgs, ARGV[i])
         end
 
@@ -170,9 +296,19 @@ public sealed class RedisStorageProvider : IStorageProvider
           redis.call('HSET', jobKey, unpack(hashArgs))
         end
 
-        -- Set idempotency key atomically if provided
+        -- Every job is listed in the index so dashboard queries never scan the keyspace
+        redis.call('ZADD', 'nexjob:index:all', tonumber(createdAtMs), jobId)
+
+        -- The key has no TTL: it lives as long as the job and is released when the job is deleted
         if idemKey ~= '' then
-          redis.call('SET', idemKey, jobId, 'EX', ttl)
+          redis.call('SET', idemKey, jobId)
+        end
+
+        -- Insert into queue / scheduled set / continuation set in the same atomic step
+        if targetKind == 'zset' then
+          redis.call('ZADD', targetKey, tonumber(targetScore), jobId)
+        elseif targetKind == 'set' then
+          redis.call('SADD', targetKey, jobId)
         end
 
         return { 'NEW', jobId }
@@ -193,7 +329,6 @@ public sealed class RedisStorageProvider : IStorageProvider
     {
         var id = job.Id.Value.ToString();
         var idemKey = job.IdempotencyKey is not null ? IdempotencyRedisKey(job.IdempotencyKey) : string.Empty;
-        var idemTtlSeconds = (int)TimeSpan.FromDays(7).TotalSeconds;
 
         var hashFields = BuildJobHash(job);
         var hashArgs = new List<RedisValue>();
@@ -203,11 +338,43 @@ public sealed class RedisStorageProvider : IStorageProvider
             hashArgs.Add(field.Value.ToString());
         }
 
+        // Queue insertion is part of the script so hash + queue entry are created atomically.
+        string targetKind;
+        string targetKey;
+        string targetScore;
+        if (job.Status == JobStatus.AwaitingContinuation && job.ParentJobId.HasValue)
+        {
+            targetKind = "set";
+            targetKey = ContinuationSetKey(job.ParentJobId.Value.Value);
+            targetScore = string.Empty;
+        }
+        else if (job.Status == JobStatus.Scheduled && job.ScheduledAt.HasValue)
+        {
+            targetKind = "zset";
+            targetKey = ScheduledKey;
+            targetScore = job.ScheduledAt.Value.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture);
+        }
+        else if (job.Status == JobStatus.Enqueued)
+        {
+            targetKind = "zset";
+            targetKey = QueueKey(job.Queue);
+            targetScore = QueueScore((int)job.Priority, job.CreatedAt).ToString("R", CultureInfo.InvariantCulture);
+        }
+        else
+        {
+            targetKind = string.Empty;
+            targetKey = string.Empty;
+            targetScore = string.Empty;
+        }
+
         var scriptArgs = new RedisValue[]
         {
             idemKey,
             id,
-            idemTtlSeconds.ToString(CultureInfo.InvariantCulture),
+            targetKind,
+            targetKey,
+            targetScore,
+            job.CreatedAt.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture),
         };
         var combinedArgs = scriptArgs.Concat(hashArgs).ToArray();
 
@@ -254,20 +421,7 @@ public sealed class RedisStorageProvider : IStorageProvider
             break; // new job created — proceed to queue/schedule
         }
 
-        // New job was created by the script — add to appropriate queue/scheduled set
-        if (job.Status == JobStatus.AwaitingContinuation && job.ParentJobId.HasValue)
-        {
-            await _db.SetAddAsync(ContinuationSetKey(job.ParentJobId.Value.Value), id).ConfigureAwait(false);
-        }
-        else if (job.Status == JobStatus.Scheduled && job.ScheduledAt.HasValue)
-        {
-            await _db.SortedSetAddAsync(ScheduledKey, id, job.ScheduledAt.Value.ToUnixTimeMilliseconds()).ConfigureAwait(false);
-        }
-        else if (job.Status == JobStatus.Enqueued)
-        {
-            await _db.SortedSetAddAsync(QueueKey(job.Queue), id, QueueScore((int)job.Priority, job.CreatedAt)).ConfigureAwait(false);
-        }
-
+        // New job (hash, idempotency key and queue entry) was created atomically by the script.
         return new EnqueueResult(job.Id, WasRejected: false);
     }
 
@@ -357,8 +511,14 @@ public sealed class RedisStorageProvider : IStorageProvider
             new HashEntry("heartbeatAt", string.Empty),
         }).ConfigureAwait(false);
 
+        await _db.HashDeleteAsync(JobKey(id), "checkpointJson").ConfigureAwait(false);
         await _db.HashDeleteAsync(ProcessingKey, id).ConfigureAwait(false);
         await _db.SortedSetAddAsync(ThroughputKey, id, now.ToUnixTimeMilliseconds()).ConfigureAwait(false);
+        await _db.SortedSetAddAsync(SucceededSetKey, id, now.ToUnixTimeMilliseconds()).ConfigureAwait(false);
+        await _db.ScriptEvaluateAsync(
+            ReleaseContinuationsScript.ExecutableScript,
+            keys: null,
+            values: [id, now.UtcTicks.ToString(CultureInfo.InvariantCulture)]).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -379,12 +539,13 @@ public sealed class RedisStorageProvider : IStorageProvider
         var nowIso = now.ToString("O", CultureInfo.InvariantCulture);
         var nowMs = now.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture);
 
-        var args = new RedisValue[2 + jobIds.Count];
+        var args = new RedisValue[3 + jobIds.Count];
         args[0] = nowIso;
         args[1] = nowMs;
+        args[2] = now.UtcTicks.ToString(CultureInfo.InvariantCulture);
         for (var i = 0; i < jobIds.Count; i++)
         {
-            args[2 + i] = jobIds[i].Value.ToString();
+            args[3 + i] = jobIds[i].Value.ToString();
         }
 
         await _db.ScriptEvaluateAsync(AcknowledgeBatchScript.ExecutableScript, Array.Empty<RedisKey>(), args).ConfigureAwait(false);
@@ -421,6 +582,7 @@ public sealed class RedisStorageProvider : IStorageProvider
                 new HashEntry("exceptionStackTrace", exception.StackTrace ?? string.Empty),
                 new HashEntry("heartbeatAt", string.Empty),
             }).ConfigureAwait(false);
+            await _db.SortedSetAddAsync(FailedSetKey, id, now.ToUnixTimeMilliseconds()).ConfigureAwait(false);
         }
     }
 
@@ -630,7 +792,8 @@ public sealed class RedisStorageProvider : IStorageProvider
         foreach (var entry in processingEntries)
         {
             var id = entry.Name.ToString();
-            if (!DateTimeOffset.TryParse(entry.Value.ToString(), CultureInfo.InvariantCulture,
+            var heartbeatText = entry.Value.ToString();
+            if (!DateTimeOffset.TryParse(heartbeatText, CultureInfo.InvariantCulture,
                     DateTimeStyles.RoundtripKind, out var heartbeat))
             {
                 continue;
@@ -641,6 +804,8 @@ public sealed class RedisStorageProvider : IStorageProvider
                 continue;
             }
 
+            // Queue, priority and creation time do not change while a job is Processing, so reading them here is
+            // safe. Everything that can change (status, heartbeat, attempts) is re-checked inside the script.
             var jobHash = await _db.HashGetAllAsync(JobKey(id)).ConfigureAwait(false);
             if (jobHash.Length == 0)
             {
@@ -656,39 +821,7 @@ public sealed class RedisStorageProvider : IStorageProvider
             var createdAt = DateTimeOffset.TryParse(createdAtStr, CultureInfo.InvariantCulture,
                 DateTimeStyles.RoundtripKind, out var ca) ? ca : DateTimeOffset.UtcNow;
 
-            var attemptsStr = dict.GetValueOrDefault("attempts", "0");
-            var maxAttemptsStr = dict.GetValueOrDefault("maxAttempts", "10");
-            var attempts = int.TryParse(attemptsStr, NumberStyles.Integer, CultureInfo.InvariantCulture, out var att) ? att : 0;
-            var maxAttempts = int.TryParse(maxAttemptsStr, NumberStyles.Integer, CultureInfo.InvariantCulture, out var ma) ? ma : 10;
-
-            if (attempts >= maxAttempts)
-            {
-                var existingError = dict.GetValueOrDefault("exceptionMessage");
-                var errorMsg = string.IsNullOrEmpty(existingError)
-                    ? "Orphaned execution exceeded maximum attempts."
-                    : existingError;
-
-                await _db.HashSetAsync(JobKey(id), new[]
-                {
-                    new HashEntry("status", "Failed"),
-                    new HashEntry("heartbeatAt", string.Empty),
-                    new HashEntry("processingStartedAt", string.Empty),
-                    new HashEntry("completedAt", DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture)),
-                    new HashEntry("exceptionMessage", errorMsg),
-                }).ConfigureAwait(false);
-                await _db.HashDeleteAsync(ProcessingKey, id).ConfigureAwait(false);
-            }
-            else
-            {
-                await _db.HashSetAsync(JobKey(id), new[]
-                {
-                    new HashEntry("status", "Enqueued"),
-                    new HashEntry("heartbeatAt", string.Empty),
-                    new HashEntry("processingStartedAt", string.Empty),
-                }).ConfigureAwait(false);
-                await _db.HashDeleteAsync(ProcessingKey, id).ConfigureAwait(false);
-                await _db.SortedSetAddAsync(QueueKey(queue), id, QueueScore(priority, createdAt)).ConfigureAwait(false);
-            }
+            await RunRequeueOrphanScriptAsync(_db, id, heartbeatText, queue, QueueScore(priority, createdAt)).ConfigureAwait(false);
         }
     }
 
@@ -731,25 +864,29 @@ public sealed class RedisStorageProvider : IStorageProvider
     /// <inheritdoc/>
     public async Task<JobMetrics> GetMetricsAsync(CancellationToken cancellationToken = default)
     {
-        var counts = new Dictionary<string, int>(StringComparer.Ordinal);
-        var recentFailures = new List<JobRecord>();
+        await EnsureIndexAsync().ConfigureAwait(false);
 
-        await foreach (var key in ScanJobKeysAsync().WithCancellation(cancellationToken).ConfigureAwait(false))
+        // Counts come from structures that already exist per state (queue sets, processing hash, scheduled set,
+        // and the Succeeded/Failed sets), so the cost does not grow with the number of stored jobs.
+        var enqueued = 0L;
+        foreach (var queueKey in await GetQueueKeysAsync().ConfigureAwait(false))
         {
-            var hash = await _db.HashGetAllAsync(key).ConfigureAwait(false);
-            if (hash.Length == 0)
-            {
-                continue;
-            }
+            enqueued += await _db.SortedSetLengthAsync(queueKey).ConfigureAwait(false);
+        }
 
-            var dict = ParseHash(hash);
-            var s = dict.GetValueOrDefault("status", string.Empty);
-            counts.TryGetValue(s, out var cnt);
-            counts[s] = cnt + 1;
+        var processing = await _db.HashLengthAsync(ProcessingKey).ConfigureAwait(false);
+        var scheduled = await _db.SortedSetLengthAsync(ScheduledKey).ConfigureAwait(false);
+        var succeeded = await _db.SortedSetLengthAsync(SucceededSetKey).ConfigureAwait(false);
+        var failed = await _db.SortedSetLengthAsync(FailedSetKey).ConfigureAwait(false);
 
-            if (string.Equals(s, "Failed", StringComparison.Ordinal))
+        var recentFailures = new List<JobRecord>();
+        var recentFailedIds = await _db.SortedSetRangeByRankAsync(FailedSetKey, 0, 9, Order.Descending).ConfigureAwait(false);
+        foreach (var failedId in recentFailedIds)
+        {
+            var hash = await _db.HashGetAllAsync(JobKey(failedId.ToString())).ConfigureAwait(false);
+            if (hash.Length > 0)
             {
-                recentFailures.Add(HashToRecord(dict));
+                recentFailures.Add(HashToRecord(ParseHash(hash)));
             }
         }
 
@@ -771,11 +908,11 @@ public sealed class RedisStorageProvider : IStorageProvider
 
         return new JobMetrics
         {
-            Enqueued = counts.GetValueOrDefault("Enqueued"),
-            Processing = counts.GetValueOrDefault("Processing"),
-            Succeeded = counts.GetValueOrDefault("Succeeded"),
-            Failed = counts.GetValueOrDefault("Failed"),
-            Scheduled = counts.GetValueOrDefault("Scheduled"),
+            Enqueued = (int)enqueued,
+            Processing = (int)processing,
+            Succeeded = (int)succeeded,
+            Failed = (int)failed,
+            Scheduled = (int)scheduled,
             Recurring = recurringCount,
             HourlyThroughput = hourBuckets,
             RecentFailures = recentFailures
@@ -790,16 +927,38 @@ public sealed class RedisStorageProvider : IStorageProvider
         JobFilter filter, int page, int pageSize,
         CancellationToken cancellationToken = default)
     {
-        var all = new List<JobRecord>();
+        await EnsureIndexAsync().ConfigureAwait(false);
+        page = Math.Max(1, page);
 
-        await foreach (var key in ScanJobKeysAsync().WithCancellation(cancellationToken).ConfigureAwait(false))
+        var unfiltered = !filter.Status.HasValue
+            && string.IsNullOrWhiteSpace(filter.Queue)
+            && string.IsNullOrEmpty(filter.RecurringJobId)
+            && string.IsNullOrWhiteSpace(filter.Search);
+
+        if (unfiltered)
         {
-            var hash = await _db.HashGetAllAsync(key).ConfigureAwait(false);
-            if (hash.Length == 0)
+            // Fast path: the index is ordered by creation time, so a page is a rank range.
+            var offset = (long)(page - 1) * pageSize;
+            var ids = await _db.SortedSetRangeByRankAsync(IndexKey, offset, offset + pageSize - 1, Order.Descending).ConfigureAwait(false);
+            var hashes = await Task.WhenAll(ids.Select(id => _db.HashGetAllAsync(JobKey(id.ToString())))).ConfigureAwait(false);
+            var stale = ids.Where((_, i) => hashes[i].Length == 0).ToArray();
+            if (stale.Length > 0)
             {
-                continue;
+                await _db.SortedSetRemoveAsync(IndexKey, stale).ConfigureAwait(false);
             }
 
+            return new PagedResult<JobRecord>
+            {
+                Items = hashes.Where(h => h.Length > 0).Select(h => HashToRecord(ParseHash(h))).ToList(),
+                TotalCount = (int)await _db.SortedSetLengthAsync(IndexKey).ConfigureAwait(false),
+                Page = page,
+                PageSize = pageSize,
+            };
+        }
+
+        var all = new List<JobRecord>();
+        await foreach (var (_, hash) in ReadIndexedJobsNewestFirstAsync(cancellationToken).ConfigureAwait(false))
+        {
             var record = HashToRecord(ParseHash(hash));
             if (MatchesFilter(record, filter))
             {
@@ -807,12 +966,9 @@ public sealed class RedisStorageProvider : IStorageProvider
             }
         }
 
-        all = all.OrderByDescending(j => j.CreatedAt).ToList();
-        var items = all.Skip((page - 1) * pageSize).Take(pageSize).ToList();
-
         return new PagedResult<JobRecord>
         {
-            Items = items,
+            Items = all.Skip((page - 1) * pageSize).Take(pageSize).ToList(),
             TotalCount = all.Count,
             Page = page,
             PageSize = pageSize,
@@ -831,9 +987,13 @@ public sealed class RedisStorageProvider : IStorageProvider
     public async Task DeleteJobAsync(JobId id, CancellationToken cancellationToken = default)
     {
         var idStr = id.Value.ToString();
+        var idempotencyKey = (string?)await _db.HashGetAsync(JobKey(idStr), "idempotencyKey").ConfigureAwait(false);
         await _db.KeyDeleteAsync(JobKey(idStr)).ConfigureAwait(false);
         await _db.KeyDeleteAsync(LogsKey(idStr)).ConfigureAwait(false);
         await _db.HashDeleteAsync(ProcessingKey, idStr).ConfigureAwait(false);
+        await RemoveFromStatusSetsAsync(_db, idStr).ConfigureAwait(false);
+        await _db.SortedSetRemoveAsync(IndexKey, idStr).ConfigureAwait(false);
+        await ReleaseIdempotencyKeyAsync(_db, idempotencyKey, idStr).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -862,6 +1022,7 @@ public sealed class RedisStorageProvider : IStorageProvider
             new HashEntry("exceptionStackTrace", string.Empty),
         }).ConfigureAwait(false);
         await _db.SortedSetAddAsync(QueueKey(queue), idStr, QueueScore(3, createdAt)).ConfigureAwait(false);
+        await RemoveFromStatusSetsAsync(_db, idStr).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -870,23 +1031,24 @@ public sealed class RedisStorageProvider : IStorageProvider
     {
         var metrics = new Dictionary<string, (int Enqueued, int Processing)>(StringComparer.Ordinal);
 
-        await foreach (var key in ScanJobKeysAsync().WithCancellation(cancellationToken).ConfigureAwait(false))
+        foreach (var queueKey in await GetQueueKeysAsync().ConfigureAwait(false))
         {
-            var fields = await _db.HashGetAsync(key, new RedisValue[] { "status", "queue" }).ConfigureAwait(false);
-            var status = fields[0].ToString();
-            var queue = fields[1].ToString();
+            var name = queueKey[QueueKeyPrefix.Length..^QueueKeySuffix.Length];
+            metrics[name] = ((int)await _db.SortedSetLengthAsync(queueKey).ConfigureAwait(false), 0);
+        }
+
+        // Running jobs: bounded by the number of workers, not by how many jobs are stored.
+        var processingIds = await _db.HashKeysAsync(ProcessingKey).ConfigureAwait(false);
+        foreach (var processingId in processingIds)
+        {
+            var queue = (string?)await _db.HashGetAsync(JobKey(processingId.ToString()), "queue").ConfigureAwait(false);
             if (string.IsNullOrEmpty(queue))
             {
                 continue;
             }
 
             metrics.TryGetValue(queue, out var current);
-            metrics[queue] = status switch
-            {
-                "Enqueued" => (current.Enqueued + 1, current.Processing),
-                "Processing" => (current.Enqueued, current.Processing + 1),
-                _ => current,
-            };
+            metrics[queue] = (current.Enqueued, current.Processing + 1);
         }
 
         return metrics
@@ -929,14 +1091,36 @@ public sealed class RedisStorageProvider : IStorageProvider
             result.Exception?.Message ?? string.Empty,
             result.Exception?.StackTrace ?? string.Empty,
             result.RetryAt?.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture) ?? "0",
+            DateTimeOffset.UtcNow.UtcTicks.ToString(CultureInfo.InvariantCulture),
+            DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture),
         };
 
         // Execute atomic state transitions via Lua script
         await _db.ScriptEvaluateAsync(CommitJobResultScript.ExecutableScript, keys: null, values: args).ConfigureAwait(false);
 
-        // Persist logs (non-critical for atomicity)
-        await _db.StringSetAsync(LogsKey(idStr), logsJson).ConfigureAwait(false);
-        await _db.HashSetAsync(JobKey(idStr), "executionLogs", logsJson).ConfigureAwait(false);
+        if (result.Succeeded && result.PurgeOnSuccess)
+        {
+            var idempotencyKey = (string?)await _db.HashGetAsync(JobKey(idStr), "idempotencyKey").ConfigureAwait(false);
+            await _db.KeyDeleteAsync(JobKey(idStr)).ConfigureAwait(false);
+            await _db.KeyDeleteAsync(LogsKey(idStr)).ConfigureAwait(false);
+            await ReleaseIdempotencyKeyAsync(_db, idempotencyKey, idStr).ConfigureAwait(false);
+        }
+        else
+        {
+            if (result.Succeeded)
+            {
+                await _db.HashDeleteAsync(JobKey(idStr), "checkpointJson").ConfigureAwait(false);
+
+                if (result.TrimPayloadOnSuccess)
+                {
+                    await _db.HashSetAsync(JobKey(idStr), "inputJson", string.Empty).ConfigureAwait(false);
+                }
+            }
+
+            // Persist logs (non-critical for atomicity)
+            await _db.StringSetAsync(LogsKey(idStr), logsJson).ConfigureAwait(false);
+            await _db.HashSetAsync(JobKey(idStr), "executionLogs", logsJson).ConfigureAwait(false);
+        }
     }
 
     /// <inheritdoc/>
@@ -968,13 +1152,36 @@ public sealed class RedisStorageProvider : IStorageProvider
     }
 
     /// <inheritdoc/>
+    public async Task SaveCheckpointAsync(
+        JobId jobId, string checkpointJson, int? percent, string? message, CancellationToken ct = default)
+    {
+        var key = (RedisKey)JobKey(jobId.Value.ToString());
+        var entries = new List<HashEntry>
+        {
+            new HashEntry("checkpointJson", checkpointJson),
+        };
+
+        if (percent.HasValue)
+        {
+            entries.Add(new HashEntry("progressPercent", percent.Value.ToString(CultureInfo.InvariantCulture)));
+        }
+
+        if (message is not null)
+        {
+            entries.Add(new HashEntry("progressMessage", message));
+        }
+
+        await _db.HashSetAsync(key, entries.ToArray()).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc/>
     public async Task<IReadOnlyList<JobRecord>> GetJobsByTagAsync(
         string tag, CancellationToken cancellationToken = default)
     {
         var results = new List<JobRecord>();
-        await foreach (var key in ScanJobKeysAsync().WithCancellation(cancellationToken).ConfigureAwait(false))
+        await EnsureIndexAsync().ConfigureAwait(false);
+        await foreach (var (key, hash) in ScanIndexedJobsAsync(cancellationToken).ConfigureAwait(false))
         {
-            var hash = await _db.HashGetAllAsync(key).ConfigureAwait(false);
             if (hash.Length == 0)
             {
                 continue;
@@ -990,6 +1197,69 @@ public sealed class RedisStorageProvider : IStorageProvider
         }
 
         return results;
+    }
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<JobCatalogItem>> GetJobCatalogAsync(CancellationToken cancellationToken = default)
+    {
+        var grouped = new Dictionary<(string JobType, string Queue), List<JobRecord>>();
+
+        await EnsureIndexAsync().ConfigureAwait(false);
+        await foreach (var (key, hash) in ScanIndexedJobsAsync(cancellationToken).ConfigureAwait(false))
+        {
+            if (hash.Length == 0)
+            {
+                continue;
+            }
+
+            var d = ParseHash(hash);
+            var record = HashToRecord(d);
+            var groupKey = (record.JobType, record.Queue);
+
+            if (!grouped.TryGetValue(groupKey, out var list))
+            {
+                list = new List<JobRecord>();
+                grouped[groupKey] = list;
+            }
+
+            list.Add(record);
+        }
+
+        var items = new List<JobCatalogItem>();
+
+        foreach (var (key, jobs) in grouped)
+        {
+            var succeeded = jobs.Count(j => j.Status == JobStatus.Succeeded);
+            var failed = jobs.Count(j => j.Status == JobStatus.Failed);
+            var total = jobs.Count;
+
+            var lastExecuted = jobs
+                .Select(j => j.CompletedAt ?? j.ProcessingStartedAt)
+                .Where(t => t.HasValue)
+                .OrderByDescending(t => t!.Value)
+                .FirstOrDefault();
+
+            var durations = jobs
+                .Where(j => j.ProcessingStartedAt.HasValue && j.CompletedAt.HasValue && j.CompletedAt >= j.ProcessingStartedAt)
+                .Select(j => (j.CompletedAt!.Value - j.ProcessingStartedAt!.Value).TotalSeconds)
+                .ToList();
+
+            double? avgDuration = durations.Count > 0 ? durations.Average() : null;
+
+            items.Add(new JobCatalogItem(
+                JobType: key.JobType,
+                Queue: key.Queue,
+                TotalRuns: total,
+                SucceededRuns: succeeded,
+                FailedRuns: failed,
+                LastExecutedAt: lastExecuted,
+                AvgDurationSeconds: avgDuration));
+        }
+
+        return items
+            .OrderBy(i => i.JobType, StringComparer.Ordinal)
+            .ThenBy(i => i.Queue, StringComparer.Ordinal)
+            .ToList();
     }
 
     // ── Server / Worker node tracking ─────────────────────────────────────────
@@ -1081,9 +1351,9 @@ public sealed class RedisStorageProvider : IStorageProvider
         var keysToDelete = new List<RedisKey>(batchSize);
         var deleted = 0;
 
-        await foreach (var key in ScanJobKeysAsync().WithCancellation(cancellationToken).ConfigureAwait(false))
+        await EnsureIndexAsync().ConfigureAwait(false);
+        await foreach (var (key, hash) in ScanIndexedJobsAsync(cancellationToken).ConfigureAwait(false))
         {
-            var hash = await _db.HashGetAllAsync(key).ConfigureAwait(false);
             if (hash.Length == 0)
             {
                 continue;
@@ -1178,8 +1448,7 @@ public sealed class RedisStorageProvider : IStorageProvider
                 keysToDelete.Add(key);
                 if (keysToDelete.Count >= batchSize)
                 {
-                    var count = (int)await _db.KeyDeleteAsync(keysToDelete.ToArray()).ConfigureAwait(false);
-                    deleted += count > 0 ? count : keysToDelete.Count;
+                    deleted += await DeleteJobsWithLogsAsync(_db, keysToDelete).ConfigureAwait(false);
                     keysToDelete.Clear();
                     await Task.Yield();
                 }
@@ -1188,11 +1457,83 @@ public sealed class RedisStorageProvider : IStorageProvider
 
         if (keysToDelete.Count > 0)
         {
-            var count = (int)await _db.KeyDeleteAsync(keysToDelete.ToArray()).ConfigureAwait(false);
-            deleted += count > 0 ? count : keysToDelete.Count;
+            deleted += await DeleteJobsWithLogsAsync(_db, keysToDelete).ConfigureAwait(false);
         }
 
         return deleted;
+    }
+
+    /// <summary>
+    /// Runs the atomic orphan requeue for one job. Internal so the tests can exercise the guards directly.
+    /// </summary>
+    /// <returns>0 skipped, 1 requeued, 2 stale entry of a job that is no longer Processing, 3 job hash missing, 4 failed.</returns>
+    internal static async Task<int> RunRequeueOrphanScriptAsync(
+        IDatabase db, string id, string expectedHeartbeat, string queue, double queueScore)
+    {
+        var result = await db.ScriptEvaluateAsync(
+            RequeueOrphanScript.ExecutableScript,
+            keys: null,
+            values:
+            [
+                id,
+                expectedHeartbeat,
+                DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture),
+                queue,
+                queueScore.ToString("R", CultureInfo.InvariantCulture),
+                DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture),
+            ]).ConfigureAwait(false);
+
+        return (int)result;
+    }
+
+    // A job leaves the Succeeded/Failed sets when it is deleted, purged or requeued.
+    private static async Task RemoveFromStatusSetsAsync(IDatabase db, string id)
+    {
+        await db.SortedSetRemoveAsync(SucceededSetKey, id).ConfigureAwait(false);
+        await db.SortedSetRemoveAsync(FailedSetKey, id).ConfigureAwait(false);
+    }
+
+    // Deletes the job hashes and their separate logs keys; returns how many job hashes were actually removed.
+    private static async Task<int> DeleteJobsWithLogsAsync(IDatabase db, List<RedisKey> jobKeys)
+    {
+        var jobKeyPrefix = JobKey(string.Empty);
+        var logKeys = new RedisKey[jobKeys.Count];
+        for (var i = 0; i < jobKeys.Count; i++)
+        {
+            logKeys[i] = LogsKey(jobKeys[i].ToString()[jobKeyPrefix.Length..]);
+        }
+
+        // Read the idempotency keys before the hashes are gone.
+        var idemFields = await Task.WhenAll(jobKeys.Select(k => db.HashGetAsync(k, "idempotencyKey"))).ConfigureAwait(false);
+
+        var removed = (int)await db.KeyDeleteAsync(jobKeys.ToArray()).ConfigureAwait(false);
+        await db.KeyDeleteAsync(logKeys).ConfigureAwait(false);
+
+        var members = jobKeys.Select(k => (RedisValue)k.ToString()[jobKeyPrefix.Length..]).ToArray();
+        await db.SortedSetRemoveAsync(SucceededSetKey, members).ConfigureAwait(false);
+        await db.SortedSetRemoveAsync(FailedSetKey, members).ConfigureAwait(false);
+        await db.SortedSetRemoveAsync(IndexKey, members).ConfigureAwait(false);
+
+        for (var i = 0; i < jobKeys.Count; i++)
+        {
+            await ReleaseIdempotencyKeyAsync(db, (string?)idemFields[i], jobKeys[i].ToString()[jobKeyPrefix.Length..]).ConfigureAwait(false);
+        }
+
+        return removed;
+    }
+
+    // Releases the idempotency key of a deleted job; a no-op for jobs without a key or when a newer job owns it.
+    private static async Task ReleaseIdempotencyKeyAsync(IDatabase db, string? idempotencyKey, string jobId)
+    {
+        if (string.IsNullOrEmpty(idempotencyKey))
+        {
+            return;
+        }
+
+        await db.ScriptEvaluateAsync(
+            ReleaseIdempotencyScript.ExecutableScript,
+            keys: null,
+            values: [IdempotencyRedisKey(idempotencyKey), jobId]).ConfigureAwait(false);
     }
 
     // ── Private static helpers ────────────────────────────────────────────────
@@ -1214,6 +1555,12 @@ public sealed class RedisStorageProvider : IStorageProvider
     // priority (1-4) * 10^13 + ticks — lower score = higher priority
     private static double QueueScore(int priority, DateTimeOffset createdAt) =>
         (priority * 10_000_000_000_000.0) + createdAt.UtcTicks;
+
+    private static long? ParseMs(RedisValue value) =>
+        !value.IsNullOrEmpty
+        && DateTimeOffset.TryParse(value.ToString(), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var parsed)
+            ? parsed.ToUnixTimeMilliseconds()
+            : null;
 
     private static string? NullIfEmpty(string? value) =>
         string.IsNullOrEmpty(value) ? null : value;
@@ -1257,6 +1604,7 @@ public sealed class RedisStorageProvider : IStorageProvider
         new("schemaVersion", job.SchemaVersion),
         new("queue", job.Queue),
         new("priority", (int)job.Priority),
+        new("queueScore", QueueScore((int)job.Priority, job.CreatedAt).ToString("R", CultureInfo.InvariantCulture)),
         new("status", job.Status.ToString()),
         new("idempotencyKey", job.IdempotencyKey ?? string.Empty),
         new("attempts", job.Attempts),
@@ -1384,6 +1732,7 @@ public sealed class RedisStorageProvider : IStorageProvider
             Tags = DeserializeTags(d.GetValueOrDefault("tags", string.Empty)),
             ProgressPercent = int.TryParse(d.GetValueOrDefault("progressPercent"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var pp) ? pp : null,
             ProgressMessage = NullIfEmpty(d.GetValueOrDefault("progressMessage")),
+            CheckpointJson = NullIfEmpty(d.GetValueOrDefault("checkpointJson")),
         };
     }
 
@@ -1438,6 +1787,168 @@ public sealed class RedisStorageProvider : IStorageProvider
 
     // ── Private instance helpers ──────────────────────────────────────────────
 
+    // One sorted set exists per non-empty queue, so this scan is bounded by the number of queues.
+    private async Task<List<string>> GetQueueKeysAsync()
+    {
+        var endpoints = _db.Multiplexer.GetEndPoints();
+        var server = _db.Multiplexer.GetServer(endpoints[0]);
+        var keys = new List<string>();
+        await foreach (var key in server.KeysAsync(database: _db.Database, pattern: $"{QueueKeyPrefix}*{QueueKeySuffix}").ConfigureAwait(false))
+        {
+            keys.Add(key.ToString());
+        }
+
+        return keys;
+    }
+
+    // Jobs written before the index existed are indexed once (and added to the Succeeded/Failed sets). The work is
+    // idempotent, so nodes racing on the first call is harmless; the marker stops every later call from scanning.
+    private async Task EnsureIndexAsync()
+    {
+        if (await _db.KeyExistsAsync(IndexReadyKey).ConfigureAwait(false))
+        {
+            return;
+        }
+
+        var indexed = new List<SortedSetEntry>(IndexChunkSize);
+        var succeeded = new List<SortedSetEntry>();
+        var failed = new List<SortedSetEntry>();
+        var prefix = JobKey(string.Empty);
+
+        await foreach (var key in ScanJobKeysAsync().ConfigureAwait(false))
+        {
+            var fields = await _db.HashGetAsync(key, new RedisValue[] { "status", "createdAt", "completedAt" }).ConfigureAwait(false);
+            var id = key.ToString()[prefix.Length..];
+            var createdMs = ParseMs(fields[1]) ?? DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            indexed.Add(new SortedSetEntry(id, createdMs));
+
+            var completedMs = ParseMs(fields[2]) ?? createdMs;
+            if (string.Equals(fields[0], "Succeeded", StringComparison.Ordinal))
+            {
+                succeeded.Add(new SortedSetEntry(id, completedMs));
+            }
+            else if (string.Equals(fields[0], "Failed", StringComparison.Ordinal))
+            {
+                failed.Add(new SortedSetEntry(id, completedMs));
+            }
+
+            if (indexed.Count >= IndexChunkSize)
+            {
+                await _db.SortedSetAddAsync(IndexKey, indexed.ToArray()).ConfigureAwait(false);
+                indexed.Clear();
+            }
+        }
+
+        if (indexed.Count > 0)
+        {
+            await _db.SortedSetAddAsync(IndexKey, indexed.ToArray()).ConfigureAwait(false);
+        }
+
+        if (succeeded.Count > 0)
+        {
+            await _db.SortedSetAddAsync(SucceededSetKey, succeeded.ToArray()).ConfigureAwait(false);
+        }
+
+        if (failed.Count > 0)
+        {
+            await _db.SortedSetAddAsync(FailedSetKey, failed.ToArray()).ConfigureAwait(false);
+        }
+
+        await _db.StringSetAsync(IndexReadyKey, "1").ConfigureAwait(false);
+    }
+
+    // Newest first, in chunks with pipelined reads. Entries whose hash is gone are dropped from the index on the way.
+    private async IAsyncEnumerable<(RedisKey Key, HashEntry[] Hash)> ReadIndexedJobsNewestFirstAsync(
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        long start = 0;
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            var ids = await _db.SortedSetRangeByRankAsync(IndexKey, start, start + IndexChunkSize - 1, Order.Descending).ConfigureAwait(false);
+            if (ids.Length == 0)
+            {
+                yield break;
+            }
+
+            var hashes = await Task.WhenAll(ids.Select(id => _db.HashGetAllAsync(JobKey(id.ToString())))).ConfigureAwait(false);
+            var stale = new List<RedisValue>();
+            for (var i = 0; i < ids.Length; i++)
+            {
+                if (hashes[i].Length == 0)
+                {
+                    stale.Add(ids[i]);
+                    continue;
+                }
+
+                yield return (JobKey(ids[i].ToString()), hashes[i]);
+            }
+
+            if (stale.Count > 0)
+            {
+                await _db.SortedSetRemoveAsync(IndexKey, stale.ToArray()).ConfigureAwait(false);
+            }
+
+            if (ids.Length < IndexChunkSize)
+            {
+                yield break;
+            }
+
+            start += IndexChunkSize - stale.Count;
+        }
+    }
+
+    // Cursor based (ZSCAN), so it stays correct while jobs are deleted or added during the walk. Order is not defined.
+    private async IAsyncEnumerable<(RedisKey Key, HashEntry[] Hash)> ScanIndexedJobsAsync(
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        var buffer = new List<RedisValue>(IndexChunkSize);
+        await foreach (var entry in _db.SortedSetScanAsync(IndexKey, pageSize: IndexChunkSize).WithCancellation(cancellationToken).ConfigureAwait(false))
+        {
+            buffer.Add(entry.Element);
+            if (buffer.Count < IndexChunkSize)
+            {
+                continue;
+            }
+
+            foreach (var item in await ReadChunkAsync(buffer).ConfigureAwait(false))
+            {
+                yield return item;
+            }
+
+            buffer.Clear();
+        }
+
+        foreach (var item in await ReadChunkAsync(buffer).ConfigureAwait(false))
+        {
+            yield return item;
+        }
+    }
+
+    private async Task<List<(RedisKey Key, HashEntry[] Hash)>> ReadChunkAsync(List<RedisValue> ids)
+    {
+        var hashes = await Task.WhenAll(ids.Select(id => _db.HashGetAllAsync(JobKey(id.ToString())))).ConfigureAwait(false);
+        var result = new List<(RedisKey, HashEntry[])>(ids.Count);
+        var stale = new List<RedisValue>();
+        for (var i = 0; i < ids.Count; i++)
+        {
+            if (hashes[i].Length == 0)
+            {
+                stale.Add(ids[i]);
+            }
+            else
+            {
+                result.Add((JobKey(ids[i].ToString()), hashes[i]));
+            }
+        }
+
+        if (stale.Count > 0)
+        {
+            await _db.SortedSetRemoveAsync(IndexKey, stale.ToArray()).ConfigureAwait(false);
+        }
+
+        return result;
+    }
+
     private async IAsyncEnumerable<RedisKey> ScanJobKeysAsync()
     {
         var endpoints = _db.Multiplexer.GetEndPoints();
@@ -1450,31 +1961,22 @@ public sealed class RedisStorageProvider : IStorageProvider
 
     private async Task PromoteScheduledJobsAsync()
     {
-        var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-        var dueMembers = await _db.SortedSetRangeByScoreWithScoresAsync(
-            ScheduledKey, double.NegativeInfinity, nowMs).ConfigureAwait(false);
-
-        foreach (var member in dueMembers)
+        // Bounded drain: each call promotes at most PromotionBatchSize entries inside one atomic script.
+        for (var round = 0; round < MaxPromotionRounds; round++)
         {
-            var id = member.Element.ToString();
-            var jobHash = await _db.HashGetAllAsync(JobKey(id)).ConfigureAwait(false);
-            if (jobHash.Length == 0)
+            var now = DateTimeOffset.UtcNow;
+            var args = new RedisValue[]
             {
-                await _db.SortedSetRemoveAsync(ScheduledKey, id).ConfigureAwait(false);
-                continue;
+                now.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture),
+                PromotionBatchSize,
+                now.UtcTicks.ToString(CultureInfo.InvariantCulture),
+            };
+
+            var due = (long)await _db.ScriptEvaluateAsync(PromoteScheduledScript.ExecutableScript, keys: null, values: args).ConfigureAwait(false);
+            if (due < PromotionBatchSize)
+            {
+                return;
             }
-
-            var dict = ParseHash(jobHash);
-            var queue = dict.GetValueOrDefault("queue", "default");
-            var priorityStr = dict.GetValueOrDefault("priority", "3");
-            var createdAtStr = dict.GetValueOrDefault("createdAt", DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture));
-            var priority = int.TryParse(priorityStr, NumberStyles.Integer, CultureInfo.InvariantCulture, out var p) ? p : 3;
-            var createdAt = DateTimeOffset.TryParse(createdAtStr, CultureInfo.InvariantCulture,
-                DateTimeStyles.RoundtripKind, out var ca) ? ca : DateTimeOffset.UtcNow;
-
-            await _db.HashSetAsync(JobKey(id), "status", "Enqueued").ConfigureAwait(false);
-            await _db.SortedSetRemoveAsync(ScheduledKey, id).ConfigureAwait(false);
-            await _db.SortedSetAddAsync(QueueKey(queue), id, QueueScore(priority, createdAt)).ConfigureAwait(false);
         }
     }
 }

@@ -211,8 +211,15 @@ internal sealed class RecurringJobRegistrar
 
             var inputJson = jobConfig.ResolvedInputJson ?? SerializeInput(jobConfig.Input, inputType);
 
-            // Use a past timestamp so the scheduler picks up this job on the next polling cycle.
-            var nextExecution = (DateTimeOffset?)DateTimeOffset.UtcNow.AddSeconds(-1);
+            // Resolve the time zone here, before anything is written: an invalid TimeZoneId fails this registration
+            // (logged below) instead of storing a job that the scheduler could never compute a next run for.
+            var timeZone = jobConfig.TimeZoneId is not null
+                ? TimeZoneInfo.FindSystemTimeZoneById(jobConfig.TimeZoneId)
+                : TimeZoneInfo.Utc;
+
+            // The first run happens at the next cron occurrence, like a job registered from code. A timestamp in the
+            // past would make every job fire immediately on each (re)start.
+            var nextExecution = DefaultScheduler.ParseCron(jobConfig.Cron).GetNextOccurrence(DateTimeOffset.UtcNow, timeZone);
 
             var recurringJob = new RecurringJobRecord
             {
@@ -229,20 +236,13 @@ internal sealed class RecurringJobRegistrar
                 NextExecution = nextExecution,
             };
 
-            var existingJob = await _storage.GetRecurringJobByIdAsync(effectiveId, cancellationToken).ConfigureAwait(false);
-            if (existingJob != null)
-            {
-                _logger.LogWarning(
-                    "Recurring job '{Id}' already exists. Skipping registration.",
-                    effectiveId);
-                return;
-            }
-
+            // Always upsert: the definition in configuration wins on every start, while the fields an operator changes
+            // in the dashboard (cron override, paused, deleted) are preserved by the storage on conflict.
             await _storage.UpsertRecurringJobAsync(recurringJob, cancellationToken).ConfigureAwait(false);
 
             _registeredJobIds.Add(effectiveId);
             _logger.LogInformation(
-                "Successfully registered recurring job '{Id}' with cron '{Cron}' in queue '{Queue}'",
+                "Registered or updated recurring job '{Id}' with cron '{Cron}' in queue '{Queue}'",
                 effectiveId,
                 jobConfig.Cron,
                 jobConfig.Queue);

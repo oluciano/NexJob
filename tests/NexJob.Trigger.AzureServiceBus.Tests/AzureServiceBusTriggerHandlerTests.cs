@@ -228,7 +228,69 @@ public sealed class AzureServiceBusTriggerHandlerTests
 
         // Assert
         argsMock.Verify(a => a.CompleteMessageAsync(It.IsAny<ServiceBusReceivedMessage>(), It.IsAny<CancellationToken>()), Times.Never);
-        argsMock.Verify(a => a.DeadLetterMessageAsync(message, "EnqueueFailed", "Database connection timeout", It.IsAny<CancellationToken>()), Times.Once);
+        // Behavior changed in v5.6: transient enqueue errors are abandoned (redelivered), not dead-lettered (#265)
+        argsMock.Verify(a => a.AbandonMessageAsync(message, It.IsAny<IDictionary<string, object>>(), It.IsAny<CancellationToken>()), Times.Once);
+        argsMock.Verify(a => a.DeadLetterMessageAsync(It.IsAny<ServiceBusReceivedMessage>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    // ─── #265: transient failures are abandoned, permanent ones are dead-lettered ─────────────
+
+    [Fact]
+    public async Task TransientEnqueueFailure_IsAbandoned_ThenRedeliveredAndCompleted()
+    {
+        // Arrange
+        var handler = CreateHandler();
+        _scheduler.FailFirstEnqueues = 1;
+        var (firstDelivery, message) = CreateMessageArgs(messageId: "msg-transient");
+        var (redelivery, _) = CreateMessageArgs(messageId: "msg-transient");
+
+        // Act
+        await handler.HandleMessageAsync(firstDelivery.Object);
+        await handler.HandleMessageAsync(redelivery.Object);
+
+        // Assert
+        firstDelivery.Verify(a => a.AbandonMessageAsync(message, It.IsAny<IDictionary<string, object>>(), It.IsAny<CancellationToken>()), Times.Once);
+        firstDelivery.Verify(a => a.CompleteMessageAsync(It.IsAny<ServiceBusReceivedMessage>(), It.IsAny<CancellationToken>()), Times.Never);
+        redelivery.Verify(a => a.CompleteMessageAsync(It.IsAny<ServiceBusReceivedMessage>(), It.IsAny<CancellationToken>()), Times.Once);
+        _scheduler.EnqueueCalls.Should().HaveCount(1);
+        firstDelivery.Verify(a => a.DeadLetterMessageAsync(It.IsAny<ServiceBusReceivedMessage>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        redelivery.Verify(a => a.DeadLetterMessageAsync(It.IsAny<ServiceBusReceivedMessage>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task MissingJobType_IsDeadLettered_NeverAbandoned()
+    {
+        // Arrange
+        var handler = CreateHandler();
+        var (argsMock, message) = CreateMessageArgs(jobType: null);
+
+        // Act
+        await handler.HandleMessageAsync(argsMock.Object);
+
+        // Assert
+        argsMock.Verify(a => a.DeadLetterMessageAsync(message, "EnqueueFailed", It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
+        argsMock.Verify(a => a.AbandonMessageAsync(It.IsAny<ServiceBusReceivedMessage>(), It.IsAny<IDictionary<string, object>>(), It.IsAny<CancellationToken>()), Times.Never);
+        _scheduler.EnqueueCalls.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task StorageKeepsFailing_OneAbandonPerDelivery_NoInHandlerLoop_AbandonFailureDoesNotCrash()
+    {
+        // Arrange
+        var handler = CreateHandler();
+        _scheduler.ShouldFailEnqueue = true;
+        var (argsMock, message) = CreateMessageArgs(messageId: "msg-down");
+        argsMock.Setup(a => a.AbandonMessageAsync(It.IsAny<ServiceBusReceivedMessage>(), It.IsAny<IDictionary<string, object>>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new ServiceBusException("abandon failed", ServiceBusFailureReason.GeneralError));
+
+        // Act
+        var act = async () => await handler.HandleMessageAsync(argsMock.Object);
+
+        // Assert: redelivery pacing belongs to Service Bus (MaxDeliveryCount); the handler acts once per delivery
+        await act.Should().NotThrowAsync();
+        argsMock.Verify(a => a.AbandonMessageAsync(message, It.IsAny<IDictionary<string, object>>(), It.IsAny<CancellationToken>()), Times.Once);
+        argsMock.Verify(a => a.CompleteMessageAsync(It.IsAny<ServiceBusReceivedMessage>(), It.IsAny<CancellationToken>()), Times.Never);
+        argsMock.Verify(a => a.DeadLetterMessageAsync(It.IsAny<ServiceBusReceivedMessage>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]

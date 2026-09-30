@@ -1,4 +1,3 @@
-using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -61,6 +60,9 @@ internal sealed class RabbitMqTriggerHandler : IHostedService, IAsyncDisposable
             TargetJobType: _options.JobType ?? "Dynamic",
             JobTag: "trigger:rabbitmq"));
     }
+
+    /// <summary>Gets the pause before a message whose enqueue failed transiently is requeued.</summary>
+    internal TimeSpan TransientNackDelay { get; init; } = TimeSpan.FromSeconds(1);
 
     /// <summary>
     /// Starts the RabbitMQ trigger.
@@ -125,6 +127,10 @@ internal sealed class RabbitMqTriggerHandler : IHostedService, IAsyncDisposable
             _stoppingCts.Dispose();
         }
     }
+
+    // The message itself is unusable and redelivery can never help: malformed payload or format.
+    private static bool IsPermanent(Exception ex) =>
+        ex is FormatException or System.Text.Json.JsonException or ArgumentException;
 
     private static string? ExtractTraceparent(IBasicProperties props)
     {
@@ -248,18 +254,24 @@ internal sealed class RabbitMqTriggerHandler : IHostedService, IAsyncDisposable
     {
         var deliveryTag = ea.DeliveryTag;
 
+        JobRecord job;
+        string? idempotencyKey;
+        string? correlationId;
         try
         {
             // 1. Extract metadata
-            var idempotencyKey = ea.BasicProperties.CorrelationId
-                ?? ea.BasicProperties.MessageId
-                ?? Convert.ToHexString(SHA256.HashData(ea.Body.Span));
+            // Only a publisher assigned MessageId identifies a message. CorrelationId groups related messages and a body
+            // hash collides for identical payloads, so neither may drive deduplication. Without a MessageId every
+            // delivery creates a job (at-least-once).
+            var messageId = ea.BasicProperties.MessageId;
+            idempotencyKey = string.IsNullOrWhiteSpace(messageId) ? null : messageId;
+            correlationId = ea.BasicProperties.CorrelationId;
             var traceparent = ExtractTraceparent(ea.BasicProperties);
             var jobType = ExtractJobType(ea.BasicProperties);
             var inputJson = Encoding.UTF8.GetString(ea.Body.ToArray());
 
             // 2. Build job record
-            var job = JobRecordFactory.Build(
+            job = JobRecordFactory.Build(
                 jobType: jobType,
                 inputType: typeof(string).AssemblyQualifiedName!,
                 inputJson: inputJson,
@@ -272,7 +284,23 @@ internal sealed class RabbitMqTriggerHandler : IHostedService, IAsyncDisposable
                 tags: new[] { "trigger:rabbitmq" },
                 expiresAt: null,
                 traceParent: traceparent);
+        }
+        catch (OperationCanceledException)
+        {
+            // Shutdown in progress — nack with requeue so message is not lost
+            _channel?.BasicNack(deliveryTag, multiple: false, requeue: true);
+            return;
+        }
+        catch (Exception ex)
+        {
+            // Permanent: the message itself is unusable, redelivering it can never help.
+            _logger.LogWarning(ex, "RabbitMQ message can never be enqueued. Nacking with requeue: false.");
+            _channel?.BasicNack(deliveryTag, multiple: false, requeue: false);
+            return;
+        }
 
+        try
+        {
             // 3. Enqueue — wake-up signal is handled internally by IScheduler
             await _scheduler.EnqueueAsync(job, DuplicatePolicy.AllowAfterFailed, CancellationToken.None)
                 .ConfigureAwait(false);
@@ -280,18 +308,36 @@ internal sealed class RabbitMqTriggerHandler : IHostedService, IAsyncDisposable
             // 4. Ack ONLY after successful enqueue
             _channel?.BasicAck(deliveryTag, multiple: false);
 
-            _logger.LogInformation("RabbitMQ message {CorrelationId} enqueued as NexJob job.", idempotencyKey);
+            _logger.LogInformation(
+                "RabbitMQ message {MessageId} (correlation {CorrelationId}) enqueued as NexJob job.",
+                idempotencyKey ?? "(none)",
+                correlationId ?? "(none)");
         }
         catch (OperationCanceledException)
         {
             // Shutdown in progress — nack with requeue so message is not lost
             _channel?.BasicNack(deliveryTag, multiple: false, requeue: true);
         }
+        catch (Exception ex) when (IsPermanent(ex))
+        {
+            _logger.LogWarning(ex, "RabbitMQ message can never be enqueued. Nacking with requeue: false.");
+            _channel?.BasicNack(deliveryTag, multiple: false, requeue: false);
+        }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to enqueue RabbitMQ message. Nacking with requeue: false.");
-            // Permanent failure — nack without requeue (routes to DLX if configured)
-            _channel?.BasicNack(deliveryTag, multiple: false, requeue: false);
+            // Transient (storage, network, timeout): give the message back instead of losing it, after a short pause
+            // so an unavailable storage does not turn redelivery into a hot loop.
+            _logger.LogWarning(ex, "Failed to enqueue RabbitMQ message. Requeuing it in {Delay}s.", TransientNackDelay.TotalSeconds);
+            try
+            {
+                await Task.Delay(TransientNackDelay, _stoppingCts?.Token ?? CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                // Shutting down: requeue right away.
+            }
+
+            _channel?.BasicNack(deliveryTag, multiple: false, requeue: true);
         }
     }
 }

@@ -311,11 +311,12 @@ public sealed class RecurringNoInputJobTests
         registered.Queue.Should().Be("default");
         registered.Enabled.Should().BeTrue();
 
-        // Verify job was registered as due (NextExecution in past or very near)
+        // Verify the next execution is the next cron occurrence (within a minute for "* * * * *")
+        // Behavior changed in v5.6: the first run is the next cron occurrence, not immediate (#261)
         var now = DateTimeOffset.UtcNow;
         registered.NextExecution.Should().NotBeNull("NextExecution should be set");
-        (registered.NextExecution!.Value <= now.AddSeconds(2)).Should().BeTrue(
-            "job should be due immediately for execution");
+        (registered.NextExecution!.Value > now.AddSeconds(-2)).Should().BeTrue("a fresh registration must not be due in the past");
+        (registered.NextExecution.Value <= now.AddSeconds(61)).Should().BeTrue("the next occurrence of every-minute cron is at most a minute away");
     }
 
     /// <summary>
@@ -448,7 +449,9 @@ public sealed class RecurringNoInputJobTests
             ["NexJob:PollingIntervalMs"] = "200",  // Fast polling for test
             ["NexJob:RecurringJobs:0:Id"] = "e2e-appsettings",
             ["NexJob:RecurringJobs:0:Job"] = "RecurringAppsettingsExecutionTestJob",
-            ["NexJob:RecurringJobs:0:Cron"] = "* * * * *",  // every minute
+            // Behavior changed in v5.6: the first run is the next cron occurrence, not immediate (#261), so this test
+            // uses a per-second cron to reach the first execution quickly
+            ["NexJob:RecurringJobs:0:Cron"] = "* * * * * *",  // every second
             ["NexJob:RecurringJobs:0:Queue"] = "default",
             ["NexJob:RecurringJobs:0:Enabled"] = "true",
             // Note: NO Input specified (IJob has no input)
