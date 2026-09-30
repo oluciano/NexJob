@@ -34,7 +34,7 @@ Active development: **develop**
 - `IJobInvokerFactory`, `IJobRetryPolicy`, `IDeadLetterDispatcher`, `IJobControlService`
 - `NexJobBuilder` — fluent builder returned by `AddNexJob()`
 - `UseDashboardReadReplica()` — opt-in read replica (PostgreSQL, SQL Server)
-- `UseDistributedThrottle()` — opt-in global Redis throttle enforcement
+- `AddNexJobDistributedThrottle()` (NexJob.Redis) — opt-in global Redis throttle enforcement
 - Triggers: AzureServiceBus, AwsSqs, RabbitMQ, Kafka, GooglePubSub
 
 ---

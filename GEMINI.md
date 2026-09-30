@@ -37,7 +37,7 @@ Key architectural foundations:
 - `IDeadLetterDispatcher` — encapsulates dead-letter handler resolution and invocation
 - `IJobControlService` — programmatic requeue/delete/pause outside dashboard
 - `UseDashboardReadReplica()` — opt-in read replica for PostgreSQL and SQL Server
-- `UseDistributedThrottle()` — opt-in global Redis throttle enforcement
+- `AddNexJobDistributedThrottle()` (NexJob.Redis) — opt-in global Redis throttle enforcement
 - `NexJobBuilder` — fluent builder returned by `AddNexJob()`
 
 ---
