@@ -12,6 +12,11 @@ mkdir -p "$out/assets"
 cp docs/wiki/*.md "$out/"
 cp docs/assets/* "$out/assets/"
 cp CHANGELOG.md "$out/CHANGELOG.md"
-mv "$out/Home.md" "$out/index.md"
+{
+  printf -- '---\ntitle: Background job processing for .NET\n'
+  printf 'description: Predictable, observable background jobs for .NET 8 with retries, deadlines, dead-letter handling, a dashboard and five storage providers.\n---\n\n'
+  cat "$out/Home.md"
+} > "$out/index.md"
+rm "$out/Home.md"
 
 sed -i 's|\.\./assets/|assets/|g; s|\.\./\.\./CHANGELOG\.md|CHANGELOG.md|g' "$out"/*.md

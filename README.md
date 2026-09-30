@@ -13,6 +13,8 @@
 
 **Background jobs for .NET. Predictable. Observable. No magic.**
 
+📖 **Documentation: [oluciano.github.io/NexJob](https://oluciano.github.io/NexJob/)**
+
 [![NuGet](https://img.shields.io/nuget/v/NexJob.svg?style=flat-square&color=512bd4&label=nuget)](https://www.nuget.org/packages/NexJob)
 [![NuGet Downloads](https://img.shields.io/nuget/dt/NexJob?style=flat-square&color=512bd4)](https://www.nuget.org/packages/NexJob)
 [![Build](https://img.shields.io/github/actions/workflow/status/oluciano/NexJob/ci.yml?style=flat-square)](https://github.com/oluciano/NexJob/actions)

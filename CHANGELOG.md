@@ -10,6 +10,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - **Documentation site on GitHub Pages (issue #292)**:
   - The wiki in `docs/wiki/` is now built with MkDocs (Material) and published to `https://oluciano.github.io/NexJob/` on every push to `main`, so the site always matches the released version.
+  - The site has a search-friendly title and description, the root README links to it, and `PackageProjectUrl` now points to it.
   - `docs/site/prepare.sh` stages a copy of the wiki (Home becomes the index, asset and Changelog links are rewritten) and leaves the wiki sources untouched; `mkdocs build` runs in strict mode, so a broken link fails the build. Pull requests that touch the docs run the same build without deploying.
 
 ## [5.6.1] - 2026-09-30
