@@ -1,4 +1,3 @@
-using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -251,9 +250,12 @@ internal sealed class RabbitMqTriggerHandler : IHostedService, IAsyncDisposable
         try
         {
             // 1. Extract metadata
-            var idempotencyKey = ea.BasicProperties.CorrelationId
-                ?? ea.BasicProperties.MessageId
-                ?? Convert.ToHexString(SHA256.HashData(ea.Body.Span));
+            // Only a publisher assigned MessageId identifies a message. CorrelationId groups related messages and a body
+            // hash collides for identical payloads, so neither may drive deduplication. Without a MessageId every
+            // delivery creates a job (at-least-once).
+            var messageId = ea.BasicProperties.MessageId;
+            var idempotencyKey = string.IsNullOrWhiteSpace(messageId) ? null : messageId;
+            var correlationId = ea.BasicProperties.CorrelationId;
             var traceparent = ExtractTraceparent(ea.BasicProperties);
             var jobType = ExtractJobType(ea.BasicProperties);
             var inputJson = Encoding.UTF8.GetString(ea.Body.ToArray());
@@ -280,7 +282,10 @@ internal sealed class RabbitMqTriggerHandler : IHostedService, IAsyncDisposable
             // 4. Ack ONLY after successful enqueue
             _channel?.BasicAck(deliveryTag, multiple: false);
 
-            _logger.LogInformation("RabbitMQ message {CorrelationId} enqueued as NexJob job.", idempotencyKey);
+            _logger.LogInformation(
+                "RabbitMQ message {MessageId} (correlation {CorrelationId}) enqueued as NexJob job.",
+                idempotencyKey ?? "(none)",
+                correlationId ?? "(none)");
         }
         catch (OperationCanceledException)
         {

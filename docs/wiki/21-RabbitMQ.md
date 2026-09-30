@@ -74,7 +74,7 @@ builder.Services.AddNexJob()
 
 ### Inbound Guarantees
 - **Never Silently Drop:** If `IScheduler.EnqueueAsync` fails, the message is not lost and is redelivered or routed according to broker policy.
-- **Idempotency:** The broker message ID is used as `JobRecord.IdempotencyKey` to prevent duplicate execution.
+- **Idempotency:** The `MessageId` property is used as `JobRecord.IdempotencyKey`, so redelivery of the same message never creates a second job. `CorrelationId` is not used (many messages can share one). Messages published without a `MessageId` are not deduplicated: every delivery creates a job (at-least-once), so set a unique `MessageId` when you need deduplication.
 - **Trace Propagation:** W3C `traceparent` headers are extracted from `IBasicProperties.Headers` and attached to the job trace.
 - **Ack Only After Success:** Messages are acknowledged (`BasicAck`) strictly *after* the job record is committed to NexJob storage.
 

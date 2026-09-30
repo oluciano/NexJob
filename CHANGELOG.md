@@ -34,6 +34,10 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`NexJob.RabbitMQ` — Only `MessageId` is used as the idempotency key (Issue #266)**:
+  - The trigger used `CorrelationId`, falling back to a SHA-256 of the body, as the idempotency key. Messages sharing a correlation id (a whole order flow, a request/reply chain) or carrying identical bodies were silently deduplicated and acknowledged without running. The key is now `MessageId` when it is set and non-blank; otherwise there is no key and every delivery creates a job.
+  - **Behaviour change:** publishers that relied on `CorrelationId` for deduplication must set a unique `MessageId`.
+
 - **`NexJob.Kafka` — The idempotency key is the record position, not the message key (Issue #264)**:
   - The trigger used the Kafka message key as the job idempotency key, so every later record sharing a key with an active job (for example the same customer id) was silently dropped, and its offset committed. The key is now `kafka:{topic}:{partition}:{offset}`: redelivery of the same record is still deduplicated, and different records always produce different jobs.
   - **Behaviour change:** applications that relied on key-based deduplication must deduplicate in the job itself.
