@@ -101,20 +101,21 @@ internal sealed class FailOnceThenSucceedJob : IJob
     private readonly Action _onExecuted;
     private readonly ILogger<FailOnceThenSucceedJob> _logger;
 
-    private int _attempt = 0;
+    private readonly IJobContext _context;
 
-    public FailOnceThenSucceedJob(Action onExecuted, ILogger<FailOnceThenSucceedJob> logger)
+    public FailOnceThenSucceedJob(Action onExecuted, ILogger<FailOnceThenSucceedJob> logger, IJobContext context)
     {
         _onExecuted = onExecuted;
         _logger = logger;
+        _context = context;
     }
 
     public async Task ExecuteAsync(CancellationToken cancellationToken)
     {
-        _attempt++;
-        _logger.LogInformation("FailOnceThenSucceedJob executing (attempt {Attempt})", _attempt);
+        var attempt = _context.Attempt;
+        _logger.LogInformation("FailOnceThenSucceedJob executing (attempt {Attempt})", attempt);
 
-        if (_attempt == 1)
+        if (attempt == 1)
         {
             _onExecuted();
             throw new InvalidOperationException("First attempt fails intentionally");
