@@ -27,6 +27,11 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`NexJob.MongoDB` — Dates are stored and compared in UTC (Issue #263, step 1)**:
+  - MongoDB stores `DateTimeOffset` as an ISO string, and scheduling filters and sorts compare those strings, so a value written with a non-UTC offset (for example `-03:00`) was compared as the wrong instant: jobs scheduled or retried with a local offset ran hours early, and jobs with a positive offset ran late. Every date written for jobs, recurring jobs, servers and execution logs, and every date used in a filter or update, is now normalised to UTC.
+  - Documents already stored with a non-UTC offset are not migrated and stay wrong until rewritten; only future-scheduled jobs created with a local offset are affected.
+  - Step 2 (a BSON `DateTime` serializer and removing the global `DateTimeOffset` registration) is not part of this change.
+
 - **`NexJob.Redis` — Metrics no longer scan every job hash (Issue #262, part 1)**:
   - `GetMetricsAsync` and `GetQueueMetricsAsync` (run every 15 s by each node's heartbeat and on every health probe) previously read the whole job keyspace. They now derive counts from structures that already exist: queue sorted sets (Enqueued), `nexjob:processing` (Processing), `nexjob:scheduled` (Scheduled), plus two new sorted sets, `nexjob:status:Succeeded` and `nexjob:status:Failed`, maintained by every path that finishes, deletes, purges or requeues a job. Recent failures come from the Failed set.
   - **Upgrade note:** jobs that finished before this version are not in the new sets, so `Succeeded`/`Failed` totals start at 0 and grow as jobs finish; older jobs drop out of nothing (they are simply not counted) and disappear from the store through normal retention. Enqueued, Processing and Scheduled are exact immediately.
