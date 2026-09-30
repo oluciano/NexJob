@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -274,7 +275,7 @@ internal sealed class RabbitMqTriggerHandler : IHostedService, IAsyncDisposable
             job = JobRecordFactory.Build(
                 jobType: jobType,
                 inputType: typeof(string).AssemblyQualifiedName!,
-                inputJson: inputJson,
+                inputJson: JsonSerializer.Serialize(inputJson),
                 options: _nexJobOptions,
                 queue: _options.TargetQueue,
                 priority: _options.JobPriority,
