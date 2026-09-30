@@ -27,6 +27,10 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`NexJob.Redis` — Released continuations are queued atomically on commit (Issue #254)**:
+  - Committing a parent successfully marked its `ContinueWith` children `Enqueued` but never added them to a queue, so they were never fetched. The commit script now moves every child still `AwaitingContinuation` into its queue ZSET in the same atomic step (children in any other state are left untouched) and deletes the continuation set.
+  - Job hashes now store a precomputed `queueScore`; children written before this field existed fall back to priority and the commit time.
+
 - **`NexJob` Core — Storage errors no longer fail successful jobs or kill the heartbeat (Issue #256)**:
   - A storage error while updating the heartbeat is logged as a warning and the loop keeps running, so a transient blip no longer lets the orphan watcher re-run a healthy job.
   - The success commit now runs outside the job failure path. If it fails it is retried up to 3 times (100 ms, 500 ms, 2 s); if it still fails the error is logged and the job stays `Processing` for the orphan watcher (at-least-once). It is never marked failed, retried by the policy, or dead-lettered because of it.
