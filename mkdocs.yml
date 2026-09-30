@@ -1,0 +1,64 @@
+site_name: NexJob
+site_description: Predictable and observable background job processing for .NET 8
+site_url: https://oluciano.github.io/NexJob/
+repo_url: https://github.com/oluciano/NexJob
+repo_name: oluciano/NexJob
+edit_uri: ""
+
+# Built from a staged copy of docs/wiki; run docs/site/prepare.sh first.
+docs_dir: .site-docs
+site_dir: site
+strict: true
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - navigation.instant
+    - navigation.top
+    - search.highlight
+    - content.code.copy
+
+markdown_extensions:
+  - admonition
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.highlight
+  - pymdownx.superfences
+
+nav:
+  - Home: index.md
+  - Mental Model: 00-Mental-Model.md
+  - Getting Started: 01-Getting-Started.md
+  - Job Types: 02-Job-Types.md
+  - Scheduling: 03-Scheduling.md
+  - Recurring Jobs: 04-Recurring-Jobs.md
+  - Continuations: 05-Continuations.md
+  - Retry & Dead Letter: 06-Retry-And-Dead-Letter.md
+  - Throttling: 07-Throttling.md
+  - IJobContext: 08-IJobContext.md
+  - Storage Providers: 09-Storage-Providers.md
+  - Dashboard: 10-Dashboard.md
+  - Configuration Reference: 11-Configuration-Reference.md
+  - OpenTelemetry: 12-OpenTelemetry.md
+  - Best Practices: 13-Best-Practices.md
+  - Writing Tests: 14-Writing-Tests.md
+  - Common Scenarios: 15-Common-Scenarios.md
+  - Troubleshooting: 16-Troubleshooting.md
+  - Idempotency: 17-Idempotency.md
+  - Migration: 18-Migration.md
+  - External Triggers: 19-Triggers.md
+  - Kafka: 20-Kafka.md
+  - RabbitMQ: 21-RabbitMQ.md
+  - Changelog: CHANGELOG.md
