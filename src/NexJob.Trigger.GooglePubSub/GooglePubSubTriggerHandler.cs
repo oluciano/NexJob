@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Google.Cloud.PubSub.V1;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -133,7 +134,7 @@ internal sealed class GooglePubSubTriggerHandler : IHostedService
             var job = JobRecordFactory.Build(
                 jobType: jobType,
                 inputType: typeof(string).AssemblyQualifiedName!,
-                inputJson: inputJson,
+                inputJson: JsonSerializer.Serialize(inputJson),
                 options: _nexJobOptions,
                 queue: _options.TargetQueue,
                 priority: _options.JobPriority,

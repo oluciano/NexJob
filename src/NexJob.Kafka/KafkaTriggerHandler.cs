@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json;
 using Confluent.Kafka;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -169,7 +170,7 @@ internal sealed class KafkaTriggerHandler : BackgroundService
             job = JobRecordFactory.Build(
                 jobType: jobType,
                 inputType: typeof(string).AssemblyQualifiedName!,
-                inputJson: result.Message.Value ?? string.Empty,
+                inputJson: JsonSerializer.Serialize(result.Message.Value ?? string.Empty),
                 options: _nexJobOptions,
                 queue: _options.TargetQueue,
                 priority: _options.JobPriority,

@@ -6,6 +6,13 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Broker triggers (AwsSqs, AzureServiceBus, GooglePubSub, Kafka, RabbitMQ) — message body now reaches `IJob<string>` verbatim (issue #287)**:
+  - The body was stored raw in `InputJson` but deserialized as a JSON string at execution, so any body that was not itself a JSON string literal (plain text, XML, CSV, a JSON object) failed the job with `JsonException`. On PostgreSQL a non-JSON body was rejected at enqueue by the `jsonb` column, and the trigger retried it in a loop.
+  - The five triggers now store the body as a JSON string (`JsonSerializer.Serialize(body)`), so it round-trips byte for byte on every storage provider and the job decides how to parse it.
+  - Behavior change: a producer that worked around the bug by publishing a JSON string literal (for example `"hello"` with quotes) now receives the quotes as part of the text.
+
 ## [5.6.0] - 2026-09-30
 
 ### Added

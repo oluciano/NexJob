@@ -98,4 +98,4 @@ await sender.SendMessageAsync(message);
 
 ## Known Limitations
 
-- **Fixed input type:** The `inputType` is fixed to `string` because broker triggers receive the message body as text (JSON). Deserializing to a concrete type is the responsibility of the job handler.
+- **Fixed input type:** The `inputType` is fixed to `string` because broker triggers receive the message body as text (JSON, XML or plain text). The body is delivered to the job verbatim; deserializing it to a concrete type is the responsibility of the job handler.
