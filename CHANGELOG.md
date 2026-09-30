@@ -27,6 +27,10 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`NexJob.Redis` — Due scheduled and retry jobs are promoted atomically (Issue #255)**:
+  - Promotion used a client-side read/`HSET`/`ZREM`/`ZADD` sequence, so two nodes could both promote (and run) the same job, and a crash mid-way could lose it. It is now a single Lua script that removes the `nexjob:scheduled` entry first and only enqueues jobs still in `Scheduled` state; stale entries (missing hash, job already running) are just dropped.
+  - Large backlogs drain in bounded batches of 100 per script call, up to 5 calls per fetch.
+
 - **`NexJob.Redis` — Released continuations are queued atomically on commit (Issue #254)**:
   - Committing a parent successfully marked its `ContinueWith` children `Enqueued` but never added them to a queue, so they were never fetched. The commit script now moves every child still `AwaitingContinuation` into its queue ZSET in the same atomic step (children in any other state are left untouched) and deletes the continuation set.
   - Job hashes now store a precomputed `queueScore`; children written before this field existed fall back to priority and the commit time.

@@ -494,6 +494,86 @@ public sealed class RedisStorageProviderTests : StorageProviderTestsBase, IClass
         (await db.HashGetAsync($"nexjob:jobs:{child.Id.Value}", "status")).ToString().Should().Be("Failed");
     }
 
+    // ── Due scheduled jobs are promoted atomically (issue #255) ───────────────
+
+    private static JobRecord NewDueScheduledJob(string queue = "default", JobPriority priority = JobPriority.Normal) =>
+        NewEnqueueJob(queue, status: JobStatus.Scheduled, scheduledAt: DateTimeOffset.UtcNow.AddSeconds(-1), priority: priority);
+
+    [Fact]
+    public async Task DueScheduledJob_IsPromotedOnceAndFetched()
+    {
+        var (mux, first) = await ConnectAsync();
+        var second = new RedisStorageProvider((await StackExchange.Redis.ConnectionMultiplexer.ConnectAsync(_fixture.Container.GetConnectionString())).GetDatabase());
+        var job = NewDueScheduledJob();
+        await first.EnqueueAsync(job);
+
+        var results = await Task.WhenAll(first.FetchNextAsync(["default"]), second.FetchNextAsync(["default"]));
+
+        results.Count(r => r is not null).Should().Be(1, "two nodes promoting the same due job must not both run it");
+        results.Single(r => r is not null)!.Id.Should().Be(job.Id);
+        (await mux.GetDatabase().SortedSetScoreAsync("nexjob:scheduled", job.Id.Value.ToString())).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ScheduledEntryForJobAlreadyProcessing_IsDroppedNotRequeued()
+    {
+        var (mux, provider) = await ConnectAsync();
+        var db = mux.GetDatabase();
+        await provider.EnqueueAsync(NewEnqueueJob());
+        var processing = (await provider.FetchNextAsync(["default"]))!;
+        await db.SortedSetAddAsync("nexjob:scheduled", processing.Id.Value.ToString(), DateTimeOffset.UtcNow.AddSeconds(-1).ToUnixTimeMilliseconds());
+
+        var fetched = await provider.FetchNextAsync(["default"]);
+
+        fetched.Should().BeNull("a job that is already running must not be requeued by a stale scheduled entry");
+        (await db.SortedSetScoreAsync("nexjob:scheduled", processing.Id.Value.ToString())).Should().BeNull("the stale entry is dropped");
+        (await db.HashGetAsync($"nexjob:jobs:{processing.Id.Value}", "status")).ToString().Should().Be("Processing");
+    }
+
+    [Fact]
+    public async Task MissingHash_EntryRemoved()
+    {
+        var (mux, provider) = await ConnectAsync();
+        var db = mux.GetDatabase();
+        var ghost = Guid.NewGuid().ToString();
+        await db.SortedSetAddAsync("nexjob:scheduled", ghost, DateTimeOffset.UtcNow.AddSeconds(-1).ToUnixTimeMilliseconds());
+
+        (await provider.FetchNextAsync(["default"])).Should().BeNull();
+
+        (await db.SortedSetScoreAsync("nexjob:scheduled", ghost)).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task MoreThanLimitDue_AllPromotedAcrossCalls()
+    {
+        var (_, provider) = await ConnectAsync();
+        for (var i = 0; i < 250; i++)
+        {
+            await provider.EnqueueAsync(NewDueScheduledJob());
+        }
+
+        var fetched = 0;
+        while (await provider.FetchNextAsync(["default"]) is not null)
+        {
+            fetched++;
+        }
+
+        fetched.Should().Be(250, "a backlog larger than one promotion batch must fully drain");
+    }
+
+    [Fact]
+    public async Task NonDefaultQueueAndPriority_KeepOrdering()
+    {
+        var (_, provider) = await ConnectAsync();
+        var low = NewDueScheduledJob("q", JobPriority.Low);
+        var critical = NewDueScheduledJob("q", JobPriority.Critical);
+        await provider.EnqueueAsync(low);
+        await provider.EnqueueAsync(critical);
+
+        (await provider.FetchNextAsync(["q"]))!.Id.Should().Be(critical.Id);
+        (await provider.FetchNextAsync(["q"]))!.Id.Should().Be(low.Id);
+    }
+
     private static async Task<Guid> CreateSucceededJobAsync(RedisStorageProvider provider)
     {
         var job = new JobRecord
