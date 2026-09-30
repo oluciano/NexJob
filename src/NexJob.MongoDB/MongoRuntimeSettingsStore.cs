@@ -47,7 +47,7 @@ public sealed class MongoRuntimeSettingsStore : IRuntimeSettingsStore
         var filter = Builders<BsonDocument>.Filter.Eq("_id", SettingsId);
         var update = Builders<BsonDocument>.Update
             .Set("value", json)
-            .Set("updated_at", settings.UpdatedAt);
+            .Set("updated_at", settings.UpdatedAt.ToUniversalTime().ToString("O", System.Globalization.CultureInfo.InvariantCulture));
 
         await _collection.UpdateOneAsync(
             filter,

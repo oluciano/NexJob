@@ -37,16 +37,15 @@ public sealed class MongoStorageProvider : IStorageProvider
         ConventionRegistry.Register("NexJobEnumAsString", pack, t =>
             t == typeof(JobDocument) || t == typeof(RecurringJobDocument));
 
-        // Store DateTimeOffset as a UTC DateTime tick pair to preserve offset
-        // TryRegisterSerializer may fail if already registered; swallow the exception gracefully
-        try
-        {
-            BsonSerializer.TryRegisterSerializer(new DateTimeOffsetSerializer(BsonType.String));
-        }
-        catch (BsonSerializationException)
-        {
-            // Already registered, likely by another provider or test setup
-        }
+        // DateTimeOffset is stored as an ISO 8601 string at +00:00 for NexJob documents only. It used to be
+        // registered globally, which silently changed how the host application serializes its own DateTimeOffset.
+        ConventionRegistry.Register(
+            "NexJobDateTimeOffsetAsString",
+            new ConventionPack { new DateTimeOffsetAsStringConvention() },
+            t => t == typeof(JobDocument)
+                 || t == typeof(RecurringJobDocument)
+                 || t == typeof(ServerDocument)
+                 || t == typeof(ExecutionLogEntry));
     }
 
     /// <summary>

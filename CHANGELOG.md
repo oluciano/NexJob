@@ -25,6 +25,13 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - **Failed Jobs** `↺ Requeue All`: confirmation now includes a warning when any visible queue lacks active workers.
   - All pages receive `ActiveWorkerQueues` (the set already computed once per request in `DashboardMiddleware`) — zero additional I/O per page.
 
+### Changed
+
+- **`NexJob.MongoDB` — The `DateTimeOffset` serializer is no longer registered globally (Issue #263, step 2)**:
+  - NexJob used to register a process-wide `DateTimeOffsetSerializer` (string representation), which silently changed how the host application serialized its own `DateTimeOffset` values. The same representation is now applied through a convention to NexJob's own documents only (jobs, recurring jobs, servers, execution logs). The stored format is unchanged (ISO 8601 string at `+00:00`), so **no data migration is needed** and old and new nodes can run together.
+  - Applications that unknowingly depended on the old global registration can pass `keepLegacyGlobalDateTimeOffsetSerializer: true` to `AddNexJobMongoDB` for one release; the flag will be removed afterwards.
+  - Storing BSON `DateTime` instead of strings is deliberately not part of this change: it would require migrating existing documents, because range filters on dates do not match string-typed values.
+
 ### Fixed
 
 - **`NexJob.Redis` — Distributed throttle slots survive node crashes without leaking (Issue #267, part 2)**:

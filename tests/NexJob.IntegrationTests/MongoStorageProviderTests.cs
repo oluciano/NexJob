@@ -191,6 +191,58 @@ public sealed class MongoStorageProviderTests : StorageProviderTestsBase, IClass
         due.Select(r => r.RecurringJobId).Should().BeEquivalentTo("due");
     }
 
+    // ── The DateTimeOffset serializer is scoped to NexJob documents (issue #263, step 2) ──
+
+    private sealed class HostAppDocument
+    {
+        public DateTimeOffset At { get; set; }
+    }
+
+    private (MongoStorageProvider Provider, IMongoCollection<BsonDocument> RawJobs) NewProviderWithRawAccess()
+    {
+        var database = _databases.Create(_fixture.Container.GetConnectionString(), "nexjob_test");
+        return (new MongoStorageProvider(database), database.GetCollection<BsonDocument>("nexjob_jobs"));
+    }
+
+    [Fact]
+    public void HostAppDateTimeOffset_IsNotAffectedByNexJob()
+    {
+        var (_, _) = NewProviderWithRawAccess(); // loads the provider and its serializer setup
+
+        var bson = new HostAppDocument { At = new DateTimeOffset(2026, 3, 1, 10, 30, 0, TimeSpan.FromHours(-3)) }.ToBsonDocument();
+
+        bson["At"].BsonType.Should().NotBe(BsonType.String, "NexJob must not change how the host application serializes its own DateTimeOffset");
+    }
+
+    [Fact]
+    public async Task NexJobDocuments_StoreDatesAsUtcStrings()
+    {
+        var (provider, rawJobs) = NewProviderWithRawAccess();
+        var job = NewScheduledJob(DateTimeOffset.UtcNow.AddHours(1).ToOffset(TimeSpan.FromHours(-3)));
+        await provider.EnqueueAsync(job);
+
+        var raw = await rawJobs.Find(FilterDefinition<BsonDocument>.Empty).SingleAsync();
+
+        raw["ScheduledAt"].BsonType.Should().Be(BsonType.String);
+        raw["ScheduledAt"].AsString.Should().EndWith("+00:00");
+        raw["CreatedAt"].AsString.Should().EndWith("+00:00");
+    }
+
+    [Fact]
+    public async Task LegacyDocumentWithNonUtcOffsetString_IsStillReadable()
+    {
+        var (provider, rawJobs) = NewProviderWithRawAccess();
+        var job = NewScheduledJob(DateTimeOffset.UtcNow.AddHours(1));
+        await provider.EnqueueAsync(job);
+        await rawJobs.UpdateOneAsync(
+            FilterDefinition<BsonDocument>.Empty,
+            new BsonDocument("$set", new BsonDocument("CreatedAt", "2026-03-01T10:30:00.0000000-03:00")));
+
+        var read = await provider.GetJobByIdAsync(job.Id);
+
+        read!.CreatedAt.Should().Be(new DateTimeOffset(2026, 3, 1, 13, 30, 0, TimeSpan.Zero));
+    }
+
     private static RecurringJobRecord NewRecurring(string id, DateTimeOffset nextExecution) => new()
     {
         RecurringJobId = id,
