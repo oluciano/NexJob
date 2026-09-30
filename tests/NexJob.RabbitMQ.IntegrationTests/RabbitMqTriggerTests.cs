@@ -71,6 +71,9 @@ public sealed class RabbitMqTriggerTests : IClassFixture<RabbitMqTriggerFixture>
             ["nexjob.job_type"] = typeof(TestJob).AssemblyQualifiedName!,
         };
         props.CorrelationId = "id-123";
+
+        // Behavior changed in v5.6: the idempotency key is the MessageId only, not the CorrelationId (#266)
+        props.MessageId = "id-123";
         channel.BasicPublish(string.Empty, "happy-path-queue", props, Encoding.UTF8.GetBytes("{\"Input\":\"Value\"}"));
 
         // Act
