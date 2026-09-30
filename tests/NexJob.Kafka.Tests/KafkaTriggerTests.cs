@@ -178,8 +178,10 @@ public sealed class KafkaTriggerTests
         await handler.StopAsync(cts.Token);
 
         // Assert
-        _consumerMock.Verify(m => m.ProduceToDeadLetterAsync("test-dlt", consumeResult, It.IsAny<Exception>(), It.IsAny<CancellationToken>()), Times.Once);
-        _consumerMock.Verify(m => m.Commit(consumeResult), Times.Once);
+        // Behavior changed in v5.6: transient enqueue errors are retried in place, not dead-lettered or committed (#265).
+        // Dead-lettering of permanent failures is covered by PermanentFailure_WithDLT_ProducedToDLTAndCommitted.
+        _consumerMock.Verify(m => m.ProduceToDeadLetterAsync(It.IsAny<string>(), It.IsAny<ConsumeResult<string, string>>(), It.IsAny<Exception>(), It.IsAny<CancellationToken>()), Times.Never);
+        _consumerMock.Verify(m => m.Commit(It.IsAny<ConsumeResult<string, string>>()), Times.Never);
     }
 
     /// <summary>
@@ -327,7 +329,8 @@ public sealed class KafkaTriggerTests
         await handler.StopAsync(CancellationToken.None);
 
         // Assert
-        _consumerMock.Verify(m => m.Commit(It.IsAny<ConsumeResult<string, string>>()), Times.Never);
+        // Behavior changed in v5.6: a message without job type can never be enqueued; it is skipped and committed (#265)
+        _consumerMock.Verify(m => m.Commit(It.IsAny<ConsumeResult<string, string>>()), Times.Once);
         _scheduler.EnqueueCalls.Should().BeEmpty();
     }
 
@@ -373,8 +376,9 @@ public sealed class KafkaTriggerTests
 
         // Assert
         _scheduler.EnqueueCalls.Should().BeEmpty("no job_type means no job should be created");
-        _consumerMock.Verify(m => m.Commit(It.IsAny<ConsumeResult<string, string>>()), Times.Never,
-            "offset must not be committed when job_type is missing");
+        // Behavior changed in v5.6: a message without job type can never be enqueued; it is skipped and committed (#265)
+        _consumerMock.Verify(m => m.Commit(It.IsAny<ConsumeResult<string, string>>()), Times.Once,
+            "a message without job_type is skipped so it cannot block the partition");
     }
 
     /// <summary>
@@ -537,7 +541,8 @@ public sealed class KafkaTriggerTests
 
         // Assert
         _scheduler.EnqueueCalls.Should().BeEmpty();
-        _consumerMock.Verify(m => m.Commit(It.IsAny<ConsumeResult<string, string>>()), Times.Never);
+        // Behavior changed in v5.6: a message without job type can never be enqueued; it is skipped and committed (#265)
+        _consumerMock.Verify(m => m.Commit(It.IsAny<ConsumeResult<string, string>>()), Times.Once);
     }
 
     /// <summary>
@@ -792,6 +797,91 @@ public sealed class KafkaTriggerTests
         var calls = await RunAsync(1, Record(null, 2, 40, topic: "orders"));
 
         calls.Should().ContainSingle().Which.IdempotencyKey.Should().Be("kafka:orders:2:40");
+    }
+
+    // ── Transient enqueue failures are retried, permanent ones are dead-lettered (issue #265) ──
+
+    private KafkaTriggerHandler NewHandler(KafkaTriggerOptions options, Func<int, TimeSpan>? retryDelay = null) => new(
+        Options.Create(options),
+        _consumerMock.Object,
+        _scheduler,
+        _nexJobOptions,
+        _loggerMock.Object)
+    {
+        TransientRetryDelay = retryDelay ?? (_ => TimeSpan.FromMilliseconds(1)),
+    };
+
+    /// <summary>N1: storage fails once, then succeeds — the record is enqueued once, committed once and never dead-lettered.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task TransientEnqueueFailure_IsRetriedInPlace_ThenCommitted()
+    {
+        var options = new KafkaTriggerOptions { BootstrapServers = "localhost:9092", Topic = "test-topic", GroupId = "test-group", DeadLetterTopic = "test-dlt" };
+        var record = Record("k", 0, 50);
+        _consumerMock.SetupSequence(m => m.Consume(It.IsAny<TimeSpan>())).Returns(record).Returns((ConsumeResult<string, string>?)null);
+        _scheduler.FailFirstEnqueues = 1;
+        var handler = NewHandler(options);
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await handler.StartAsync(cts.Token);
+        while (_scheduler.SucceededEnqueues < 1 && !cts.IsCancellationRequested)
+        {
+            await Task.Delay(10, CancellationToken.None);
+        }
+
+        await handler.StopAsync(CancellationToken.None);
+
+        _scheduler.SucceededEnqueues.Should().Be(1);
+        _consumerMock.Verify(m => m.Commit(record), Times.Once);
+        _consumerMock.Verify(m => m.ProduceToDeadLetterAsync(It.IsAny<string>(), It.IsAny<ConsumeResult<string, string>>(), It.IsAny<Exception>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    /// <summary>N2: a message without job type is a permanent failure — dead-lettered and committed.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task PermanentFailure_WithDLT_ProducedToDLTAndCommitted()
+    {
+        var options = new KafkaTriggerOptions { BootstrapServers = "localhost:9092", Topic = "test-topic", GroupId = "test-group", DeadLetterTopic = "test-dlt" };
+        var record = new ConsumeResult<string, string>
+        {
+            Message = new Message<string, string> { Key = "k", Value = "{}", Headers = new Headers() },
+            Topic = "test-topic",
+            Partition = 0,
+            Offset = 51,
+        };
+        _consumerMock.SetupSequence(m => m.Consume(It.IsAny<TimeSpan>())).Returns(record).Returns((ConsumeResult<string, string>?)null);
+        var handler = NewHandler(options);
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await handler.StartAsync(cts.Token);
+        await Task.Delay(300, CancellationToken.None);
+        await handler.StopAsync(CancellationToken.None);
+
+        _consumerMock.Verify(m => m.ProduceToDeadLetterAsync("test-dlt", record, It.IsAny<Exception>(), It.IsAny<CancellationToken>()), Times.Once);
+        _consumerMock.Verify(m => m.Commit(record), Times.Once);
+        _scheduler.EnqueueCalls.Should().BeEmpty();
+    }
+
+    /// <summary>N3: storage keeps failing — retries are bounded by the backoff, nothing is committed and the next record is not consumed.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task StorageKeepsFailing_BoundedRetries_NoCommit_NextRecordNotConsumed()
+    {
+        var record = Record("k", 0, 60);
+        _consumerMock.SetupSequence(m => m.Consume(It.IsAny<TimeSpan>()))
+            .Returns(record)
+            .Returns(Record("k2", 0, 61));
+        _scheduler.ShouldFailEnqueue = true;
+        var handler = new KafkaTriggerHandler(Options.Create(_triggerOptions), _consumerMock.Object, _scheduler, _nexJobOptions, _loggerMock.Object);
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await handler.StartAsync(cts.Token);
+        await Task.Delay(TimeSpan.FromMilliseconds(1500), CancellationToken.None);
+        await handler.StopAsync(CancellationToken.None);
+
+        _scheduler.EnqueueCalls.Count.Should().BeInRange(1, 3, "the default backoff is 1 s, 2 s, 5 s: a hot loop would make thousands of attempts");
+        _consumerMock.Verify(m => m.Commit(It.IsAny<ConsumeResult<string, string>>()), Times.Never);
+        _consumerMock.Verify(m => m.Consume(It.IsAny<TimeSpan>()), Times.Once, "the failing record blocks the partition instead of being skipped");
     }
 }
 

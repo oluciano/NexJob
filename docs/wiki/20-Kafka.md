@@ -70,7 +70,7 @@ builder.Services.AddNexJob()
 ```
 
 ### Inbound Guarantees
-- **Never Silently Drop:** If `IScheduler.EnqueueAsync` fails, the message is routed to dead-letter.
+- **Never Silently Drop:** Enqueue failures are classified. A **transient** failure (storage or network error, timeout) retries the *same* record in place with a backoff of 1 s, 2 s, 5 s, 10 s, 20 s and then 30 s, until it succeeds or the host stops; the next record is not consumed meanwhile, so order is kept and no later offset can be committed past it. A **permanent** failure (missing `nexjob.job_type`, malformed payload) can never succeed: with `DeadLetterTopic` configured the record is produced there and committed; without it the record is logged at `Error` and committed, because skipping a poison message is better than blocking the partition forever. Configure a dead-letter topic if you cannot afford to lose such messages.
 - **Idempotency:** The idempotency key is the record position (`kafka:{topic}:{partition}:{offset}`), so redelivery of the same record never creates a second job. Two different records with the same message key produce two jobs.
 - **Trace Propagation:** W3C `traceparent` headers are extracted and attached to the job trace.
 - **Manual Commit Only:** Offsets are committed to Kafka strictly *after* the job has been persisted to NexJob storage.

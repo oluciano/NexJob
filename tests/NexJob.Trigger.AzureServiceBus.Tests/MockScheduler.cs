@@ -10,7 +10,12 @@ internal sealed class MockScheduler : IScheduler
     private readonly List<JobRecord> _enqueueCalls = [];
     private readonly object _lock = new();
 
+    private int _enqueueAttempts;
+
     public bool ShouldFailEnqueue { get; set; }
+
+    /// <summary>Gets or sets how many of the first enqueue calls fail before calls start to succeed.</summary>
+    public int FailFirstEnqueues { get; set; }
 
     public Exception? CustomException { get; set; }
 
@@ -32,7 +37,7 @@ internal sealed class MockScheduler : IScheduler
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (ShouldFailEnqueue)
+        if (ShouldFailEnqueue || Interlocked.Increment(ref _enqueueAttempts) <= FailFirstEnqueues)
         {
             throw CustomException ?? new InvalidOperationException("Simulated enqueue failure");
         }

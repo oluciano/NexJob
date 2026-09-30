@@ -131,7 +131,9 @@ public sealed class RabbitMqTriggerTests
         await _scheduler.WaitForEnqueueAttemptAsync(CancellationToken.None);
 
         // Assert
-        _channelMock.Verify(m => m.BasicNack(1, false, false), Times.Once);
+        // Behavior changed in v5.6: transient enqueue errors are requeued instead of nacked without requeue (#265)
+        _channelMock.Verify(m => m.BasicNack(1, false, true), Times.Once);
+        _channelMock.Verify(m => m.BasicNack(1, false, false), Times.Never);
     }
 
     /// <summary>
@@ -709,6 +711,91 @@ public sealed class RabbitMqTriggerTests
 
         calls.Should().HaveCount(2);
         calls.Select(c => c.IdempotencyKey).Should().OnlyContain(k => k == null);
+    }
+
+    // ── Transient enqueue failures are requeued, permanent ones are not (issue #265) ──
+
+    private async Task<(AsyncEventingBasicConsumer Consumer, RabbitMqTriggerHandler Handler)> StartHandlerAsync(RabbitMqTriggerOptions options, TimeSpan? nackDelay)
+    {
+        AsyncEventingBasicConsumer? consumer = null;
+        _channelMock.Setup(m => m.BasicConsume(
+                It.IsAny<string>(), false, It.IsAny<string>(), It.IsAny<bool>(),
+                It.IsAny<bool>(), It.IsAny<IDictionary<string, object>>(),
+                It.IsAny<IBasicConsumer>()))
+            .Callback<string, bool, string, bool, bool, IDictionary<string, object>, IBasicConsumer>(
+                (_, _, _, _, _, _, c) => consumer = (AsyncEventingBasicConsumer)c)
+            .Returns("consumer-tag");
+
+        var handler = new RabbitMqTriggerHandler(
+            Options.Create(options),
+            _connectionFactoryMock.Object,
+            _scheduler,
+            _nexJobOptions,
+            _loggerMock.Object)
+        {
+            TransientNackDelay = nackDelay ?? TimeSpan.FromSeconds(1),
+        };
+        await handler.StartAsync(CancellationToken.None);
+        return (consumer!, handler);
+    }
+
+    private static Mock<IBasicProperties> PropsWithJobType(bool withJobType = true)
+    {
+        var props = new Mock<IBasicProperties>();
+        props.Setup(p => p.MessageId).Returns("m-1");
+        props.Setup(p => p.Headers).Returns(withJobType
+            ? new Dictionary<string, object> { ["nexjob.job_type"] = Encoding.UTF8.GetBytes("TestJobType") }
+            : new Dictionary<string, object>());
+        return props;
+    }
+
+    /// <summary>N1: storage fails once — the first delivery is requeued, the redelivery is enqueued and acked.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task TransientEnqueueFailure_IsRequeued_ThenRedeliveredAndAcked()
+    {
+        var (consumer, _) = await StartHandlerAsync(_triggerOptions, TimeSpan.FromMilliseconds(1));
+        _scheduler.FailFirstEnqueues = 1;
+        var props = PropsWithJobType();
+
+        await consumer.HandleBasicDeliver("consumer-tag", 1, false, "exchange", "routing-key", props.Object, Encoding.UTF8.GetBytes("{}"));
+        await consumer.HandleBasicDeliver("consumer-tag", 2, true, "exchange", "routing-key", props.Object, Encoding.UTF8.GetBytes("{}"));
+
+        _channelMock.Verify(m => m.BasicNack(1, false, true), Times.Once);
+        _channelMock.Verify(m => m.BasicAck(2, false), Times.Once);
+        _channelMock.Verify(m => m.BasicNack(It.IsAny<ulong>(), It.IsAny<bool>(), false), Times.Never);
+        _scheduler.SucceededEnqueues.Should().Be(1);
+    }
+
+    /// <summary>N2: a message without job type is permanent — nacked without requeue and never handed to the scheduler.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task MissingJobType_IsNackedWithoutRequeue_NotEnqueued()
+    {
+        var (consumer, _) = await StartHandlerAsync(_triggerOptions, TimeSpan.FromMilliseconds(1));
+
+        await consumer.HandleBasicDeliver("consumer-tag", 1, false, "exchange", "routing-key", PropsWithJobType(withJobType: false).Object, Encoding.UTF8.GetBytes("{}"));
+
+        _channelMock.Verify(m => m.BasicNack(1, false, false), Times.Once);
+        _channelMock.Verify(m => m.BasicNack(1, false, true), Times.Never);
+        _scheduler.EnqueueCalls.Should().BeEmpty();
+    }
+
+    /// <summary>N3: storage keeps failing — the requeue is delayed (no hot redelivery loop) and the message is never acked.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task StorageKeepsFailing_RequeueIsDelayed_NeverAcked()
+    {
+        var (consumer, _) = await StartHandlerAsync(_triggerOptions, nackDelay: null);
+        _scheduler.ShouldFailEnqueue = true;
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+
+        await consumer.HandleBasicDeliver("consumer-tag", 1, false, "exchange", "routing-key", PropsWithJobType().Object, Encoding.UTF8.GetBytes("{}"));
+        sw.Stop();
+
+        sw.Elapsed.Should().BeGreaterThan(TimeSpan.FromMilliseconds(900), "the default pause before requeue is one second");
+        _channelMock.Verify(m => m.BasicNack(1, false, true), Times.Once);
+        _channelMock.Verify(m => m.BasicAck(It.IsAny<ulong>(), It.IsAny<bool>()), Times.Never);
     }
 }
 

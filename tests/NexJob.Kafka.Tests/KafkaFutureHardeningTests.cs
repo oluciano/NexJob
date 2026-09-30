@@ -91,8 +91,9 @@ public sealed class KafkaFutureHardeningTests
         var method = typeof(KafkaTriggerHandler).GetMethod("ProcessMessageAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
         await (Task)method!.Invoke(sut, new object[] { result, CancellationToken.None })!;
 
-        // Assert — no commit, no DLT production
-        consumerMock.Verify(x => x.Commit(It.IsAny<ConsumeResult<string, string>>()), Times.Never);
+        // Assert — committed (skipped, logged at Error), no DLT production
+        // Behavior changed in v5.6: a message that can never be enqueued is skipped so it cannot block the partition (#265)
+        consumerMock.Verify(x => x.Commit(It.IsAny<ConsumeResult<string, string>>()), Times.Once);
         consumerMock.Verify(x => x.ProduceToDeadLetterAsync(It.IsAny<string>(), It.IsAny<ConsumeResult<string, string>>(), It.IsAny<Exception>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 }

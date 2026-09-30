@@ -34,6 +34,13 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`NexJob.Kafka`, `NexJob.RabbitMQ`, `NexJob.Trigger.AzureServiceBus` — Transient enqueue failures no longer lose or dead-letter messages (Issue #265)**:
+  - Enqueue failures are classified. **Permanent** ones (missing `nexjob.job_type`, malformed payload) can never succeed; **transient** ones (storage or network errors, timeouts) can.
+  - Kafka used to commit the *next* record's offset after a failed enqueue when a dead-letter topic was configured, dead-lettering (and skipping) messages on any storage blip. It now retries the same record in place with a 1 s / 2 s / 5 s / ... / 30 s backoff and does not consume the next record meanwhile. A permanent failure goes to the dead-letter topic and is committed; without a topic it is logged at `Error` and committed so a poison message cannot block the partition (previously it was never committed and was redelivered forever).
+  - RabbitMQ nacks a transient failure with `requeue: true` after a one-second pause (no hot loop) instead of `requeue: false`, which discarded the message. A permanent failure is still nacked without requeue.
+  - Azure Service Bus abandons a transient failure so it is delivered again (the entity's `MaxDeliveryCount` decides when it is dead-lettered) instead of dead-lettering it immediately; permanent failures are still dead-lettered.
+  - A failed Kafka offset commit after a successful enqueue is no longer treated as an enqueue failure.
+
 - **`NexJob.RabbitMQ` — Only `MessageId` is used as the idempotency key (Issue #266)**:
   - The trigger used `CorrelationId`, falling back to a SHA-256 of the body, as the idempotency key. Messages sharing a correlation id (a whole order flow, a request/reply chain) or carrying identical bodies were silently deduplicated and acknowledged without running. The key is now `MessageId` when it is set and non-blank; otherwise there is no key and every delivery creates a job.
   - **Behaviour change:** publishers that relied on `CorrelationId` for deduplication must set a unique `MessageId`.

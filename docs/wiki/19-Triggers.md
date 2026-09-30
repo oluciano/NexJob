@@ -256,18 +256,24 @@ Key features:
 
 ## Error handling
 
-**Malformed message (missing `nexjob.job_type`):**
-The trigger logs a warning and acknowledges (or nacks, depending on broker)
-the message. No job is created. The message will not be redelivered.
+Enqueue errors are classified by the Kafka, RabbitMQ and Azure Service Bus triggers:
+
+**Permanent failure (missing `nexjob.job_type`, malformed payload):**
+The message can never become a job, so redelivery is pointless. No job is created and the message is not
+redelivered: Kafka produces it to the dead-letter topic and commits (or, with no topic configured, logs an
+`Error` and commits so the partition is not blocked), RabbitMQ nacks it with `requeue: false` (dead-letter
+exchange if configured) and Azure Service Bus dead-letters it.
 
 **Job type not found in DI:**
 The trigger enqueues the job record. The dispatcher will fail the job on
 execution with a clear error. Retries apply normally.
 
-**Enqueue fails (storage unavailable):**
-The message is NOT acknowledged. It will be redelivered by the broker
-when the trigger recovers. Combined with idempotency keys, this prevents
-duplicate jobs even under partial failures.
+**Transient failure (storage unavailable, network error, timeout):**
+The message is never lost and never dead-lettered because of it. Kafka retries the same record in place with a
+1 s, 2 s, 5 s, ... 30 s backoff and does not consume the next record meanwhile; RabbitMQ nacks with
+`requeue: true` after a one-second pause; Azure Service Bus abandons the message so it is delivered again
+(`MaxDeliveryCount` decides when it is dead-lettered if the failure never clears); SQS and Pub/Sub leave the
+message unacknowledged. Combined with idempotency keys, this prevents duplicate jobs even under partial failures.
 
 ---
 
