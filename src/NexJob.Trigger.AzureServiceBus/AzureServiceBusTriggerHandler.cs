@@ -110,16 +110,19 @@ internal sealed class AzureServiceBusTriggerHandler : IHostedService
     /// </summary>
     internal async Task HandleMessageAsync(ProcessMessageEventArgs args)
     {
+        JobRecord job;
+        string messageId;
+        string jobType;
         try
         {
             // Extract message properties
-            var messageId = args.Message.MessageId;
+            messageId = args.Message.MessageId;
             var traceparent = ExtractTraceparent(args.Message);
-            var jobType = ExtractJobType(args.Message);
+            jobType = ExtractJobType(args.Message);
             var inputJson = args.Message.Body.ToString();
 
             // Build JobRecord using factory
-            var job = JobRecordFactory.Build(
+            job = JobRecordFactory.Build(
                 jobType: jobType,
                 inputType: typeof(string).AssemblyQualifiedName!,
                 inputJson: inputJson,
@@ -132,7 +135,21 @@ internal sealed class AzureServiceBusTriggerHandler : IHostedService
                 tags: new[] { "trigger:azuresb" },
                 expiresAt: null,
                 traceParent: traceparent);
+        }
+        catch (OperationCanceledException)
+        {
+            // Propagate cancellation — this is a shutdown signal
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // Permanent: the message itself is unusable, redelivering it can never help.
+            await DeadLetterAsync(args, ex).ConfigureAwait(false);
+            return;
+        }
 
+        try
+        {
             // Enqueue the job using scheduler — wake-up signal is handled internally
             await _scheduler.EnqueueAsync(job, DuplicatePolicy.AllowAfterFailed, args.CancellationToken).ConfigureAwait(false);
 
@@ -149,27 +166,28 @@ internal sealed class AzureServiceBusTriggerHandler : IHostedService
             // Propagate cancellation — this is a shutdown signal
             throw;
         }
+        catch (Exception ex) when (IsPermanent(ex))
+        {
+            await DeadLetterAsync(args, ex).ConfigureAwait(false);
+        }
         catch (Exception ex)
         {
-            // Enqueue failed — dead-letter the message
+            // Transient (storage, network, timeout): give the message back so it is delivered again. The entity's
+            // MaxDeliveryCount decides when Service Bus dead-letters it if the failure never clears.
             _logger.LogWarning(
                 ex,
-                "Failed to enqueue message {MessageId}. Message will be dead-lettered.",
+                "Failed to enqueue message {MessageId}. Abandoning it so it is delivered again.",
                 args.Message.MessageId);
 
             try
             {
-                await args.DeadLetterMessageAsync(
-                    args.Message,
-                    "EnqueueFailed",
-                    ex.Message,
-                    args.CancellationToken).ConfigureAwait(false);
+                await args.AbandonMessageAsync(args.Message, cancellationToken: args.CancellationToken).ConfigureAwait(false);
             }
-            catch (Exception deadLetterEx)
+            catch (Exception abandonEx)
             {
                 _logger.LogError(
-                    deadLetterEx,
-                    "Failed to dead-letter message {MessageId}",
+                    abandonEx,
+                    "Failed to abandon message {MessageId}; its lock will expire and it will be delivered again.",
                     args.Message.MessageId);
             }
         }
@@ -189,6 +207,10 @@ internal sealed class AzureServiceBusTriggerHandler : IHostedService
 
         return Task.CompletedTask;
     }
+
+    // The message itself is unusable and redelivery can never help: malformed payload or format.
+    private static bool IsPermanent(Exception ex) =>
+        ex is FormatException or System.Text.Json.JsonException or ArgumentException;
 
     /// <summary>
     /// Extracts the W3C traceparent from message application properties.
@@ -221,5 +243,29 @@ internal sealed class AzureServiceBusTriggerHandler : IHostedService
         }
 
         throw new InvalidOperationException("Message must contain 'nexjob.job_type' in ApplicationProperties or JobType must be configured in AzureServiceBusTriggerOptions");
+    }
+
+    private async Task DeadLetterAsync(ProcessMessageEventArgs args, Exception ex)
+    {
+        _logger.LogWarning(
+            ex,
+            "Message {MessageId} can never be enqueued. Message will be dead-lettered.",
+            args.Message.MessageId);
+
+        try
+        {
+            await args.DeadLetterMessageAsync(
+                args.Message,
+                "EnqueueFailed",
+                ex.Message,
+                args.CancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception deadLetterEx)
+        {
+            _logger.LogError(
+                deadLetterEx,
+                "Failed to dead-letter message {MessageId}",
+                args.Message.MessageId);
+        }
     }
 }

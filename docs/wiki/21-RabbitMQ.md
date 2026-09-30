@@ -73,8 +73,8 @@ builder.Services.AddNexJob()
 *(Legacy `AddNexJobRabbitMqTrigger` remains supported for backward compatibility).*
 
 ### Inbound Guarantees
-- **Never Silently Drop:** If `IScheduler.EnqueueAsync` fails, the message is not lost and is redelivered or routed according to broker policy.
-- **Idempotency:** The broker message ID is used as `JobRecord.IdempotencyKey` to prevent duplicate execution.
+- **Never Silently Drop:** Enqueue failures are classified. A **transient** failure (storage or network error, timeout) is nacked with `requeue: true` after a one-second pause, so the broker redelivers it without a hot loop and nothing is lost. A **permanent** failure (missing `nexjob.job_type`, malformed payload) is nacked with `requeue: false`, which routes it to the queue's dead-letter exchange if one is configured.
+- **Idempotency:** The `MessageId` property is used as `JobRecord.IdempotencyKey`, so redelivery of the same message never creates a second job. `CorrelationId` is not used (many messages can share one). Messages published without a `MessageId` are not deduplicated: every delivery creates a job (at-least-once), so set a unique `MessageId` when you need deduplication.
 - **Trace Propagation:** W3C `traceparent` headers are extracted from `IBasicProperties.Headers` and attached to the job trace.
 - **Ack Only After Success:** Messages are acknowledged (`BasicAck`) strictly *after* the job record is committed to NexJob storage.
 

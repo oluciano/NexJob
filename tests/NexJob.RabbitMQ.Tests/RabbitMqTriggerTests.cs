@@ -1,4 +1,3 @@
-using System.Security.Cryptography;
 using System.Text;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -64,6 +63,7 @@ public sealed class RabbitMqTriggerTests
         var body = Encoding.UTF8.GetBytes("{\"key\":\"value\"}");
         var props = new Mock<IBasicProperties>();
         props.Setup(p => p.CorrelationId).Returns("test-correlation-id");
+        props.Setup(p => p.MessageId).Returns("test-message-id");
         props.Setup(p => p.Headers).Returns(new Dictionary<string, object>
         {
             ["nexjob.job_type"] = Encoding.UTF8.GetBytes("TestJobType"),
@@ -83,7 +83,8 @@ public sealed class RabbitMqTriggerTests
 
         // Assert
         _scheduler.EnqueueCalls.Should().HaveCount(1);
-        _scheduler.EnqueueCalls[0].IdempotencyKey.Should().Be("test-correlation-id");
+        // Behavior changed in v5.6: idempotency key is MessageId only (#266)
+        _scheduler.EnqueueCalls[0].IdempotencyKey.Should().Be("test-message-id");
         _channelMock.Verify(m => m.BasicAck(1, false), Times.Once);
     }
 
@@ -130,7 +131,9 @@ public sealed class RabbitMqTriggerTests
         await _scheduler.WaitForEnqueueAttemptAsync(CancellationToken.None);
 
         // Assert
-        _channelMock.Verify(m => m.BasicNack(1, false, false), Times.Once);
+        // Behavior changed in v5.6: transient enqueue errors are requeued instead of nacked without requeue (#265)
+        _channelMock.Verify(m => m.BasicNack(1, false, true), Times.Once);
+        _channelMock.Verify(m => m.BasicNack(1, false, false), Times.Never);
     }
 
     /// <summary>
@@ -343,6 +346,7 @@ public sealed class RabbitMqTriggerTests
         var body = Encoding.UTF8.GetBytes("{\"orderId\":123}");
         var props = new Mock<IBasicProperties>();
         props.Setup(p => p.CorrelationId).Returns("corr-123");
+        props.Setup(p => p.MessageId).Returns("msg-corr-123");
         props.Setup(p => p.Headers).Returns(new Dictionary<string, object>());
 
         // Act
@@ -354,7 +358,8 @@ public sealed class RabbitMqTriggerTests
         // Assert
         _scheduler.EnqueueCalls.Should().HaveCount(1);
         _scheduler.EnqueueCalls[0].JobType.Should().Be("ConfiguredRabbitConsumerJob");
-        _scheduler.EnqueueCalls[0].IdempotencyKey.Should().Be("corr-123");
+        // Behavior changed in v5.6: idempotency key is MessageId only (#266)
+        _scheduler.EnqueueCalls[0].IdempotencyKey.Should().Be("msg-corr-123");
         _channelMock.Verify(m => m.BasicAck(1, false), Times.Once);
     }
 
@@ -412,7 +417,7 @@ public sealed class RabbitMqTriggerTests
     }
 
     /// <summary>
-    /// Verifies that when neither CorrelationId nor MessageId is provided, idempotencyKey falls back to deterministic SHA256 of body.
+    /// Verifies that when no MessageId is provided the job is enqueued without an idempotency key (no body-hash fallback).
     /// </summary>
     [Fact]
     public async Task IdempotencyFallback_Sha256_WhenCorrelationIdAndMessageIdMissing()
@@ -445,7 +450,6 @@ public sealed class RabbitMqTriggerTests
         await handler.StartAsync(CancellationToken.None);
 
         var body = Encoding.UTF8.GetBytes("{\"content\":\"unique-payload\"}");
-        var expectedSha256 = Convert.ToHexString(SHA256.HashData(body));
 
         var props = new Mock<IBasicProperties>();
         props.Setup(p => p.CorrelationId).Returns((string)null!);
@@ -460,12 +464,13 @@ public sealed class RabbitMqTriggerTests
 
         // Assert
         _scheduler.EnqueueCalls.Should().HaveCount(1);
-        _scheduler.EnqueueCalls[0].IdempotencyKey.Should().Be(expectedSha256);
+        // Behavior changed in v5.6: idempotency key is MessageId only (#266)
+        _scheduler.EnqueueCalls[0].IdempotencyKey.Should().BeNull();
         _channelMock.Verify(m => m.BasicAck(1, false), Times.Once);
     }
 
     /// <summary>
-    /// Verifies that an empty body without CorrelationId/MessageId produces a valid non-empty SHA256 hash without throwing.
+    /// Verifies that an empty body without a MessageId is enqueued without an idempotency key and without throwing.
     /// </summary>
     [Fact]
     public async Task IdempotencyFallback_EmptyBody_ComputesValidSha256()
@@ -498,7 +503,6 @@ public sealed class RabbitMqTriggerTests
         await handler.StartAsync(CancellationToken.None);
 
         var body = Array.Empty<byte>();
-        var expectedSha256 = Convert.ToHexString(SHA256.HashData(body));
 
         var props = new Mock<IBasicProperties>();
         props.Setup(p => p.CorrelationId).Returns((string)null!);
@@ -513,7 +517,8 @@ public sealed class RabbitMqTriggerTests
 
         // Assert
         _scheduler.EnqueueCalls.Should().HaveCount(1);
-        _scheduler.EnqueueCalls[0].IdempotencyKey.Should().Be(expectedSha256);
+        // Behavior changed in v5.6: idempotency key is MessageId only (#266)
+        _scheduler.EnqueueCalls[0].IdempotencyKey.Should().BeNull();
         _channelMock.Verify(m => m.BasicAck(1, false), Times.Once);
     }
 
@@ -624,6 +629,173 @@ public sealed class RabbitMqTriggerTests
         await handler.StopAsync(CancellationToken.None);
         var stopped = registry.Get($"rabbitmq:{_triggerOptions.QueueName}");
         stopped!.Status.Should().Be(ListenerStatus.Stopped);
+    }
+
+    // ── Idempotency key is MessageId only (issue #266) ────────────────────────
+
+    private async Task<IReadOnlyList<JobRecord>> DeliverAsync(int expectedEnqueues, params (string? MessageId, string? CorrelationId)[] messages)
+    {
+        AsyncEventingBasicConsumer? consumer = null;
+        _channelMock.Setup(m => m.BasicConsume(
+                It.IsAny<string>(), false, It.IsAny<string>(), It.IsAny<bool>(),
+                It.IsAny<bool>(), It.IsAny<IDictionary<string, object>>(),
+                It.IsAny<IBasicConsumer>()))
+            .Callback<string, bool, string, bool, bool, IDictionary<string, object>, IBasicConsumer>(
+                (_, _, _, _, _, _, c) => consumer = (AsyncEventingBasicConsumer)c)
+            .Returns("consumer-tag");
+
+        var options = new RabbitMqTriggerOptions
+        {
+            HostName = "localhost",
+            QueueName = "test-queue",
+            TargetQueue = "default",
+            JobType = "IdempotencyKeyJob",
+        };
+
+        var handler = new RabbitMqTriggerHandler(
+            Options.Create(options),
+            _connectionFactoryMock.Object,
+            _scheduler,
+            _nexJobOptions,
+            _loggerMock.Object);
+        await handler.StartAsync(CancellationToken.None);
+
+        ulong tag = 1;
+        foreach (var (messageId, correlationId) in messages)
+        {
+            var props = new Mock<IBasicProperties>();
+            props.Setup(p => p.MessageId).Returns(messageId!);
+            props.Setup(p => p.CorrelationId).Returns(correlationId!);
+            props.Setup(p => p.Headers).Returns(new Dictionary<string, object>());
+            await consumer!.HandleBasicDeliver(
+                "consumer-tag", tag++, false, "exchange", "routing-key", props.Object, Encoding.UTF8.GetBytes("{}"));
+        }
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        while (_scheduler.EnqueueCalls.Count < expectedEnqueues && !cts.IsCancellationRequested)
+        {
+            await Task.Delay(10, CancellationToken.None);
+        }
+
+        return _scheduler.EnqueueCalls;
+    }
+
+    /// <summary>N1: messages sharing a CorrelationId but with different MessageIds produce two jobs.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task SameCorrelationId_DifferentMessageIds_EnqueueTwoJobs()
+    {
+        var calls = await DeliverAsync(2, ("m-1", "order-42"), ("m-2", "order-42"));
+
+        calls.Should().HaveCount(2);
+        calls.Select(c => c.IdempotencyKey).Should().Equal("m-1", "m-2");
+    }
+
+    /// <summary>N2: the same MessageId delivered again carries the same key, so storage can deduplicate it.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task SameMessageIdRedelivered_UsesSameKey()
+    {
+        var calls = await DeliverAsync(2, ("m-9", "corr-a"), ("m-9", "corr-b"));
+
+        calls.Should().HaveCount(2);
+        calls.Select(c => c.IdempotencyKey).Should().OnlyContain(k => k == "m-9");
+    }
+
+    /// <summary>N3: a missing or whitespace MessageId enqueues without an idempotency key.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task NoMessageId_EnqueuesWithoutIdempotencyKey()
+    {
+        var calls = await DeliverAsync(2, (null, "corr-x"), ("   ", "corr-x"));
+
+        calls.Should().HaveCount(2);
+        calls.Select(c => c.IdempotencyKey).Should().OnlyContain(k => k == null);
+    }
+
+    // ── Transient enqueue failures are requeued, permanent ones are not (issue #265) ──
+
+    private async Task<(AsyncEventingBasicConsumer Consumer, RabbitMqTriggerHandler Handler)> StartHandlerAsync(RabbitMqTriggerOptions options, TimeSpan? nackDelay)
+    {
+        AsyncEventingBasicConsumer? consumer = null;
+        _channelMock.Setup(m => m.BasicConsume(
+                It.IsAny<string>(), false, It.IsAny<string>(), It.IsAny<bool>(),
+                It.IsAny<bool>(), It.IsAny<IDictionary<string, object>>(),
+                It.IsAny<IBasicConsumer>()))
+            .Callback<string, bool, string, bool, bool, IDictionary<string, object>, IBasicConsumer>(
+                (_, _, _, _, _, _, c) => consumer = (AsyncEventingBasicConsumer)c)
+            .Returns("consumer-tag");
+
+        var handler = new RabbitMqTriggerHandler(
+            Options.Create(options),
+            _connectionFactoryMock.Object,
+            _scheduler,
+            _nexJobOptions,
+            _loggerMock.Object)
+        {
+            TransientNackDelay = nackDelay ?? TimeSpan.FromSeconds(1),
+        };
+        await handler.StartAsync(CancellationToken.None);
+        return (consumer!, handler);
+    }
+
+    private static Mock<IBasicProperties> PropsWithJobType(bool withJobType = true)
+    {
+        var props = new Mock<IBasicProperties>();
+        props.Setup(p => p.MessageId).Returns("m-1");
+        props.Setup(p => p.Headers).Returns(withJobType
+            ? new Dictionary<string, object> { ["nexjob.job_type"] = Encoding.UTF8.GetBytes("TestJobType") }
+            : new Dictionary<string, object>());
+        return props;
+    }
+
+    /// <summary>N1: storage fails once — the first delivery is requeued, the redelivery is enqueued and acked.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task TransientEnqueueFailure_IsRequeued_ThenRedeliveredAndAcked()
+    {
+        var (consumer, _) = await StartHandlerAsync(_triggerOptions, TimeSpan.FromMilliseconds(1));
+        _scheduler.FailFirstEnqueues = 1;
+        var props = PropsWithJobType();
+
+        await consumer.HandleBasicDeliver("consumer-tag", 1, false, "exchange", "routing-key", props.Object, Encoding.UTF8.GetBytes("{}"));
+        await consumer.HandleBasicDeliver("consumer-tag", 2, true, "exchange", "routing-key", props.Object, Encoding.UTF8.GetBytes("{}"));
+
+        _channelMock.Verify(m => m.BasicNack(1, false, true), Times.Once);
+        _channelMock.Verify(m => m.BasicAck(2, false), Times.Once);
+        _channelMock.Verify(m => m.BasicNack(It.IsAny<ulong>(), It.IsAny<bool>(), false), Times.Never);
+        _scheduler.SucceededEnqueues.Should().Be(1);
+    }
+
+    /// <summary>N2: a message without job type is permanent — nacked without requeue and never handed to the scheduler.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task MissingJobType_IsNackedWithoutRequeue_NotEnqueued()
+    {
+        var (consumer, _) = await StartHandlerAsync(_triggerOptions, TimeSpan.FromMilliseconds(1));
+
+        await consumer.HandleBasicDeliver("consumer-tag", 1, false, "exchange", "routing-key", PropsWithJobType(withJobType: false).Object, Encoding.UTF8.GetBytes("{}"));
+
+        _channelMock.Verify(m => m.BasicNack(1, false, false), Times.Once);
+        _channelMock.Verify(m => m.BasicNack(1, false, true), Times.Never);
+        _scheduler.EnqueueCalls.Should().BeEmpty();
+    }
+
+    /// <summary>N3: storage keeps failing — the requeue is delayed (no hot redelivery loop) and the message is never acked.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task StorageKeepsFailing_RequeueIsDelayed_NeverAcked()
+    {
+        var (consumer, _) = await StartHandlerAsync(_triggerOptions, nackDelay: null);
+        _scheduler.ShouldFailEnqueue = true;
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+
+        await consumer.HandleBasicDeliver("consumer-tag", 1, false, "exchange", "routing-key", PropsWithJobType().Object, Encoding.UTF8.GetBytes("{}"));
+        sw.Stop();
+
+        sw.Elapsed.Should().BeGreaterThan(TimeSpan.FromMilliseconds(900), "the default pause before requeue is one second");
+        _channelMock.Verify(m => m.BasicNack(1, false, true), Times.Once);
+        _channelMock.Verify(m => m.BasicAck(It.IsAny<ulong>(), It.IsAny<bool>()), Times.Never);
     }
 }
 

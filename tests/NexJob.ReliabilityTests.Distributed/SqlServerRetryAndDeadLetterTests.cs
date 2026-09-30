@@ -28,7 +28,7 @@ public sealed class SqlServerRetryAndDeadLetterTests
     {
         using var host = BuildHost(
             Storage(),
-            s => s.AddTransient<FailOnceThenSucceedJob>(sp => new FailOnceThenSucceedJob(() => { }, sp.GetRequiredService<ILogger<FailOnceThenSucceedJob>>())),
+            s => s.AddTransient<FailOnceThenSucceedJob>(sp => new FailOnceThenSucceedJob(() => { }, sp.GetRequiredService<ILogger<FailOnceThenSucceedJob>>(), sp.GetRequiredService<IJobContext>())),
             workers: 1);
 
         await host.StartAsync();
@@ -49,7 +49,7 @@ public sealed class SqlServerRetryAndDeadLetterTests
     {
         using var host = BuildHost(
             Storage(),
-            s => s.AddTransient<FailOnceThenSucceedJobWithInput>(sp => new FailOnceThenSucceedJobWithInput(() => { }, sp.GetRequiredService<ILogger<FailOnceThenSucceedJobWithInput>>())),
+            s => s.AddTransient<FailOnceThenSucceedJobWithInput>(sp => new FailOnceThenSucceedJobWithInput(() => { }, sp.GetRequiredService<ILogger<FailOnceThenSucceedJobWithInput>>(), sp.GetRequiredService<IJobContext>())),
             workers: 1);
 
         await host.StartAsync();
@@ -100,6 +100,8 @@ public sealed class SqlServerRetryAndDeadLetterTests
     [Fact]
     public async Task DeadLetterHandlerInvokedAfterMaxAttemptsExhausted_WithInput()
     {
+        RecordingDeadLetterHandler<AlwaysFailJobWithInput>.Reset();
+
         using var host = BuildHost(
             Storage(),
             s =>
@@ -135,6 +137,7 @@ public sealed class SqlServerRetryAndDeadLetterTests
             s =>
             {
                 s.AddTransient<AlwaysFailJob>(sp => new AlwaysFailJob(() => { }, sp.GetRequiredService<ILogger<AlwaysFailJob>>()));
+                s.AddTransient<SuccessJob>(sp => new SuccessJob(() => { }, sp.GetRequiredService<ILogger<SuccessJob>>()));
                 s.AddTransient<IDeadLetterHandler<AlwaysFailJob>, ThrowingDeadLetterHandler<AlwaysFailJob>>();
             },
             workers: 1);
@@ -164,6 +167,7 @@ public sealed class SqlServerRetryAndDeadLetterTests
             s =>
             {
                 s.AddTransient<AlwaysFailJobWithInput>(sp => new AlwaysFailJobWithInput(() => { }, sp.GetRequiredService<ILogger<AlwaysFailJobWithInput>>()));
+                s.AddTransient<SuccessJobWithInput>(sp => new SuccessJobWithInput(() => { }, sp.GetRequiredService<ILogger<SuccessJobWithInput>>()));
                 s.AddTransient<IDeadLetterHandler<AlwaysFailJobWithInput>, ThrowingDeadLetterHandler<AlwaysFailJobWithInput>>();
             },
             workers: 1);
@@ -194,7 +198,7 @@ public sealed class SqlServerRetryAndDeadLetterTests
             s =>
             {
                 s.AddTransient<SuccessJob>(sp => new SuccessJob(() => { }, sp.GetRequiredService<ILogger<SuccessJob>>()));
-                s.AddTransient<FailOnceThenSucceedJob>(sp => new FailOnceThenSucceedJob(() => { }, sp.GetRequiredService<ILogger<FailOnceThenSucceedJob>>()));
+                s.AddTransient<FailOnceThenSucceedJob>(sp => new FailOnceThenSucceedJob(() => { }, sp.GetRequiredService<ILogger<FailOnceThenSucceedJob>>(), sp.GetRequiredService<IJobContext>()));
             },
             workers: 2);
 
@@ -221,7 +225,7 @@ public sealed class SqlServerRetryAndDeadLetterTests
             s =>
             {
                 s.AddTransient<SuccessJobWithInput>(sp => new SuccessJobWithInput(() => { }, sp.GetRequiredService<ILogger<SuccessJobWithInput>>()));
-                s.AddTransient<FailOnceThenSucceedJobWithInput>(sp => new FailOnceThenSucceedJobWithInput(() => { }, sp.GetRequiredService<ILogger<FailOnceThenSucceedJobWithInput>>()));
+                s.AddTransient<FailOnceThenSucceedJobWithInput>(sp => new FailOnceThenSucceedJobWithInput(() => { }, sp.GetRequiredService<ILogger<FailOnceThenSucceedJobWithInput>>(), sp.GetRequiredService<IJobContext>()));
             },
             workers: 2);
 
@@ -249,7 +253,7 @@ public sealed class SqlServerRetryAndDeadLetterTests
             Storage(),
             s =>
             {
-                s.AddTransient<FailOnceThenSucceedJob>(sp => new FailOnceThenSucceedJob(() => { }, sp.GetRequiredService<ILogger<FailOnceThenSucceedJob>>()));
+                s.AddTransient<FailOnceThenSucceedJob>(sp => new FailOnceThenSucceedJob(() => { }, sp.GetRequiredService<ILogger<FailOnceThenSucceedJob>>(), sp.GetRequiredService<IJobContext>()));
                 s.AddTransient<SuccessJob>(sp => new SuccessJob(() => { }, sp.GetRequiredService<ILogger<SuccessJob>>()));
             },
             workers: 1);
@@ -281,7 +285,7 @@ public sealed class SqlServerRetryAndDeadLetterTests
             Storage(),
             s =>
             {
-                s.AddTransient<FailOnceThenSucceedJobWithInput>(sp => new FailOnceThenSucceedJobWithInput(() => { }, sp.GetRequiredService<ILogger<FailOnceThenSucceedJobWithInput>>()));
+                s.AddTransient<FailOnceThenSucceedJobWithInput>(sp => new FailOnceThenSucceedJobWithInput(() => { }, sp.GetRequiredService<ILogger<FailOnceThenSucceedJobWithInput>>(), sp.GetRequiredService<IJobContext>()));
                 s.AddTransient<SuccessJobWithInput>(sp => new SuccessJobWithInput(() => { }, sp.GetRequiredService<ILogger<SuccessJobWithInput>>()));
             },
             workers: 1);

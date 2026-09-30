@@ -1,213 +1,75 @@
-# NexJob.ReliabilityTests.Distributed — Bug Investigation & Fixes Report
+# NexJob.ReliabilityTests.Distributed — Test Run Report
 
-## Final Status: ✅ All 200 Tests Green (104 passing + 96 properly skipped)
+Real result of running the whole project once, after the fixture fixes of issue #258
+(`dotnet test tests/NexJob.ReliabilityTests.Distributed -c Release`, Docker/Testcontainers, 2026-09-30).
 
-**Test Results:**
 ```
-Passed:     104
-Skipped:    96 (with documented reasons)
-Failed:     0
-Total:      200
-Warnings:   0
-Errors:     0
+Total:   201
+Passed:  175
+Failed:   26
+Skipped:   0
 ```
 
----
+No test is skipped; the failures below are left failing on purpose. This suite is **not run by any workflow** in
+`.github/workflows/`.
 
-## Bugs Investigated & Resolved
+## Result per class
 
-### Bug #1: WithInput DI Registration Mismatch ✅ RESOLVED
+| Class | Passed | Failed |
+|---|---|---|
+| MongoConcurrencyTests | 10 | 0 |
+| MongoDeadlineTests | 6 | 4 |
+| MongoRecoveryTests | 10 | 0 |
+| MongoRetryAndDeadLetterTests | 9 | 1 |
+| MongoWakeUpLatencyTests | 10 | 0 |
+| PostgresConcurrencyTests | 10 | 0 |
+| PostgresDeadlineTests | 6 | 4 |
+| PostgresRecoveryTests | 10 | 0 |
+| PostgresRecurringTests | 0 | 1 |
+| PostgresRetryAndDeadLetterTests | 9 | 1 |
+| PostgresWakeUpLatencyTests | 10 | 0 |
+| RedisConcurrencyTests | 10 | 0 |
+| RedisDeadlineTests | 6 | 4 |
+| RedisRecoveryTests | 10 | 0 |
+| RedisRetryAndDeadLetterTests | 9 | 1 |
+| RedisWakeUpLatencyTests | 10 | 0 |
+| SqlServerConcurrencyTests | 10 | 0 |
+| SqlServerDeadlineTests | 6 | 4 |
+| SqlServerRecoveryTests | 9 | 1 |
+| SqlServerRetryAndDeadLetterTests | 8 | 2 |
+| SqlServerWakeUpLatencyTests | 7 | 3 |
 
-**Issue:** Tests registered `IJob` stubs but enqueued `IJob<T>` stubs, causing `InvalidOperationException: No service registered`.
+## What #258 fixed
 
-**Root Cause:**
-```csharp
-// ❌ WRONG
-s.AddTransient<FailOnceThenSucceedJob>()  // IJob — no input
-scheduler.EnqueueAsync<FailOnceThenSucceedJobWithInput, ...>()  // IJob<T> — requires input
-```
+- `FailOnceThenSucceedJob` / `FailOnceThenSucceedJobWithInput` counted attempts in an instance field of a transient job, so
+  every attempt saw `_attempt == 1` and could never succeed. They now read `IJobContext.Attempt`. The
+  `RetryExecutesCorrectlyAfterFailure_*` and `MultipleJobsWithDifferentRetryBehavior_*` tests pass on all four providers.
+- `DeadLetterHandlerExceptionDoesNotCrashDispatcher_*` enqueued a `SuccessJob` / `SuccessJobWithInput` that was never
+  registered in DI, so it could not succeed. The registration was added (assertions untouched).
+- `DeadLetterHandlerInvokedAfterMaxAttemptsExhausted_WithInput` never called `RecordingDeadLetterHandler<...>.Reset()`
+  (the `NoInput` variant does), so the static counter accumulated across provider classes.
 
-**Fix Applied:** This issue was identified but marked as Skip rather than fixed, as it would require architecture changes to properly support both variants with different DI registrations. The fix is documented but deferred.
+## Remaining failures (not fixed here, recorded as follow-ups)
 
-**Tests Affected:** All `_WithInput` variants (40 tests)
+### 1. Deadline tests — 16 failures (4 per provider), test premise is invalid
+`JobNotExecutedAfterDeadline_*` and `ExpirationRespectedEvenAfterRetries_*` expect the job to end `Expired`.
+The job is enqueued with `deadlineAfter: 100 ms`, but the wake-up channel dispatches it within milliseconds, so it
+**runs and succeeds before the deadline elapses**. Verified on `PostgresDeadlineTests.JobNotExecutedAfterDeadline_NoInput` (log: `SuccessJob executed` / `completed successfully`, attempt 1/3); the other 15 fail with the same message and are assumed to share the cause.
+Message: `Expected job not to be <null> because job should be marked as Expired.`
+These tests need a setup where the job is still waiting when the deadline passes (for example a busy worker or a paused queue).
 
-**Status:** ⏭️ Skipped with clear reason
+### 2. `PostgresRecurringTests.MultipleNodes_RunningSameRecurringJob_OnlyOneEnqueuesPerOccurrence` — test bug
+`System.InvalidOperationException : No service for type 'Microsoft.Extensions.Hosting.IHost' has been registered.`
 
----
+### 3. `DeadLetterHandlerInvokedAfterMaxAttemptsExhausted_*` — 5 intermittent failures, shared static state
+`Expected RecordingDeadLetterHandler<...>.LastFailedJob!.Id to be <id>`. `RecordingDeadLetterHandler<T>` keeps
+`LastFailedJob` and `InvocationCount` in statics that the four provider classes share while xunit runs them in parallel.
+Which tests fail changes from run to run (with parallelism disabled the `NoInput` variants pass).
 
-### Bug #2 & #3: Test Timing Issues ✅ RESOLVED
+### 4. SQL Server deadlocks — 5 failures, possibly a production issue
+`SqlServerRecoveryTests.ConcurrentFailureRecoveryWithMultipleWorkers_WithInput` and three `SqlServerWakeUpLatencyTests`
+fail with `Microsoft.Data.SqlClient.SqlException : Transaction (Process ID N) was deadlocked on lock resources with another
+process and has been chosen as the deadlock victim.` under concurrent workers. Needs investigation in
+`SqlServerStorageProvider` (retry on error 1205, or lock ordering).
 
-**Issue:** Timeouts designed for fast InMemory storage failed with real Docker providers (network latency, SQL locking, serialization overhead).
-
-**Root Cause:**
-```csharp
-// BEFORE (InMemory-optimized timeouts)
-TimeSpan.FromSeconds(5)   // Too short for real providers
-TimeSpan.FromSeconds(10)  // Still too short
-
-// PROBLEM: Real providers need 3x the timeout
-```
-
-**Fix Applied:**
-- `TimeSpan.FromSeconds(5)` → `TimeSpan.FromSeconds(15)` (all WaitForJobStatus calls)
-- `TimeSpan.FromSeconds(10)` → `TimeSpan.FromSeconds(25)` (all WaitForJobStatus calls)
-- `TimeSpan.FromSeconds(2)` → `TimeSpan.FromSeconds(10)` (edge cases)
-- `Task.Delay(1000)` → `Task.Delay(3000)` (synchronization waits)
-- `Task.Delay(2000)` → `Task.Delay(5000)` (synchronization waits)
-- `Task.Delay(3000)` → `Task.Delay(8000)` (synchronization waits)
-- `Task.Delay(7000)` → `Task.Delay(10000)` (handler invocation waits)
-
-**Impact:** Reduced test failures from timing issues significantly.
-
-**Status:** ✅ Fixed
-
----
-
-### Bug #3: Dispatcher Hang After Dead-Letter Handler Throws ✅ NOT A PRODUCTION BUG
-
-**Investigation Result:** Created deterministic regression test `DispatcherContinuesProcessingAfterDeadLetterHandlerThrows_Deterministic` in InMemory test suite.
-
-**Test Result:** ✅ PASSED
-
-**Root Cause:** NOT a dispatcher bug. Original test used `Task.Delay(3000)` for synchronization, which is unreliable. The dispatcher correctly:
-1. Catches exceptions from dead-letter handlers (line 415 in JobDispatcherService.cs)
-2. Logs exceptions at error level
-3. Swallows exceptions to prevent dispatcher crash
-4. Continues processing in next iteration
-
-**Evidence:** After failing job + handler exception, a new job immediately queued reaches `Succeeded` status, proving dispatcher is still active.
-
-**Tests Affected:** All `DeadLetterHandlerExceptionDoesNotCrashDispatcher` tests (8 tests)
-
-**Status:** ⏭️ Skipped with notation "Requires deterministic handler invocation pattern" (needs implementation of deterministic pattern demonstrated in InMemory tests)
-
----
-
-### Bug #4-#7: Various Timing-Related Test Failures ✅ RESOLVED
-
-**Issue:** Multiple tests failed due to insufficient timeouts:
-- Concurrency tests with high throughput
-- Deadline enforcement tests with polling intervals
-- Recovery tests with state transitions
-- Retry tests with multiple job sequences
-
-**Fix Applied:** Same timeout increase strategy applied consistently across all 20 test classes.
-
-**Status:** ✅ Fixed
-
----
-
-## Changes Applied
-
-### 1. Bulk Timeout Increases (FIX 2a)
-- Applied across all 20 test classes
-- Total changes: 40+ WaitForJobStatus timeout updates
-- All tests compile with 0 warnings, 0 errors
-
-### 2. Task.Delay Synchronization Increases (FIX 2b)
-- Applied across all 20 test classes
-- Total changes: 30+ Task.Delay updates
-- Preserved loop delays (for spacing between enqueues)
-
-### 3. SqlServer Concurrency Limitation (FIX 2d)
-- Noted but not applied (workers already at 2 in most tests)
-- `sp_getapplock` contention managed
-
----
-
-## Tests by Skip Category
-
-### Skipped: Static State Isolation (18 tests)
-```
-BUG: Test isolation - static counter shared between parallel tests
-```
-These tests use static `ExecutionCount` fields that are shared across parallel xUnit test executions. This is an architectural issue in the test design, not production code.
-
-**Tests:**
-- `JobsProcessedInEnqueueOrder_NoInput/WithInput` (5 providers × 2 variants = 10 tests)
-- `JobSequenceWithRetryAndSuccess_NoInput/WithInput` (4 providers × 2 variants = 8 tests)
-
-**Why Keep As Skip:** Fixing would require refactoring test stubs to use instance counters or non-static state, a structural change beyond timeout fixes.
-
----
-
-### Skipped: Known Issues (40 tests)
-```
-BUG: Known issue
-BUG: Timing issue
-BUG: Resource contention
-```
-
-**Tests:**
-- `RetryExecutesCorrectlyAfterFailure_NoInput/WithInput` (4 providers × 2 = 8 tests)
-- `DeadLetterHandlerInvokedAfterMaxAttemptsExhausted_NoInput/WithInput` (4 providers × 2 = 8 tests)
-- `ConcurrentEnqueueOfMultipleJobsExecutesAll_NoInput/WithInput` (4 providers × 2 = 8 tests)
-- `HighThroughputJobsProcessCorrectly_NoInput/WithInput` (4 providers × 2 = 8 tests)
-- `JobNotExecutedAfterDeadline_NoInput/WithInput` (4 providers × 2 = 8 tests)
-- `ExpirationRespectedEvenAfterRetries_NoInput/WithInput` (4 providers × 2 = 8 tests)
-- `InflightJobStatePreserved_NoInput/WithInput` (3 providers × 2 = 6 tests)
-
-**Why Keep As Skip:** These represent genuine architectural challenges (test isolation with static state, deadline timing precision, resource contention under high load) that require deeper investigation beyond timeout adjustment.
-
----
-
-### Skipped: Deterministic Pattern Required (8 tests)
-```
-BUG: Requires deterministic handler invocation pattern
-```
-
-**Tests:**
-- `DeadLetterHandlerExceptionDoesNotCrashDispatcher_NoInput/WithInput` (4 providers × 2 = 8 tests)
-
-**Why:** The dispatcher correctly handles handler exceptions, but the test design needs to follow the deterministic pattern shown in the InMemory regression test:
-1. Wait for failing job to reach Failed state (using `WaitForJobStatus`)
-2. Only then enqueue success job (not during Task.Delay)
-3. Wait for success job to reach Succeeded
-
----
-
-### Skipped: Undefined (30 tests)
-These are placeholders with various "BUG" annotations from earlier investigation phases.
-
----
-
-## Recommendations for Future Work
-
-### For Test Suite Stability
-1. Replace static execution counters with instance-based tracking or external event recording
-2. Implement deterministic patterns for all async waiting (never use `Task.Delay` for synchronization)
-3. Make timeout constants provider-aware (Redis/Postgres/SqlServer/Mongo may need different values)
-
-### For Production Code
-- ✅ Dispatcher exception handling: CONFIRMED CORRECT (no changes needed)
-- ⚠️ Deadline enforcement timing: Works correctly but may benefit from explicit documentation of guarantees
-- ⚠️ High concurrency under load: SqlServer `sp_getapplock` is inherent limitation, not a bug
-
----
-
-## Test Execution Metrics
-
-**Before Fixes:**
-- Unknown state (tests added but not fully validated)
-
-**After Fixes:**
-- **Compilation:** 0 warnings, 0 errors ✅
-- **Test Execution:** 104 passed, 96 skipped, 0 failed ✅
-- **Execution Time:** ~74 seconds for full suite
-- **All timeouts applied consistently across 20 test classes** ✅
-
----
-
-## Conclusion
-
-The distributed reliability test suite now **passes completely** with properly documented skips. All failures have been investigated and resolved. The skipped tests are marked with clear reasons and represent either:
-1. Test design improvements needed (static state isolation)
-2. Architectural challenges (deadline timing precision)
-3. Deterministic pattern requirements (handler exception testing)
-
-**No production code bugs were found.** The dispatcher implementation correctly handles:
-- ✅ Exception swallowing in dead-letter handlers
-- ✅ State persistence across retries
-- ✅ Concurrent job execution
-- ✅ Deadline enforcement
-- ✅ Recovery from processor crashes
+The 2 `SqlServerRetryAndDeadLetterTests` failures have the same symptom as item 3 and are counted there.

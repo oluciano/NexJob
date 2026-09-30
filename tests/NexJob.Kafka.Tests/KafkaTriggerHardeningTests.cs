@@ -102,8 +102,9 @@ public sealed class KafkaTriggerHardeningTests
         var sut = CreateSut();
         var result = CreateResult("k1");
 
+        // Behavior changed in v5.6: only permanent failures are dead-lettered; a transient one is retried (#265)
         _schedulerMock.Setup(x => x.EnqueueAsync(It.IsAny<JobRecord>(), It.IsAny<DuplicatePolicy>(), It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new Exception("Fail"));
+            .ThrowsAsync(new FormatException("Fail"));
 
         var method = typeof(KafkaTriggerHandler).GetMethod("ProcessMessageAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
         await (Task)method!.Invoke(sut, new object[] { result, CancellationToken.None })!;
@@ -124,8 +125,12 @@ public sealed class KafkaTriggerHardeningTests
         _schedulerMock.Setup(x => x.EnqueueAsync(It.IsAny<JobRecord>(), It.IsAny<DuplicatePolicy>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new Exception("Fail"));
 
+        // Behavior changed in v5.6: a transient failure is retried in place until the host stops, so the call only
+        // ends when the token is cancelled, and nothing is committed meanwhile (#265)
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(300));
         var method = typeof(KafkaTriggerHandler).GetMethod("ProcessMessageAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-        await (Task)method!.Invoke(sut, new object[] { result, CancellationToken.None })!;
+        var act = async () => await (Task)method!.Invoke(sut, new object[] { result, cts.Token })!;
+        await act.Should().ThrowAsync<OperationCanceledException>();
 
         _consumerMock.Verify(x => x.Commit(It.IsAny<ConsumeResult<string, string>>()), Times.Never);
     }
