@@ -8,7 +8,7 @@ It defines architecture, constraints, and behavioral guarantees.
 ## Project Status
 
 NexJob is a production-oriented background job processing library.
-Current published version: **v5.6.0**
+Current published version: **v5.6.1**
 Active development: **develop**
 
 ### Implemented (v3.0.0)

@@ -2,6 +2,12 @@
 
 Breaking changes, API updates, and schema migration between NexJob versions.
 
+## v5.6.0 → v5.6.1
+
+| Area | What changed | What to do |
+|---|---|---|
+| Broker triggers (SQS, Service Bus, Pub/Sub, Kafka, RabbitMQ) | The message body now reaches `IJob<string>` verbatim as text. Before, only a body that was itself a JSON string literal executed; any other body failed the job. | If you worked around it by publishing a JSON string literal (for example `"hello"` with quotes), the job now receives the quotes as part of the text. Publish the plain text instead. |
+
 ## v5.5.0 → v5.6.0
 
 > This section covers what to check when upgrading; the [Changelog](../../CHANGELOG.md) is the complete list of changes.

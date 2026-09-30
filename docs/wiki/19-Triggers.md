@@ -12,7 +12,7 @@ Triggers follow a standard pipeline:
 
 1. The **Trigger Package** consumes a message from the broker.
 2. It resolves the **Job Type** (see [Which job runs](#which-job-runs-for-a-message)) and extracts the **Trace Context** from headers/attributes.
-3. It uses `JobRecordFactory` to build a `JobRecord` using the message body as input.
+3. It uses `JobRecordFactory` to build a `JobRecord` using the message body as input. The body is stored as a JSON string, so a trigger-bound `IJob<string>` receives it **verbatim as text** (JSON, XML, CSV or plain text); the job decides how to parse it.
 4. It calls `IScheduler.EnqueueAsync` to persist the job.
 5. It **Acknowledge (Ack)** the message only after a successful enqueue.
 
