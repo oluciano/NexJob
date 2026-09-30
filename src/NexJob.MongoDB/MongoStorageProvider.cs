@@ -37,16 +37,15 @@ public sealed class MongoStorageProvider : IStorageProvider
         ConventionRegistry.Register("NexJobEnumAsString", pack, t =>
             t == typeof(JobDocument) || t == typeof(RecurringJobDocument));
 
-        // Store DateTimeOffset as a UTC DateTime tick pair to preserve offset
-        // TryRegisterSerializer may fail if already registered; swallow the exception gracefully
-        try
-        {
-            BsonSerializer.TryRegisterSerializer(new DateTimeOffsetSerializer(BsonType.String));
-        }
-        catch (BsonSerializationException)
-        {
-            // Already registered, likely by another provider or test setup
-        }
+        // DateTimeOffset is stored as an ISO 8601 string at +00:00 for NexJob documents only. It used to be
+        // registered globally, which silently changed how the host application serializes its own DateTimeOffset.
+        ConventionRegistry.Register(
+            "NexJobDateTimeOffsetAsString",
+            new ConventionPack { new DateTimeOffsetAsStringConvention() },
+            t => t == typeof(JobDocument)
+                 || t == typeof(RecurringJobDocument)
+                 || t == typeof(ServerDocument)
+                 || t == typeof(ExecutionLogEntry));
     }
 
     /// <summary>
@@ -202,6 +201,7 @@ public sealed class MongoStorageProvider : IStorageProvider
             .Unset(d => d.CheckpointJson);
 
         await _jobs.UpdateOneAsync(ById(jobId), update, cancellationToken: cancellationToken).ConfigureAwait(false);
+        await ReleaseContinuationsAsync([jobId], cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -226,6 +226,7 @@ public sealed class MongoStorageProvider : IStorageProvider
             .Unset(d => d.CheckpointJson);
 
         await _jobs.UpdateManyAsync(filter, update, cancellationToken: cancellationToken).ConfigureAwait(false);
+        await ReleaseContinuationsAsync(jobIds, cancellationToken).ConfigureAwait(false);
     }
 
     // ── SetFailedAsync ────────────────────────────────────────────────────────
@@ -994,6 +995,20 @@ public sealed class MongoStorageProvider : IStorageProvider
         };
 
         return await _jobs.FindOneAndUpdateAsync(filter, update, options, cancellationToken).ConfigureAwait(false);
+    }
+
+    // A parent acknowledged outside CommitJobResultAsync must still release its continuations.
+    private async Task ReleaseContinuationsAsync(IEnumerable<JobId> parentIds, CancellationToken cancellationToken)
+    {
+        var filter = Builders<JobDocument>.Filter.And(
+            Builders<JobDocument>.Filter.Eq(d => d.Status, JobStatus.AwaitingContinuation),
+            Builders<JobDocument>.Filter.In(d => d.ParentJobId, parentIds.Select(id => (JobId?)id)));
+
+        var update = Builders<JobDocument>.Update
+            .Set(d => d.Status, JobStatus.Enqueued)
+            .Unset(d => d.ScheduledAt);
+
+        await _jobs.UpdateManyAsync(filter, update, cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
     private async Task PromoteDueScheduledJobsAsync(DateTimeOffset now, CancellationToken ct)

@@ -260,6 +260,7 @@ builder.Services.AddNexJob(options =>
 - High-throughput batch claim and vectorized acknowledgment (`UpdateManyAsync` by ID set)
 - Atomic state transitions via `FindOneAndUpdate` with optimistic filter criteria
 - Distributed recurring locks via atomic collections
+- NexJob no longer registers a global `DateTimeOffset` serializer: the string representation applies to NexJob's own documents only, so your application's `DateTimeOffset` values are serialized the way *you* configured them. If your application unknowingly relied on the old global registration, pass `keepLegacyGlobalDateTimeOffsetSerializer: true` to `AddNexJobMongoDB` (temporary; it will be removed in a later release)
 - Every date is stored as an ISO 8601 string at `+00:00` (UTC), so scheduling comparisons are correct whatever offset the caller used. Documents written by older versions with a non-UTC offset keep that offset until they are rewritten; only future-scheduled jobs created with a local offset are affected
 - Automatic index creation on first use
 

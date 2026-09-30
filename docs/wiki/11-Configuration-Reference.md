@@ -41,8 +41,8 @@ builder.Services.AddNexJob(options =>
     options.RetentionInterval = TimeSpan.FromHours(1);   // How often to purge
     options.RetentionBatchSize = 1000;                   // Chunk size to prevent DB lock contention
 
-    // TTL for distributed throttle slots in Redis.
-    // Must exceed your longest expected job execution time.
+    // Maximum time a job may hold a distributed throttle slot in Redis. Slots of crashed nodes are reclaimed after
+    // 3 x HeartbeatInterval regardless; this only caps a live job. Must exceed your longest job execution time.
     // Only relevant when UseDistributedThrottle() is enabled.
     options.DistributedThrottleTtl = TimeSpan.FromHours(1); // Default: 1 hour
 
@@ -51,8 +51,6 @@ builder.Services.AddNexJob(options =>
 
     // Enable high-throughput asynchronous batch acknowledgment
     // Aggregates completed job acknowledgments to cut database write roundtrips by 90%+
-    // Limitation: jobs acknowledged in a batch do NOT release their continuations (ContinueWith children stay
-    // AwaitingContinuation). Keep it off if any job has continuations. A warning is logged at startup when it is on.
     options.EnableBatchAcknowledgment = true; // Default: false
 
     // Custom retry delay factory

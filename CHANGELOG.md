@@ -25,7 +25,29 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - **Failed Jobs** `↺ Requeue All`: confirmation now includes a warning when any visible queue lacks active workers.
   - All pages receive `ActiveWorkerQueues` (the set already computed once per request in `DashboardMiddleware`) — zero additional I/O per page.
 
+### Changed
+
+- **`NexJob.MongoDB` — The `DateTimeOffset` serializer is no longer registered globally (Issue #263, step 2)**:
+  - NexJob used to register a process-wide `DateTimeOffsetSerializer` (string representation), which silently changed how the host application serialized its own `DateTimeOffset` values. The same representation is now applied through a convention to NexJob's own documents only (jobs, recurring jobs, servers, execution logs). The stored format is unchanged (ISO 8601 string at `+00:00`), so **no data migration is needed** and old and new nodes can run together.
+  - Applications that unknowingly depended on the old global registration can pass `keepLegacyGlobalDateTimeOffsetSerializer: true` to `AddNexJobMongoDB` for one release; the flag will be removed afterwards.
+  - Storing BSON `DateTime` instead of strings is deliberately not part of this change: it would require migrating existing documents, because range filters on dates do not match string-typed values.
+
 ### Fixed
+
+- **`NexJob.Redis` — Distributed throttle slots survive node crashes without leaking (Issue #267, part 2)**:
+  - The single global counter (INCR/DECR with a one-hour TTL) is replaced by a sorted set of holders in `nexjob:throttle:holders:{resource}`. Each running job owns one entry with an expiry; the owning node refreshes it every `HeartbeatInterval`, and expired entries are dropped before every acquire (using the Redis clock).
+  - A slot left by a crashed node is reclaimed after `3 x HeartbeatInterval` (90 s by default) instead of up to an hour. Releasing removes only the caller's own holder, so a node can never free another node's slot.
+  - `DistributedThrottleTtl` is not deprecated: it now caps how long a single job may hold a slot (a slot older than that stops being refreshed).
+  - **Rolling upgrade:** old nodes keep counting in the previous key, so the global limit can be exceeded until all nodes run this version.
+
+- **`NexJob.Redis` — Dashboard queries and retention no longer scan the keyspace (Issue #262, part 2)**:
+  - Every job is now listed in a `nexjob:index:all` sorted set (score = creation time), written atomically by the enqueue script and removed on delete and purge. `GetJobsAsync` without filters pages straight from the index (cost proportional to the page); filtered listing, `GetJobsByTagAsync`, `GetJobCatalogAsync` and `PurgeJobsAsync` walk the index with pipelined reads instead of `SCAN`ning every key.
+  - Jobs stored before this version are indexed once, on first use, by an idempotent backfill guarded by a `nexjob:index:ready` marker. The same backfill fills the Succeeded/Failed sets, so the **upgrade note of part 1 no longer applies**: Succeeded/Failed totals are exact after the first metrics call.
+  - Index entries whose job hash disappeared (for example after a crash between two writes) are skipped and removed as they are found.
+
+- **All providers — Batch acknowledgment releases continuations (Issue #257)**:
+  - `AcknowledgeAsync` and `AcknowledgeBatchAsync` now move every child waiting on the acknowledged parent from `AwaitingContinuation` to `Enqueued` in InMemory, PostgreSQL, SQL Server, MongoDB and Redis (SQL providers do it in the same transaction; Redis in the same Lua script). With `EnableBatchAcknowledgment = true`, `ContinueWith` children now run.
+  - The startup warning and the documented limitation from the previous step are removed.
 
 - **`NexJob` Core — `EnableBatchAcknowledgment` limitation with continuations is documented and warned about (Issue #257, documentation step)**:
   - Jobs acknowledged in a batch do not release their `ContinueWith` children. The wiki (`05-Continuations.md`, `11-Configuration-Reference.md`) and the option's XML documentation now say so, and `JobDispatcherService` logs one warning at startup when the option is enabled.

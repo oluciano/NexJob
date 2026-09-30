@@ -192,6 +192,8 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
                 job.CompletedAt = DateTimeOffset.UtcNow;
                 job.CheckpointJson = null;
             }
+
+            PromoteContinuations(jobId);
         }
 
         return Task.CompletedTask;
@@ -211,6 +213,8 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
                     job.CompletedAt = now;
                     job.CheckpointJson = null;
                 }
+
+                PromoteContinuations(jobIds[i]);
             }
         }
 

@@ -7,20 +7,19 @@ using Xunit;
 namespace NexJob.Tests;
 
 /// <summary>
-/// Tests for issue #257 (documentation step): batch acknowledgment does not release continuations, so the
-/// dispatcher warns once at startup when the option is enabled.
+/// Behavior changed in v5.6: batch acknowledgment now releases continuations (issue #257), so the startup warning
+/// added in the documentation step is gone. These tests guard that no such warning is logged any more.
 /// </summary>
 public sealed class BatchAckContinuationWarningTests
 {
-    /// <summary>N1 (Positive): enabling batch acknowledgment logs exactly one continuation warning at startup.</summary>
+    /// <summary>N1 (Positive): enabling batch acknowledgment no longer logs a continuation warning.</summary>
     /// <returns>A task.</returns>
     [Fact]
-    public async Task BatchAckEnabled_LogsOneWarningAboutContinuations()
+    public async Task BatchAckEnabled_NoLongerWarnsAboutContinuations()
     {
         var warnings = await RunHostAsync(batchAck: true);
 
-        warnings.Should().ContainSingle(m => m.Contains("EnableBatchAcknowledgment", StringComparison.Ordinal)
-                                             && m.Contains("continuation", StringComparison.OrdinalIgnoreCase));
+        warnings.Should().NotContain(m => m.Contains("EnableBatchAcknowledgment", StringComparison.Ordinal));
     }
 
     /// <summary>N2 (Negative): with the default settings no such warning is logged.</summary>
@@ -33,14 +32,14 @@ public sealed class BatchAckContinuationWarningTests
         warnings.Should().NotContain(m => m.Contains("EnableBatchAcknowledgment", StringComparison.Ordinal));
     }
 
-    /// <summary>N3 (Boundary): the warning is logged once at startup, not on every polling cycle.</summary>
+    /// <summary>N3 (Boundary): no warning appears across several polling cycles either.</summary>
     /// <returns>A task.</returns>
     [Fact]
-    public async Task BatchAckEnabled_WarningIsNotRepeatedAcrossPollingCycles()
+    public async Task BatchAckEnabled_NoWarningAcrossPollingCycles()
     {
         var warnings = await RunHostAsync(batchAck: true, runFor: TimeSpan.FromMilliseconds(400));
 
-        warnings.Count(m => m.Contains("EnableBatchAcknowledgment", StringComparison.Ordinal)).Should().Be(1);
+        warnings.Count(m => m.Contains("EnableBatchAcknowledgment", StringComparison.Ordinal)).Should().Be(0);
     }
 
     private static async Task<List<string>> RunHostAsync(bool batchAck, TimeSpan? runFor = null)

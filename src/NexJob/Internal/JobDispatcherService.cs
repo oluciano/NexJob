@@ -98,13 +98,6 @@ internal sealed class JobDispatcherService : BackgroundService
         _logger.LogInformation("JobDispatcherService started. Workers: {Workers}, Queues: {Queues}",
             _options.Workers, string.Join(", ", _options.Queues));
 
-        if (_options.EnableBatchAcknowledgment)
-        {
-            _logger.LogWarning(
-                "EnableBatchAcknowledgment is on: jobs acknowledged in a batch do not release their continuations (ContinueWith children). " +
-                "Turn it off if any job has continuations.");
-        }
-
         // Outlives ExecuteAsync: jobs still draining during shutdown release their slot after the loop exits.
         var workerSlots = new SemaphoreSlim(_options.Workers, _options.Workers);
         _workerSlots = workerSlots;

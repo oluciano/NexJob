@@ -295,13 +295,26 @@ public sealed class SqlServerStorageProvider : IStorageProvider
     {
         await using var conn = Open();
         await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var tx = await conn.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
         await conn.ExecuteAsync(
             """
             UPDATE nexjob_jobs
             SET status = 'Succeeded', completed_at = SYSUTCDATETIME(), heartbeat_at = NULL, checkpoint_json = NULL
             WHERE id = @id
             """,
-            new { id = jobId.Value });
+            new { id = jobId.Value },
+            transaction: tx).ConfigureAwait(false);
+
+        // A parent acknowledged outside CommitJobResultAsync must still release its continuations.
+        await conn.ExecuteAsync(
+            """
+            UPDATE nexjob_jobs
+            SET status = 'Enqueued', scheduled_at = NULL
+            WHERE parent_job_id = @id AND status = 'AwaitingContinuation'
+            """,
+            new { id = jobId.Value },
+            transaction: tx).ConfigureAwait(false);
+        await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -320,6 +333,7 @@ public sealed class SqlServerStorageProvider : IStorageProvider
 
         await using var conn = Open();
         await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var tx = await conn.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
         var idList = jobIds.Select(j => j.Value).ToArray();
 
         await conn.ExecuteAsync(
@@ -328,7 +342,18 @@ public sealed class SqlServerStorageProvider : IStorageProvider
             SET status = 'Succeeded', completed_at = SYSUTCDATETIME(), heartbeat_at = NULL, checkpoint_json = NULL
             WHERE id IN @Ids
             """,
-            new { Ids = idList });
+            new { Ids = idList },
+            transaction: tx).ConfigureAwait(false);
+
+        await conn.ExecuteAsync(
+            """
+            UPDATE nexjob_jobs
+            SET status = 'Enqueued', scheduled_at = NULL
+            WHERE parent_job_id IN @Ids AND status = 'AwaitingContinuation'
+            """,
+            new { Ids = idList },
+            transaction: tx).ConfigureAwait(false);
+        await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
     }
 
     // ── SetFailedAsync ────────────────────────────────────────────────────────

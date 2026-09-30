@@ -31,9 +31,10 @@ public sealed class NexJobOptions
     public int MaxAttempts { get; set; } = 10;
 
     /// <summary>
-    /// TTL for distributed throttle slots in Redis.
-    /// Serves as a dead-man switch: if a worker crashes without releasing a slot,
-    /// the slot expires automatically after this duration.
+    /// Maximum time a job may hold a distributed throttle slot in Redis.
+    /// A node keeps refreshing the slots of its running jobs, so a slot left behind by a crashed node is
+    /// reclaimed after three <see cref="HeartbeatInterval"/> periods; this value only caps how long a live job
+    /// can keep a slot (a slot older than this is no longer refreshed and expires).
     /// Must be greater than the longest expected job execution time.
     /// Defaults to 1 hour.
     /// </summary>
@@ -129,10 +130,6 @@ public sealed class NexJobOptions
     /// <summary>
     /// When enabled, completed jobs are acknowledged in asynchronous batches to reduce database write roundtrips.
     /// Defaults to <c>false</c> (synchronous commit on job completion).
-    /// <para>
-    /// Jobs acknowledged in a batch do not release their continuations: a child enqueued with
-    /// <c>ContinueWith</c> stays <c>AwaitingContinuation</c>. Leave this off if any job has continuations.
-    /// </para>
     /// </summary>
     public bool EnableBatchAcknowledgment { get; set; }
 
