@@ -25,7 +25,100 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - **Failed Jobs** `↺ Requeue All`: confirmation now includes a warning when any visible queue lacks active workers.
   - All pages receive `ActiveWorkerQueues` (the set already computed once per request in `DashboardMiddleware`) — zero additional I/O per page.
 
+- **`NexJob.Dashboard` — UX Polish, Action Ergonomics & Filter Indicators (Issues #214, #220)**:
+  - Added Job Detail actions: Enqueued and Scheduled states now expose Cancel & Delete operations directly from the job detail view.
+  - Added Job Checkpoint Inspector: collapsible `💾 Checkpoint State` panel on Job Detail view displaying formatted progress JSON when `CheckpointJson` is present.
+  - Added Retention Payload Indicator: Job Detail displays an informational badge (`Payload stripped by retention policy (TrimPayloadOnSuccess)`) when payload is trimmed.
+  - Added Destructive Action Safety: Added browser confirmation dialog (`Pause ALL recurring jobs cluster-wide?`) to the Settings page Pause All button.
+  - Added Sidebar Orphan Queue Alert: Added alert badge (`.nav-counter.alert`) to the Queues sidebar item when enqueued jobs exist in queues without active listening workers.
+  - Added Job Catalog Ergonomics: Enqueuing a job from the catalog redirects with `?triggered={jobId}` displaying a success notification banner with direct navigation to the job; added sort controls (`failure-rate`, `duration`, `runs`).
+  - Added Active Filter Breadcrumb Chips: Active filters (status, queue, tag, search) render removable badge chips with individual `[x]` clear links and a `Clear all` button in `FilterBar`.
+  - Added Circuit Breaker Drill-down Links: Direct `View Errors` navigation link to `/failed?queue={q}` for `HalfOpen` and `Recovering` circuit states.
+  - Added Topology Diagram Responsiveness: Responsive layout media query wrapping topology nodes on mobile viewports and rotating connection arrows.
+
+- **`NexJob.IntegrationTests` & Storage Providers — Integration Test Suite Synchronization for v5.6 Features (Issue #219)**:
+  - Extended shared `StorageProviderTestsBase` contract suite with real-database integration tests across all 5 providers (`InMemory`, `PostgreSQL`, `SQL Server`, `MongoDB`, `Redis`).
+  - Added integration contract coverage for Checkpoints (`SaveCheckpointAsync`, state persistence, and auto-clear on `AcknowledgeAsync` / `AcknowledgeBatchAsync`).
+  - Hardened `AcknowledgeAsync` and `AcknowledgeBatchAsync` across `PostgresStorageProvider`, `SqlServerStorageProvider`, `RedisStorageProvider`, and `MongoStorageProvider` to automatically reset `checkpoint_json = NULL` / unset upon job acknowledgment.
+  - Added integration contract coverage for Retention strategies (`PurgeOnSuccess` physical deletion and `TrimPayloadOnSuccess` payload stripping).
+  - Added integration contract coverage for Job Catalog native aggregations (`GetJobCatalogAsync`).
+
+- **`NexJob` Core & Storage Providers — Progress Checkpoints & State Saving for Long-Running Jobs (Issue #206)**:
+  - Added `CheckpointJson` property to `JobRecord` for serializing and preserving arbitrary checkpoint state.
+  - Extended `IJobContext` with `TState? GetCheckpoint<TState>()` and `Task SaveCheckpointAsync<TState>(TState state, int? percent, string? message, CancellationToken ct)`.
+  - Added `SaveCheckpointAsync(JobId, string, int?, string?, CancellationToken)` to `IJobStorage` with default interface implementation.
+  - Implemented checkpoint persistence across all 5 storage providers: `InMemoryStorageProvider`, `PostgresStorageProvider`, `SqlServerStorageProvider`, `RedisStorageProvider`, and `MongoStorageProvider`.
+  - Added schema migrations V9 for PostgreSQL (`V9AddCheckpointColumn`) and SQL Server (`V9AddCheckpointColumn`) adding nullable `checkpoint_json` column.
+  - Enforced state persistence on retry: `CheckpointJson` is preserved across retry attempts (`Scheduled`) and dead-letter moves (`Failed`) so interrupted jobs resume exactly from the last saved state.
+  - Enforced anti-bloat cleanup: `checkpoint_json` is automatically cleared (`NULL` / unset) upon successful execution (`Succeeded`) across all storage providers.
+  - Added 3N unit testing matrix (Positive, Negative, Boundary) in `tests/NexJob.Tests/JobCheckpointTests.cs` and updated `tests/NexJob.Tests/SchemaMigratorTests.cs`.
+  - Documented in `docs/wiki/08-IJobContext.md` and `docs/wiki/15-Common-Scenarios.md`.
+
+- **`NexJob` Core & `NexJob.Dashboard` — Dynamic Circuit Breaker & Queue Auto-Pausing (Issue #207)**:
+  - Added declarative queue-level circuit breaker via `NexJobOptions.ConfigureQueue(queue, q => q.EnableCircuitBreaker(...))`.
+  - Added 4-state lifecycle (`Closed`, `Open`, `HalfOpen`, `Recovering`) to prevent thundering herds ("metralhadora" effect) when downstream APIs experience severe outages.
+  - Implemented progressive exponential backoff multiplier on cooldown for repeated probe failures up to `MaxOpenDuration`.
+  - Added selective exception filtering with predicate support (`cb.BreakOn<TException>(predicate)`) and out-of-the-box helper `cb.BreakOnTransientHttpErrors()`: automatically trips on 5xx, timeouts, 429 Too Many Requests (Rate Limits), and network drops while safely ignoring client/payload bugs (400 Bad Request, 404 Not Found, 422).
+  - Added `Recovering` gradual ramp-up state capping concurrency to `RecoveryConcurrency` during `RecoveryDuration` when downstream recovers.
+  - Integrated with `JobDispatcherService` to bypass open queues and dispatch canary in `HalfOpen`.
+  - Integrated with `IJobControlService.ResetQueueCircuitAsync` and `DashboardMiddleware` (`POST /queues/{queue}/reset-circuit`) for manual reset.
+  - Updated Dashboard `/queues` cards with real-time badges (`⚡ CIRCUIT OPEN (Xs)`, `🟡 CANARY TESTING`, `🟢 RECOVERING`) and manual reset action.
+  - Added 3N unit testing matrix using `TimeProvider` / `FakeTimeProvider` in `tests/NexJob.Tests/QueueCircuitBreakerTests.cs`.
+  - Documented in `docs/wiki/07-Throttling.md` and `docs/wiki/13-Best-Practices.md`.
+
+- **`NexJob` Core & Storage Providers — Anti-Bloat Retention Strategies (Issue #203)**:
+   - Added declarative `[Retention(PurgeOnSuccess = bool, TrimPayloadOnSuccess = bool)]` attribute to decorate job classes.
+   - Implemented immediate row purge (`PurgeOnSuccess = true`) upon successful job execution across all storage providers (`InMemory`, `PostgreSQL`, `SQL Server`, `MongoDB`, `Redis`), preventing table growth and WAL bloat in high-frequency streaming workloads.
+   - Implemented payload stripping (`TrimPayloadOnSuccess = true`), wiping `InputJson` upon successful execution while preserving job state, timestamps, tags, and logs for auditability.
+   - Hardened `JobExecutor` to propagate retention metadata in `JobExecutionResult` and bypass delayed batch acknowledgment when purge or trim operations are requested.
+   - Preserved lifetime job catalog statistics (`/catalog`) in `InMemoryStorageProvider` via aggregated lifetime tracking counters even when individual job instances are immediately purged.
+   - Documented retention strategies in `docs/wiki/06-Retry-And-Dead-Letter.md` and `docs/wiki/13-Best-Practices.md`.
+   - Added 3N unit testing matrix (Positive, Negative, Boundary) in `tests/NexJob.Tests/RetentionHardeningTests.cs`.
+
+
+- **`NexJob.Dashboard` — Orphan Queues & Inactive Worker Indicators (Issue #212)**:
+  - Added real-time tracking of queue coverage against active worker nodes registered via `IJobStorage.GetActiveServersAsync()`.
+  - Added warning badge `⚠️ NO WORKERS` and warning subtitle on `QueuesPage` cards whenever a queue has pending jobs (`Enqueued > 0`) but no active worker nodes in the cluster configured to process it.
+  - Added unserved queues alert banner on `ServersPage` highlighting queues that have accumulated work without any online worker nodes.
+  - Added live queue coverage check in the `CatalogPage` Trigger Modal, alerting operators before enqueuing a job if the chosen queue currently lacks active workers.
+  - Added 3N unit testing matrix (Positive, Negative, Boundary) in `tests/NexJob.Tests/StandaloneDashboardTests.cs`.
+  - Documented behavior in `docs/wiki/10-Dashboard.md`.
+
+- **`NexJob` Core & `NexJob.Dashboard` — Job Catalog & Definitions View and On-Demand Triggering (Issue #202)**:
+  - Added `JobCatalogItem` record encapsulating job definitions with aggregated execution telemetry (`JobType`, `Queue`, `TotalRuns`, `SucceededRuns`, `FailedRuns`, `LastExecutedAt`, `AvgDurationSeconds`).
+  - Extended `IDashboardStorage` with `GetJobCatalogAsync` featuring a default interface implementation for backward compatibility with external providers (with deprecation notice for v6.0).
+  - Implemented high-performance native aggregated queries (`GROUP BY job_type, queue`) in `InMemoryStorageProvider`, `PostgresStorageProvider`, and `SqlServerStorageProvider`.
+  - Added `/catalog` page in `NexJob.Dashboard` rendering an interactive table under the `MONITORING` sidebar section with instant search filtering, queue filtering, failure rate badges, average duration calculations, and deep-linking to filtered execution history in `/jobs`.
+  - Added on-demand ad-hoc execution (`POST /catalog/{jobType}/trigger`) for jobs directly from the catalog table, adhering to multi-cluster active selection (`?cluster={id}`) and `IsReadOnly` safety guards.
+  - Added Swagger-style interactive Trigger modal for parameterized jobs (`IJob<T>`): clicking "Trigger" opens a dialog pre-filled with an automatically generated sample JSON schema for the input type (and target queue), allowing operators to edit the payload or reset to sample before triggering. Parameterless `IJob`s trigger immediately with 1 click.
+  - Added 3N testing matrix (Positive, Negative, Boundary) in `tests/NexJob.Tests/InMemoryStorageProviderTests.cs` and `tests/NexJob.Tests/StandaloneDashboardTests.cs`.
+  - Updated documentation in `docs/wiki/10-Dashboard.md`, root `README.md`, `src/NexJob.Dashboard/README.md`, and `samples/NexJob.Sample.WorkerService`.
+
+
+- **`NexJob.Dashboard` & `NexJob.Dashboard.Standalone` — Multi-Cluster Dashboard Federation (Issue #200)**:
+  - Added `DashboardCluster` descriptor encapsulating cluster identity (`Id`, `Name`), isolated storage contracts (`DashboardStorage`, `JobStorage`, `RecurringStorage`, `ControlService`, `RuntimeStore`), cluster-scoped `Queues`, and `IsReadOnly` safety mode.
+  - Added `Clusters` collection and fluent `AddCluster(...)` API to `DashboardOptions` and `StandaloneDashboardOptions`.
+  - Added multi-cluster switcher dropdown in Maxton header when `Clusters.Count > 1`, with active cluster selection controlled via `?cluster={id}` and seamless URL parameter preservation across redirects and actions.
+  - Isolated SSE metrics stream and IMemoryCache keys by cluster (`$"nexjob:dashboard:metrics:{clusterId}"`), preventing cross-cluster cache collision.
+  - Enforced `IsReadOnly` mutation guard returning `403 Forbidden` on POST actions for read-only clusters.
+  - Added 3N testing matrix (Positive, Negative, Boundary) in `tests/NexJob.Tests/StandaloneDashboardTests.cs`.
+
+- **`NexJob.Dashboard` & `NexJob.Dashboard.Standalone` — Dedicated Ops Host Mode and Queue Scoping (Issue #199)**:
+  - Added `DisableWorkers` (bool, default `false`) to `StandaloneDashboardOptions`. When set to `true`, `NexJobOptions.Workers` is configured to `0`, allowing a headless worker to function as a dedicated monitoring/ops host without taking processing slots from background workers.
+  - Added `Queues` (`IReadOnlyList<string>?`) to `DashboardOptions` and `StandaloneDashboardOptions` for queue scoping and isolation.
+  - Scoped dashboard navigation counters, queue cards, and default `/jobs` filter exclusively to the configured queues when `Queues` is specified.
+  - Added comprehensive documentation and architectural guidelines in `docs/wiki/10-Dashboard.md`, `docs/wiki/13-Best-Practices.md`, and `src/NexJob.Dashboard.Standalone/README.md`.
+  - Added 3N unit testing matrix in `tests/NexJob.Tests/StandaloneDashboardTests.cs` (positive, negative, and boundary scenarios).
+
 ### Changed
+
+- **Documentation — Wiki, package READMEs and XML docs audited against the code (Issues #173, #174, #175, #178)**:
+  - Removed APIs that do not exist (`opt.UseRedis`, `UseDistributedThrottle()`, `UsePostgreSqlStorage`, `IRetryDelayFactory`, `QueueOptions`, `AddOrUpdateRecurringJobAsync`, `GetInput<T>()`, `IJobContextAccessor`) and fixed parameter and option names (`AddRecurringJob(id:, timeZoneId:)`, circuit breaker `ConsecutiveFailuresThreshold`/`OpenDuration`, dashboard options).
+  - Corrected behaviour descriptions: job filters (`context.Succeeded` is only set after the pipeline; filters are singletons), `AddNexJobJobs` (internal jobs are registered), dashboard requeue (same job, attempts reset), single dashboard authorization handler, retention (`RetentionFailed` governs failed jobs), telemetry tag and metric names, and the state diagram (no `Retried`/`DeadLetter` status).
+  - Documented what the code really does for the broker triggers (job type precedence, idempotency key and failure handling per broker), appsettings-bindable options versus code-only options (retention is code-only), the dashboard settings page, and the `using` namespaces of each storage package.
+  - Rewrote the testing guide so its examples run (they use a started host and fast retry delays) and added the v5.5.0 to v5.6.0 upgrade notes to the migration guide.
+  - `IRecurringStorage`: the XML documentation of `DeleteRecurringJobAsync` and `ForceDeleteRecurringJobAsync` described the two methods the other way round; corrected (no behaviour change).
+  - The `[Unreleased]` section no longer has a duplicated `### Added` heading.
 
 - **`NexJob.MongoDB` — The `DateTimeOffset` serializer is no longer registered globally (Issue #263, step 2)**:
   - NexJob used to register a process-wide `DateTimeOffsetSerializer` (string representation), which silently changed how the host application serialized its own `DateTimeOffset` values. The same representation is now applied through a convention to NexJob's own documents only (jobs, recurring jobs, servers, execution logs). The stored format is unchanged (ISO 8601 string at `+00:00`), so **no data migration is needed** and old and new nodes can run together.
@@ -177,93 +270,6 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - Hardened `JobExecutor.ExecuteJobAsync` to catch `ForeignJobTypeException` separately from standard execution failures: the worker rolls back the attempt increment, defers the job with a configurable `ForeignJobRetryDelay` (default 5s) via `CommitJobResultAsync`, and avoids dead-lettering (`IDeadLetterDispatcher` is never invoked).
   - Added `ForeignJobRetryDelay` option to `NexJobOptions` (default 5s).
   - Added 3N unit testing matrix in `tests/NexJob.Tests/JobExecutorHardeningTests.cs` and `tests/NexJob.Tests/DefaultJobInvokerFactoryHardeningTests.cs`.
-
-### Added
-
-- **`NexJob.Dashboard` — UX Polish, Action Ergonomics & Filter Indicators (Issues #214, #220)**:
-  - Added Job Detail actions: Enqueued and Scheduled states now expose Cancel & Delete operations directly from the job detail view.
-  - Added Job Checkpoint Inspector: collapsible `💾 Checkpoint State` panel on Job Detail view displaying formatted progress JSON when `CheckpointJson` is present.
-  - Added Retention Payload Indicator: Job Detail displays an informational badge (`Payload stripped by retention policy (TrimPayloadOnSuccess)`) when payload is trimmed.
-  - Added Destructive Action Safety: Added browser confirmation dialog (`Pause ALL recurring jobs cluster-wide?`) to the Settings page Pause All button.
-  - Added Sidebar Orphan Queue Alert: Added alert badge (`.nav-counter.alert`) to the Queues sidebar item when enqueued jobs exist in queues without active listening workers.
-  - Added Job Catalog Ergonomics: Enqueuing a job from the catalog redirects with `?triggered={jobId}` displaying a success notification banner with direct navigation to the job; added sort controls (`failure-rate`, `duration`, `runs`).
-  - Added Active Filter Breadcrumb Chips: Active filters (status, queue, tag, search) render removable badge chips with individual `[x]` clear links and a `Clear all` button in `FilterBar`.
-  - Added Circuit Breaker Drill-down Links: Direct `View Errors` navigation link to `/failed?queue={q}` for `HalfOpen` and `Recovering` circuit states.
-  - Added Topology Diagram Responsiveness: Responsive layout media query wrapping topology nodes on mobile viewports and rotating connection arrows.
-
-- **`NexJob.IntegrationTests` & Storage Providers — Integration Test Suite Synchronization for v5.6 Features (Issue #219)**:
-  - Extended shared `StorageProviderTestsBase` contract suite with real-database integration tests across all 5 providers (`InMemory`, `PostgreSQL`, `SQL Server`, `MongoDB`, `Redis`).
-  - Added integration contract coverage for Checkpoints (`SaveCheckpointAsync`, state persistence, and auto-clear on `AcknowledgeAsync` / `AcknowledgeBatchAsync`).
-  - Hardened `AcknowledgeAsync` and `AcknowledgeBatchAsync` across `PostgresStorageProvider`, `SqlServerStorageProvider`, `RedisStorageProvider`, and `MongoStorageProvider` to automatically reset `checkpoint_json = NULL` / unset upon job acknowledgment.
-  - Added integration contract coverage for Retention strategies (`PurgeOnSuccess` physical deletion and `TrimPayloadOnSuccess` payload stripping).
-  - Added integration contract coverage for Job Catalog native aggregations (`GetJobCatalogAsync`).
-
-- **`NexJob` Core & Storage Providers — Progress Checkpoints & State Saving for Long-Running Jobs (Issue #206)**:
-  - Added `CheckpointJson` property to `JobRecord` for serializing and preserving arbitrary checkpoint state.
-  - Extended `IJobContext` with `TState? GetCheckpoint<TState>()` and `Task SaveCheckpointAsync<TState>(TState state, int? percent, string? message, CancellationToken ct)`.
-  - Added `SaveCheckpointAsync(JobId, string, int?, string?, CancellationToken)` to `IJobStorage` with default interface implementation.
-  - Implemented checkpoint persistence across all 5 storage providers: `InMemoryStorageProvider`, `PostgresStorageProvider`, `SqlServerStorageProvider`, `RedisStorageProvider`, and `MongoStorageProvider`.
-  - Added schema migrations V9 for PostgreSQL (`V9AddCheckpointColumn`) and SQL Server (`V9AddCheckpointColumn`) adding nullable `checkpoint_json` column.
-  - Enforced state persistence on retry: `CheckpointJson` is preserved across retry attempts (`Scheduled`) and dead-letter moves (`Failed`) so interrupted jobs resume exactly from the last saved state.
-  - Enforced anti-bloat cleanup: `checkpoint_json` is automatically cleared (`NULL` / unset) upon successful execution (`Succeeded`) across all storage providers.
-  - Added 3N unit testing matrix (Positive, Negative, Boundary) in `tests/NexJob.Tests/JobCheckpointTests.cs` and updated `tests/NexJob.Tests/SchemaMigratorTests.cs`.
-  - Documented in `docs/wiki/08-IJobContext.md` and `docs/wiki/15-Common-Scenarios.md`.
-
-- **`NexJob` Core & `NexJob.Dashboard` — Dynamic Circuit Breaker & Queue Auto-Pausing (Issue #207)**:
-  - Added declarative queue-level circuit breaker via `NexJobOptions.ConfigureQueue(queue, q => q.EnableCircuitBreaker(...))`.
-  - Added 4-state lifecycle (`Closed`, `Open`, `HalfOpen`, `Recovering`) to prevent thundering herds ("metralhadora" effect) when downstream APIs experience severe outages.
-  - Implemented progressive exponential backoff multiplier on cooldown for repeated probe failures up to `MaxOpenDuration`.
-  - Added selective exception filtering with predicate support (`cb.BreakOn<TException>(predicate)`) and out-of-the-box helper `cb.BreakOnTransientHttpErrors()`: automatically trips on 5xx, timeouts, 429 Too Many Requests (Rate Limits), and network drops while safely ignoring client/payload bugs (400 Bad Request, 404 Not Found, 422).
-  - Added `Recovering` gradual ramp-up state capping concurrency to `RecoveryConcurrency` during `RecoveryDuration` when downstream recovers.
-  - Integrated with `JobDispatcherService` to bypass open queues and dispatch canary in `HalfOpen`.
-  - Integrated with `IJobControlService.ResetQueueCircuitAsync` and `DashboardMiddleware` (`POST /queues/{queue}/reset-circuit`) for manual reset.
-  - Updated Dashboard `/queues` cards with real-time badges (`⚡ CIRCUIT OPEN (Xs)`, `🟡 CANARY TESTING`, `🟢 RECOVERING`) and manual reset action.
-  - Added 3N unit testing matrix using `TimeProvider` / `FakeTimeProvider` in `tests/NexJob.Tests/QueueCircuitBreakerTests.cs`.
-  - Documented in `docs/wiki/07-Throttling.md` and `docs/wiki/13-Best-Practices.md`.
-
-- **`NexJob` Core & Storage Providers — Anti-Bloat Retention Strategies (Issue #203)**:
-   - Added declarative `[Retention(PurgeOnSuccess = bool, TrimPayloadOnSuccess = bool)]` attribute to decorate job classes.
-   - Implemented immediate row purge (`PurgeOnSuccess = true`) upon successful job execution across all storage providers (`InMemory`, `PostgreSQL`, `SQL Server`, `MongoDB`, `Redis`), preventing table growth and WAL bloat in high-frequency streaming workloads.
-   - Implemented payload stripping (`TrimPayloadOnSuccess = true`), wiping `InputJson` upon successful execution while preserving job state, timestamps, tags, and logs for auditability.
-   - Hardened `JobExecutor` to propagate retention metadata in `JobExecutionResult` and bypass delayed batch acknowledgment when purge or trim operations are requested.
-   - Preserved lifetime job catalog statistics (`/catalog`) in `InMemoryStorageProvider` via aggregated lifetime tracking counters even when individual job instances are immediately purged.
-   - Documented retention strategies in `docs/wiki/06-Retry-And-Dead-Letter.md` and `docs/wiki/13-Best-Practices.md`.
-   - Added 3N unit testing matrix (Positive, Negative, Boundary) in `tests/NexJob.Tests/RetentionHardeningTests.cs`.
-
-
-- **`NexJob.Dashboard` — Orphan Queues & Inactive Worker Indicators (Issue #212)**:
-  - Added real-time tracking of queue coverage against active worker nodes registered via `IJobStorage.GetActiveServersAsync()`.
-  - Added warning badge `⚠️ NO WORKERS` and warning subtitle on `QueuesPage` cards whenever a queue has pending jobs (`Enqueued > 0`) but no active worker nodes in the cluster configured to process it.
-  - Added unserved queues alert banner on `ServersPage` highlighting queues that have accumulated work without any online worker nodes.
-  - Added live queue coverage check in the `CatalogPage` Trigger Modal, alerting operators before enqueuing a job if the chosen queue currently lacks active workers.
-  - Added 3N unit testing matrix (Positive, Negative, Boundary) in `tests/NexJob.Tests/StandaloneDashboardTests.cs`.
-  - Documented behavior in `docs/wiki/10-Dashboard.md`.
-
-- **`NexJob` Core & `NexJob.Dashboard` — Job Catalog & Definitions View and On-Demand Triggering (Issue #202)**:
-  - Added `JobCatalogItem` record encapsulating job definitions with aggregated execution telemetry (`JobType`, `Queue`, `TotalRuns`, `SucceededRuns`, `FailedRuns`, `LastExecutedAt`, `AvgDurationSeconds`).
-  - Extended `IDashboardStorage` with `GetJobCatalogAsync` featuring a default interface implementation for backward compatibility with external providers (with deprecation notice for v6.0).
-  - Implemented high-performance native aggregated queries (`GROUP BY job_type, queue`) in `InMemoryStorageProvider`, `PostgresStorageProvider`, and `SqlServerStorageProvider`.
-  - Added `/catalog` page in `NexJob.Dashboard` rendering an interactive table under the `MONITORING` sidebar section with instant search filtering, queue filtering, failure rate badges, average duration calculations, and deep-linking to filtered execution history in `/jobs`.
-  - Added on-demand ad-hoc execution (`POST /catalog/{jobType}/trigger`) for jobs directly from the catalog table, adhering to multi-cluster active selection (`?cluster={id}`) and `IsReadOnly` safety guards.
-  - Added Swagger-style interactive Trigger modal for parameterized jobs (`IJob<T>`): clicking "Trigger" opens a dialog pre-filled with an automatically generated sample JSON schema for the input type (and target queue), allowing operators to edit the payload or reset to sample before triggering. Parameterless `IJob`s trigger immediately with 1 click.
-  - Added 3N testing matrix (Positive, Negative, Boundary) in `tests/NexJob.Tests/InMemoryStorageProviderTests.cs` and `tests/NexJob.Tests/StandaloneDashboardTests.cs`.
-  - Updated documentation in `docs/wiki/10-Dashboard.md`, root `README.md`, `src/NexJob.Dashboard/README.md`, and `samples/NexJob.Sample.WorkerService`.
-
-
-- **`NexJob.Dashboard` & `NexJob.Dashboard.Standalone` — Multi-Cluster Dashboard Federation (Issue #200)**:
-  - Added `DashboardCluster` descriptor encapsulating cluster identity (`Id`, `Name`), isolated storage contracts (`DashboardStorage`, `JobStorage`, `RecurringStorage`, `ControlService`, `RuntimeStore`), cluster-scoped `Queues`, and `IsReadOnly` safety mode.
-  - Added `Clusters` collection and fluent `AddCluster(...)` API to `DashboardOptions` and `StandaloneDashboardOptions`.
-  - Added multi-cluster switcher dropdown in Maxton header when `Clusters.Count > 1`, with active cluster selection controlled via `?cluster={id}` and seamless URL parameter preservation across redirects and actions.
-  - Isolated SSE metrics stream and IMemoryCache keys by cluster (`$"nexjob:dashboard:metrics:{clusterId}"`), preventing cross-cluster cache collision.
-  - Enforced `IsReadOnly` mutation guard returning `403 Forbidden` on POST actions for read-only clusters.
-  - Added 3N testing matrix (Positive, Negative, Boundary) in `tests/NexJob.Tests/StandaloneDashboardTests.cs`.
-
-- **`NexJob.Dashboard` & `NexJob.Dashboard.Standalone` — Dedicated Ops Host Mode and Queue Scoping (Issue #199)**:
-  - Added `DisableWorkers` (bool, default `false`) to `StandaloneDashboardOptions`. When set to `true`, `NexJobOptions.Workers` is configured to `0`, allowing a headless worker to function as a dedicated monitoring/ops host without taking processing slots from background workers.
-  - Added `Queues` (`IReadOnlyList<string>?`) to `DashboardOptions` and `StandaloneDashboardOptions` for queue scoping and isolation.
-  - Scoped dashboard navigation counters, queue cards, and default `/jobs` filter exclusively to the configured queues when `Queues` is specified.
-  - Added comprehensive documentation and architectural guidelines in `docs/wiki/10-Dashboard.md`, `docs/wiki/13-Best-Practices.md`, and `src/NexJob.Dashboard.Standalone/README.md`.
-  - Added 3N unit testing matrix in `tests/NexJob.Tests/StandaloneDashboardTests.cs` (positive, negative, and boundary scenarios).
 
 ## [5.5.0] - 2026-09-25
 

@@ -124,7 +124,9 @@ public sealed record WebhookInput(string Url, object Payload);
 - Attempt 2: fails → wait 20s
 - Attempt 3: fails → wait 40s
 - Attempt 4: fails → wait 80s
-- Attempt 5: fails → dead-letter
+- Attempt 5: fails → dead-letter (no more retries)
+
+Each delay also gets a random ±10% jitter.
 
 ---
 
@@ -136,7 +138,7 @@ Run a cleanup job daily at 2 AM.
 builder.Services.AddNexJob(options =>
 {
     options.AddRecurringJob<CleanupOldLogsJob>(
-        recurringJobId: "cleanup-daily",
+        id: "cleanup-daily",
         cron: "0 2 * * *");
 });
 
@@ -165,14 +167,23 @@ public sealed class CleanupOldLogsJob : IJob
 An order payment webhook may fire twice. Use idempotency to prevent duplicate processing.
 
 ```csharp
-// Webhook endpoint — may be called twice by the payment provider
+// Webhook endpoint — may be called twice by the payment provider (DuplicateJobException is in NexJob.Exceptions)
 app.MapPost("/webhooks/payment", async (PaymentEvent evt, IScheduler scheduler) =>
 {
-    await scheduler.EnqueueAsync<ProcessPaymentJob, PaymentInput>(
-        new PaymentInput(evt.OrderId, evt.Amount),
-        idempotencyKey: $"payment-{evt.OrderId}",
-        duplicatePolicy: DuplicatePolicy.RejectAlways,
-        cancellationToken: CancellationToken.None);
+    try
+    {
+        // While the first job is still active, the second call simply returns its id.
+        // Once it has finished, RejectAlways throws instead of creating a second job.
+        await scheduler.EnqueueAsync<ProcessPaymentJob, PaymentInput>(
+            new PaymentInput(evt.OrderId, evt.Amount),
+            idempotencyKey: $"payment-{evt.OrderId}",
+            duplicatePolicy: DuplicatePolicy.RejectAlways,
+            cancellationToken: CancellationToken.None);
+    }
+    catch (DuplicateJobException)
+    {
+        // Already processed — acknowledge the webhook so the provider stops retrying
+    }
 
     return Results.Ok();
 });

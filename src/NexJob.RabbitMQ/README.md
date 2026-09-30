@@ -14,7 +14,7 @@ dotnet add package NexJob.RabbitMQ
 
 ## 1. Resilient Outbox Producer
 
-Publishes messages to RabbitMQ exchanges and queues backed by NexJob's persistent storage, exponential retries with jitter, dead-letter dispatch, Publisher Confirms, and OpenTelemetry trace propagation.
+Publishes messages to RabbitMQ exchanges and queues backed by NexJob's persistent storage, retries with backoff and jitter, dead-letter dispatch, Publisher Confirms, and OpenTelemetry trace propagation.
 
 ### Registration
 
@@ -22,8 +22,8 @@ Publishes messages to RabbitMQ exchanges and queues backed by NexJob's persisten
 using NexJob;
 using NexJob.RabbitMQ;
 
+builder.Services.AddNexJobPostgres(builder.Configuration.GetConnectionString("NexJobConnection")!); // or any other storage provider
 builder.Services.AddNexJob()
-    .UsePostgreSqlStorage(...)
     .AddRabbitMqProducer(options =>
     {
         options.HostName = builder.Configuration["RABBITMQ_HOST"] 
@@ -31,7 +31,7 @@ builder.Services.AddNexJob()
             ?? "localhost";
         options.Port = 5672;
         options.UserName = builder.Configuration["RABBITMQ_USER"] ?? "guest";
-        options.Password = builder.Configuration["RABBITMQ_PASS"] ?? "guest";
+        options.Password = builder.Configuration["RABBITMQ_PASSWORD"] ?? "guest";
         options.DefaultExchange = "events.exchange";
         options.ConfirmTimeout = TimeSpan.FromSeconds(5);
     });
@@ -105,7 +105,7 @@ Bind a queue directly to a job handler class (`IJob<string>`). The job is automa
 
 ```csharp
 builder.Services.AddNexJob()
-    .AddNexJobRabbitMqTrigger<ProcessOrderJob>(options =>
+    .AddRabbitMqTrigger<ProcessOrderJob>(options =>
     {
         options.HostName = builder.Configuration["RABBITMQ_HOST"] ?? "localhost";
         options.Port = 5672;
@@ -134,37 +134,32 @@ builder.Services.AddNexJob()
 
 ### Inbound Message Contract
 
-Messages consumed by the trigger expect the following headers:
-- `nexjob.job_type`: Assembly-qualified name of the `IJob<string>` to execute (required).
+Messages consumed by the trigger can carry the following headers:
+- `nexjob.job_type`: Assembly-qualified name of the `IJob<string>` to execute. When it is absent, `options.JobType` is used; a message with neither can never become a job and is nacked without requeue.
 - `traceparent`: W3C distributed trace header (optional).
 
-The message payload body is passed directly as the job input string.
+The message payload body is passed directly as the job input string. The job idempotency key is the message's `MessageId` (`CorrelationId` and the body are not used); a message published without a `MessageId` is not deduplicated.
+
+Enqueue failures are classified: a transient failure (storage or network error) is nacked with `requeue: true` after a one-second pause; a permanent failure (missing job type, malformed payload) is nacked with `requeue: false`, which routes it to the queue's dead-letter exchange if configured.
 
 ---
 
-## 3. Environment Variables (12-Factor App / Docker / K8s)
+## 3. Configuration & 12-Factor App (Docker / Kubernetes)
 
-Both the Producer and Trigger support configuration via environment variables:
+`NexJob.RabbitMQ` is configured through the option delegates shown above. It does not read a `NexJob:RabbitMq` section or any `RABBITMQ_*` environment variable by itself. Read the values you choose and assign them (environment variables are available through `builder.Configuration` with the default host builders):
 
-| Variable | Description | Default |
-|---|---|---|
-| `RABBITMQ_HOST` | Hostname or IP of the RabbitMQ server | `localhost` |
-| `RABBITMQ_PORT` | Port number | `5672` |
-| `RABBITMQ_USER` | Username for authentication | `guest` |
-| `RABBITMQ_PASSWORD` | Password for authentication | `guest` |
-| `RABBITMQ_VIRTUAL_HOST` | Target virtual host | `/` |
-
-Or via ASP.NET Core hierarchical configuration:
-```json
-{
-  "NexJob": {
-    "RabbitMq": {
-      "HostName": "rabbitmq.internal",
-      "Port": 5672,
-      "UserName": "admin",
-      "Password": "secretpassword",
-      "VirtualHost": "/"
-    }
-  }
-}
+```csharp
+builder.Services.AddNexJob()
+    .AddRabbitMqTrigger(options =>
+    {
+        options.HostName = builder.Configuration["RABBITMQ_HOST"] ?? "localhost";
+        options.Port = int.TryParse(builder.Configuration["RABBITMQ_PORT"], out var port) ? port : 5672;
+        options.UserName = builder.Configuration["RABBITMQ_USER"] ?? "guest";
+        options.Password = builder.Configuration["RABBITMQ_PASSWORD"] ?? "guest";
+        options.VirtualHost = builder.Configuration["RABBITMQ_VIRTUAL_HOST"] ?? "/";
+        options.QueueName = "incoming-events";
+    });
 ```
+
+Or bind a whole section of your own: `.AddRabbitMqTrigger(options => builder.Configuration.GetSection("RabbitMQ").Bind(options))`.
+

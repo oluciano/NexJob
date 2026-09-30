@@ -13,7 +13,7 @@ builder.Services.AddNexJob(options =>
 {
     // Run cleanup every day at 2 AM
     options.AddRecurringJob<CleanupOldLogsJob>(
-        recurringJobId: "cleanup-daily",
+        id: "cleanup-daily",
         cron: "0 2 * * *");
 });
 ```
@@ -24,7 +24,7 @@ builder.Services.AddNexJob(options =>
 builder.Services.AddNexJob(options =>
 {
     options.AddRecurringJob<GenerateReportJob, ReportInput>(
-        recurringJobId: "weekly-report",
+        id: "weekly-report",
         cron: "0 9 * * 1", // Monday 9 AM
         input: new ReportInput("weekly"));
 });
@@ -36,9 +36,9 @@ builder.Services.AddNexJob(options =>
 builder.Services.AddNexJob(options =>
 {
     options.AddRecurringJob<SendDailyDigestJob>(
-        recurringJobId: "daily-digest",
+        id: "daily-digest",
         cron: "0 8 * * *",
-        timeZone: TimeZoneInfo.FindSystemTimeZoneById("America/New_York"));
+        timeZoneId: "America/New_York");
 });
 ```
 
@@ -48,7 +48,7 @@ builder.Services.AddNexJob(options =>
 builder.Services.AddNexJob(options =>
 {
     options.AddRecurringJob<HeavyAnalyticsJob>(
-        recurringJobId: "analytics-hourly",
+        id: "analytics-hourly",
         cron: "0 * * * *",
         queue: "compute");
 });
@@ -72,7 +72,7 @@ Define recurring jobs in configuration instead of code.
       },
       {
         "Job": "GenerateReportJob",
-        "Input": { "ReportType": "weekly" },
+        "Input": "{\"ReportType\": \"weekly\"}",
         "Cron": "0 9 * * 1",
         "Queue": "reports"
       }
@@ -96,7 +96,10 @@ builder.Services.AddNexJob(builder.Configuration, options =>
 });
 ```
 
-**Rule:** The `Job` field must match the class name (not fully qualified). Input is deserialized using the job's `IJob<T>` input type.
+**Rules:**
+- The `Job` field must match the class name (not fully qualified). If two jobs share a name, give each entry an explicit `Id`.
+- `Input` is a **JSON string** (escape the quotes), not a nested JSON object. It is validated and deserialized using the job's `IJob<T>` input type; omit it for an `IJob` without input.
+- Each entry can also set `Id`, `Queue` (default `default`), `TimeZoneId`, `ConcurrencyPolicy` (`SkipIfRunning` by default) and `Enabled` (default `true`).
 
 ### What happens on every start
 
@@ -117,13 +120,13 @@ builder.Services.AddNexJob(options =>
 {
     // Default: skip if the previous instance is still running
     options.AddRecurringJob<SlowSyncJob>(
-        recurringJobId: "slow-sync",
+        id: "slow-sync",
         cron: "*/5 * * * *",
         concurrencyPolicy: RecurringConcurrencyPolicy.SkipIfRunning);
 
     // Allow concurrent executions
     options.AddRecurringJob<IndependentTaskJob>(
-        recurringJobId: "independent-task",
+        id: "independent-task",
         cron: "0 * * * *",
         concurrencyPolicy: RecurringConcurrencyPolicy.AllowConcurrent);
 });
@@ -143,6 +146,8 @@ await scheduler.RemoveRecurringAsync("cleanup-daily", ct);
 ```
 
 This removes the schedule — it does not affect already-created `JobRecord` instances.
+
+You can also create or update a schedule at runtime with `scheduler.RecurringAsync<TJob>(recurringJobId, cron, ...)`; note that this method names the id parameter `recurringJobId`, while the `options.AddRecurringJob` extension used at startup names it `id`.
 
 ---
 

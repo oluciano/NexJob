@@ -14,7 +14,7 @@ Monitor, debug, and manage jobs through the enterprise Maxton-inspired UI.
 - **Real-Time Live Log Streaming (SSE):** Streaming log viewer on `/jobs/{id}` displaying logs line-by-line via Server-Sent Events as the job executes.
 - **Active Event Triggers & Listeners:** Dedicated `/listeners` page monitoring connected message brokers (RabbitMQ, Kafka, SQS, Azure Service Bus, etc.), consumer groups, target queues, and status (`Listening`, `Reconnecting`, `Faulted`).
 - **Interactive Controls & Time Filters:** Pause and Resume queues with 1 click; filter jobs by time periods (`1h`, `6h`, `24h`, `7d`).
-- **Zero External Dependencies:** 100% self-contained in native CSS and vanilla JS — no external NPM, Webpack, or CDN downloads required.
+- **Self-Contained Front End:** native CSS and vanilla JS — no NPM or Webpack build and no JavaScript/CSS framework from a CDN. The only external request is the *Public Sans* web font, loaded from Google Fonts.
 
 ---
 
@@ -95,10 +95,11 @@ builder.Services.AddNexJobStandaloneDashboard();
 // Or customize host and port:
 // builder.Services.AddNexJobStandaloneDashboard(options =>
 // {
-//     options.Port = 5005;
-//     options.Path = "/dashboard";
+//     options.Port = 5005;                 // default 5005
+//     options.Path = "/dashboard";         // default "/dashboard"
 //     options.Title = "Worker Dashboard";
-//     options.LocalhostOnly = true;
+//     options.LocalhostOnly = true;        // default false: listens on all interfaces
+//     options.PollIntervalSeconds = 3;     // default 3
 // });
 
 var host = builder.Build();
@@ -124,7 +125,7 @@ public sealed class AdminDashboardAuth : IDashboardAuthorizationHandler
 builder.Services.AddTransient<IDashboardAuthorizationHandler, AdminDashboardAuth>();
 ```
 
-Multiple handlers are allowed — any handler returning `true` grants access.
+The dashboard uses a **single** handler: the last `IDashboardAuthorizationHandler` registered in DI. If you need several rules, combine them inside that handler. A request the handler rejects gets `401 Unauthorized`.
 
 ---
 
@@ -134,7 +135,7 @@ Multiple handlers are allowed — any handler returning `true` grants access.
 2. Click on a failed job to see:
    - Error message and full stack trace
    - Number of attempts and retry timeline
-   - Job input (deserialized)
+   - Job input (the stored JSON payload)
    - Queue, tags, and creation/completion timestamps
 3. Use this information to diagnose and fix the issue
 
@@ -142,23 +143,39 @@ Multiple handlers are allowed — any handler returning `true` grants access.
 
 ## Reading the Execution Timeline
 
-Each job displays its lifecycle:
+The job detail page shows the lifecycle as a timeline of events, with the time of day (UTC) on each:
 
 ```
-Created:  2026-04-08 10:00:00 UTC
-Enqueued: 2026-04-08 10:00:01 UTC
-Started:  2026-04-08 10:00:03 UTC  (2s queue wait)
-Failed:   2026-04-08 10:00:05 UTC  (2s execution)
-Retried:  2026-04-08 10:00:35 UTC  (30s backoff)
-Started:  2026-04-08 10:00:36 UTC
-Succeeded:2026-04-08 10:00:38 UTC
+Enqueued          10:00:01   queue: default · priority: Normal
+Processing        10:00:03   attempt 1/3
+Failed            10:00:05   <error message>
+Retry scheduled   10:00:35   in 30s
+Processing        10:00:36   attempt 2/3
+Succeeded         10:00:38
 ```
 
-Key timestamps to check:
+A **Timing** block beside it shows:
 
-- **Queue wait time** = `Started - Enqueued` — high values indicate insufficient workers
-- **Execution time** = `Completed - Started` — high values indicate slow job or external dependency
-- **Retry gaps** — show backoff delays between attempts
+- **Enqueue → Start** — how long the job waited before a worker took it; high values indicate insufficient workers
+- **Duration** — from start to completion; high values indicate a slow job or a slow external dependency
+- **Total Age** — time since the job was created
+
+The gap between `Failed` and the next `Processing` is the retry backoff.
+
+---
+
+## Settings Page (`/settings`)
+
+The settings page shows the **effective** value of each runtime setting (a runtime override if one exists, otherwise the value from `NexJobOptions`) and lets an operator change some of them without redeploying. Overrides are stored in the `IRuntimeSettingsStore` of the active storage, so they survive restarts and are shared by every node:
+
+| Form | Route (POST) | Effect |
+|---|---|---|
+| Polling interval | `settings/polling` | Overrides `PollingInterval` |
+| Retention | `settings/retention` | Overrides `RetentionSucceeded`, `RetentionFailed`, `RetentionExpired` and `RetentionDeadLetter`, entered in days (`0` keeps that kind of job forever) |
+| Workers | `settings/workers` | Stored and displayed, but not applied yet: the worker pool is sized from `NexJobOptions.Workers` at startup (see [Configuration Reference](11-Configuration-Reference.md#runtime-settings)) |
+| Reset | `settings/reset` | Clears all overrides so the code/`appsettings.json` values apply again |
+
+Read-only clusters (`isReadOnly: true` in a federated dashboard) reject these actions. `RetentionBatchSize` has no field on the page; it can be set through `IRuntimeSettingsStore`.
 
 ---
 
@@ -167,10 +184,9 @@ Key timestamps to check:
 The dashboard allows requeuing failed or expired jobs:
 
 1. Select the job in the **Failed** or **Expired** tab
-2. Click **Requeue**
-3. A new `JobRecord` is created with the same input, preserving the original for audit
+2. Click **Requeue** (the job detail page has the same button; the list pages offer a bulk "Requeue all")
 
-**Important:** Requeue creates a new job — it does not modify the existing one. The original job remains in its terminal state for historical tracking.
+**Important:** Requeue puts the **same job** (same id and input) back in the `Enqueued` state, with its attempt counter reset to zero and the previous error cleared. It does not create a copy, so the failure history of the previous run is not kept on the record. If you need an audit trail, log the failure in a dead-letter handler before requeuing.
 
 ---
 
@@ -285,8 +301,6 @@ builder.Services.AddNexJobStandaloneDashboard(options =>
 ## Job Catalog & Definitions (`/catalog`)
 
 Inspect distinct job types, performance metrics, queue distributions, error rates, and trigger parameterless jobs on demand.
-
-[![Job Catalog & Definitions](../assets/dashboard-catalog.png)](../assets/dashboard-catalog.png)
 
 ### Key Capabilities
 

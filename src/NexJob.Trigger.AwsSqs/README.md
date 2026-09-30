@@ -36,6 +36,17 @@ builder.Services.AddNexJobAwsSqsTrigger(sqsClient, options =>
 });
 ```
 
+You can also bind the trigger to one job type with the generic overload, which sets `JobName` for you:
+
+```csharp
+builder.Services.AddNexJobAwsSqsTrigger<ProcessOrderJob>(sqsClient, options =>
+{
+    options.QueueUrl = "https://sqs.us-east-1.amazonaws.com/123456789/my-queue";
+});
+```
+
+SQS does not read a job type from the message attributes: every message on the queue runs the configured job. The job idempotency key is the SQS `MessageId`.
+
 ## Configuration Options
 
 | Option | Description | Default |

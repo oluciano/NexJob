@@ -50,7 +50,7 @@ See [Getting Started](01-Getting-Started.md) for a complete walkthrough.
 - **Operational visibility** — built-in dashboard, traces, and metrics
 - **Low-latency dispatch** — wake-up channel for near-zero latency local enqueue
 - **Free storage providers** — PostgreSQL, SQL Server, Redis, MongoDB, InMemory
-- **Event-driven triggers** — enqueue jobs from Azure Service Bus, SQS, RabbitMQ, Kafka, Google Pub/Sub, or Salesforce Pub/Sub API
+- **Event-driven triggers** — enqueue jobs from Azure Service Bus, SQS, RabbitMQ, Kafka, Google Pub/Sub, Salesforce Pub/Sub API, or Salesforce Streaming (CometD)
 
 ### NexJob vs Alternatives
 
@@ -59,7 +59,7 @@ See [Getting Started](01-Getting-Started.md) for a complete walkthrough.
 | Execution model | Stateless dispatcher, atomic commits | Polling-based | Trigger-based |
 | Retry & dead-letter | Built-in, configurable | Plugin required | Manual |
 | Deadline enforcement | Built-in (`deadlineAfter`) | Plugin required | Manual |
-| Scheduling | Interval-based polling | Polling | Cron + calendar |
+| Scheduling | Delay, one-shot and cron recurring; dispatched by polling with a local wake-up | Polling | Cron + calendar |
 | Dashboard | Built-in, standalone | Paid | None |
 | OpenTelemetry | Built-in | Plugin required | Plugin required |
 
@@ -80,7 +80,7 @@ See [Getting Started](01-Getting-Started.md) for a complete walkthrough.
 - **External Triggers** — enqueue jobs from message brokers automatically
 
 ### Reliability
-- **Retry policies** — global + per-job `[Retry]` with exponential backoff
+- **Retry policies** — a global delay policy plus per-job `[Retry]` with configurable exponential backoff
 - **`deadlineAfter`** — jobs expire if not executed in time
 - **`IDeadLetterHandler<T>`** — automatic fallback on permanent failure
 - **Idempotency** — `DuplicatePolicy` controls re-enqueue behavior
@@ -113,7 +113,7 @@ See [Getting Started](01-Getting-Started.md) for a complete walkthrough.
 | [Recurring Jobs](04-Recurring-Jobs.md) | Cron-based recurring execution |
 | [Continuations](05-Continuations.md) | Chain jobs together |
 | [Job Filters](02-Job-Types.md#job-execution-filters) | Cross-cutting middleware for job execution |
-| [External Triggers](19-Triggers.md) | Enqueue jobs from message brokers (AWS SQS, Azure Service Bus, GCP Pub/Sub, Salesforce) |
+| [External Triggers](19-Triggers.md) | Enqueue jobs from message brokers (AWS SQS, Azure Service Bus, GCP Pub/Sub, Salesforce Pub/Sub API and Streaming) |
 | [Kafka Integration](20-Kafka.md) | Kafka Triggers & Resilient Outbox Producer |
 | [RabbitMQ Integration](21-RabbitMQ.md) | RabbitMQ Triggers & Resilient Outbox Producer |
 
@@ -149,4 +149,4 @@ See [Getting Started](01-Getting-Started.md) for a complete walkthrough.
 
 ---
 
-**v5.4.1** · [Changelog](../../CHANGELOG.md) · [GitHub](https://github.com/oluciano/NexJob)
+**v5.5.0** · [Changelog](../../CHANGELOG.md) · [GitHub](https://github.com/oluciano/NexJob)

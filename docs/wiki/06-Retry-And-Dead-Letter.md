@@ -17,6 +17,10 @@ builder.Services.AddNexJob(options =>
 
 Default is 10 attempts.
 
+### Default delay between attempts
+
+Unless a job sets its own delay with `[Retry(InitialDelay = ...)]`, the wait before the next attempt comes from `options.RetryDelayFactory`. Its default is `attempt^4 + 15` seconds plus a random 0-29 s multiplied by `(attempt + 1)`, where `attempt` is the number of attempts already made (1 after the first failure). That is a polynomial curve with jitter, not an exponential one, and it grows quickly: between 16 and 74 seconds after the first failure and between 4.5 and 7 minutes after the fourth. See [Custom Retry Delay](#custom-retry-delay) to change it.
+
 ---
 
 ## Per-Job Retry Override
@@ -29,8 +33,8 @@ public sealed class ProcessPaymentJob : IJob<PaymentInput>
 {
     public async Task ExecuteAsync(PaymentInput input, CancellationToken ct)
     {
-        // Will retry up to 5 times with exponential backoff:
-        // 30s → 60s → 120s → 240s → 480s (capped at 1h)
+        // 5 attempts in total = the first run + 4 retries, with exponential backoff
+        // (each delay gets ±10% jitter): 30s → 60s → 120s → 240s, never above 1h
     }
 }
 ```
@@ -38,9 +42,11 @@ public sealed class ProcessPaymentJob : IJob<PaymentInput>
 | Parameter | Default | Description |
 |---|---|---|
 | `attempts` | Required | Maximum number of attempts (including the first) |
-| `InitialDelay` | 1 minute | Delay before the first retry |
-| `Multiplier` | 2.0 | Exponential backoff multiplier |
-| `MaxDelay` | No cap | Maximum delay between retries |
+| `InitialDelay` | None | Delay before the first retry, as a `TimeSpan` string (`"00:00:30"`). When it is not set, the global `options.RetryDelayFactory` computes the delay and `Multiplier`/`MaxDelay` are not used |
+| `Multiplier` | 2.0 | Exponential backoff multiplier (delay = `InitialDelay` × `Multiplier`^(retry − 1)) |
+| `MaxDelay` | No cap | Maximum delay between retries, as a `TimeSpan` string |
+
+A random ±10% jitter is added to every delay computed from `InitialDelay`.
 
 ### Immediate Dead-Letter
 
@@ -57,25 +63,17 @@ public sealed class WebhookNotificationJob : IJob<WebhookInput>
 
 ---
 
-## Custom Retry Delay Factory
+## Custom Retry Delay
 
-For full control over retry timing, implement `IRetryDelayFactory`.
+For full control over the timing of jobs that do not set `[Retry(InitialDelay = ...)]`, assign a delegate to `options.RetryDelayFactory`. It receives the number of attempts already made (1 after the first failure) and returns how long to wait before the next one.
 
 ```csharp
-public sealed class JitterRetryFactory : IRetryDelayFactory
-{
-    public TimeSpan GetDelay(int attempt, JobRecord job)
-    {
-        // Exponential backoff with jitter
-        var baseDelay = TimeSpan.FromSeconds(Math.Pow(2, attempt));
-        var jitter = TimeSpan.FromMilliseconds(Random.Shared.Next(0, 1000));
-        return baseDelay + jitter;
-    }
-}
-
 builder.Services.AddNexJob(options =>
 {
-    options.RetryDelayFactory = new JitterRetryFactory();
+    // Exponential backoff with jitter: 2s, 4s, 8s, ... plus up to 1s
+    options.RetryDelayFactory = attempt =>
+        TimeSpan.FromSeconds(Math.Pow(2, attempt))
+        + TimeSpan.FromMilliseconds(Random.Shared.Next(0, 1000));
 });
 ```
 
@@ -108,8 +106,8 @@ public sealed class PaymentDeadLetterHandler : IDeadLetterHandler<ProcessPayment
             cancellationToken);
 
         // Optionally trigger compensation
-        // var input = failedJob.GetInput<PaymentInput>();
-        // await _refunds.InitiateAsync(input.OrderId, cancellationToken);
+        // var input = JsonSerializer.Deserialize<PaymentInput>(failedJob.InputJson);
+        // await _refunds.InitiateAsync(input!.OrderId, cancellationToken);
     }
 }
 
@@ -133,7 +131,7 @@ The `JobRecord` passed to dead-letter handlers contains:
 - `MaxAttempts` — configured maximum
 - `LastErrorMessage` — the error message from the last failure
 - `LastErrorStackTrace` — full stack trace
-- `InputJson` — the serialized input (deserialize with `GetInput<T>()`)
+- `InputJson` — the serialized input (deserialize it with `System.Text.Json`)
 - `Queue`, `Tags`, `CreatedAt`, `CompletedAt` — full execution context
 
 ---
@@ -174,54 +172,57 @@ builder.Services.AddNexJob(options =>
 
 ---
 
-## Dead-Letter Retention & Chunked Purging
+## Failed Job Retention & Chunked Purging
 
-Failed and dead-lettered jobs are retained in storage for troubleshooting and manual re-queuing before being automatically purged by `JobRetentionService`.
+A job that exhausts its attempts is stored as `Failed` (its dead-letter handler runs at that moment). Failed jobs stay in storage for troubleshooting and manual re-queuing until `JobRetentionService` purges them.
 
 Configure retention thresholds and batch sizing in `NexJobOptions`:
 
 ```csharp
 builder.Services.AddNexJob(options =>
 {
-    // Keep dead-lettered jobs for 60 days (default)
-    options.RetentionDeadLetter = TimeSpan.FromDays(60);
+    // How long Failed (dead-lettered) jobs are kept — default 30 days
+    options.RetentionFailed = TimeSpan.FromDays(30);
 
     // Run the retention purge loop every hour (default)
     options.RetentionInterval = TimeSpan.FromHours(1);
 
-    // Delete in chunks of 1000 to avoid table locks and WAL / log bloat
+    // Delete in chunks of 1000 to avoid table locks and WAL / log bloat (default)
     options.RetentionBatchSize = 1000;
 });
 ```
 
-To retain dead-letter jobs indefinitely, set `options.RetentionDeadLetter = TimeSpan.Zero`.
+- `RetentionFailed` (default 30 days) decides how long `Failed` jobs are kept.
+- `RetentionDeadLetter` (default 60 days) applies to `Failed` jobs **only when `RetentionFailed` is `TimeSpan.Zero`**; it also covers rows in the legacy `DeadLetter` state written by older versions.
+- To keep failed jobs indefinitely, set both `RetentionFailed` and `RetentionDeadLetter` to `TimeSpan.Zero`.
+
 Chunked purging runs across all persistent storage providers (PostgreSQL, SQL Server, Redis, MongoDB).
- 
- ---
- 
-+## Anti-Bloat Retention Strategies (`[Retention]`)
-+
-+For ultra high-throughput workloads (e.g. streaming message triggers) where retaining millions of succeeded jobs until the scheduled retention interval causes table/index bloat:
-+
-+1. **Immediate Purge (`PurgeOnSuccess = true`):**
-+   ```csharp
-+   [Retention(PurgeOnSuccess = true)]
-+   public sealed class FastIngestionJob : IJob<DataChunk> { ... }
-+   ```
-+   Deletes the job row atomically upon successful completion. Succeeded jobs will not bloat `/jobs` tables, but lifetime execution statistics are preserved in `/catalog`.
-+
-+2. **Payload Stripping (`TrimPayloadOnSuccess = true`):**
-+   ```csharp
-+   [Retention(TrimPayloadOnSuccess = true)]
-+   public sealed class LargeDocumentJob : IJob<DocumentPayload> { ... }
-+   ```
-+   Clears `InputJson` upon successful execution (`InputJson = ""`). Metadata (execution duration, completion timestamp, tags, logs) is retained for auditability while drastically cutting storage footprint.
-+
-+*Note: If a job fails or enters dead-letter, retention purge/trim is bypassed, ensuring full diagnostics and input data remain available for retry and debugging.*
-+
-+---
-+
- ## Next Steps
+
+---
+
+## Anti-Bloat Retention Strategies (`[Retention]`)
+
+For ultra high-throughput workloads (for example streaming message triggers) where retaining millions of succeeded jobs until the retention interval causes table and index bloat:
+
+1. **Immediate purge (`PurgeOnSuccess = true`):**
+   ```csharp
+   [Retention(PurgeOnSuccess = true)]
+   public sealed class FastIngestionJob : IJob<DataChunk> { ... }
+   ```
+   Deletes the job as soon as it succeeds. Succeeded jobs will not bloat the `/jobs` tables, but lifetime execution statistics are preserved in `/catalog`.
+
+2. **Payload stripping (`TrimPayloadOnSuccess = true`):**
+   ```csharp
+   [Retention(TrimPayloadOnSuccess = true)]
+   public sealed class LargeDocumentJob : IJob<DocumentPayload> { ... }
+   ```
+   Clears `InputJson` when the job succeeds. Metadata (execution duration, completion timestamp, tags, logs) is kept for auditability while cutting the storage footprint.
+
+*Note: if a job fails or is dead-lettered, the purge/trim is skipped, so the full diagnostics and input data stay available for retry and debugging.*
+
+---
+
+## Next Steps
 
 - [Throttling](07-Throttling.md) — Limit concurrent executions
 - [Idempotency](17-Idempotency.md) — Handle retries safely with idempotent jobs

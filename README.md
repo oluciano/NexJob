@@ -97,12 +97,12 @@ The job expires if not started within 5 minutes — no silent failures, no zombi
 ## Core Features
 
 - **`IJob` / `IJob<T>`** — simple and structured job interfaces
-- **Predictable retries** — exponential backoff with configurable policies, global + per-job `[Retry]`
+- **Predictable retries** — a configurable global delay policy plus per-job `[Retry]` with exponential backoff
 - **Deadline enforcement** — jobs expire if not executed in time (`deadlineAfter`)
 - **Dead-letter handlers** — automatic fallback when all retries are exhausted
 - **Multi-service safe deferral** — foreign jobs from other microservices are automatically deferred without penalizing attempts or dead-lettering
 - **Concurrency throttling** — `[Throttle]` attribute for per-resource limits
-- **Distributed throttling** — `UseDistributedThrottle()` enforces global cluster-wide rate limits via Redis
+- **Distributed throttling** — `AddNexJobDistributedThrottle()` enforces global cluster-wide rate limits via Redis
 - **Job continuations** — chain jobs with parent/child relationships
 - **Idempotency** — `DuplicatePolicy` controls re-enqueue behavior
 - **Recurring jobs** — via code or `appsettings.json`
@@ -229,7 +229,7 @@ The [`samples/`](samples/) directory provides comprehensive, runnable reference 
 | [`NexJob.Sample.ConfiguredRecurring`](samples/NexJob.Sample.ConfiguredRecurring) | Declarative Recurring | `5004` | Zero-code recurring job registration via `appsettings.json` with timezones |
 | [`NexJob.Sample.RabbitMQ`](samples/NexJob.Sample.RabbitMQ) | Broker Integration | `5005` | Outbox producer + trigger consumer with 5 trigger guarantees |
 | [`NexJob.Sample.Kafka`](samples/NexJob.Sample.Kafka) | Streaming Broker | `5006` | Partitioned Outbox event publishing + consumer trigger with offset tracking |
-| [`NexJob.Sample.Storage`](samples/NexJob.Sample.Storage) | Enterprise Topology | `5007` | PostgreSQL primary + read replica (`UseDashboardReadReplica`), Redis throttle (`UseDistributedThrottle`), OTel |
+| [`NexJob.Sample.Storage`](samples/NexJob.Sample.Storage) | Enterprise Topology | `5007` | PostgreSQL primary + read replica (`UseDashboardReadReplica`), Redis throttle (`AddNexJobDistributedThrottle`), OTel |
 | [`NexJob.Sample.CloudTriggers`](samples/NexJob.Sample.CloudTriggers) | Unified Cloud Consumers | `5008` | AWS SQS, Azure Service Bus, GCP Pub/Sub, Salesforce gRPC & CometD with `/simulate/*` endpoints |
 
 A full local test stack (PostgreSQL 16, Redis 7, RabbitMQ 3.13, and Kafka KRaft) is provided in [`samples/docker-compose.yml`](samples/docker-compose.yml).
@@ -271,7 +271,7 @@ v1.0.0  ✅ API freeze, production hardened
 v2.0.0  ✅ External triggers, OpenTelemetry, metrics cache
 v3.0.0  ✅ Storage segregation (IJobStorage / IRecurringStorage / IDashboardStorage),
            JobExecutor pipeline, IJobExecutionFilter, IJobControlService,
-           UseDashboardReadReplica(), UseDistributedThrottle()
+           UseDashboardReadReplica(), AddNexJobDistributedThrottle()
 v4.0.0  ✅ Reliability hardening, crash recovery, orphaned job watcher, fault injection
 v5.0.0  ✅ Resilient Outbox producers & triggers for RabbitMQ and Apache Kafka
 v5.1.0  ✅ Salesforce triggers (gRPC Pub/Sub API + CometD Bayeux Streaming API)

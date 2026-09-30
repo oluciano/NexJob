@@ -14,7 +14,7 @@ dotnet add package NexJob.Kafka
 
 ## 1. Resilient Outbox Producer
 
-Publishes messages to Kafka topics backed by NexJob's persistent storage, exponential retry with jitter, dead-letter dispatch, and OpenTelemetry trace propagation.
+Publishes messages to Kafka topics backed by NexJob's persistent storage, retry with backoff and jitter, dead-letter dispatch, and OpenTelemetry trace propagation.
 
 ### Registration
 
@@ -22,8 +22,8 @@ Publishes messages to Kafka topics backed by NexJob's persistent storage, expone
 using NexJob;
 using NexJob.Kafka;
 
+builder.Services.AddNexJobPostgres(builder.Configuration.GetConnectionString("NexJobConnection")!); // or any other storage provider
 builder.Services.AddNexJob()
-    .UsePostgreSqlStorage(...)
     .AddKafkaProducer(options =>
     {
         options.BootstrapServers = builder.Configuration["KAFKA_BOOTSTRAP_SERVERS"] 
@@ -89,7 +89,7 @@ Bind a topic directly to a job handler class (`IJob<string>`). The job is automa
 
 ```csharp
 builder.Services.AddNexJob()
-    .AddNexJobKafkaTrigger<ProcessOrderJob>(options =>
+    .AddKafkaTrigger<ProcessOrderJob>(options =>
     {
         options.BootstrapServers = builder.Configuration["KAFKA_BOOTSTRAP_SERVERS"] ?? "localhost:9092";
         options.Topic = "incoming-orders";
@@ -115,17 +115,19 @@ builder.Services.AddNexJob()
 
 ### Inbound Message Contract
 
-For dynamic triggers (Option B), messages consumed expect the following headers:
-- `nexjob.job_type`: Assembly-qualified name of the `IJob<string>` to execute (required unless `options.JobType` is configured).
+For dynamic triggers (Option B), consumed messages can carry the following headers:
+- `nexjob.job_type`: Assembly-qualified name of the `IJob<string>` to execute. When it is absent, `options.JobType` is used; a message with neither can never become a job and is handled as a permanent failure.
 - `traceparent`: W3C distributed trace header (optional).
 
-The message value is passed as the string input to the resolved job.
+The message value is passed as the string input to the resolved job. The job idempotency key is the record position (`kafka:{topic}:{partition}:{offset}`), so a redelivered record never creates a second job while two records that share a message key each produce a job.
+
+Enqueue failures are classified: a transient failure (storage or network error) retries the same record in place with a 1 s to 30 s backoff and commits only after success; a permanent failure goes to `DeadLetterTopic` and is committed (without a topic it is logged at `Error` and committed, so it cannot block the partition).
 
 ---
 
 ## 3. Configuration & 12-Factor App (Docker / Kubernetes)
 
-`NexJob.Kafka` does not require settings in `appsettings.json`. It fully supports containerized environments via environment variables:
+`NexJob.Kafka` is configured through the option delegates shown above; it does not read `appsettings.json` sections or environment variables by itself. In containerized environments, read the variables in your own code and assign them to the options:
 
 ```bash
 # Set environment variables in Docker / Kubernetes
@@ -133,7 +135,7 @@ export KAFKA_BOOTSTRAP_SERVERS="kafka-broker.prod:9092"
 export KAFKA_TOPIC="orders"
 ```
 
-Read seamlessly in C#:
+Read them in C#:
 ```csharp
 builder.Services.AddNexJob()
     .AddKafkaProducer(options =>
@@ -167,6 +169,9 @@ builder.Services.AddNexJob()
 | `Topic` | Kafka topic to consume messages from | `""` |
 | `GroupId` | Kafka consumer group identifier | `""` |
 | `TargetQueue` | Target NexJob queue name for enqueued jobs | `"default"` |
+| `JobPriority` | Priority of the enqueued jobs | `JobPriority.Normal` |
+| `DeadLetterTopic` | Topic that receives records that can never be enqueued (permanent failures) | `null` |
+| `JobType` | Assembly-qualified job type used when a message has no `nexjob.job_type` header | `null` |
 | `ConsumeTimeout` | Polling timeout for `IConsumer.Consume` | `1 second` |
 | `ConfigureConsumer` | Delegate (`Action<ConsumerConfig>`) to customize SASL/SSL credentials, TLS certificates, and timeouts | `null` |
 

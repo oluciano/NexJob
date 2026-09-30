@@ -41,7 +41,7 @@ public interface IRecurringStorage
         string? errorMessage,
         CancellationToken cancellationToken = default);
 
-    /// <summary>Soft-deletes a recurring job by marking it as deleted by the user.</summary>
+    /// <summary>Removes a recurring job definition. Jobs it already enqueued are not affected. (To keep the definition but stop it from being re-created from configuration, use <see cref="ForceDeleteRecurringJobAsync"/>.)</summary>
     /// <param name="recurringJobId">The unique identifier of the recurring job.</param>
     /// <param name="cancellationToken">Token to cancel the operation.</param>
     Task DeleteRecurringJobAsync(
@@ -59,7 +59,7 @@ public interface IRecurringStorage
         bool enabled,
         CancellationToken cancellationToken = default);
 
-    /// <summary>Permanently deletes a recurring job definition and all related records.</summary>
+    /// <summary>Soft-deletes a recurring job: marks it as deleted by the user and disabled, and deletes the jobs it created. The definition stays so configuration cannot resurrect it; <see cref="RestoreRecurringJobAsync"/> undoes it.</summary>
     /// <param name="recurringJobId">The unique identifier of the recurring job.</param>
     /// <param name="cancellationToken">Token to cancel the operation.</param>
     Task ForceDeleteRecurringJobAsync(

@@ -92,7 +92,7 @@ await foreach (var item in source.WithProgress(_context, ct))
 }
 ```
 
-Automatically calculates percentage based on source position. The source must implement `IAsyncEnumerable<T>` with known count.
+Reports the percentage of items already yielded. The extension **reads the whole source into memory first** (it needs the total count), so use it for collections that fit in memory, not for very large or unbounded streams.
 
 ### IEnumerable with Progress
 
@@ -103,7 +103,7 @@ foreach (var item in items.WithProgress(_context))
 }
 ```
 
-Fire-and-forget progress for synchronous collections.
+Fire-and-forget progress for synchronous collections: the sequence is materialized first to know its size, and the progress call is not awaited, so a storage error while reporting is not surfaced to the job.
 
 ---
 
@@ -179,23 +179,19 @@ public record SyncCheckpoint(long LastProcessedId, int TotalBatches);
 
 ---
 
-## Accessing Context Outside the Job (`IJobContextAccessor`)
+## Using the Context From Other Services
 
-When building cross-cutting infrastructure services, telemetry enrichers, or database interceptors executed within the job scope, inject `IJobContextAccessor` instead of `IJobContext` directly:
+`IJobContext` is registered as a **scoped** service, and every job runs in its own scope. So any service that is resolved inside that scope (for example an application service injected into your job) can take `IJobContext` in its constructor:
 
 ```csharp
-public sealed class CurrentJobAuditEnricher(IJobContextAccessor contextAccessor)
+public sealed class AuditTrail(IJobContext context)
 {
-    public string? GetCurrentJobCorrelationId()
-    {
-        // Safe even if invoked outside an active job scope (returns null)
-        return contextAccessor.Context?.JobId.Value;
-    }
+    public string CorrelationId => context.JobId.Value.ToString();
 }
 ```
 
-- `IJobContextAccessor` is registered as `Scoped` and exposes `.Context` which holds the active `IJobContext` (or `null` if resolved outside an execution scope).
-- Injecting `IJobContext` directly outside a job's `ExecuteAsync` invocation will throw an `InvalidOperationException`. Use `IJobContextAccessor` whenever context resolution may be optional.
+- Resolving `IJobContext` outside a job execution (from a web request, a singleton, a hosted service) throws an `InvalidOperationException` ("IJobContext is only available during job execution").
+- There is no public "optional accessor". If a service must work both inside and outside jobs, pass the values it needs explicitly, or read them from the structured logging scope NexJob opens around every execution (`NexJob.JobId`, `NexJob.JobType`, `NexJob.Queue`, `NexJob.Attempt`, `NexJob.TraceParent`; see [OpenTelemetry](12-OpenTelemetry.md)).
 
 ---
 

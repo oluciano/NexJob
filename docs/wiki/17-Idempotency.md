@@ -95,9 +95,11 @@ Re-enqueue is rejected if the existing job is in any terminal state.
 
 ## DuplicateJobException
 
-Thrown when enqueue is rejected by the duplicate policy.
+Thrown (from `NexJob.Exceptions`) when enqueue is rejected by the duplicate policy. It is only thrown when the existing job has already reached a terminal state the policy forbids re-enqueueing; while the existing job is still active, the enqueue is deduplicated and returns its id instead.
 
 ```csharp
+using NexJob.Exceptions;
+
 try
 {
     await scheduler.EnqueueAsync<MyJob>(
@@ -107,7 +109,7 @@ try
 }
 catch (DuplicateJobException ex)
 {
-    // Existing job is still active or was completed with this key
+    // The existing job with this key already finished and the policy forbids a new one
     var existingJobId = ex.ExistingJobId;
     var policy = ex.Policy;
 }

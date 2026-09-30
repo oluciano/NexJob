@@ -65,12 +65,14 @@ This trigger registers with `IListenerRegistry` to report live connection states
 
 ## Message Contract
 
-The trigger expects messages with the following properties:
+The trigger reads the following from each message:
 
 - **Body:** The job input as a UTF-8 string (JSON).
 - **ApplicationProperties:**
-  - `nexjob.job_type`: Assembly-qualified name of the job type (required).
+  - `nexjob.job_type`: Assembly-qualified name of the job type. Optional when the subscriber sets `options.JobType` or registers the trigger with `AddNexJobAzureServiceBusTrigger<TJob>()`; the header wins when both are present. A message with neither can never become a job and is dead-lettered.
   - `traceparent`: W3C traceparent for distributed tracing (optional).
+
+The job idempotency key is the message's `MessageId`. A transient enqueue failure (storage or network error) abandons the message so Service Bus delivers it again (`MaxDeliveryCount` decides when it is dead-lettered).
 
 ## Broker Guarantees
 

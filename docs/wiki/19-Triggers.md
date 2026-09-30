@@ -1,6 +1,6 @@
 # External Triggers
 
-NexJob v2 supports external triggers — broker messages that automatically
+NexJob supports external triggers — broker messages that automatically
 enqueue NexJob jobs. This enables event-driven job scheduling from various message brokers.
 
 ---
@@ -11,7 +11,7 @@ Triggers follow a standard pipeline:
 `[broker] → trigger package → JobRecordFactory → IScheduler.EnqueueAsync → dispatcher`
 
 1. The **Trigger Package** consumes a message from the broker.
-2. It extracts the **Job Type** and **Trace Context** from headers/attributes.
+2. It resolves the **Job Type** (see [Which job runs](#which-job-runs-for-a-message)) and extracts the **Trace Context** from headers/attributes.
 3. It uses `JobRecordFactory` to build a `JobRecord` using the message body as input.
 4. It calls `IScheduler.EnqueueAsync` to persist the job.
 5. It **Acknowledge (Ack)** the message only after a successful enqueue.
@@ -20,11 +20,27 @@ Triggers follow a standard pipeline:
 
 ## Message Contract
 
-All triggers expect two headers/attributes in the broker message:
-- **`nexjob.job_type`**: Assembly-qualified name of the job type (e.g., `MyApp.Jobs.ProcessOrderJob, MyApp`).
-- **`traceparent`**: W3C trace context for distributed tracing (optional).
-
 The message **Body** is used as the job input. Since broker triggers are generic, the input type is always `string` (usually JSON). Your job handler should deserialize the body as needed.
+
+The optional **`traceparent`** header/attribute carries the W3C trace context for distributed tracing.
+
+### Which job runs for a message
+
+Most triggers resolve the job with the same three-step precedence, so publishers do not have to know NexJob types:
+
+1. The **`nexjob.job_type`** header/attribute of the message (assembly-qualified name, for example `MyApp.Jobs.ProcessOrderJob, MyApp`), if present.
+2. The **subscriber's configured job**: `options.JobType`, or the generic overload `Add{Broker}Trigger<TJob>()`, which sets it for you.
+3. Neither is present: the message can never become a job. It is treated as a permanent failure (see [Error handling](#error-handling)).
+
+| Trigger | Resolves the job from | Idempotency key |
+|---|---|---|
+| Kafka | header `nexjob.job_type`, then `options.JobType` | `kafka:{topic}:{partition}:{offset}` |
+| RabbitMQ | header `nexjob.job_type`, then `options.JobType` | `MessageId` (none when blank) |
+| Azure Service Bus | application property `nexjob.job_type`, then `options.JobType` | `MessageId` |
+| Google Pub/Sub | attribute `nexjob.job_type`, then `options.JobType` | message id |
+| AWS SQS | **configured only**: `options.JobName`, or `AddNexJobAwsSqsTrigger<TJob>()` (the message attributes are not consulted) | message id |
+| Salesforce Pub/Sub API | configured `options.JobType`, otherwise the built-in `SalesforceEventJob` | event id (replay id, hex, when absent) |
+| Salesforce Streaming | configured `options.JobType`, otherwise the built-in `SalesforceStreamingEventJob` | `{channel}:{eventId}` (`{channel}:{replayId}` when absent) |
 
 ---
 
@@ -32,7 +48,7 @@ The message **Body** is used as the job input. Since broker triggers are generic
 
 All NexJob triggers satisfy 5 core guarantees:
 1. **At-least-once delivery**: Messages are never silently dropped before enqueue.
-2. **Idempotency**: Uses the broker's native message ID as `idempotencyKey` to prevent duplicate jobs.
+2. **Idempotency**: Uses the broker's native message identity as `idempotencyKey` to prevent duplicate jobs (see the table above for what each broker uses).
 3. **Trace propagation**: Extracts `traceparent` from headers to maintain the trace across systems.
 4. **Signal after enqueue**: Enqueueing a job automatically signals the dispatcher (no manual wake-up needed).
 5. **Ack only after success**: Messages are acknowledged only after `IScheduler.EnqueueAsync` completes successfully.
@@ -58,6 +74,16 @@ builder.Services.AddNexJobAzureServiceBusTrigger(options =>
 });
 ```
 
+To run one job for every message regardless of the `nexjob.job_type` property, use the generic overload (or set `options.JobType`):
+
+```csharp
+builder.Services.AddNexJobAzureServiceBusTrigger<ProcessOrderJob>(options =>
+{
+    options.ConnectionString = "Endpoint=sb://...";
+    options.QueueOrTopicName = "orders";
+});
+```
+
 ---
 
 ## AWS SQS
@@ -72,6 +98,13 @@ Usage:
 using NexJob.Trigger.AwsSqs;
 
 builder.Services.AddNexJobAwsSqsTrigger(options =>
+{
+    options.QueueUrl = "https://sqs.us-east-1.amazonaws.com/123456789/my-queue";
+    options.JobName = typeof(ProcessOrderJob).AssemblyQualifiedName!; // SQS does not read a job type from the message
+});
+
+// Equivalent, and clearer: bind the trigger to one job type
+builder.Services.AddNexJobAwsSqsTrigger<ProcessOrderJob>(options =>
 {
     options.QueueUrl = "https://sqs.us-east-1.amazonaws.com/123456789/my-queue";
 });
@@ -151,8 +184,11 @@ builder.Services.AddNexJobGooglePubSubTrigger(options =>
 {
     options.ProjectId = "my-project";
     options.SubscriptionId = "my-subscription";
+    // options.JobType = typeof(ProcessOrderJob).AssemblyQualifiedName; // used when a message has no nexjob.job_type attribute
 });
 ```
+
+The generic overload `AddNexJobGooglePubSubTrigger<TJob>()` sets that fallback job type for you.
 
 ---
 

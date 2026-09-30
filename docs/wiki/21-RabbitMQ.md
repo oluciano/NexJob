@@ -32,9 +32,9 @@ Bind a queue directly to a job handler class (`IJob<string>`). The job is automa
 
 ```csharp
 // Program.cs
+builder.Services.AddNexJobPostgres(builder.Configuration.GetConnectionString("NexJobConnection")!); // or any other storage provider
 builder.Services.AddNexJob()
-    .UsePostgreSqlStorage(...)
-    .AddNexJobRabbitMqTrigger<ProcessOrderJob>(options =>
+    .AddRabbitMqTrigger<ProcessOrderJob>(options =>
     {
         options.HostName = builder.Configuration["RABBITMQ_HOST"] ?? "localhost";
         options.Port = 5672;
@@ -58,7 +58,7 @@ public sealed class ProcessOrderJob : IJob<string>
 ```
 
 #### Option B: Dynamic Message Header (`nexjob.job_type`)
-If multiple job types share the same queue, register the trigger without generic arguments. Each message must include the `nexjob.job_type` header (or have `options.JobType` configured):
+If multiple job types share the same queue, register the trigger without generic arguments. Each message carries a `nexjob.job_type` header with the assembly-qualified name of the target job. When a message has no such header, `options.JobType` (the fallback) is used; a message with neither can never become a job and is nacked without requeue (see *Inbound Guarantees* below):
 
 ```csharp
 builder.Services.AddNexJob()
@@ -66,6 +66,7 @@ builder.Services.AddNexJob()
     {
         options.HostName = "localhost";
         options.QueueName = "incoming-events";
+        // Fallback for messages without the header:
         // options.JobType = typeof(DefaultEventJob).AssemblyQualifiedName;
     });
 ```
@@ -103,8 +104,8 @@ The Producer allows applications to publish messages to RabbitMQ backed by NexJo
 
 ```csharp
 // Program.cs
+builder.Services.AddNexJobPostgres(builder.Configuration.GetConnectionString("NexJobConnection")!); // or any other storage provider
 builder.Services.AddNexJob()
-    .UsePostgreSqlStorage(...)
     .AddRabbitMqProducer(options =>
     {
         options.HostName = builder.Configuration["RABBITMQ_HOST"] 
@@ -112,7 +113,7 @@ builder.Services.AddNexJob()
             ?? "localhost";
         options.Port = 5672;
         options.UserName = builder.Configuration["RABBITMQ_USER"] ?? "guest";
-        options.Password = builder.Configuration["RABBITMQ_PASS"] ?? "guest";
+        options.Password = builder.Configuration["RABBITMQ_PASSWORD"] ?? "guest";
         options.DefaultExchange = "orders.events";
         options.ConfirmTimeout = TimeSpan.FromSeconds(5);
     });
@@ -120,7 +121,7 @@ builder.Services.AddNexJob()
 
 ### Publishing Messages
 
-Inject `IScheduler` into any service, controller, or handler:
+Inject `IScheduler` into any service, controller, or handler. Set `messageId:` when you publish: the consuming NexJob trigger uses it to deduplicate redeliveries (see *Inbound Guarantees*).
 
 ```csharp
 public class OrderService(IScheduler scheduler)
@@ -133,6 +134,7 @@ public class OrderService(IScheduler scheduler)
             routingKey: "order.created",
             value: order,
             correlationId: order.OrderId.ToString(),
+            messageId: Guid.NewGuid().ToString(),
             cancellationToken: ct);
     }
 
@@ -173,22 +175,29 @@ public class OrderService(IScheduler scheduler)
 
 RabbitMQ channels in `NexJob.RabbitMQ` operate in **Publisher Confirms** mode (`ConfirmSelect()`).
 - When a message is published, the producer awaits an acknowledgment (ACK) from the RabbitMQ broker.
-- If the broker returns a NACK or the operation times out, the producer throws an exception, and NexJob retries the job using exponential backoff.
+- If the broker returns a NACK or the operation times out, the producer throws an exception, and NexJob retries the job according to its retry policy.
 - This eliminates silent message loss on unroutable or unpersisted messages.
 
 ---
 
 ## 4. Configuration & 12-Factor App (Docker / Kubernetes)
 
-`NexJob.RabbitMQ` natively supports configuration from `appsettings.json` or environment variables:
+`NexJob.RabbitMQ` is configured through the `Action<...Options>` delegates shown above. It does not read a `NexJob:RabbitMQ` section or any `RABBITMQ_*` environment variable by itself; read the values from the configuration source you prefer and assign them (environment variables are available through `builder.Configuration` with the default host builders):
 
-| Variable | Description | Default |
-|---|---|---|
-| `RABBITMQ_HOST` | Hostname or IP address | `localhost` |
-| `RABBITMQ_PORT` | Port number | `5672` |
-| `RABBITMQ_USER` | Username | `guest` |
-| `RABBITMQ_PASSWORD` | Password | `guest` |
-| `RABBITMQ_VIRTUAL_HOST` | Virtual host | `/` |
+```csharp
+builder.Services.AddNexJob()
+    .AddRabbitMqTrigger(options =>
+    {
+        options.HostName = builder.Configuration["RABBITMQ_HOST"] ?? "localhost";
+        options.Port = int.TryParse(builder.Configuration["RABBITMQ_PORT"], out var port) ? port : 5672;
+        options.UserName = builder.Configuration["RABBITMQ_USER"] ?? "guest";
+        options.Password = builder.Configuration["RABBITMQ_PASSWORD"] ?? "guest";
+        options.VirtualHost = builder.Configuration["RABBITMQ_VIRTUAL_HOST"] ?? "/";
+        options.QueueName = "incoming-events";
+    });
+```
+
+Or bind a whole section: `.AddRabbitMqTrigger(options => builder.Configuration.GetSection("RabbitMQ").Bind(options))`.
 
 ---
 
@@ -196,7 +205,7 @@ RabbitMQ channels in `NexJob.RabbitMQ` operate in **Publisher Confirms** mode (`
 
 | Failure Scenario | NexJob Producer Behavior |
 |---|---|
-| **RabbitMQ Broker Down** | The job throws a connection/socket exception and triggers NexJob's retry policy with exponential backoff. Messages remain durable in NexJob storage. |
+| **RabbitMQ Broker Down** | The job throws a connection/socket exception and triggers NexJob's retry policy. Messages remain durable in NexJob storage. |
 | **Broker NACK** | The broker rejection throws `InvalidOperationException`, triggering retry. |
 | **Confirm Timeout** | Throws `TimeoutException`, triggering retry. |
 | **Retries Exhausted** | The message is dispatched to the Dead-Letter pipeline (`IDeadLetterHandler`) and surfaced on the Dashboard. |

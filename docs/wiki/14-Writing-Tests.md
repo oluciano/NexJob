@@ -14,7 +14,7 @@ NexJob follows a multi-layered testing strategy to ensure both speed and reliabi
 | **Distributed** | `*.ReliabilityTests.Distributed` | Cluster coordination, failover | N2 (Network/Cluster) | Multi-node |
 
 > **Case Study: Recurring Job Distributed Lock (N2 Distributed)**
-> A unit test (N1/N2) can verify that the code *calls* `TryAcquireLockAsync`. However, only a **Distributed Reliability Test** can verify that when 5 instances of NexJob start at the exact same millisecond, exactly one instance enqueues the recurring job while the other 4 log a "lock not acquired" message. This prevents double-firing in production clusters.
+> A unit test (N1/N2) can verify that the code *calls* `TryAcquireRecurringJobLockAsync`. However, only a **Distributed Reliability Test** can verify that when 5 instances of NexJob start at the exact same millisecond, exactly one instance enqueues the recurring job while the other 4 log a "lock not acquired" message. This prevents double-firing in production clusters.
 
 ### 1. Unit Tests (The Foundation)
 Target 100% logic coverage per class. Use mocks (`Moq`) for external dependencies.
@@ -64,7 +64,7 @@ public sealed class SendWelcomeEmailJobTests
 
 ## Integration Testing with InMemory Storage
 
-Test the full pipeline: enqueue → dispatch → execute → complete.
+The dispatcher, the recurring scheduler and the registration of configured recurring jobs are **hosted services**, so they only run inside a started host. `new ServiceCollection().BuildServiceProvider()` does not start them and no job would ever execute. Build a real host, start it, and wait on a signal from the job instead of sleeping.
 
 ```csharp
 public sealed class JobIntegrationTests
@@ -73,33 +73,39 @@ public sealed class JobIntegrationTests
     public async Task EnqueueAndExecute_CompletesSuccessfully()
     {
         // Arrange
-        var services = new ServiceCollection()
-            .AddNexJob() // InMemory by default
-            .AddNexJobJobs(typeof(TestJob).Assembly)
-            .AddSingleton<ITestService, FakeTestService>()
-            .BuildServiceProvider();
-
-        var scheduler = services.GetRequiredService<IScheduler>();
+        var executed = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var host = Host.CreateDefaultBuilder()
+            .ConfigureServices(services =>
+            {
+                services.AddNexJob(options => options.PollingInterval = TimeSpan.FromMilliseconds(50)); // InMemory by default
+                services.AddSingleton(executed);
+                services.AddTransient<TestJob>();
+            })
+            .Build();
+        await host.StartAsync();
 
         // Act
-        await scheduler.EnqueueAsync<TestJob>(cancellationToken: CancellationToken.None);
-
-        // Wait for dispatcher to process
-        await Task.Delay(500);
+        var scheduler = host.Services.GetRequiredService<IScheduler>();
+        await scheduler.EnqueueAsync<TestJob>();
 
         // Assert
-        var testService = (FakeTestService)services.GetRequiredService<ITestService>();
-        Assert.True(testService.WasExecuted);
+        (await executed.Task.WaitAsync(TimeSpan.FromSeconds(5))).Should().BeTrue();
+
+        await host.StopAsync();
     }
 }
 
-public sealed class TestJob : IJob
+public sealed class TestJob(TaskCompletionSource<bool> executed) : IJob
 {
-    private readonly ITestService _test;
-    public TestJob(ITestService test) => _test = test;
-    public async Task ExecuteAsync(CancellationToken ct) => await _test.ExecuteAsync(ct);
+    public Task ExecuteAsync(CancellationToken ct)
+    {
+        executed.TrySetResult(true);
+        return Task.CompletedTask;
+    }
 }
 ```
+
+`AddNexJob()` returns a `NexJobBuilder`, not an `IServiceCollection`: register your own services on `services` (as above) instead of chaining them after `AddNexJob()`. You can register jobs one by one with `AddTransient<TJob>()` or scan an assembly with `AddNexJobJobs(assembly)`.
 
 ---
 
@@ -109,21 +115,34 @@ public sealed class TestJob : IJob
 [Fact]
 public async Task EnqueueWithInput_PassesInputToJob()
 {
-    var services = new ServiceCollection()
-        .AddNexJob()
-        .AddNexJobJobs(typeof(ProcessorJob).Assembly)
-        .AddSingleton<IProcessor, FakeProcessor>()
-        .BuildServiceProvider();
+    var received = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+    using var host = Host.CreateDefaultBuilder()
+        .ConfigureServices(services =>
+        {
+            services.AddNexJob(options => options.PollingInterval = TimeSpan.FromMilliseconds(50));
+            services.AddSingleton(received);
+            services.AddTransient<ProcessorJob>();
+        })
+        .Build();
+    await host.StartAsync();
 
-    var scheduler = services.GetRequiredService<IScheduler>();
+    var scheduler = host.Services.GetRequiredService<IScheduler>();
+    await scheduler.EnqueueAsync<ProcessorJob, ProcessInput>(new ProcessInput(42));
 
-    var input = new ProcessInput(42);
-    await scheduler.EnqueueAsync<ProcessorJob, ProcessInput>(input, cancellationToken: CancellationToken.None);
+    Assert.Equal(42, await received.Task.WaitAsync(TimeSpan.FromSeconds(5)));
 
-    await Task.Delay(500);
+    await host.StopAsync();
+}
 
-    var processor = (FakeProcessor)services.GetRequiredService<IProcessor>();
-    Assert.Equal(42, processor.ProcessedValue);
+public sealed record ProcessInput(int Value);
+
+public sealed class ProcessorJob(TaskCompletionSource<int> received) : IJob<ProcessInput>
+{
+    public Task ExecuteAsync(ProcessInput input, CancellationToken ct)
+    {
+        received.TrySetResult(input.Value);
+        return Task.CompletedTask;
+    }
 }
 ```
 
@@ -131,27 +150,52 @@ public async Task EnqueueWithInput_PassesInputToJob()
 
 ## Testing Retries
 
+The default delay between attempts is 16 seconds or more, which would make a test crawl. Override `RetryDelayFactory` so retries are immediate:
+
 ```csharp
 [Fact]
 public async Task JobFailsThenRetries_SucceedsOnSecondAttempt()
 {
-    var fakeService = new FakeFlakyService { FailCount = 1 }; // Fails once
+    var succeeded = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+    using var host = Host.CreateDefaultBuilder()
+        .ConfigureServices(services =>
+        {
+            services.AddNexJob(options =>
+            {
+                options.MaxAttempts = 3;
+                options.PollingInterval = TimeSpan.FromMilliseconds(50);
+                options.RetryDelayFactory = _ => TimeSpan.FromMilliseconds(50);
+            });
+            services.AddSingleton(succeeded);
+            services.AddTransient<FlakyJob>();
+        })
+        .Build();
+    await host.StartAsync();
 
-    var services = new ServiceCollection()
-        .AddNexJob(options => options.MaxAttempts = 3)
-        .AddNexJobJobs(typeof(FlakyJob).Assembly)
-        .AddSingleton<IFlakyService>(fakeService)
-        .BuildServiceProvider();
+    await host.Services.GetRequiredService<IScheduler>().EnqueueAsync<FlakyJob>();
 
-    var scheduler = services.GetRequiredService<IScheduler>();
-    await scheduler.EnqueueAsync<FlakyJob>(cancellationToken: CancellationToken.None);
+    // Succeeds on attempt 2: the first attempt failed and was retried
+    Assert.Equal(2, await succeeded.Task.WaitAsync(TimeSpan.FromSeconds(5)));
 
-    // Wait for retries to complete
-    await Task.Delay(2000);
+    await host.StopAsync();
+}
 
-    Assert.Equal(2, fakeService.CallCount); // Called twice: fail + success
+public sealed class FlakyJob(IJobContext context, TaskCompletionSource<int> succeeded) : IJob
+{
+    public Task ExecuteAsync(CancellationToken ct)
+    {
+        if (context.Attempt == 1)
+        {
+            throw new InvalidOperationException("first attempt fails");
+        }
+
+        succeeded.TrySetResult(context.Attempt);
+        return Task.CompletedTask;
+    }
 }
 ```
+
+Count attempts with `IJobContext.Attempt`, not with a field on the job: a job is a transient service, so every attempt gets a new instance.
 
 ---
 
@@ -162,31 +206,48 @@ public async Task JobFailsThenRetries_SucceedsOnSecondAttempt()
 public async Task JobExhaustsRetries_InvokesDeadLetterHandler()
 {
     var handler = new TestDeadLetterHandler();
+    using var host = Host.CreateDefaultBuilder()
+        .ConfigureServices(services =>
+        {
+            services.AddNexJob(options =>
+            {
+                options.MaxAttempts = 2;
+                options.PollingInterval = TimeSpan.FromMilliseconds(50);
+                options.RetryDelayFactory = _ => TimeSpan.FromMilliseconds(50);
+            });
+            services.AddTransient<FailingJob>();
+            services.AddTransient<IDeadLetterHandler<FailingJob>>(_ => handler);
+        })
+        .Build();
+    await host.StartAsync();
 
-    var services = new ServiceCollection()
-        .AddNexJob(options => options.MaxAttempts = 2)
-        .AddNexJobJobs(typeof(FailingJob).Assembly)
-        .AddTransient<IDeadLetterHandler<FailingJob>, TestDeadLetterHandler>(_ => handler)
-        .BuildServiceProvider();
+    await host.Services.GetRequiredService<IScheduler>().EnqueueAsync<FailingJob>();
 
-    var scheduler = services.GetRequiredService<IScheduler>();
-    await scheduler.EnqueueAsync<FailingJob>(cancellationToken: CancellationToken.None);
-
-    await Task.Delay(1000);
-
+    await handler.Invoked.Task.WaitAsync(TimeSpan.FromSeconds(5));
     Assert.NotNull(handler.FailedJob);
     Assert.NotNull(handler.LastException);
+
+    await host.StopAsync();
 }
 
-private sealed class TestDeadLetterHandler : IDeadLetterHandler<FailingJob>
+public sealed class FailingJob : IJob
 {
+    public Task ExecuteAsync(CancellationToken ct) => throw new InvalidOperationException("always fails");
+}
+
+public sealed class TestDeadLetterHandler : IDeadLetterHandler<FailingJob>
+{
+    public TaskCompletionSource Invoked { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
     public JobRecord? FailedJob { get; private set; }
+
     public Exception? LastException { get; private set; }
 
-    public Task HandleAsync(JobRecord job, Exception ex, CancellationToken ct)
+    public Task HandleAsync(JobRecord failedJob, Exception lastException, CancellationToken ct)
     {
-        FailedJob = job;
-        LastException = ex;
+        FailedJob = failedJob;
+        LastException = lastException;
+        Invoked.TrySetResult();
         return Task.CompletedTask;
     }
 }
@@ -196,25 +257,29 @@ private sealed class TestDeadLetterHandler : IDeadLetterHandler<FailingJob>
 
 ## Testing Recurring Jobs
 
+Recurring jobs declared with `options.AddRecurringJob` are registered by a hosted service when the host starts, so start the host before looking at storage:
+
 ```csharp
 [Fact]
-public async Task RecurringJob_CreatesJobOnSchedule()
+public async Task RecurringJob_IsRegisteredOnStartup()
 {
-    var services = new ServiceCollection()
-        .AddNexJob(options =>
+    using var host = Host.CreateDefaultBuilder()
+        .ConfigureServices(services =>
         {
-            options.AddRecurringJob<TestJob>("test-recurring", "0 0 * * *");
+            services.AddNexJob(options => options.AddRecurringJob<TestJob>("test-recurring", "0 0 * * *"));
+            services.AddSingleton(new TaskCompletionSource<bool>());
+            services.AddTransient<TestJob>();
         })
-        .AddNexJobJobs(typeof(TestJob).Assembly)
-        .BuildServiceProvider();
+        .Build();
+    await host.StartAsync();
+    await Task.Delay(500); // let the registration service run
 
-    await Task.Delay(1000); // Let recurring scheduler register
+    var storage = host.Services.GetRequiredService<IStorageProvider>();
+    var recurring = await storage.GetRecurringJobsAsync();
 
-    // Verify recurring job was registered
-    var storage = services.GetRequiredService<IStorageProvider>();
-    var recurring = await storage.GetAllRecurringJobsAsync(CancellationToken.None);
+    Assert.Contains(recurring, r => r.RecurringJobId == "test-recurring");
 
-    Assert.Contains(recurring, r => r.Id == "test-recurring");
+    await host.StopAsync();
 }
 ```
 
@@ -226,22 +291,39 @@ public async Task RecurringJob_CreatesJobOnSchedule()
 [Fact]
 public async Task ContinueWith_ChildExecutesAfterParentSucceeds()
 {
-    var services = new ServiceCollection()
-        .AddNexJob()
-        .AddNexJobJobs(typeof(ParentJob).Assembly, typeof(ChildJob).Assembly)
-        .AddSingleton<ITracker, Tracker>()
-        .BuildServiceProvider();
+    var childRan = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+    using var host = Host.CreateDefaultBuilder()
+        .ConfigureServices(services =>
+        {
+            services.AddNexJob(options => options.PollingInterval = TimeSpan.FromMilliseconds(50));
+            services.AddSingleton(childRan);
+            services.AddTransient<ParentJob>();
+            services.AddTransient<ChildJob>();
+        })
+        .Build();
+    await host.StartAsync();
 
-    var scheduler = services.GetRequiredService<IScheduler>();
+    var scheduler = host.Services.GetRequiredService<IScheduler>();
+    var parentId = await scheduler.EnqueueAsync<ParentJob>();
+    await scheduler.ContinueWithAsync<ChildJob>(parentId);
 
-    var parentId = await scheduler.EnqueueAsync<ParentJob>(cancellationToken: CancellationToken.None);
-    await scheduler.ContinueWithAsync<ChildJob>(parentId, cancellationToken: CancellationToken.None);
+    Assert.True(await childRan.Task.WaitAsync(TimeSpan.FromSeconds(5)));
 
-    await Task.Delay(1000);
+    await host.StopAsync();
+}
 
-    var tracker = (Tracker)services.GetRequiredService<ITracker>();
-    Assert.True(tracker.ParentExecuted);
-    Assert.True(tracker.ChildExecuted);
+public sealed class ParentJob : IJob
+{
+    public Task ExecuteAsync(CancellationToken ct) => Task.CompletedTask;
+}
+
+public sealed class ChildJob(TaskCompletionSource<bool> childRan) : IJob
+{
+    public Task ExecuteAsync(CancellationToken ct)
+    {
+        childRan.TrySetResult(true);
+        return Task.CompletedTask;
+    }
 }
 ```
 
@@ -249,7 +331,8 @@ public async Task ContinueWith_ChildExecutesAfterParentSucceeds()
 
 ## Tips
 
-- Use `Task.Delay()` to wait for dispatcher — for production tests, consider a polling helper
+- Wait on a `TaskCompletionSource` that the job completes (with `WaitAsync(timeout)`) instead of sleeping for a fixed time
+- Lower `PollingInterval` and `RetryDelayFactory` in tests so nothing waits for the production defaults
 - InMemory storage is fast and sufficient for unit tests
 - Use Testcontainers for integration tests against real databases
 - Keep tests deterministic — avoid real time delays where possible
