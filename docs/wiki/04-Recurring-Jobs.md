@@ -98,6 +98,14 @@ builder.Services.AddNexJob(builder.Configuration, options =>
 
 **Rule:** The `Job` field must match the class name (not fully qualified). Input is deserialized using the job's `IJob<T>` input type.
 
+### What happens on every start
+
+The configuration is applied on **every start**, not only the first one: if you change the `Cron`, `Queue`, `Input` or `TimeZoneId` of an entry, the stored schedule follows the file after the next restart.
+
+- What an operator changed in the dashboard is kept: a cron override, a paused job and a deleted job stay as they are.
+- The first run of a job that is registered (or whose definition is re-applied) happens at its **next cron occurrence**. It does not fire immediately on start, so restarting the application never triggers every configured job at once.
+- An unknown `TimeZoneId` or an invalid `Cron` fails the registration of that entry only. The error is logged and nothing is stored for it.
+
 ---
 
 ## Concurrency Policy

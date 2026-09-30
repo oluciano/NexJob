@@ -34,6 +34,12 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`NexJob` Core — Recurring jobs from `appsettings.json` follow the configuration on every start (Issue #261)**:
+  - `RecurringJobRegistrar` used to skip an entry that already existed in storage, so changing a cron, queue or input in configuration had no effect after the first start. It now always upserts the definition; the storage keeps what an operator changed in the dashboard (cron override, paused, deleted).
+  - The first run is now the next cron occurrence, like a job registered from code. Before, `NextExecution` was set one second in the past, so every configured job fired immediately on the first registration.
+  - The time zone is resolved before anything is stored, so an invalid `TimeZoneId` fails that entry's registration with an error log instead of storing a job whose next run cannot be computed.
+  - **Behaviour change:** configured jobs no longer run once at startup.
+
 - **`NexJob.Kafka`, `NexJob.RabbitMQ`, `NexJob.Trigger.AzureServiceBus` — Transient enqueue failures no longer lose or dead-letter messages (Issue #265)**:
   - Enqueue failures are classified. **Permanent** ones (missing `nexjob.job_type`, malformed payload) can never succeed; **transient** ones (storage or network errors, timeouts) can.
   - Kafka used to commit the *next* record's offset after a failed enqueue when a dead-letter topic was configured, dead-lettering (and skipping) messages on any storage blip. It now retries the same record in place with a 1 s / 2 s / 5 s / ... / 30 s backoff and does not consume the next record meanwhile. A permanent failure goes to the dead-letter topic and is committed; without a topic it is logged at `Error` and committed so a poison message cannot block the partition (previously it was never committed and was redelivered forever).
