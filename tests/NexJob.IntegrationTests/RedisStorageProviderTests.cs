@@ -188,7 +188,7 @@ public sealed class RedisStorageProviderTests : StorageProviderTestsBase, IClass
 
     // ── Enqueue inserts hash and queue entry atomically (issue #239) ──────────
 
-    private static JobRecord NewEnqueueJob(string queue = "default", string? key = null, JobStatus status = JobStatus.Enqueued, DateTimeOffset? scheduledAt = null, JobId? parent = null) => new()
+    private static JobRecord NewEnqueueJob(string queue = "default", string? key = null, JobStatus status = JobStatus.Enqueued, DateTimeOffset? scheduledAt = null, JobId? parent = null, JobPriority priority = JobPriority.Normal) => new()
     {
         Id = new JobId(Guid.NewGuid()),
         JobType = "T",
@@ -201,6 +201,7 @@ public sealed class RedisStorageProviderTests : StorageProviderTestsBase, IClass
         Status = status,
         ScheduledAt = scheduledAt,
         ParentJobId = parent,
+        Priority = priority,
     };
 
     [Fact]
@@ -389,6 +390,108 @@ public sealed class RedisStorageProviderTests : StorageProviderTestsBase, IClass
 
         (await mux.GetDatabase().KeyExistsAsync($"nexjob:idempotency:{key}")).Should().BeTrue();
         second.JobId.Should().Be(first.Id);
+    }
+
+    // ── Released continuations are queued atomically on commit (issue #254) ───
+
+    private static async Task<JobId> StartParentAsync(RedisStorageProvider provider, string queue = "default")
+    {
+        await provider.EnqueueAsync(NewEnqueueJob(queue));
+        return (await provider.FetchNextAsync([queue]))!.Id;
+    }
+
+    private static Task CommitAsync(RedisStorageProvider provider, JobId id, bool succeeded) =>
+        provider.CommitJobResultAsync(id, new JobExecutionResult
+        {
+            Succeeded = succeeded,
+            Exception = succeeded ? null : new InvalidOperationException("boom"),
+            Logs = [],
+        });
+
+    [Fact]
+    public async Task CommitSuccess_ReleasesContinuation_ChildIsFetchable()
+    {
+        var (_, provider) = await ConnectAsync();
+        var parentId = await StartParentAsync(provider);
+        var child = NewEnqueueJob(status: JobStatus.AwaitingContinuation, parent: parentId);
+        await provider.EnqueueAsync(child);
+
+        await CommitAsync(provider, parentId, succeeded: true);
+
+        var fetched = await provider.FetchNextAsync(["default"]);
+        fetched.Should().NotBeNull("a released continuation must be reachable by the dispatcher");
+        fetched!.Id.Should().Be(child.Id);
+    }
+
+    [Fact]
+    public async Task CommitFailure_DoesNotReleaseContinuation()
+    {
+        var (mux, provider) = await ConnectAsync();
+        var parentId = await StartParentAsync(provider);
+        var child = NewEnqueueJob(status: JobStatus.AwaitingContinuation, parent: parentId);
+        await provider.EnqueueAsync(child);
+
+        await CommitAsync(provider, parentId, succeeded: false);
+
+        var db = mux.GetDatabase();
+        (await db.HashGetAsync($"nexjob:jobs:{child.Id.Value}", "status")).ToString().Should().Be("AwaitingContinuation");
+        (await db.SortedSetScoreAsync("nexjob:queue:default:z", child.Id.Value.ToString())).Should().BeNull();
+        (await provider.FetchNextAsync(["default"])).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task CommitSuccess_ManyChildren_NonDefaultQueueAndPriority_AllFetchable()
+    {
+        var (_, provider) = await ConnectAsync();
+        var parentId = await StartParentAsync(provider, "reports");
+        var children = Enumerable.Range(0, 3).Select(_ =>
+        {
+            return NewEnqueueJob("reports", status: JobStatus.AwaitingContinuation, parent: parentId, priority: JobPriority.High);
+        }).ToList();
+        foreach (var c in children)
+        {
+            await provider.EnqueueAsync(c);
+        }
+
+        await CommitAsync(provider, parentId, succeeded: true);
+
+        var fetchedIds = new List<JobId>();
+        for (var i = 0; i < 3; i++)
+        {
+            fetchedIds.Add((await provider.FetchNextAsync(["reports"]))!.Id);
+        }
+
+        fetchedIds.Should().BeEquivalentTo(children.Select(c => c.Id));
+    }
+
+    [Fact]
+    public async Task LegacyChildWithoutQueueScore_IsStillQueued()
+    {
+        var (mux, provider) = await ConnectAsync();
+        var parentId = await StartParentAsync(provider);
+        var child = NewEnqueueJob(status: JobStatus.AwaitingContinuation, parent: parentId);
+        await provider.EnqueueAsync(child);
+        await mux.GetDatabase().HashDeleteAsync($"nexjob:jobs:{child.Id.Value}", "queueScore");
+
+        await CommitAsync(provider, parentId, succeeded: true);
+
+        (await provider.FetchNextAsync(["default"]))!.Id.Should().Be(child.Id);
+    }
+
+    [Fact]
+    public async Task ChildNoLongerAwaiting_IsNotQueued()
+    {
+        var (mux, provider) = await ConnectAsync();
+        var parentId = await StartParentAsync(provider);
+        var child = NewEnqueueJob(status: JobStatus.AwaitingContinuation, parent: parentId);
+        await provider.EnqueueAsync(child);
+        var db = mux.GetDatabase();
+        await db.HashSetAsync($"nexjob:jobs:{child.Id.Value}", "status", "Failed");
+
+        await CommitAsync(provider, parentId, succeeded: true);
+
+        (await db.SortedSetScoreAsync("nexjob:queue:default:z", child.Id.Value.ToString())).Should().BeNull();
+        (await db.HashGetAsync($"nexjob:jobs:{child.Id.Value}", "status")).ToString().Should().Be("Failed");
     }
 
     private static async Task<Guid> CreateSucceededJobAsync(RedisStorageProvider provider)

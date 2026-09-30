@@ -152,14 +152,27 @@ public sealed class RedisStorageProvider : IStorageProvider
           redis.call('HSET', jobKey, 'status', 'Succeeded', 'completedAt', ARGV[3], 'heartbeatAt', '')
           redis.call('HDEL', 'nexjob:processing', ARGV[1])
 
-          -- Enqueue continuations
+          -- Release continuations: move each still-waiting child into its queue in the same atomic step
           local contKey = 'nexjob:continuations:' .. ARGV[1]
           local continuations = redis.call('SMEMBERS', contKey)
           for i = 1, #continuations do
             local childId = continuations[i]
-            redis.call('HSET', 'nexjob:jobs:' .. childId, 'status', 'Enqueued', 'scheduledAt', '')
-            -- Requeue the child (simple approach: add back to queue with priority)
+            local childKey = 'nexjob:jobs:' .. childId
+            if redis.call('HGET', childKey, 'status') == 'AwaitingContinuation' then
+              redis.call('HSET', childKey, 'status', 'Enqueued', 'scheduledAt', '')
+              local score = tonumber(redis.call('HGET', childKey, 'queueScore'))
+              if not score then
+                -- Legacy child written before queueScore existed: derive it from priority and now
+                score = (tonumber(redis.call('HGET', childKey, 'priority')) or 3) * 10000000000000 + tonumber(ARGV[9])
+              end
+              local queue = redis.call('HGET', childKey, 'queue')
+              if not queue or queue == '' then
+                queue = 'default'
+              end
+              redis.call('ZADD', 'nexjob:queue:' .. queue .. ':z', score, childId)
+            end
           end
+          redis.call('DEL', contKey)
 
           -- Update recurring job if applicable
           if ARGV[4] ~= '' then
@@ -986,6 +999,7 @@ public sealed class RedisStorageProvider : IStorageProvider
             result.Exception?.Message ?? string.Empty,
             result.Exception?.StackTrace ?? string.Empty,
             result.RetryAt?.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture) ?? "0",
+            DateTimeOffset.UtcNow.UtcTicks.ToString(CultureInfo.InvariantCulture),
         };
 
         // Execute atomic state transitions via Lua script
@@ -1478,6 +1492,7 @@ public sealed class RedisStorageProvider : IStorageProvider
         new("schemaVersion", job.SchemaVersion),
         new("queue", job.Queue),
         new("priority", (int)job.Priority),
+        new("queueScore", QueueScore((int)job.Priority, job.CreatedAt).ToString("R", CultureInfo.InvariantCulture)),
         new("status", job.Status.ToString()),
         new("idempotencyKey", job.IdempotencyKey ?? string.Empty),
         new("attempts", job.Attempts),
