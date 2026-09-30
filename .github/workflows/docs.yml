@@ -48,8 +48,6 @@ jobs:
       - name: Build the site (strict mode, a broken link fails the build)
         run: mkdocs build
 
-      - uses: actions/configure-pages@v5
-
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site
