@@ -187,6 +187,11 @@ internal sealed class JobDispatcherService : BackgroundService
                             {
                                 await _executor.ExecuteJobAsync(job, stoppingToken).ConfigureAwait(false);
                             }
+                            catch (Exception ex)
+                            {
+                                // Unhandled storage or pipeline errors must not become unobserved task exceptions.
+                                _logger.LogError(ex, "Unhandled error while executing job {JobId}", job.Id);
+                            }
                             finally
                             {
                                 workerSlots.Release();
