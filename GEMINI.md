@@ -242,3 +242,12 @@ Only valid reason to change a test: behavior was explicitly changed by the archi
 If changed: add comment `// Behavior changed in vX.Y: <reason>`.
 
 800 tests that can be rewritten on demand are worth less than 10 that cannot.
+
+---
+
+## Lessons From Releases (append one line per lesson)
+
+- **v5.6.0 — Search every test project before changing behaviour.** When a change alters what a test pins, grep the old value across *all* `tests/` projects, including `*.IntegrationTests`, not just the unit tests you run locally; a missed integration test is what turned CI red.
+- **v5.6.0 — Compile and run the code you put in the docs.** Wiki and README snippets drifted for releases (phantom APIs, examples that never executed). Build new snippets in a throwaway project against the real packages before committing them.
+- **v5.6.0 — Verify a claim in the code before writing it into an issue or a doc.** One issue was opened on an unverified assumption about how other providers behave and had to be closed; grep every provider first.
+- **v5.6.0 — Two-node/statics in tests.** Test helpers with `static` state (for example a recording dead-letter handler) race when provider test classes run in parallel; keep such state per test or per host.
