@@ -4,7 +4,7 @@ Breaking changes, API updates, and schema migration between NexJob versions.
 
 ## v5.5.0 → v5.6.0
 
-> The v5.6.0 entries are listed here as the release is prepared; the [Changelog](../../CHANGELOG.md) is the complete list.
+> This section covers what to check when upgrading; the [Changelog](../../CHANGELOG.md) is the complete list of changes.
 
 ### Behaviour changes to check before upgrading
 

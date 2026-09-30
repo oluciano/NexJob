@@ -80,8 +80,8 @@ This trigger satisfies all 5 NexJob trigger guarantees adapted for Service Bus:
 
 1. **At-least-once delivery** — messages are never lost before enqueue. Uses PeekLock mode.
 2. **Lock renewal** — messages stay locked while processing. The SDK handles lock renewal automatically.
-3. **Explicit ack** — messages completed (`CompleteAsync`) only after `EnqueueAsync` succeeds.
-4. **Dead-letter on failure** — failed enqueues result in `AbandonAsync`, eventually routing to DLQ after max delivery count.
+3. **Explicit ack** — messages completed (`CompleteMessageAsync`) only after `EnqueueAsync` succeeds.
+4. **Dead-letter on failure** — a transient enqueue failure abandons the message (`AbandonMessageAsync`) so it is delivered again and Service Bus routes it to the DLQ after the max delivery count; a message that can never be enqueued (no job type, malformed) is dead-lettered immediately.
 5. **Graceful shutdown** — `CancellationToken` respected, processor stops accepting new messages and waits for in-flight ones.
 
 ## Trace Propagation

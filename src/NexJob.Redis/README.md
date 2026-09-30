@@ -46,14 +46,14 @@ builder.Services.AddNexJobRedis(multiplexer);
 
 ## Distributed Throttling
 
-When scaling workers across multiple server instances or containers, in-memory rate limits only throttle per process. You can enable global, cluster-wide rate limiting with `AddNexJobDistributedThrottle`:
+`[Throttle]` limits how many jobs run **concurrently** per named resource. By default that limit applies per process; when you scale workers across several instances or containers you can enforce it cluster-wide with `AddNexJobDistributedThrottle`:
 
 ```csharp
 builder.Services.AddNexJobRedis("localhost:6379")
     .AddNexJobDistributedThrottle();
 ```
 
-Any job decorated with `[Throttle("external-api", 50, ThrottleWindow.PerMinute)]` will automatically enforce a strict global Redis rate limit across all worker nodes.
+Any job decorated with `[Throttle("external-api", maxConcurrent: 50)]` then runs at most 50 at a time across all worker nodes. Each running job holds an expiring entry that its node keeps refreshing, so slots left behind by a crashed node are reclaimed automatically (after three `HeartbeatInterval` periods); `DistributedThrottleTtl` caps how long one job may hold a slot. This is a concurrency limit, not a rate (per-minute) limit.
 
 ---
 
@@ -83,7 +83,8 @@ builder.Services.AddNexJob(options =>
 - **Microsecond Latency:** Ultra-fast job enqueue and dispatch leveraging in-memory data structures.
 - **Server-Side Lua Scripts:** All complex state transitions (dequeuing, state commits, retry rescheduling) run atomically inside Redis, preventing race conditions.
 - **Priority Queues:** Implemented using Redis Sorted Sets (`ZSET`) ordered by job priority and schedule timestamp.
-- **Global Distributed Throttle:** Native sliding window rate limiting across multiple hosts.
+- **Global Distributed Throttle:** Cluster-wide `[Throttle]` concurrency limits with crash-safe, expiring slots.
+- **Job Index:** A sorted-set index of all jobs serves dashboard lists, metrics and retention without scanning the keyspace; jobs that already exist are indexed once, on first use.
 - **Runtime Settings Store:** Hot-reloads queue concurrency and pause states from Redis hash keys.
 
 ---

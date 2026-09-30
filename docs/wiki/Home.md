@@ -149,4 +149,4 @@ See [Getting Started](01-Getting-Started.md) for a complete walkthrough.
 
 ---
 
-**v5.5.0** · [Changelog](../../CHANGELOG.md) · [GitHub](https://github.com/oluciano/NexJob)
+**v5.6.0** · [Changelog](../../CHANGELOG.md) · [GitHub](https://github.com/oluciano/NexJob)
