@@ -574,6 +574,104 @@ public sealed class RedisStorageProviderTests : StorageProviderTestsBase, IClass
         (await provider.FetchNextAsync(["q"]))!.Id.Should().Be(low.Id);
     }
 
+    // ── Metrics without scanning every job hash (issue #262) ──────────────────
+
+    private static async Task<JobId> EnqueueAndFetchAsync(RedisStorageProvider provider, string queue)
+    {
+        await provider.EnqueueAsync(NewEnqueueJob(queue));
+        return (await provider.FetchNextAsync([queue]))!.Id;
+    }
+
+    [Fact]
+    public async Task Metrics_MatchAMixedSetOfJobs()
+    {
+        var (_, provider) = await ConnectAsync();
+        await provider.EnqueueAsync(NewEnqueueJob("a"));
+        await provider.EnqueueAsync(NewEnqueueJob("a"));
+        await EnqueueAndFetchAsync(provider, "b");
+        await provider.EnqueueAsync(NewEnqueueJob("a", status: JobStatus.Scheduled, scheduledAt: DateTimeOffset.UtcNow.AddHours(1)));
+        await CommitAsync(provider, await EnqueueAndFetchAsync(provider, "c"), succeeded: true);
+        var failedId = await EnqueueAndFetchAsync(provider, "c");
+        await CommitAsync(provider, failedId, succeeded: false);
+
+        var metrics = await provider.GetMetricsAsync();
+        var queues = (await provider.GetQueueMetricsAsync()).ToDictionary(q => q.Queue, StringComparer.Ordinal);
+
+        metrics.Enqueued.Should().Be(2);
+        metrics.Processing.Should().Be(1);
+        metrics.Scheduled.Should().Be(1);
+        metrics.Succeeded.Should().Be(1);
+        metrics.Failed.Should().Be(1);
+        metrics.RecentFailures.Should().ContainSingle().Which.Id.Should().Be(failedId);
+        queues["a"].Enqueued.Should().Be(2);
+        queues["a"].Processing.Should().Be(0);
+        queues["b"].Enqueued.Should().Be(0);
+        queues["b"].Processing.Should().Be(1, "a queue that only has a running job must still be listed");
+    }
+
+    [Fact]
+    public async Task Metrics_FollowRequeueDeleteAndPurge()
+    {
+        var (_, provider) = await ConnectAsync();
+        var failedToRequeue = await EnqueueAndFetchAsync(provider, "q");
+        await CommitAsync(provider, failedToRequeue, succeeded: false);
+        var failedToDelete = await EnqueueAndFetchAsync(provider, "q");
+        await CommitAsync(provider, failedToDelete, succeeded: false);
+        await CommitAsync(provider, await EnqueueAndFetchAsync(provider, "q"), succeeded: true);
+        await CommitAsync(provider, await EnqueueAndFetchAsync(provider, "q"), succeeded: true);
+        (await provider.GetMetricsAsync()).Failed.Should().Be(2);
+
+        await provider.RequeueJobAsync(failedToRequeue);
+        var afterRequeue = await provider.GetMetricsAsync();
+        afterRequeue.Failed.Should().Be(1, "a requeued job is no longer failed");
+        afterRequeue.Enqueued.Should().Be(1);
+
+        await provider.DeleteJobAsync(failedToDelete);
+        (await provider.GetMetricsAsync()).Failed.Should().Be(0);
+
+        await Task.Delay(200);
+        await provider.PurgeJobsAsync(new RetentionPolicy { RetainSucceeded = TimeSpan.FromMilliseconds(50) });
+        (await provider.GetMetricsAsync()).Succeeded.Should().Be(0, "purged jobs leave the counts");
+    }
+
+    [Fact]
+    public async Task Metrics_OnEmptyStore_AreZero()
+    {
+        var (_, provider) = await ConnectAsync();
+
+        var metrics = await provider.GetMetricsAsync();
+
+        (metrics.Enqueued + metrics.Processing + metrics.Scheduled + metrics.Succeeded + metrics.Failed).Should().Be(0);
+        metrics.RecentFailures.Should().BeEmpty();
+        (await provider.GetQueueMetricsAsync()).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task QueueMetrics_QueueNameWithColons_IsReportedIntact()
+    {
+        var (_, provider) = await ConnectAsync();
+        await provider.EnqueueAsync(NewEnqueueJob("team:billing:high"));
+
+        var queues = await provider.GetQueueMetricsAsync();
+
+        queues.Should().ContainSingle().Which.Queue.Should().Be("team:billing:high");
+        queues[0].Enqueued.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Metrics_DoNotScanJobHashes_LegacyFinishedJobsWithoutStatusSetsAreNotCounted()
+    {
+        var (mux, provider) = await ConnectAsync();
+        await mux.GetDatabase().HashSetAsync(
+            $"nexjob:jobs:{Guid.NewGuid()}",
+            [new("status", "Failed"), new("queue", "legacy"), new("completedAt", DateTimeOffset.UtcNow.ToString("O"))]);
+
+        var metrics = await provider.GetMetricsAsync();
+
+        metrics.Failed.Should().Be(0, "counts come from the status sets, not from reading every job hash");
+        metrics.RecentFailures.Should().BeEmpty();
+    }
+
     private static async Task<Guid> CreateSucceededJobAsync(RedisStorageProvider provider)
     {
         var job = new JobRecord

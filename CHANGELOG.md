@@ -27,6 +27,11 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`NexJob.Redis` — Metrics no longer scan every job hash (Issue #262, part 1)**:
+  - `GetMetricsAsync` and `GetQueueMetricsAsync` (run every 15 s by each node's heartbeat and on every health probe) previously read the whole job keyspace. They now derive counts from structures that already exist: queue sorted sets (Enqueued), `nexjob:processing` (Processing), `nexjob:scheduled` (Scheduled), plus two new sorted sets, `nexjob:status:Succeeded` and `nexjob:status:Failed`, maintained by every path that finishes, deletes, purges or requeues a job. Recent failures come from the Failed set.
+  - **Upgrade note:** jobs that finished before this version are not in the new sets, so `Succeeded`/`Failed` totals start at 0 and grow as jobs finish; older jobs drop out of nothing (they are simply not counted) and disappear from the store through normal retention. Enqueued, Processing and Scheduled are exact immediately.
+  - Dashboard list queries (`GetJobsAsync` and similar) still scan; that is tracked for part 2.
+
 - **`NexJob` Core — Recurring jobs fire once per occurrence and an invalid time zone no longer causes an enqueue storm (Issue #260)**:
   - `RecurringJobSchedulerService` re-reads the recurring job after taking the lock and only fires it if it is still due, so a second instance holding a stale due list no longer fires an occurrence another instance already fired.
   - The next execution is now computed before the job is enqueued. An unresolvable time zone or invalid cron logs an error and enqueues nothing, instead of enqueuing the job on every polling cycle.
