@@ -27,6 +27,10 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **All providers — Batch acknowledgment releases continuations (Issue #257)**:
+  - `AcknowledgeAsync` and `AcknowledgeBatchAsync` now move every child waiting on the acknowledged parent from `AwaitingContinuation` to `Enqueued` in InMemory, PostgreSQL, SQL Server, MongoDB and Redis (SQL providers do it in the same transaction; Redis in the same Lua script). With `EnableBatchAcknowledgment = true`, `ContinueWith` children now run.
+  - The startup warning and the documented limitation from the previous step are removed.
+
 - **`NexJob` Core — `EnableBatchAcknowledgment` limitation with continuations is documented and warned about (Issue #257, documentation step)**:
   - Jobs acknowledged in a batch do not release their `ContinueWith` children. The wiki (`05-Continuations.md`, `11-Configuration-Reference.md`) and the option's XML documentation now say so, and `JobDispatcherService` logs one warning at startup when the option is enabled.
   - The provider-side fix (releasing children from `AcknowledgeAsync`/`AcknowledgeBatchAsync`) is still open in #257.

@@ -63,11 +63,9 @@ To handle this, either:
 
 ---
 
-## Batch Acknowledgment Does Not Release Continuations
+## Batch Acknowledgment
 
-With `EnableBatchAcknowledgment = true`, successful jobs are acknowledged in asynchronous batches, and that path does **not** release continuations: a child enqueued with `ContinueWith` stays in `AwaitingContinuation` and never runs.
-
-If any of your jobs has continuations, leave `EnableBatchAcknowledgment` off (the default). NexJob logs a warning at startup when the option is on. Support in the batch path is tracked in issue #257.
+`EnableBatchAcknowledgment = true` releases continuations exactly like the default path: when a parent is acknowledged in a batch, every child waiting on it becomes runnable in the same operation. (Before v5.6 the batch path skipped this and children stayed in `AwaitingContinuation`.)
 
 ---
 

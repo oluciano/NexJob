@@ -202,6 +202,7 @@ public sealed class MongoStorageProvider : IStorageProvider
             .Unset(d => d.CheckpointJson);
 
         await _jobs.UpdateOneAsync(ById(jobId), update, cancellationToken: cancellationToken).ConfigureAwait(false);
+        await ReleaseContinuationsAsync([jobId], cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -226,6 +227,7 @@ public sealed class MongoStorageProvider : IStorageProvider
             .Unset(d => d.CheckpointJson);
 
         await _jobs.UpdateManyAsync(filter, update, cancellationToken: cancellationToken).ConfigureAwait(false);
+        await ReleaseContinuationsAsync(jobIds, cancellationToken).ConfigureAwait(false);
     }
 
     // ── SetFailedAsync ────────────────────────────────────────────────────────
@@ -994,6 +996,20 @@ public sealed class MongoStorageProvider : IStorageProvider
         };
 
         return await _jobs.FindOneAndUpdateAsync(filter, update, options, cancellationToken).ConfigureAwait(false);
+    }
+
+    // A parent acknowledged outside CommitJobResultAsync must still release its continuations.
+    private async Task ReleaseContinuationsAsync(IEnumerable<JobId> parentIds, CancellationToken cancellationToken)
+    {
+        var filter = Builders<JobDocument>.Filter.And(
+            Builders<JobDocument>.Filter.Eq(d => d.Status, JobStatus.AwaitingContinuation),
+            Builders<JobDocument>.Filter.In(d => d.ParentJobId, parentIds.Select(id => (JobId?)id)));
+
+        var update = Builders<JobDocument>.Update
+            .Set(d => d.Status, JobStatus.Enqueued)
+            .Unset(d => d.ScheduledAt);
+
+        await _jobs.UpdateManyAsync(filter, update, cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
     private async Task PromoteDueScheduledJobsAsync(DateTimeOffset now, CancellationToken ct)

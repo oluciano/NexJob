@@ -317,13 +317,26 @@ public sealed class PostgresStorageProvider : IStorageProvider, IDisposable, IAs
     {
         await using var conn = Open();
         await conn.OpenAsync(cancellationToken);
+        await using var tx = await conn.BeginTransactionAsync(cancellationToken);
         await conn.ExecuteAsync(
             """
             UPDATE nexjob_jobs
             SET status = 'Succeeded', completed_at = NOW(), heartbeat_at = NULL, checkpoint_json = NULL
             WHERE id = @id
             """,
-            new { id = jobId.Value });
+            new { id = jobId.Value },
+            transaction: tx);
+
+        // A parent acknowledged outside CommitJobResultAsync must still release its continuations.
+        await conn.ExecuteAsync(
+            """
+            UPDATE nexjob_jobs
+            SET status = 'Enqueued', scheduled_at = NULL
+            WHERE parent_job_id = @id AND status = 'AwaitingContinuation'
+            """,
+            new { id = jobId.Value },
+            transaction: tx);
+        await tx.CommitAsync(cancellationToken);
     }
 
     /// <inheritdoc/>
@@ -342,6 +355,7 @@ public sealed class PostgresStorageProvider : IStorageProvider, IDisposable, IAs
 
         await using var conn = Open();
         await conn.OpenAsync(cancellationToken);
+        await using var tx = await conn.BeginTransactionAsync(cancellationToken);
         var idList = jobIds.Select(j => j.Value).ToArray();
 
         await conn.ExecuteAsync(
@@ -350,7 +364,18 @@ public sealed class PostgresStorageProvider : IStorageProvider, IDisposable, IAs
             SET status = 'Succeeded', completed_at = NOW(), heartbeat_at = NULL, checkpoint_json = NULL
             WHERE id = ANY(@Ids)
             """,
-            new { Ids = idList });
+            new { Ids = idList },
+            transaction: tx);
+
+        await conn.ExecuteAsync(
+            """
+            UPDATE nexjob_jobs
+            SET status = 'Enqueued', scheduled_at = NULL
+            WHERE parent_job_id = ANY(@Ids) AND status = 'AwaitingContinuation'
+            """,
+            new { Ids = idList },
+            transaction: tx);
+        await tx.CommitAsync(cancellationToken);
     }
 
     // ── SetFailedAsync ────────────────────────────────────────────────────────

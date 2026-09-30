@@ -696,6 +696,101 @@ public abstract class StorageProviderTestsBase
 
     // ── CommitJobResultAsync ────────────────────────────────────────────────────
 
+    // ── Acknowledge releases continuations (issue #257) ───────────────────────
+
+    private static async Task<JobRecord> StartProcessingAsync(IJobStorage storage)
+    {
+        await storage.EnqueueAsync(MakeJob());
+        return (await storage.FetchNextAsync(["default"]))!;
+    }
+
+    private static async Task<JobRecord> AddChildAsync(IJobStorage storage, JobRecord parent)
+    {
+        var child = MakeJob(status: JobStatus.AwaitingContinuation, parentJobId: parent.Id);
+        await storage.EnqueueAsync(child);
+        return child;
+    }
+
+    [Fact]
+    public async Task AcknowledgeAsync_ReleasesContinuationChild()
+    {
+        var (storage, _, _, _) = await CreateStorageAsync();
+        var parent = await StartProcessingAsync(storage);
+        var child = await AddChildAsync(storage, parent);
+
+        await storage.AcknowledgeAsync(parent.Id);
+
+        var fetched = await storage.FetchNextAsync(["default"]);
+        fetched.Should().NotBeNull("a child of an acknowledged parent must become runnable");
+        fetched!.Id.Should().Be(child.Id);
+    }
+
+    [Fact]
+    public async Task AcknowledgeBatchAsync_ReleasesChildrenOfEveryParent_AndIgnoresParentsWithoutChildren()
+    {
+        var (storage, _, _, _) = await CreateStorageAsync();
+        var parentA = await StartProcessingAsync(storage);
+        var parentB = await StartProcessingAsync(storage);
+        var parentC = await StartProcessingAsync(storage);
+        var childrenIds = new List<JobId>
+        {
+            (await AddChildAsync(storage, parentA)).Id,
+            (await AddChildAsync(storage, parentA)).Id,
+            (await AddChildAsync(storage, parentB)).Id,
+        };
+
+        await storage.AcknowledgeBatchAsync([parentA.Id, parentB.Id, parentC.Id]);
+
+        var fetchedIds = new List<JobId>();
+        for (var i = 0; i < 3; i++)
+        {
+            fetchedIds.Add((await storage.FetchNextAsync(["default"]))!.Id);
+        }
+
+        fetchedIds.Should().BeEquivalentTo(childrenIds);
+        (await storage.FetchNextAsync(["default"])).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task AcknowledgeAsync_DoesNotReleaseChildrenOfAnotherParent()
+    {
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
+        var acknowledged = await StartProcessingAsync(storage);
+        var stillRunning = await StartProcessingAsync(storage);
+        var otherChild = await AddChildAsync(storage, stillRunning);
+
+        await storage.AcknowledgeAsync(acknowledged.Id);
+
+        (await dashboard.GetJobByIdAsync(otherChild.Id))!.Status.Should().Be(JobStatus.AwaitingContinuation);
+        (await storage.FetchNextAsync(["default"])).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task FailedParent_LeavesChildAwaiting()
+    {
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
+        var parent = await StartProcessingAsync(storage);
+        var child = await AddChildAsync(storage, parent);
+
+        await storage.SetFailedAsync(parent.Id, new InvalidOperationException("boom"), retryAt: null);
+
+        (await dashboard.GetJobByIdAsync(child.Id))!.Status.Should().Be(JobStatus.AwaitingContinuation);
+    }
+
+    [Fact]
+    public async Task Acknowledge_EmptyBatchAndUnknownIds_DoNotThrow()
+    {
+        var (storage, _, _, _) = await CreateStorageAsync();
+
+        var empty = () => storage.AcknowledgeBatchAsync([]);
+        var unknown = () => storage.AcknowledgeBatchAsync([new JobId(Guid.NewGuid()), new JobId(Guid.NewGuid())]);
+        var unknownSingle = () => storage.AcknowledgeAsync(new JobId(Guid.NewGuid()));
+
+        await empty.Should().NotThrowAsync();
+        await unknown.Should().NotThrowAsync();
+        await unknownSingle.Should().NotThrowAsync();
+    }
+
     [Fact]
     public async Task CommitJobResultAsync_Success_WithContinuation_EnqueuesContinuation()
     {

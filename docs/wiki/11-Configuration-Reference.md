@@ -51,8 +51,6 @@ builder.Services.AddNexJob(options =>
 
     // Enable high-throughput asynchronous batch acknowledgment
     // Aggregates completed job acknowledgments to cut database write roundtrips by 90%+
-    // Limitation: jobs acknowledged in a batch do NOT release their continuations (ContinueWith children stay
-    // AwaitingContinuation). Keep it off if any job has continuations. A warning is logged at startup when it is on.
     options.EnableBatchAcknowledgment = true; // Default: false
 
     // Custom retry delay factory

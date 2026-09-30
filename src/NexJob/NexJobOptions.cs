@@ -129,10 +129,6 @@ public sealed class NexJobOptions
     /// <summary>
     /// When enabled, completed jobs are acknowledged in asynchronous batches to reduce database write roundtrips.
     /// Defaults to <c>false</c> (synchronous commit on job completion).
-    /// <para>
-    /// Jobs acknowledged in a batch do not release their continuations: a child enqueued with
-    /// <c>ContinueWith</c> stays <c>AwaitingContinuation</c>. Leave this off if any job has continuations.
-    /// </para>
     /// </summary>
     public bool EnableBatchAcknowledgment { get; set; }
 

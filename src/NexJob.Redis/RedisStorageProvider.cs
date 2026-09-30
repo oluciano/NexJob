@@ -24,6 +24,35 @@ public sealed class RedisStorageProvider : IStorageProvider
     private const string QueueKeySuffix = ":z";
     private const string ServersAllKey = "nexjob:servers:all";
 
+    // Lua function shared by every script that finishes a job successfully: moves each child still waiting on the
+    // parent into its queue in the same atomic step and deletes the continuation set.
+    private const string ReleaseContinuationsFunction =
+        """
+        local function releaseContinuations(parentId, nowTicks)
+          local contKey = 'nexjob:continuations:' .. parentId
+          local continuations = redis.call('SMEMBERS', contKey)
+          for i = 1, #continuations do
+            local childId = continuations[i]
+            local childKey = 'nexjob:jobs:' .. childId
+            if redis.call('HGET', childKey, 'status') == 'AwaitingContinuation' then
+              redis.call('HSET', childKey, 'status', 'Enqueued', 'scheduledAt', '')
+              local score = tonumber(redis.call('HGET', childKey, 'queueScore'))
+              if not score then
+                -- Legacy child written before queueScore existed: derive it from priority and now
+                score = (tonumber(redis.call('HGET', childKey, 'priority')) or 3) * 10000000000000 + tonumber(nowTicks)
+              end
+              local queue = redis.call('HGET', childKey, 'queue')
+              if not queue or queue == '' then
+                queue = 'default'
+              end
+              redis.call('ZADD', 'nexjob:queue:' .. queue .. ':z', score, childId)
+            end
+          end
+          redis.call('DEL', contKey)
+        end
+
+        """;
+
     private static readonly JsonSerializerOptions JsonOpts = new();
 
     /// <summary>
@@ -128,25 +157,30 @@ public sealed class RedisStorageProvider : IStorageProvider
         return fetched
         """);
 
+    private static readonly LuaScript ReleaseContinuationsScript = LuaScript.Prepare(
+        ReleaseContinuationsFunction + "releaseContinuations(ARGV[1], ARGV[2])\nreturn 1");
+
     private static readonly LuaScript AcknowledgeBatchScript = LuaScript.Prepare(
-        """
+        ReleaseContinuationsFunction + """
         local nowIso = ARGV[1]
         local nowMs = tonumber(ARGV[2])
+        local nowTicks = ARGV[3]
 
-        for i = 3, #ARGV do
+        for i = 4, #ARGV do
           local id = ARGV[i]
           local jobKey = 'nexjob:jobs:' .. id
           redis.call('HSET', jobKey, 'status', 'Succeeded', 'completedAt', nowIso, 'heartbeatAt', '')
           redis.call('HDEL', 'nexjob:processing', id)
           redis.call('ZADD', 'nexjob:throughput', nowMs, id)
           redis.call('ZADD', 'nexjob:status:Succeeded', nowMs, id)
+          releaseContinuations(id, nowTicks)
         end
 
         return 1
         """);
 
     private static readonly LuaScript CommitJobResultScript = LuaScript.Prepare(
-        """
+        ReleaseContinuationsFunction + """
         local jobKey = 'nexjob:jobs:' .. ARGV[1]
         local status = redis.call('HGET', jobKey, 'status')
 
@@ -161,27 +195,7 @@ public sealed class RedisStorageProvider : IStorageProvider
           redis.call('HDEL', 'nexjob:processing', ARGV[1])
           redis.call('ZADD', 'nexjob:status:Succeeded', tonumber(ARGV[10]), ARGV[1])
 
-          -- Release continuations: move each still-waiting child into its queue in the same atomic step
-          local contKey = 'nexjob:continuations:' .. ARGV[1]
-          local continuations = redis.call('SMEMBERS', contKey)
-          for i = 1, #continuations do
-            local childId = continuations[i]
-            local childKey = 'nexjob:jobs:' .. childId
-            if redis.call('HGET', childKey, 'status') == 'AwaitingContinuation' then
-              redis.call('HSET', childKey, 'status', 'Enqueued', 'scheduledAt', '')
-              local score = tonumber(redis.call('HGET', childKey, 'queueScore'))
-              if not score then
-                -- Legacy child written before queueScore existed: derive it from priority and now
-                score = (tonumber(redis.call('HGET', childKey, 'priority')) or 3) * 10000000000000 + tonumber(ARGV[9])
-              end
-              local queue = redis.call('HGET', childKey, 'queue')
-              if not queue or queue == '' then
-                queue = 'default'
-              end
-              redis.call('ZADD', 'nexjob:queue:' .. queue .. ':z', score, childId)
-            end
-          end
-          redis.call('DEL', contKey)
+          releaseContinuations(ARGV[1], ARGV[9])
 
           -- Update recurring job if applicable
           if ARGV[4] ~= '' then
@@ -493,6 +507,10 @@ public sealed class RedisStorageProvider : IStorageProvider
         await _db.HashDeleteAsync(ProcessingKey, id).ConfigureAwait(false);
         await _db.SortedSetAddAsync(ThroughputKey, id, now.ToUnixTimeMilliseconds()).ConfigureAwait(false);
         await _db.SortedSetAddAsync(SucceededSetKey, id, now.ToUnixTimeMilliseconds()).ConfigureAwait(false);
+        await _db.ScriptEvaluateAsync(
+            ReleaseContinuationsScript.ExecutableScript,
+            keys: null,
+            values: [id, now.UtcTicks.ToString(CultureInfo.InvariantCulture)]).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -513,12 +531,13 @@ public sealed class RedisStorageProvider : IStorageProvider
         var nowIso = now.ToString("O", CultureInfo.InvariantCulture);
         var nowMs = now.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture);
 
-        var args = new RedisValue[2 + jobIds.Count];
+        var args = new RedisValue[3 + jobIds.Count];
         args[0] = nowIso;
         args[1] = nowMs;
+        args[2] = now.UtcTicks.ToString(CultureInfo.InvariantCulture);
         for (var i = 0; i < jobIds.Count; i++)
         {
-            args[2 + i] = jobIds[i].Value.ToString();
+            args[3 + i] = jobIds[i].Value.ToString();
         }
 
         await _db.ScriptEvaluateAsync(AcknowledgeBatchScript.ExecutableScript, Array.Empty<RedisKey>(), args).ConfigureAwait(false);
