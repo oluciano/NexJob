@@ -90,6 +90,7 @@ When a task is new, non-trivial, or ambiguous (or when explicitly requested via 
      - **Definition of Done (DoD)**
      - **3N Testing Matrix Plan**
    - Capture the issue ID (e.g. `#138`) to link in the eventual Pull Request.
+   - **Assign the target version** (label and milestone named like the version, for example `v5.6.1`). A **patch** milestone accepts only small bug fixes: no new public API, no stored-format change, no behaviour change, and nothing on a hot path that needs investigation first. Everything else goes to the next minor milestone. This keeps releases small (see the Release Size Guard in the `nexjob-release` skill).
 
 *For deep architectural questions and broker-specific dilemmas, refer to [grooming-guide.md](./references/grooming-guide.md).*
 

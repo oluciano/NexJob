@@ -21,6 +21,7 @@ It guarantees that code and documentation (Wiki + Package READMEs) are strictly 
 4. **SemVer Detection & User Confirmation:** Automatically inspect commits and `CHANGELOG.md` since the last tag to determine if the release is **MAJOR**, **MINOR**, or **PATCH**, propose the next version number, and **ask the user to confirm or override**.
 5. **Quality Gate:** Release builds must pass with **0 warnings** (`TreatWarningsAsErrors = true`), all unit tests must pass, and `dotnet pack` must produce valid `.nupkg` packages.
 6. **Branch Strategy:** Releases are ALWAYS merged via PR from `develop` into `main` using **"Create a merge commit"** (not squash, not rebase). Never push directly to `main`. Never manually create git tags (CI creates the tag upon merge to `main`).
+7. **Release Size Guard:** A release must stay small enough to review, canary and roll back. Phase 1 measures the size of what is about to ship and stops the flow when it is oversized (see the thresholds there). An oversized release ships only after the user picks a split or explicitly accepts the mitigation checklist. Never let `[Unreleased]` grow unnoticed: propose a release when it reaches the "green" cap.
 
 ---
 
@@ -66,6 +67,32 @@ It guarantees that code and documentation (Wiki + Package READMEs) are strictly 
    - **MINOR (vX.Y.0):** New backwards-compatible features, new dashboard pages, new triggers, new options/delegates, new extension methods.
    - **PATCH (vX.Y.Z):** Bug fixes, performance optimizations, documentation-only changes, zero new features.
 4. Formulate the proposed version (e.g. if NuGet has `5.3.0` and new dashboard features are added, propose `v5.4.0`).
+5. **Measure the release size (Release Size Guard):**
+   ```bash
+   LAST=$(git describe --tags --abbrev=0)
+   git rev-list --count $LAST..HEAD                                   # commits
+   awk '/^## \[Unreleased\]/{f=1;next} /^## \[/{f=0} f && /^- \*\*/' CHANGELOG.md | wc -l   # changelog entries
+   git diff --name-only $LAST..HEAD -- src | wc -l                    # changed files in src/
+   ```
+   Reference points from history: usual releases had 1-4 entries; v5.2.0 had 19; v5.6.0 had 43 (105 commits, 86 files in `src/`) and needed a risk review, a documentation audit and a follow-up patch plan.
+
+   | Size | Entries | Commits | Files in `src/` | What to do |
+   |---|---|---|---|---|
+   | 🟢 Green | ≤ 12 | ≤ 40 | ≤ 25 | Proceed. |
+   | 🟡 Yellow | 13-24 | 41-80 | 26-40 | Proceed only after the **mitigation checklist** below. |
+   | 🔴 Red (oversized) | ≥ 25 | > 80 | > 40 | **Stop.** Present the options below and wait for the user. |
+
+   A **PATCH** is only valid when it holds bug fixes alone: at most 10 entries, no `feat`, no new public API, no change to a stored data format, no behaviour change. Anything else is a MINOR (or a split).
+
+   **Options when Red:** (a) release earlier, from the last known-good commit, and keep the rest in `develop`; (b) cut a fix-only branch from the last tag with the reviewed fixes and release that as a PATCH, then the features as the next MINOR; (c) proceed anyway, recording in the release PR that it is oversized and completing the mitigation checklist.
+
+   **Mitigation checklist (Yellow and Red):**
+   - Every entry that changes observable behaviour is listed in the release PR and in `docs/wiki/18-Migration.md` with what the user must do.
+   - Every change to a stored format or key (schema, Redis keys, Mongo documents) has an explicit **mixed-version (rolling upgrade) statement**: what happens while old and new nodes run together, and how to recover.
+   - The distributed reliability suite (`tests/NexJob.ReliabilityTests.Distributed`, not run by CI) was run and its result recorded, with every failure classified as test issue or product issue.
+   - Code examples added or changed in the docs were compiled and executed.
+   - A rollout note (upgrade one node first, what to watch) and a rollback note (previous version, whether the schema migrations are reversible) are in the release PR.
+   - A patch milestone (`vX.Y.Z+1`) exists for the follow-ups already known, so they do not pile into the next minor.
 
 ---
 
@@ -75,6 +102,7 @@ Always ask the user explicitly before proceeding:
 - Present the detected changes.
 - Explain whether it was classified as **MAJOR**, **MINOR**, or **PATCH**.
 - Propose the next version (e.g. `v5.4.0`).
+- Report the size (entries, commits, files in `src/`) and its colour from the Release Size Guard; on Red, do not continue until the user chooses an option.
 - Wait for user confirmation or alternative version request.
 
 ---
@@ -200,6 +228,7 @@ Immediately following the sync-back to `develop`:
 1. **Lightweight Friction Audit:**
    - Did any compiler warning, StyleCop rule, or flaky test delay the release cycle?
    - Did we encounter documentation drift that was caught late?
+   - Record the release size (entries, commits, files in `src/`, colour) and whether a follow-up patch was needed. If the same size problem happened twice, lower the green cap or add a cadence rule.
 2. **Repository Hardening (Direct to `develop`):**
    - If a recurring pain point or pattern was identified, synthesize it into a 1-line rule in `GEMINI.md` or a skill reference.
    - Commit directly to `develop`:

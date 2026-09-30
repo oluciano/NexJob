@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Amazon.SQS.Model;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -209,14 +210,15 @@ internal sealed class AwsSqsTriggerHandler : IHostedService
             // Build JobRecord using factory
             // <remarks>
             // The <c>inputType</c> is fixed to <see cref="string"/> because broker triggers
-            // receive the message body as text (JSON, XML or plain text). Deserializing to a
-            // concrete type is the responsibility of the job handler.
+            // receive the message body as text (JSON, XML or plain text). The body is stored as a
+            // JSON string, so the job receives it verbatim and deserializing it to a concrete type
+            // is the responsibility of the job handler.
             // Support for custom <c>inputType</c> is planned for v2.2.
             // </remarks>
             var job = JobRecordFactory.Build(
                 jobType: _options.JobName,
                 inputType: typeof(string).AssemblyQualifiedName!,
-                inputJson: message.Body ?? string.Empty,
+                inputJson: JsonSerializer.Serialize(message.Body ?? string.Empty),
                 options: _nexJobOptions,
                 queue: _options.TargetQueue,
                 priority: _options.JobPriority,

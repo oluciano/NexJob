@@ -360,8 +360,49 @@ public sealed class AzureServiceBusTriggerHandlerTests
 
         // Assert
         _scheduler.EnqueueCalls.Should().HaveCount(1);
-        _scheduler.EnqueueCalls[0].InputJson.Should().Be("{}");
+        // Behavior changed in v5.6.1: the body is stored as a JSON string so IJob<string> receives it verbatim (#287)
+        _scheduler.EnqueueCalls[0].InputJson.Should().Be("\"{}\"");
         argsMock.Verify(a => a.CompleteMessageAsync(It.IsAny<ServiceBusReceivedMessage>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    /// <summary>
+    /// N1/N3 (#287): any body, JSON or not, is stored as a JSON string that deserializes back to the original text.
+    /// An empty body is not covered here: <c>ServiceBusReceivedMessage.Body</c> throws for it in the SDK model factory.
+    /// </summary>
+    /// <param name="body">Raw message body.</param>
+    [Theory]
+    [InlineData("{\"a\":1}")]
+    [InlineData("hello")]
+    [InlineData("<x a=\"1\"/>")]
+    [InlineData("\"quoted\"")]
+    [InlineData("olá 🚀 \"x\"\n\tend")]
+    public async Task HandleMessageAsync_Body_IsStoredAsJsonString_AndRoundTripsVerbatim(string body)
+    {
+        var handler = CreateHandler();
+        var (argsMock, _) = CreateMessageArgs(body: body);
+
+        await handler.HandleMessageAsync(argsMock.Object);
+
+        var job = _scheduler.EnqueueCalls.Should().ContainSingle().Subject;
+        var parse = () => System.Text.Json.JsonDocument.Parse(job.InputJson);
+        parse.Should().NotThrow("InputJson must be valid JSON so a jsonb column accepts it");
+        System.Text.Json.JsonSerializer.Deserialize<string>(job.InputJson).Should().Be(body);
+        job.InputType.Should().Be(typeof(string).AssemblyQualifiedName);
+    }
+
+    /// <summary>
+    /// N2 (#287): a plain-text body is completed like any other message, never dead-lettered as malformed.
+    /// </summary>
+    [Fact]
+    public async Task HandleMessageAsync_PlainTextBody_IsCompleted_NotDeadLettered()
+    {
+        var handler = CreateHandler();
+        var (argsMock, _) = CreateMessageArgs(body: "not json at all");
+
+        await handler.HandleMessageAsync(argsMock.Object);
+
+        argsMock.Verify(a => a.CompleteMessageAsync(It.IsAny<ServiceBusReceivedMessage>(), It.IsAny<CancellationToken>()), Times.Once);
+        argsMock.Verify(a => a.DeadLetterMessageAsync(It.IsAny<ServiceBusReceivedMessage>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]

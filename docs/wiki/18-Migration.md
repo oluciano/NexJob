@@ -2,6 +2,12 @@
 
 Breaking changes, API updates, and schema migration between NexJob versions.
 
+## v5.6.0 → v5.6.1
+
+| Area | What changed | What to do |
+|---|---|---|
+| Broker triggers (SQS, Service Bus, Pub/Sub, Kafka, RabbitMQ) | The message body now reaches `IJob<string>` verbatim as text. Before, only a body that was itself a JSON string literal executed; any other body failed the job. | If you worked around it by publishing a JSON string literal (for example `"hello"` with quotes), the job now receives the quotes as part of the text. Publish the plain text instead. |
+
 ## v5.5.0 → v5.6.0
 
 > This section covers what to check when upgrading; the [Changelog](../../CHANGELOG.md) is the complete list of changes.
@@ -21,12 +27,22 @@ Breaking changes, API updates, and schema migration between NexJob versions.
 | **Redis dashboard queries** | A job index (`nexjob:index:all`) is built once, on first use, for jobs that already exist. The first dashboard or metrics call after the upgrade scans the keyspace once. | Nothing to change; expect that first call to be slower on a large dataset. |
 | **Job filters** | The documentation was wrong about `context.Succeeded`/`context.Exception` (they are only set after the whole pipeline finished) and about filter lifetime. | If a filter reads them after `await next(ct)`, switch to `try/catch` around `next`. Register filters as singletons. |
 
+> [!WARNING]
+> **Redis: upgrade every node together.** The job index and the Succeeded/Failed sets are maintained by the new version only. Nodes still on v5.5.0 keep enqueuing and finishing jobs without writing to them, so those jobs are missing from the dashboard lists and from retention (which now walks the index) until they are indexed. The one-time backfill runs on the first dashboard or metrics call after the upgrade and is then marked done (`nexjob:index:ready`).
+>
+> - Preferred: stop all nodes, deploy v5.6.0 everywhere, start them.
+> - If you already upgraded node by node: once **all** nodes run v5.6.0, delete the key `nexjob:index:ready` (`DEL nexjob:index:ready`). The next dashboard or metrics call runs the backfill again; it is idempotent and adds the missing jobs and counts.
+> - The backfill scans the job keyspace once and is not locked, so several nodes may do it at the same time. On a large Redis, expect that first call to be slow; upgrading a single node first and opening the dashboard there lets you absorb that cost before the rest.
+> - The distributed throttle also uses a new key while mixed versions run (see the table above).
+
 ### Schema changes
 
 PostgreSQL and SQL Server apply these automatically on startup:
 
 - **V9** — `checkpoint_json` column on `nexjob_jobs` (job progress checkpoints).
 - **V10** — the idempotency key is unique only among active jobs (`Enqueued`, `Processing`, `Scheduled`, `AwaitingContinuation`), so a finished job no longer blocks a new one with the same key.
+
+V10 drops and recreates indexes on `nexjob_jobs` at startup. On a very large table that can take time and hold locks on writes while the index is built (not measured), so upgrade one node first and consider a quiet period for big deployments.
 
 ### New in v5.6
 
