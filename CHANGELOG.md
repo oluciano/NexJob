@@ -27,6 +27,10 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`NexJob` Core — `EnableBatchAcknowledgment` limitation with continuations is documented and warned about (Issue #257, documentation step)**:
+  - Jobs acknowledged in a batch do not release their `ContinueWith` children. The wiki (`05-Continuations.md`, `11-Configuration-Reference.md`) and the option's XML documentation now say so, and `JobDispatcherService` logs one warning at startup when the option is enabled.
+  - The provider-side fix (releasing children from `AcknowledgeAsync`/`AcknowledgeBatchAsync`) is still open in #257.
+
 - **`NexJob` Core — Distributed throttle no longer busy-spins or over-releases slots (Issue #267, part 1)**:
   - A job waiting on a full `[Throttle]` used to retry in a tight `Task.Yield()` loop, hammering Redis with acquire calls and ignoring cancellation. It now backs off 250 ms plus 0-100 ms of jitter between attempts and observes the cancellation token.
   - `ThrottleRegistry` tracks the slots it really took from the distributed store, so a release only decrements the global counter for those. When the store is unavailable and the registry degrades to local-only throttling, releases no longer push the Redis counter down.
