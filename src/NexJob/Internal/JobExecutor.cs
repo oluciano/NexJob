@@ -179,6 +179,34 @@ internal sealed class JobExecutor : IDisposable, IAsyncDisposable
                 RecurringJobId = job.RecurringJobId,
             }, CancellationToken.None).ConfigureAwait(false);
         }
+        catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
+        {
+            sw.Stop();
+            // Interrupted by shutdown: the job did not fail, the host stopped. Requeue immediately without
+            // consuming the attempt and never dead-letter, so it runs again on the next start.
+            if (job.Attempts > 0)
+            {
+                job.Attempts--;
+            }
+
+            _logger.LogWarning(
+                ex,
+                "Job {JobId} ({JobType}) interrupted by shutdown. Requeuing without consuming the attempt.",
+                job.Id,
+                job.JobType);
+
+            activity?.SetStatus(ActivityStatusCode.Error, "interrupted by shutdown");
+            activity?.SetTag("nexjob.interrupted", true);
+
+            await _storage.CommitJobResultAsync(job.Id, new JobExecutionResult
+            {
+                Succeeded = false,
+                Logs = logScope.Entries,
+                Exception = ex,
+                RetryAt = DateTimeOffset.UtcNow,
+                RecurringJobId = job.RecurringJobId,
+            }, CancellationToken.None).ConfigureAwait(false);
+        }
         catch (Exception ex)
         {
             sw.Stop();

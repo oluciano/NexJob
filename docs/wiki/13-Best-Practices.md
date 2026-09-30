@@ -195,6 +195,23 @@ When an external API comes back online after an outage, NexJob transitions the q
 
 ---
 
+## Graceful Shutdown
+
+When the host stops, NexJob stops fetching new jobs immediately and waits up to `NexJobOptions.ShutdownTimeout` (default 30s) for running jobs to finish. Jobs still running after that are cancelled through the `CancellationToken` passed to `ExecuteAsync`.
+
+A job that is cancelled by shutdown is **not** treated as a failure: it is requeued right away, its attempt is not consumed, and it is never sent to a dead-letter handler. An `OperationCanceledException` thrown while the host is *not* stopping (for example an internal timeout) is still an ordinary failure and follows your retry policy.
+
+**`HostOptions.ShutdownTimeout` must be greater than `NexJobOptions.ShutdownTimeout`** (recommended: add 10 seconds). The .NET host defaults to 30s (5s on older templates), so with the NexJob default the host can kill the process before the drain finishes.
+
+```csharp
+builder.Services.Configure<HostOptions>(o => o.ShutdownTimeout = TimeSpan.FromSeconds(40));
+builder.Services.AddNexJob(o => o.ShutdownTimeout = TimeSpan.FromSeconds(30));
+```
+
+Write cancellable jobs: honour the `CancellationToken` so they can be interrupted and requeued quickly instead of being abandoned to the orphan watcher.
+
+---
+
 ## Monitoring
 
 ### Enable OpenTelemetry
@@ -231,6 +248,7 @@ Check the dashboard regularly for:
 - [ ] Retention policies set (prevent storage growth)
 - [ ] Idempotent jobs (see [Idempotency](17-Idempotency.md))
 - [ ] Health check configured (`NexJobHealthCheck`)
+- [ ] `HostOptions.ShutdownTimeout` greater than `NexJobOptions.ShutdownTimeout`
 
 ---
 

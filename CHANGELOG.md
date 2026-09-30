@@ -27,6 +27,11 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`NexJob` Core — Graceful shutdown stops fetching and no longer burns attempts on interrupted jobs (Issue #259)**:
+  - `JobDispatcherService` stops polling and fetching as soon as `StopAsync` begins, so no new job is claimed while the drain runs. Running jobs still receive the host stopping token only after `ShutdownTimeout` expires.
+  - A job that throws `OperationCanceledException` while the shutdown token is cancelled is requeued immediately (`RetryAt = now`) without consuming its attempt and is never dead-lettered. An `OperationCanceledException` thrown without a shutdown request remains a normal failure.
+  - Docs: `HostOptions.ShutdownTimeout` must be greater than `NexJobOptions.ShutdownTimeout` (see `docs/wiki/13-Best-Practices.md`).
+
 - **`NexJob.Trigger.SalesforceStreaming` — OAuth token expiry and `ConnectTimeout` are honoured (Issue #230)**:
   - The cached OAuth token is no longer reused forever. It records `ExpiresAt` from the response `expires_in` (default 2 hours when missing or invalid) and is refreshed once it is within 60 seconds of expiry, matching `NexJob.Trigger.Salesforce`. `SalesforceStreamingTokenResult` gains an optional `ExpiresAt` init property; its constructor is unchanged.
   - `SalesforceStreamingTriggerOptions.ConnectTimeout` was ignored (the Bayeux `HttpClient` used a fixed 150 s). The client timeout is now `ConnectTimeout + 30 s`, so the default still yields 150 s.
