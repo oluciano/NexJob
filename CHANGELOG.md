@@ -6,6 +6,10 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **`NexJob` package README**: the package now ships its own short README (`src/NexJob/README.md`: what it is, install, quick start, which packages to add, links to the documentation) instead of the full repository README, matching every other NexJob package.
+
 ### Added
 
 - **Documentation site on GitHub Pages (issue #292)**:
