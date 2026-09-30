@@ -334,8 +334,8 @@ internal sealed class JobExecutor : IDisposable, IAsyncDisposable
                 TimeSpan.FromMilliseconds(500),
                 cancellationToken).ConfigureAwait(false))
             {
-                // Slot ainda ocupado — yield para não monopolizar o worker
-                await Task.Yield();
+                // Slot still taken: back off (with jitter) instead of spinning against the throttle store.
+                await Task.Delay(TimeSpan.FromMilliseconds(250 + System.Security.Cryptography.RandomNumberGenerator.GetInt32(100)), cancellationToken).ConfigureAwait(false);
             }
 
             acquired.Add(attr);

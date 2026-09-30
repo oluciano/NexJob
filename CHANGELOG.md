@@ -27,6 +27,11 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`NexJob` Core — Distributed throttle no longer busy-spins or over-releases slots (Issue #267, part 1)**:
+  - A job waiting on a full `[Throttle]` used to retry in a tight `Task.Yield()` loop, hammering Redis with acquire calls and ignoring cancellation. It now backs off 250 ms plus 0-100 ms of jitter between attempts and observes the cancellation token.
+  - `ThrottleRegistry` tracks the slots it really took from the distributed store, so a release only decrements the global counter for those. When the store is unavailable and the registry degrades to local-only throttling, releases no longer push the Redis counter down.
+  - The holder-set redesign (crash-safe slots with TTL) is not part of this change.
+
 - **`NexJob.MongoDB` — Dates are stored and compared in UTC (Issue #263, step 1)**:
   - MongoDB stores `DateTimeOffset` as an ISO string, and scheduling filters and sorts compare those strings, so a value written with a non-UTC offset (for example `-03:00`) was compared as the wrong instant: jobs scheduled or retried with a local offset ran hours early, and jobs with a positive offset ran late. Every date written for jobs, recurring jobs, servers and execution logs, and every date used in a filter or update, is now normalised to UTC.
   - Documents already stored with a non-UTC offset are not migrated and stay wrong until rewritten; only future-scheduled jobs created with a local offset are affected.
