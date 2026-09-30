@@ -71,7 +71,7 @@ builder.Services.AddNexJob()
 
 ### Inbound Guarantees
 - **Never Silently Drop:** If `IScheduler.EnqueueAsync` fails, the message is routed to dead-letter.
-- **Idempotency:** The Kafka message key and offset are used to prevent duplicate jobs.
+- **Idempotency:** The idempotency key is the record position (`kafka:{topic}:{partition}:{offset}`), so redelivery of the same record never creates a second job. Two different records with the same message key produce two jobs.
 - **Trace Propagation:** W3C `traceparent` headers are extracted and attached to the job trace.
 - **Manual Commit Only:** Offsets are committed to Kafka strictly *after* the job has been persisted to NexJob storage.
 

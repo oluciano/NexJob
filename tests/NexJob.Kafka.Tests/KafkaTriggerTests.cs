@@ -71,7 +71,8 @@ public sealed class KafkaTriggerTests
 
         // Assert
         _scheduler.EnqueueCalls.Should().HaveCount(1);
-        _scheduler.EnqueueCalls[0].IdempotencyKey.Should().Be("test-key");
+        // Behavior changed in v5.6: idempotency key is topic/partition/offset, not the message key (#264)
+        _scheduler.EnqueueCalls[0].IdempotencyKey.Should().Be("kafka:test-topic:0:1");
         _consumerMock.Verify(m => m.Commit(consumeResult), Times.Once);
         _consumerMock.Verify(m => m.Close(), Times.Once);
     }
@@ -426,7 +427,8 @@ public sealed class KafkaTriggerTests
         // Assert
         _scheduler.EnqueueCalls.Should().HaveCount(1);
         _scheduler.EnqueueCalls[0].JobType.Should().Be("ConfiguredConsumerJob");
-        _scheduler.EnqueueCalls[0].IdempotencyKey.Should().Be("consumer-driven-key");
+        // Behavior changed in v5.6: idempotency key is topic/partition/offset, not the message key (#264)
+        _scheduler.EnqueueCalls[0].IdempotencyKey.Should().Be("kafka:test-topic:0:10");
         _consumerMock.Verify(m => m.Commit(consumeResult), Times.Once);
     }
 
@@ -714,6 +716,82 @@ public sealed class KafkaTriggerTests
         await handler.StopAsync(CancellationToken.None);
         var stopped = registry.Get($"kafka:{_triggerOptions.Topic}");
         stopped!.Status.Should().Be(ListenerStatus.Stopped);
+    }
+
+    // ── Idempotency key is the record position (issue #264) ────────────────────
+
+    private static ConsumeResult<string, string> Record(string? key, int partition, long offset, string topic = "test-topic") => new()
+    {
+        Message = new Message<string, string>
+        {
+            Key = key!,
+            Value = "{}",
+            Headers = new Headers { { "nexjob.job_type", Encoding.UTF8.GetBytes("TestJobType") } },
+        },
+        Topic = topic,
+        Partition = partition,
+        Offset = offset,
+    };
+
+    private async Task<IReadOnlyList<JobRecord>> RunAsync(int expectedEnqueues, params ConsumeResult<string, string>[] records)
+    {
+        var sequence = _consumerMock.SetupSequence(m => m.Consume(It.IsAny<TimeSpan>()));
+        foreach (var record in records)
+        {
+            sequence = sequence.Returns(record);
+        }
+
+        sequence.Returns((ConsumeResult<string, string>?)null);
+
+        var handler = new KafkaTriggerHandler(
+            Options.Create(_triggerOptions),
+            _consumerMock.Object,
+            _scheduler,
+            _nexJobOptions,
+            _loggerMock.Object);
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await handler.StartAsync(cts.Token);
+        while (_scheduler.EnqueueCalls.Count < expectedEnqueues && !cts.IsCancellationRequested)
+        {
+            await Task.Delay(10, CancellationToken.None);
+        }
+
+        await handler.StopAsync(CancellationToken.None);
+        return _scheduler.EnqueueCalls;
+    }
+
+    /// <summary>N1: two records that share a key but sit at different offsets produce two jobs with different keys.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task TwoMessagesWithSameKey_DifferentOffsets_EnqueueTwoJobs()
+    {
+        var calls = await RunAsync(2, Record("customer-1", 0, 20), Record("customer-1", 0, 21));
+
+        calls.Should().HaveCount(2);
+        calls[0].IdempotencyKey.Should().NotBe(calls[1].IdempotencyKey);
+    }
+
+    /// <summary>N2: the same record delivered again carries the identical key, so storage can deduplicate it.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task SameRecordRedelivered_UsesSameIdempotencyKey()
+    {
+        var calls = await RunAsync(2, Record("customer-1", 3, 30), Record("customer-1", 3, 30));
+
+        calls.Should().HaveCount(2);
+        calls[0].IdempotencyKey.Should().Be(calls[1].IdempotencyKey);
+        calls[0].IdempotencyKey.Should().Be("kafka:test-topic:3:30");
+    }
+
+    /// <summary>N3: a record without a key still gets the position based key.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task MessageWithNullKey_UsesPositionKey()
+    {
+        var calls = await RunAsync(1, Record(null, 2, 40, topic: "orders"));
+
+        calls.Should().ContainSingle().Which.IdempotencyKey.Should().Be("kafka:orders:2:40");
     }
 }
 

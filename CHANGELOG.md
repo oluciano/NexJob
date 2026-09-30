@@ -34,6 +34,10 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`NexJob.Kafka` — The idempotency key is the record position, not the message key (Issue #264)**:
+  - The trigger used the Kafka message key as the job idempotency key, so every later record sharing a key with an active job (for example the same customer id) was silently dropped, and its offset committed. The key is now `kafka:{topic}:{partition}:{offset}`: redelivery of the same record is still deduplicated, and different records always produce different jobs.
+  - **Behaviour change:** applications that relied on key-based deduplication must deduplicate in the job itself.
+
 - **`NexJob.Redis` — Distributed throttle slots survive node crashes without leaking (Issue #267, part 2)**:
   - The single global counter (INCR/DECR with a one-hour TTL) is replaced by a sorted set of holders in `nexjob:throttle:holders:{resource}`. Each running job owns one entry with an expiry; the owning node refreshes it every `HeartbeatInterval`, and expired entries are dropped before every acquire (using the Redis clock).
   - A slot left by a crashed node is reclaimed after `3 x HeartbeatInterval` (90 s by default) instead of up to an hour. Releasing removes only the caller's own holder, so a node can never free another node's slot.

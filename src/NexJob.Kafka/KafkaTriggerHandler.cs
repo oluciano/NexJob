@@ -138,7 +138,11 @@ internal sealed class KafkaTriggerHandler : BackgroundService
         ConsumeResult<string, string> result,
         CancellationToken ct)
     {
+        // The key is only for logs: two different records may share a key, so it must never drive deduplication.
         var messageId = result.Message.Key ?? result.TopicPartitionOffset.ToString();
+
+        // A record is identified by its position. Redelivery of the same record yields the same key.
+        var idempotencyKey = $"kafka:{result.Topic}:{result.Partition.Value}:{result.Offset.Value}";
         var traceparent = ExtractTraceparent(result.Message.Headers);
 
         try
@@ -152,7 +156,7 @@ internal sealed class KafkaTriggerHandler : BackgroundService
                 options: _nexJobOptions,
                 queue: _options.TargetQueue,
                 priority: _options.JobPriority,
-                idempotencyKey: messageId,
+                idempotencyKey: idempotencyKey,
                 status: JobStatus.Enqueued,
                 scheduledAt: null,
                 tags: new[] { "trigger:kafka" },
