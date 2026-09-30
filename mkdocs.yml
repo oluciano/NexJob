@@ -61,4 +61,5 @@ nav:
   - External Triggers: 19-Triggers.md
   - Kafka: 20-Kafka.md
   - RabbitMQ: 21-RabbitMQ.md
+  - FAQ: 22-FAQ.md
   - Changelog: CHANGELOG.md

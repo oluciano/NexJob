@@ -139,6 +139,7 @@ See [Getting Started](01-Getting-Started.md) for a complete walkthrough.
 | [Troubleshooting](16-Troubleshooting.md) ⭐ | Debug common issues |
 | [Idempotency](17-Idempotency.md) ⭐ | Prevent duplicate execution |
 | [Migration](18-Migration.md) | Breaking changes and upgrade guide |
+| [FAQ](22-FAQ.md) ⭐ | Basic and tricky questions, each answer checked against the source |
 
 ---
 
