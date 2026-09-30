@@ -27,6 +27,12 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`NexJob.Redis` — Distributed throttle slots survive node crashes without leaking (Issue #267, part 2)**:
+  - The single global counter (INCR/DECR with a one-hour TTL) is replaced by a sorted set of holders in `nexjob:throttle:holders:{resource}`. Each running job owns one entry with an expiry; the owning node refreshes it every `HeartbeatInterval`, and expired entries are dropped before every acquire (using the Redis clock).
+  - A slot left by a crashed node is reclaimed after `3 x HeartbeatInterval` (90 s by default) instead of up to an hour. Releasing removes only the caller's own holder, so a node can never free another node's slot.
+  - `DistributedThrottleTtl` is not deprecated: it now caps how long a single job may hold a slot (a slot older than that stops being refreshed).
+  - **Rolling upgrade:** old nodes keep counting in the previous key, so the global limit can be exceeded until all nodes run this version.
+
 - **`NexJob.Redis` — Dashboard queries and retention no longer scan the keyspace (Issue #262, part 2)**:
   - Every job is now listed in a `nexjob:index:all` sorted set (score = creation time), written atomically by the enqueue script and removed on delete and purge. `GetJobsAsync` without filters pages straight from the index (cost proportional to the page); filtered listing, `GetJobsByTagAsync`, `GetJobCatalogAsync` and `PurgeJobsAsync` walk the index with pipelined reads instead of `SCAN`ning every key.
   - Jobs stored before this version are indexed once, on first use, by an idempotent backfill guarded by a `nexjob:index:ready` marker. The same backfill fills the Succeeded/Failed sets, so the **upgrade note of part 1 no longer applies**: Succeeded/Failed totals are exact after the first metrics call.

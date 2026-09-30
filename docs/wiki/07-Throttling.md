@@ -79,7 +79,10 @@ With distributed throttling enabled, `[Throttle("api", maxConcurrent: 5)]`
 enforces a **global limit of 5** across all nodes — regardless of how many
 workers are running.
 
-Configure the slot TTL (default: 1 hour — should exceed your longest job):
+Each running job holds one slot, and its node keeps refreshing that slot while the job runs. If a node
+crashes, its slots are reclaimed automatically after three `HeartbeatInterval` periods (90 seconds with the
+default), not after an hour. `DistributedThrottleTtl` (default: 1 hour) is the maximum time a single job may hold
+a slot, so it should exceed your longest job:
 
 ```csharp
 services.AddNexJob(opt =>
@@ -89,6 +92,10 @@ services.AddNexJob(opt =>
 })
 .UseDistributedThrottle();
 ```
+
+**Upgrade note:** slots are now stored under `nexjob:throttle:holders:{resource}`. During a rolling upgrade, nodes
+on the old version keep counting in the previous key, so the global limit can be exceeded until every node runs
+the new version.
 
 **Note:** `UseDistributedThrottle()` requires `NexJob.Redis`. If Redis is
 unavailable, the system degrades to per-process throttling automatically.

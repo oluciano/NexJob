@@ -41,8 +41,8 @@ builder.Services.AddNexJob(options =>
     options.RetentionInterval = TimeSpan.FromHours(1);   // How often to purge
     options.RetentionBatchSize = 1000;                   // Chunk size to prevent DB lock contention
 
-    // TTL for distributed throttle slots in Redis.
-    // Must exceed your longest expected job execution time.
+    // Maximum time a job may hold a distributed throttle slot in Redis. Slots of crashed nodes are reclaimed after
+    // 3 x HeartbeatInterval regardless; this only caps a live job. Must exceed your longest job execution time.
     // Only relevant when UseDistributedThrottle() is enabled.
     options.DistributedThrottleTtl = TimeSpan.FromHours(1); // Default: 1 hour
 
