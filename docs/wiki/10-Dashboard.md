@@ -106,6 +106,8 @@ var host = builder.Build();
 host.Run();
 ```
 
+> **Security:** with `LocalhostOnly = false` (the default) the standalone dashboard listens on all interfaces, and standalone mode does not support `IDashboardAuthorizationHandler`. Anyone who can reach the port can read job payloads (which may hold personal data) and run actions such as pausing queues, requeueing and triggering jobs. NexJob logs a warning at startup in this case. Set `LocalhostOnly = true`, restrict the port with a firewall or network policy, or host the dashboard in an ASP.NET Core app where you can register an authorization handler.
+
 ---
 
 ## Authorization

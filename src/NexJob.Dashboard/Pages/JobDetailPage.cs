@@ -41,7 +41,7 @@ internal sealed class JobDetailPage : IComponent
         {
             var notFoundHtml =
                 HtmlFragments.Breadcrumbs(PathPrefix, ("Jobs", $"{PathPrefix}/jobs"), ("Not Found", null)) +
-                HtmlFragments.EmptyState("0 0 24 24", "Job not found") +
+                HtmlFragments.EmptyState(HtmlFragments.EmptyIconInbox, "Job not found") +
                 $"<div style=\"text-align:center;margin-top:12px\"><a href=\"{PathPrefix}/jobs\" class=\"btn btn-ghost btn-sm\">← Back to Jobs</a></div>";
             return HtmlShell.Wrap(Title, PathPrefix, "jobs", notFoundHtml, Counters, clusters: Clusters, activeCluster: ActiveCluster);
         }
