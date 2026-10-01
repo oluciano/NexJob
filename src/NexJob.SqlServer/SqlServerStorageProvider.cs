@@ -305,12 +305,17 @@ public sealed class SqlServerStorageProvider : IStorageProvider
             new { id = jobId.Value },
             transaction: tx).ConfigureAwait(false);
 
+        // The index hint and the redundant 'parent_job_id IS NOT NULL' are deliberate. idx_nexjob_jobs_parent is a filtered
+        // index, and the plan is chosen on first use: with a small table SQL Server prefers a clustered index scan, which is
+        // then reused and takes update locks on other jobs' rows (deadlocks under concurrent workers, issue #279). The
+        // predicate makes the filtered index eligible and the hint makes the seek independent of the table size.
         // A parent acknowledged outside CommitJobResultAsync must still release its continuations.
         await conn.ExecuteAsync(
             """
-            UPDATE nexjob_jobs
-            SET status = 'Enqueued', scheduled_at = NULL
-            WHERE parent_job_id = @id AND status = 'AwaitingContinuation'
+            UPDATE j
+            SET j.status = 'Enqueued', j.scheduled_at = NULL
+            FROM nexjob_jobs AS j WITH (INDEX(idx_nexjob_jobs_parent))
+            WHERE j.parent_job_id = @id AND j.parent_job_id IS NOT NULL AND j.status = 'AwaitingContinuation'
             """,
             new { id = jobId.Value },
             transaction: tx).ConfigureAwait(false);
@@ -347,9 +352,10 @@ public sealed class SqlServerStorageProvider : IStorageProvider
 
         await conn.ExecuteAsync(
             """
-            UPDATE nexjob_jobs
-            SET status = 'Enqueued', scheduled_at = NULL
-            WHERE parent_job_id IN @Ids AND status = 'AwaitingContinuation'
+            UPDATE j
+            SET j.status = 'Enqueued', j.scheduled_at = NULL
+            FROM nexjob_jobs AS j WITH (INDEX(idx_nexjob_jobs_parent))
+            WHERE j.parent_job_id IN @Ids AND j.parent_job_id IS NOT NULL AND j.status = 'AwaitingContinuation'
             """,
             new { Ids = idList },
             transaction: tx).ConfigureAwait(false);
@@ -630,9 +636,10 @@ public sealed class SqlServerStorageProvider : IStorageProvider
         await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
         await conn.ExecuteAsync(
             """
-            UPDATE nexjob_jobs
-            SET status = 'Enqueued'
-            WHERE status = 'AwaitingContinuation' AND parent_job_id = @parentId
+            UPDATE j
+            SET j.status = 'Enqueued'
+            FROM nexjob_jobs AS j WITH (INDEX(idx_nexjob_jobs_parent))
+            WHERE j.status = 'AwaitingContinuation' AND j.parent_job_id = @parentId AND j.parent_job_id IS NOT NULL
             """,
             new { parentId = parentJobId.Value });
     }
@@ -1197,9 +1204,10 @@ public sealed class SqlServerStorageProvider : IStorageProvider
 
         await conn.ExecuteAsync(
             """
-            UPDATE nexjob_jobs
-            SET status = 'Enqueued', scheduled_at = NULL
-            WHERE parent_job_id = @id AND status = 'AwaitingContinuation'
+            UPDATE j
+            SET j.status = 'Enqueued', j.scheduled_at = NULL
+            FROM nexjob_jobs AS j WITH (INDEX(idx_nexjob_jobs_parent))
+            WHERE j.parent_job_id = @id AND j.parent_job_id IS NOT NULL AND j.status = 'AwaitingContinuation'
             """,
             new { id = jobId.Value },
             transaction: tx);

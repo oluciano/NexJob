@@ -122,6 +122,71 @@ builder.Services.AddTransient<IDeadLetterHandler<ProcessPaymentJob>, PaymentDead
 
 ---
 
+## Forwarding a dead-lettered job to Kafka or RabbitMQ
+
+Two different things are called "dead-letter" when a broker is involved:
+
+| What failed | Where the dead-letter goes |
+|---|---|
+| A message that can **never become a job** (malformed body, missing job type) | The **broker's own** dead-letter: the Kafka trigger's `DeadLetterTopic`, a RabbitMQ `nack` with `requeue: false` (to the queue's dead-letter exchange, if you configured one), Service Bus dead-lettering, the SQS redrive policy. |
+| A **job that ran** and exhausted its retries, or an Outbox publish that kept failing | **Only inside NexJob**: the job is `Failed` in storage and shows in the dashboard, and `IDeadLetterHandler<TJob>` runs if you registered one. The broker never hears about it. |
+
+The second row is not an oversight. The broker message is acknowledged as soon as it becomes a job, because NexJob storage is the source of truth, and the job runs later, possibly on another node, with retries that can take hours. The broker cannot hold the message that long, so it cannot decide the dead-letter. What you can do is **forward a copy** to a Kafka topic or a RabbitMQ exchange when the job is dead-lettered, so another service that watches that destination can react (alert, reprocess, audit). The job stays `Failed` in NexJob.
+
+An open-generic `IDeadLetterHandler<>` receives the dead-letter of **every** job type, and the NexJob Outbox publishes the copy, so the forward is durable and retried. This example forwards only the jobs of the trigger's target queue (`orders`) and sends the original message body, nothing else from the job:
+
+```csharp
+public sealed class OrdersDeadLetterForwarder<TJob>(IScheduler scheduler) : IDeadLetterHandler<TJob>
+{
+    public async Task HandleAsync(JobRecord failedJob, Exception lastException, CancellationToken cancellationToken)
+    {
+        // Only jobs of this trigger's target queue, and only plain messages (a trigger stores the body as a string).
+        if (failedJob.Queue != "orders" || failedJob.InputType != typeof(string).AssemblyQualifiedName)
+        {
+            return;
+        }
+
+        // The trigger job stores the message body as a JSON string: recover it verbatim.
+        var body = JsonSerializer.Deserialize<string>(failedJob.InputJson)!;
+
+        await scheduler.EnqueueKafkaAsync(
+            "orders.dlt",
+            failedJob.Id.Value.ToString(),
+            body,
+            headers: new Dictionary<string, string> { ["x-nexjob-error"] = lastException.Message, }, // optional: leave out to send the body only
+            cancellationToken: cancellationToken);
+    }
+}
+
+services.AddKafkaProducer(o => o.BootstrapServers = "localhost:9092");
+services.AddTransient(typeof(IDeadLetterHandler<>), typeof(OrdersDeadLetterForwarder<>));
+```
+
+For RabbitMQ, publish with `EnqueueRabbitMqAsync` instead (the message id lets the consumer deduplicate):
+
+```csharp
+await scheduler.EnqueueRabbitMqAsync(
+    "orders.dlx",
+    "orders.failed",
+    body,
+    messageId: failedJob.Id.Value.ToString(),
+    cancellationToken: cancellationToken);
+```
+
+Things to know before you use it:
+
+- **The queues must be polled.** `NexJobOptions.Queues` defaults to `default`. Add the trigger's target queue and the Outbox queue (`kafka-producer` or `rabbitmq-producer`), or those jobs are never fetched.
+- **A handler for a specific job type wins.** If you also registered `IDeadLetterHandler<OrderJob>`, the dispatcher uses that one for `OrderJob` and the open-generic forwarder is not called for it. The dispatcher calls one handler per job type.
+- **Only the body is kept.** The original Kafka key and headers are not stored: NexJob keeps the body, the idempotency key (`kafka:{topic}:{partition}:{offset}`, or the RabbitMQ `MessageId`) and the trace parent.
+- **It is not a transaction.** The forward is enqueued after the job is marked `Failed`. If the process dies in between, that one forward is lost. The Outbox then retries the publish until it succeeds.
+- **The job stays in the dashboard.** If you requeue it there and the consuming service also reprocesses the forwarded copy, it is processed twice.
+- **Do not forward the Outbox publisher itself.** Filtering by the trigger's queue keeps it out; forwarding every job would make a failing publish forward itself.
+- **The body may hold personal data**, and forwarding sends it to another system. The error message is optional for the same reason: leave the header out unless the consumer needs it.
+
+This code runs in the repository tests (`DeadLetterForwardingTests` in `NexJob.Kafka.Tests` and `NexJob.RabbitMQ.Tests`). A ready-made forwarder, configured where you add the trigger, is planned.
+
+---
+
 ## Failure Data Available
 
 The `JobRecord` passed to dead-letter handlers contains:

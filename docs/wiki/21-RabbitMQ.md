@@ -210,3 +210,5 @@ Or bind a whole section: `.AddRabbitMqTrigger(options => builder.Configuration.G
 | **Confirm Timeout** | Throws `TimeoutException`, triggering retry. |
 | **Retries Exhausted** | The message is dispatched to the Dead-Letter pipeline (`IDeadLetterHandler`) and surfaced on the Dashboard. |
 | **Host Shutdown** | Active connections and channels are closed cleanly without dropping acknowledged messages. |
+
+> A job that came from the trigger and exhausted its retries stays **only inside NexJob** (the broker message was acknowledged when it became a job). To also send a copy to a RabbitMQ exchange, see [Forwarding a dead-lettered job](06-Retry-And-Dead-Letter.md#forwarding-a-dead-lettered-job-to-kafka-or-rabbitmq).
