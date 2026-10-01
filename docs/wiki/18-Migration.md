@@ -2,6 +2,13 @@
 
 Breaking changes, API updates, and schema migration between NexJob versions.
 
+## v5.6.2 → v5.7.0
+
+| Area | What changed | What to do |
+|---|---|---|
+| **Standalone dashboard, default `LocalhostOnly`** | The standalone dashboard now listens on **loopback only** by default (`LocalhostOnly = true`; it was `false`, all interfaces). Before, anyone who could reach the port could read job payloads and run actions. | If you reach the dashboard from another host or a published container port, set `LocalhostOnly = false` **and** register an `IDashboardAuthorizationHandler` (or restrict the port with a firewall or network policy). Without a handler, NexJob logs a warning at startup. |
+| **Standalone dashboard, authorization** | A registered `IDashboardAuthorizationHandler` is now enforced in standalone mode (before it was silently ignored). The embedded server has no authentication middleware, so `context.User` is never authenticated. | If you registered a handler that relied on `context.User`, it will now deny every request: make it authenticate from `context.Request` (see [Dashboard](10-Dashboard.md#authorization-in-the-standalone-dashboard)). |
+
 ## v5.6.0 → v5.6.1
 
 | Area | What changed | What to do |

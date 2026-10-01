@@ -15,6 +15,6 @@ public sealed class DashboardSettings
     /// <summary>Port the embedded HTTP server listens on (Standalone mode only). Defaults to <c>5005</c>.</summary>
     public int Port { get; set; } = 5005;
 
-    /// <summary>When <see langword="true"/>, the dashboard only accepts connections from localhost (Standalone mode only). Defaults to <see langword="false"/>.</summary>
-    public bool LocalhostOnly { get; set; } = false;
+    /// <summary>When <see langword="true"/>, the dashboard only accepts connections from localhost (Standalone mode only). Defaults to <see langword="true"/>.</summary>
+    public bool LocalhostOnly { get; set; } = true;
 }

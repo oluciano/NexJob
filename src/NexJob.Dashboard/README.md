@@ -109,7 +109,9 @@ Register the authorization handler in DI:
 builder.Services.AddSingleton<IDashboardAuthorizationHandler, AdminDashboardAuthorization>();
 ```
 
-When authorization fails, the dashboard returns `401 Unauthorized` or `403 Forbidden`.
+When authorization fails, the dashboard returns `401 Unauthorized`.
+
+> The standalone dashboard (`NexJob.Dashboard.Standalone`) enforces the same handler but runs no authentication middleware, so `context.User` is never authenticated there. A handler used with the standalone dashboard must authenticate from `context.Request` itself.
 
 ---
 

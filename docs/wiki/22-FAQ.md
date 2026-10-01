@@ -238,10 +238,10 @@ The standalone package starts a small embedded web server **inside your worker p
 If you want a dashboard-only process with no job execution, set `DisableWorkers` in the standalone options. It sets `Workers = 0` for that host, so it serves the UI and runs no jobs.
 
 **Security, read this before exposing it:**
-- In standalone mode the dashboard listens on **`0.0.0.0` by default** (`LocalhostOnly = false`), so it is reachable from outside the machine. Set `LocalhostOnly = true` or restrict it at the network level.
-- `IDashboardAuthorizationHandler` is **not supported in standalone mode**. If you need authentication, host `NexJob.Dashboard` inside an ASP.NET Core app where you control the middleware.
+- In standalone mode the dashboard listens on **loopback only by default** (`LocalhostOnly = true`). In a container that makes it unreachable through a published port; there, set `LocalhostOnly = false` and register an `IDashboardAuthorizationHandler` (or restrict the port at the network level). With `LocalhostOnly = false` and no handler, NexJob logs a warning at startup.
+- A registered `IDashboardAuthorizationHandler` **is enforced in standalone mode**, but the embedded server has no authentication middleware, so `context.User` is never authenticated: the handler must authenticate from the request itself (see [Dashboard](10-Dashboard.md#authorization-in-the-standalone-dashboard)).
 
-**Verified in:** `StandaloneDashboardHostedService.cs` (builds a `WebApplication`; `UseUrls` with `localhost` or `0.0.0.0`; `DisableWorkers` sets `Workers = 0`; comment that the authorization handler is unsupported), `StandaloneDashboardOptions.cs` (`Port = 5005`, `Path`, `LocalhostOnly = false`).
+**Verified in:** `StandaloneDashboardHostedService.cs` (builds a `WebApplication`; `UseUrls` with `localhost` or `0.0.0.0`; `DisableWorkers` sets `Workers = 0`; forwards the parent host's `IDashboardAuthorizationHandler` through `RootScopedDashboardAuthorizationHandler`), `StandaloneDashboardOptions.cs` (`Port = 5005`, `Path`, `LocalhostOnly = true`).
 
 ---
 
