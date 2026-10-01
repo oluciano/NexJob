@@ -258,7 +258,7 @@ builder.Services.AddNexJobStandaloneDashboard(options =>
     options.Port = 5005;                 // default 5005
     options.Path = "/dashboard";         // default "/dashboard"
     options.Title = "NexJob Dashboard";  // default "NexJob"
-    options.LocalhostOnly = false;       // default false
+    options.LocalhostOnly = true;        // default true: loopback only
     options.PollIntervalSeconds = 3;     // default 3
     options.DisableWorkers = false;      // true = ops-only host that processes no jobs
     options.Queues = null;               // optional queue scope

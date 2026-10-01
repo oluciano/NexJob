@@ -43,6 +43,10 @@ internal sealed class StandaloneDashboardHostedService : IHostedService
             ? $"http://localhost:{_options.Port}"
             : $"http://0.0.0.0:{_options.Port}";
 
+        // The embedded server has its own container, so a handler registered in the parent host is forwarded.
+        var hasAuthorizationHandler = _rootProvider.GetService<IServiceProviderIsService>()
+            ?.IsService(typeof(IDashboardAuthorizationHandler)) == true;
+
         var builder = WebApplication.CreateBuilder();
 
         // Silence the embedded server's startup banner and reduce log noise
@@ -79,6 +83,12 @@ internal sealed class StandaloneDashboardHostedService : IHostedService
         builder.Services.AddSingleton(
             _rootProvider.GetRequiredService<NexJob.Configuration.IRuntimeSettingsStore>());
 
+        if (hasAuthorizationHandler)
+        {
+            builder.Services.AddSingleton<IDashboardAuthorizationHandler>(
+                new RootScopedDashboardAuthorizationHandler(_rootProvider));
+        }
+
         // Dashboard requires IMemoryCache for metrics caching
         builder.Services.AddMemoryCache();
 
@@ -91,9 +101,6 @@ internal sealed class StandaloneDashboardHostedService : IHostedService
             {
                 opt.AddCluster(cluster);
             }
-
-            // IDashboardAuthorizationHandler is not supported in standalone mode
-            // Register auth middleware in a WebApplication host instead
         });
 
         await _app.StartAsync(cancellationToken);
@@ -102,13 +109,12 @@ internal sealed class StandaloneDashboardHostedService : IHostedService
             "NexJob dashboard listening on {Url}{Path}",
             listenUrl, _options.Path);
 
-        if (!_options.LocalhostOnly)
+        if (!_options.LocalhostOnly && !hasAuthorizationHandler)
         {
             _logger.LogWarning(
-                "NexJob dashboard is reachable from the network on {Url}{Path} and standalone mode has no " +
-                "authorization (IDashboardAuthorizationHandler is not supported). Anyone who can reach this port " +
-                "can read job payloads and run actions. Set LocalhostOnly = true, or host the dashboard in an " +
-                "ASP.NET Core app with an authorization handler.",
+                "NexJob dashboard is reachable from the network on {Url}{Path} and has no authorization " +
+                "(no IDashboardAuthorizationHandler is registered). Anyone who can reach this port can read job " +
+                "payloads and run actions. Set LocalhostOnly = true, or register an IDashboardAuthorizationHandler.",
                 listenUrl, _options.Path);
         }
     }

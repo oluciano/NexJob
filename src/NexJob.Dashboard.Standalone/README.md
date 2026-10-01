@@ -79,7 +79,7 @@ builder.Services.AddNexJobStandaloneDashboard(builder.Configuration);
 | `Port` | `int` | `5005` | Port number the embedded HTTP server listens on |
 | `Path` | `string` | `"/dashboard"` | URL path prefix where the dashboard is mounted |
 | `Title` | `string` | `"NexJob"` | Title displayed in the browser tab and navigation bar |
-| `LocalhostOnly` | `bool` | `false` | When `true`, binds strictly to `127.0.0.1` / `localhost` |
+| `LocalhostOnly` | `bool` | `true` | When `true` (default), binds strictly to `localhost`. Set `false` to listen on all interfaces (needed in a container) and register an `IDashboardAuthorizationHandler` |
 | `PollIntervalSeconds` | `int` | `3` | SSE live stream update interval in seconds |
 | `DisableWorkers` | `bool` | `false` | When `true`, sets `NexJobOptions.Workers = 0` to run as a dedicated ops/monitoring container |
 | `Queues` | `IReadOnlyList<string>?` | `null` | Optional list of queues to scope the dashboard view, nav counters, and default job listings |
@@ -125,7 +125,7 @@ builder.Services.AddNexJobStandaloneDashboard(options =>
 
 ## Security Best Practices
 
-- **No built-in authorization:** standalone mode does not support `IDashboardAuthorizationHandler`. With `LocalhostOnly = false` (the default) the dashboard listens on all interfaces, so anyone who can reach the port can read job payloads and run actions; NexJob logs a warning at startup in that case.
-- **Production Workers:** Set `LocalhostOnly = true` to restrict access strictly to the local host machine (the only alternative is all interfaces, there is no option to bind to a single network interface). To expose it, restrict the port with a firewall or network policy, or host the dashboard in an ASP.NET Core app where you can register an authorization handler.
+- **Secure by default:** the dashboard listens on loopback only (`LocalhostOnly = true`). There is no option to bind to a single network interface: the alternative is all interfaces.
+- **Exposing it (containers):** set `LocalhostOnly = false` **and** register an `IDashboardAuthorizationHandler` in your host. It is enforced in standalone mode, but the embedded server has no authentication middleware, so `context.User` is never authenticated: the handler must authenticate from `context.Request` (see the Basic example in the [Dashboard guide](https://github.com/oluciano/NexJob/blob/main/docs/wiki/10-Dashboard.md#authorization-in-the-standalone-dashboard)). Without a handler, anyone who can reach the port can read job payloads and run actions, and NexJob logs a warning at startup.
 - **Dedicated Ops Host:** Set `DisableWorkers = true` so the monitoring container does not consume processing capacity or compete for job dispatching.
 - **Reverse Proxy:** Place an authenticated reverse proxy (Nginx, Traefik, AWS ALB) in front of the dashboard port when accessing across internal networks.
