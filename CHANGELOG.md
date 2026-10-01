@@ -6,25 +6,26 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Security
+
+- **Standalone dashboard is secure by default (issue #295)**: `StandaloneDashboardOptions.LocalhostOnly` now defaults to `true` (loopback only; it was `false`, all interfaces), and a registered `IDashboardAuthorizationHandler` is now enforced in standalone mode (it was silently ignored because the embedded server has its own container). The handler is resolved per request in a scope of the host container, so any lifetime works, and a throwing handler never grants access. The startup warning from #294 now appears only when the dashboard is exposed **and** no handler is registered. The standalone server runs no authentication middleware, so a handler must authenticate from `context.Request`; the wiki has a Basic-auth example that is covered by tests. `DashboardSettings.LocalhostOnly` in core is aligned to `true` (it is not read by anything). **Behaviour change:** see `docs/wiki/18-Migration.md` (containers need `LocalhostOnly = false` plus a handler).
+
 ### Added
 
 - **Documentation: forwarding a dead-lettered job to Kafka or RabbitMQ (issue #311)**: explains what is broker-native (messages that can never become a job) and what stays only inside NexJob (a job that exhausted its retries), and why. Shows a pattern with an open-generic `IDeadLetterHandler<>` that forwards the original message body of one trigger queue through the Outbox, with the caveats (polled queues, a specific handler wins, key and headers are not kept, the forward is not transactional, requeue twice, PII). The code is compiled and run by new tests in `NexJob.Kafka.Tests` and `NexJob.RabbitMQ.Tests`. A built-in forwarder is tracked in #312.
+
 ### Changed
 
 - **Database connection usage (issue #307)**: NexJob usually shares its database with other applications, so its footprint is now visible and bounded by design.
   - `AddNexJobPostgres(connectionString)` builds the runtime settings store from the provider's data source, so a node keeps **one** pool instead of two (the connection limit applied twice before). A host that resolved only the settings store also gets the schema migrated now, instead of failing with `relation "nexjob_settings" does not exist`.
   - PostgreSQL and SQL Server log one line at startup with the `Maximum Pool Size` found and the worker count, and a warning when the pool is smaller than `Workers`. A host with `Workers = 0` logs nothing. No behaviour change.
   - New wiki section "Database connections and pool sizing" (rule of about `Workers` + 10 per node times the number of nodes, the option name in each driver, measured numbers, how to check on the database). Measured on PostgreSQL: 5 workers use 10 connections, 30 use 35, 60 use 60.
+- **CI runners pinned to `ubuntu-24.04` (issue #302)**: all workflows used `ubuntu-latest`, which GitHub migrates to Ubuntu 26 on 2026-10-19. Pinning keeps CI and the release pipeline on a known image until the move is tested on purpose. No change to the packages.
+
 ### Fixed
 
 - **PostgreSQL — `AddNexJobPostgres(NpgsqlDataSource)` crashed the host on databases that require a password (issue #308)**: the runtime settings store was built from `dataSource.ConnectionString`, which Npgsql returns **without the password**, so it failed with `No password has been provided but the backend requires one`, a background service threw and the host stopped within seconds. The store now opens its connections through the same `NpgsqlDataSource` as the provider (internal constructor, no public API change), so the password, the pool and any data-source configuration are shared. Affected v5.6.0 to v5.6.2 and only the `NpgsqlDataSource` overload; the connection-string overload was never affected. New integration tests run against a real PostgreSQL that requires a password.
 - **Dashboard no longer offers a Workers control, and settings with no effect are no longer silent (issue #281)**: the Settings page saved a `Workers` override and showed it as effective, but the dispatcher sizes its pool once at startup and never read it. The worker count is a deployment decision, so the Workers card and the `POST settings/workers` route are removed (worker counts per node stay on the Servers page), and a stored value is ignored. `RuntimeSettings.Workers` stays for compatibility and is documented as not applied. At startup the dispatcher now logs a Warning when `QueueSettings[].Workers` or a `DefaultQueue` other than `default` is configured, because both are accepted and ignored. The `WebApi` sample no longer configures a per-queue `Workers`.
-### Security
-
-- **Standalone dashboard is secure by default (issue #295)**: `StandaloneDashboardOptions.LocalhostOnly` now defaults to `true` (loopback only; it was `false`, all interfaces), and a registered `IDashboardAuthorizationHandler` is now enforced in standalone mode (it was silently ignored because the embedded server has its own container). The handler is resolved per request in a scope of the host container, so any lifetime works, and a throwing handler never grants access. The startup warning from #294 now appears only when the dashboard is exposed **and** no handler is registered. The standalone server runs no authentication middleware, so a handler must authenticate from `context.Request`; the wiki has a Basic-auth example that is covered by tests. `DashboardSettings.LocalhostOnly` in core is aligned to `true` (it is not read by anything). **Behaviour change:** see `docs/wiki/18-Migration.md` (containers need `LocalhostOnly = false` plus a handler).
-### Changed
-
-- **CI runners pinned to `ubuntu-24.04` (issue #302)**: all workflows used `ubuntu-latest`, which GitHub migrates to Ubuntu 26 on 2026-10-19. Pinning keeps CI and the release pipeline on a known image until the move is tested on purpose. No change to the packages.
 
 ## [5.6.2] - 2026-10-01
 
