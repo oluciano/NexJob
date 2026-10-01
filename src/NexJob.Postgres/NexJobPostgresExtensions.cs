@@ -56,7 +56,7 @@ public static class NexJobPostgresExtensions
         services.AddSingleton<IRecurringStorage>(sp => sp.GetRequiredService<PostgresStorageProvider>());
         services.AddSingleton<IDashboardStorage>(sp => sp.GetRequiredService<PostgresStorageProvider>());
 
-        services.AddSingleton<IRuntimeSettingsStore>(_ => new PostgresRuntimeSettingsStore(dataSource.ConnectionString));
+        services.AddSingleton<IRuntimeSettingsStore>(_ => new PostgresRuntimeSettingsStore(dataSource));
         return services;
     }
 
