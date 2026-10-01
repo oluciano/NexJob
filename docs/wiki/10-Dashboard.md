@@ -222,7 +222,6 @@ The settings page shows the **effective** value of each runtime setting (a runti
 |---|---|---|
 | Polling interval | `settings/polling` | Overrides `PollingInterval` |
 | Retention | `settings/retention` | Overrides `RetentionSucceeded`, `RetentionFailed`, `RetentionExpired` and `RetentionDeadLetter`, entered in days (`0` keeps that kind of job forever) |
-| Workers | `settings/workers` | Stored and displayed, but not applied yet: the worker pool is sized from `NexJobOptions.Workers` at startup (see [Configuration Reference](11-Configuration-Reference.md#runtime-settings)) |
 | Reset | `settings/reset` | Clears all overrides so the code/`appsettings.json` values apply again |
 
 Read-only clusters (`isReadOnly: true` in a federated dashboard) reject these actions. `RetentionBatchSize` has no field on the page; it can be set through `IRuntimeSettingsStore`.

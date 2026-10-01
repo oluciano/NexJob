@@ -19,7 +19,11 @@ public interface IRuntimeSettingsStore
 /// </summary>
 public sealed class RuntimeSettings
 {
-    /// <summary>Override global worker count. <see langword="null"/> = use appsettings/code value.</summary>
+    /// <summary>
+    /// Not applied: the worker count is a deployment setting (<see cref="NexJobOptions.Workers"/>) and the dispatcher
+    /// never reads this value. The dashboard no longer offers a way to change it. Kept for compatibility with stored
+    /// settings and may be removed in the next major version.
+    /// </summary>
     public int? Workers { get; set; }
 
     /// <summary>Queues that are administratively paused. Workers skip these queues entirely.</summary>
