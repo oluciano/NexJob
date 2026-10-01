@@ -94,6 +94,10 @@ options.Workers = 20;
 public sealed class ChargeCardJob : IJob<ChargeInput> { ... }
 ```
 
+### Size the database connection pool
+
+Your database is usually shared. A node needs about `Workers` + 5 connections, so set `Maximum Pool Size` (`Max Pool Size` on SQL Server) to about `Workers` + 10 and multiply by the number of nodes before scaling out. See [Database connections and pool sizing](09-Storage-Providers.md#database-connections-and-pool-sizing).
+
 ### Use Queues for Workload Isolation
 
 ```csharp

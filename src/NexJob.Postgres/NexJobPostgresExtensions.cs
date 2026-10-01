@@ -1,5 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using NexJob.Configuration;
 using NexJob.Storage;
 using Npgsql;
@@ -32,7 +33,11 @@ public static class NexJobPostgresExtensions
         services.AddSingleton<IRecurringStorage>(sp => sp.GetRequiredService<PostgresStorageProvider>());
         services.AddSingleton<IDashboardStorage>(sp => sp.GetRequiredService<PostgresStorageProvider>());
 
-        services.AddSingleton<IRuntimeSettingsStore>(_ => new PostgresRuntimeSettingsStore(connectionString));
+        // One pool per node: the settings store shares the provider's data source instead of opening its own pool.
+        services.AddSingleton<IRuntimeSettingsStore>(
+            sp => new PostgresRuntimeSettingsStore(sp.GetRequiredService<PostgresStorageProvider>().DataSource));
+        services.AddHostedService(sp => new PostgresPoolAdvisor(
+            sp.GetRequiredService<NexJobOptions>(), sp.GetRequiredService<ILogger<PostgresPoolAdvisor>>(), connectionString));
         return services;
     }
 
@@ -57,6 +62,8 @@ public static class NexJobPostgresExtensions
         services.AddSingleton<IDashboardStorage>(sp => sp.GetRequiredService<PostgresStorageProvider>());
 
         services.AddSingleton<IRuntimeSettingsStore>(_ => new PostgresRuntimeSettingsStore(dataSource));
+        services.AddHostedService(sp => new PostgresPoolAdvisor(
+            sp.GetRequiredService<NexJobOptions>(), sp.GetRequiredService<ILogger<PostgresPoolAdvisor>>(), dataSource.ConnectionString));
         return services;
     }
 

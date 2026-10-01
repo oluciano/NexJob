@@ -113,3 +113,7 @@ The provider automatically manages the following tables:
   }
 }
 ```
+
+## Connection pool
+
+NexJob shares your database with other applications. A node needs about `Workers` + 5 connections, so set `Maximum Pool Size` in the connection string to about `Workers` + 10 and multiply by the number of nodes. NexJob logs the pool size it finds at startup and warns when it is smaller than `Workers`. See [Database connections and pool sizing](https://github.com/oluciano/NexJob/blob/main/docs/wiki/09-Storage-Providers.md#database-connections-and-pool-sizing).
