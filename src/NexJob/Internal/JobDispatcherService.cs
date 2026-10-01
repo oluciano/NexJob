@@ -98,6 +98,14 @@ internal sealed class JobDispatcherService : BackgroundService
         _logger.LogInformation("JobDispatcherService started. Workers: {Workers}, Queues: {Queues}",
             _options.Workers, string.Join(", ", _options.Queues));
 
+        var ignoredSettings = _options.GetIgnoredSettings();
+        if (ignoredSettings.Count > 0)
+        {
+            _logger.LogWarning(
+                "These settings are configured but have no effect and are ignored: {Settings}. The worker count is a deployment setting (NexJobOptions.Workers).",
+                string.Join(", ", ignoredSettings));
+        }
+
         // Outlives ExecuteAsync: jobs still draining during shutdown release their slot after the loop exits.
         var workerSlots = new SemaphoreSlim(_options.Workers, _options.Workers);
         _workerSlots = workerSlots;

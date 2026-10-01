@@ -6,6 +6,9 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Dashboard no longer offers a Workers control, and settings with no effect are no longer silent (issue #281)**: the Settings page saved a `Workers` override and showed it as effective, but the dispatcher sizes its pool once at startup and never read it. The worker count is a deployment decision, so the Workers card and the `POST settings/workers` route are removed (worker counts per node stay on the Servers page), and a stored value is ignored. `RuntimeSettings.Workers` stays for compatibility and is documented as not applied. At startup the dispatcher now logs a Warning when `QueueSettings[].Workers` or a `DefaultQueue` other than `default` is configured, because both are accepted and ignored. The `WebApi` sample no longer configures a per-queue `Workers`.
 ### Security
 
 - **Standalone dashboard is secure by default (issue #295)**: `StandaloneDashboardOptions.LocalhostOnly` now defaults to `true` (loopback only; it was `false`, all interfaces), and a registered `IDashboardAuthorizationHandler` is now enforced in standalone mode (it was silently ignored because the embedded server has its own container). The handler is resolved per request in a scope of the host container, so any lifetime works, and a throwing handler never grants access. The startup warning from #294 now appears only when the dashboard is exposed **and** no handler is registered. The standalone server runs no authentication middleware, so a handler must authenticate from `context.Request`; the wiki has a Basic-auth example that is covered by tests. `DashboardSettings.LocalhostOnly` in core is aligned to `true` (it is not read by anything). **Behaviour change:** see `docs/wiki/18-Migration.md` (containers need `LocalhostOnly = false` plus a handler).

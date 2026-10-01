@@ -520,20 +520,6 @@ public sealed class DashboardMiddleware
         HttpContext context, string subPath, IRuntimeSettingsStore runtimeStore,
         IJobControlService controlService, DashboardCluster? activeCluster)
     {
-        if (string.Equals(subPath, "settings/workers", StringComparison.Ordinal))
-        {
-            var form = await context.Request.ReadFormAsync(context.RequestAborted).ConfigureAwait(false);
-            if (int.TryParse(form["workers"], NumberStyles.Integer, CultureInfo.InvariantCulture, out var workers) && workers > 0)
-            {
-                var rt = await runtimeStore.GetAsync(context.RequestAborted).ConfigureAwait(false);
-                rt.Workers = workers;
-                await runtimeStore.SaveAsync(rt, context.RequestAborted).ConfigureAwait(false);
-            }
-
-            LocalRedirect(context, $"{_pathPrefix}/settings", activeCluster);
-            return true;
-        }
-
         if (string.Equals(subPath, "settings/polling", StringComparison.Ordinal))
         {
             var form = await context.Request.ReadFormAsync(context.RequestAborted).ConfigureAwait(false);

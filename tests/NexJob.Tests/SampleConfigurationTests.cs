@@ -41,6 +41,27 @@ public sealed class SampleConfigurationTests
     }
 
     [Fact]
+    public void SampleAppSettings_DoNotConfigureSettingsThatHaveNoEffect()
+    {
+        // N1 (Positive, issue #281): per-queue Workers and a non-default DefaultQueue are accepted and ignored.
+        foreach (var (sample, section) in LoadSamples())
+        {
+            if (section.TryGetProperty("DefaultQueue", out var defaultQueue))
+            {
+                defaultQueue.GetString().Should().Be("default", $"sample '{sample}' sets a DefaultQueue that is ignored");
+            }
+
+            if (section.TryGetProperty("QueueSettings", out var queues))
+            {
+                foreach (var queue in queues.EnumerateArray())
+                {
+                    queue.TryGetProperty("Workers", out _).Should().BeFalse($"sample '{sample}' sets a per-queue Workers that is ignored");
+                }
+            }
+        }
+    }
+
+    [Fact]
     public void FindUnknownKeys_BogusKey_IsReported()
     {
         // N2 (Negative): the guard really fails for a key that does not exist.

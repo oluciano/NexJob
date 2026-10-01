@@ -227,7 +227,6 @@ Modifiable at runtime via dashboard or API. Persisted in storage.
 
 | Setting | Description |
 |---|---|
-| `Workers` | Stored and shown by the dashboard, but **not applied yet**: the worker pool is sized from `NexJobOptions.Workers` when the host starts, so changing the worker count still needs a restart |
 | `PausedQueues` | Pause specific queues |
 | `RecurringJobsPaused` | Pause all recurring job scheduling |
 | `PollingInterval` | Change poll frequency at runtime |
@@ -236,6 +235,10 @@ Modifiable at runtime via dashboard or API. Persisted in storage.
 | `RetentionExpired` | Adjust retention for expired jobs |
 | `RetentionDeadLetter` | Adjust retention for dead-letter jobs |
 | `RetentionBatchSize` | Maximum rows deleted per batch during purge (no field on the dashboard page; set it through `IRuntimeSettingsStore`) |
+
+> **The worker count is not a runtime setting.** It is sized from `NexJobOptions.Workers` when the host starts, so changing it means changing the configuration and redeploying. The dashboard has no control for it, and a `Workers` value saved by an older version is ignored.
+>
+> **Settings that are accepted but have no effect:** `QueueSettings[].Workers` (there is no per-queue pool) and a `DefaultQueue` other than `default`. NexJob logs a warning at startup when either is configured.
 
 The other settings apply on the next dispatcher, scheduler or retention cycle.
 

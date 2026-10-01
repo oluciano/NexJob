@@ -6,7 +6,10 @@ public sealed class QueueSettings
     /// <summary>Queue name. Required.</summary>
     public required string Name { get; set; }
 
-    /// <summary>Worker count override for this queue. When <see langword="null"/>, the global value is used.</summary>
+    /// <summary>
+    /// Not applied: the worker pool is global (<see cref="NexJobOptions.Workers"/>) and there is no per-queue pool.
+    /// Setting it has no effect, and the dispatcher logs a warning at startup when it is set.
+    /// </summary>
     public int? Workers { get; set; }
 
     /// <summary>Optional time window during which this queue is processed.</summary>

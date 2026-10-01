@@ -50,7 +50,6 @@ internal sealed class SettingsPage : ComponentBase
     /// <inheritdoc/>
     protected override void BuildRenderTree(RenderTreeBuilder builder)
     {
-        var effectiveWorkers = Runtime.Workers ?? Options.Workers;
         var effectivePolling = (Runtime.PollingInterval ?? Options.PollingInterval).TotalSeconds;
         var effectiveRetentionSucceeded = (int)(Runtime.RetentionSucceeded ?? Options.RetentionSucceeded).TotalDays;
         var effectiveRetentionFailed = (int)(Runtime.RetentionFailed ?? Options.RetentionFailed).TotalDays;
@@ -59,7 +58,7 @@ internal sealed class SettingsPage : ComponentBase
 
         var effectiveJson = JsonSerializer.Serialize(new
         {
-            Workers = effectiveWorkers,
+            Options.Workers,
             PollingIntervalSeconds = effectivePolling,
             Options.MaxAttempts,
             Options.HeartbeatInterval,
@@ -73,7 +72,6 @@ internal sealed class SettingsPage : ComponentBase
             RetentionDeadLetterDays = effectiveRetentionDeadLetter,
             RuntimeOverrides = new
             {
-                Runtime.Workers,
                 Runtime.PollingInterval,
                 Runtime.RetentionSucceeded,
                 Runtime.RetentionFailed,
@@ -84,8 +82,7 @@ internal sealed class SettingsPage : ComponentBase
             },
         }, PrettyPrint);
 
-        var hasOverrides = Runtime.Workers.HasValue
-            || Runtime.PollingInterval.HasValue
+        var hasOverrides = Runtime.PollingInterval.HasValue
             || Runtime.PausedQueues.Count > 0
             || Runtime.RetentionSucceeded.HasValue
             || Runtime.RetentionFailed.HasValue
@@ -95,14 +92,6 @@ internal sealed class SettingsPage : ComponentBase
 
         var isReadOnly = ActiveCluster?.IsReadOnly == true;
         var clusterSuffix = ActiveCluster is not null ? $"?cluster={Uri.EscapeDataString(ActiveCluster.Id)}" : string.Empty;
-
-        var workersAction = !isReadOnly
-            ? $"<form method=\"post\" action=\"{PathPrefix}/settings/workers{clusterSuffix}\" style=\"display:flex;gap:8px;align-items:center\">" +
-              $"<input type=\"number\" name=\"workers\" value=\"{effectiveWorkers}\" min=\"1\" max=\"200\" " +
-              $"style=\"width:80px\"/>" +
-              "<button class=\"btn btn-primary btn-sm\" type=\"submit\">Apply</button>" +
-              "</form>"
-            : $"<span style=\"font-weight:700;font-size:16px\">{effectiveWorkers}</span>";
 
         var pollingAction = !isReadOnly
             ? $"<form method=\"post\" action=\"{PathPrefix}/settings/polling{clusterSuffix}\" style=\"display:flex;gap:8px;align-items:center\">" +
@@ -133,20 +122,6 @@ internal sealed class SettingsPage : ComponentBase
             HtmlFragments.PageHeader("Settings", "Live runtime configuration — changes apply immediately") +
 
             "<div style=\"display:grid;grid-template-columns:repeat(auto-fit, minmax(400px, 1fr));gap:24px\">" +
-
-            // Workers card
-            "<div class=\"card\">" +
-            "<div class=\"card-header\"><h3>Workers</h3></div>" +
-            "<div style=\"padding:16px\">" +
-            "<div style=\"display:flex;justify-content:space-between;align-items:center\">" +
-            "<div><div style=\"font-weight:600\">Active workers</div>" +
-            $"<div style=\"font-size:12px;color:var(--text-tertiary)\">Baseline: {Options.Workers}</div></div>" +
-            workersAction +
-            "</div>" +
-            (Runtime.Workers.HasValue
-                ? "<div style=\"margin-top:12px\"><div class=\"badge badge-warning\" style=\"width:100%;text-align:center\">Runtime override active</div></div>"
-                : string.Empty) +
-            "</div></div>" +
 
             // Polling card
             "<div class=\"card\">" +

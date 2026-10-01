@@ -20,7 +20,10 @@ public sealed class NexJobSettings
     /// <summary>Maximum number of execution attempts before dead-lettering. Defaults to <c>10</c>.</summary>
     public int MaxAttempts { get; set; } = 10;
 
-    /// <summary>Default queue name. Defaults to <c>default</c>.</summary>
+    /// <summary>
+    /// Not applied: enqueueing without a queue always uses <c>default</c>. A value other than <c>default</c>
+    /// has no effect, and the dispatcher logs a warning at startup.
+    /// </summary>
     public string DefaultQueue { get; set; } = "default";
 
     /// <summary>How often the dispatcher polls for new jobs. Defaults to <c>15 seconds</c>.</summary>
