@@ -6,6 +6,8 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [5.7.0] - 2026-10-01
+
 ### Security
 
 - **Standalone dashboard is secure by default (issue #295)**: `StandaloneDashboardOptions.LocalhostOnly` now defaults to `true` (loopback only; it was `false`, all interfaces), and a registered `IDashboardAuthorizationHandler` is now enforced in standalone mode (it was silently ignored because the embedded server has its own container). The handler is resolved per request in a scope of the host container, so any lifetime works, and a throwing handler never grants access. The startup warning from #294 now appears only when the dashboard is exposed **and** no handler is registered. The standalone server runs no authentication middleware, so a handler must authenticate from `context.Request`; the wiki has a Basic-auth example that is covered by tests. `DashboardSettings.LocalhostOnly` in core is aligned to `true` (it is not read by anything). **Behaviour change:** see `docs/wiki/18-Migration.md` (containers need `LocalhostOnly = false` plus a handler).
