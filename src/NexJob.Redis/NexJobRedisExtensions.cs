@@ -1,6 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 using NexJob.Configuration;
 using NexJob.Storage;
 using StackExchange.Redis;
@@ -26,7 +27,7 @@ public static class NexJobRedisExtensions
         var mux = ConnectionMultiplexer.Connect(connectionString);
         var db = mux.GetDatabase();
         services.TryAddSingleton(db);
-        services.AddSingleton(_ => new RedisStorageProvider(db));
+        services.AddSingleton(sp => new RedisStorageProvider(db, sp.GetService<ILogger<RedisStorageProvider>>()));
         services.AddSingleton<IStorageProvider>(sp => sp.GetRequiredService<RedisStorageProvider>());
         services.AddSingleton<IJobStorage>(sp => sp.GetRequiredService<RedisStorageProvider>());
         services.AddSingleton<IRecurringStorage>(sp => sp.GetRequiredService<RedisStorageProvider>());
@@ -50,7 +51,7 @@ public static class NexJobRedisExtensions
     {
         var db = multiplexer.GetDatabase();
         services.TryAddSingleton(db);
-        services.AddSingleton(_ => new RedisStorageProvider(db));
+        services.AddSingleton(sp => new RedisStorageProvider(db, sp.GetService<ILogger<RedisStorageProvider>>()));
         services.AddSingleton<IStorageProvider>(sp => sp.GetRequiredService<RedisStorageProvider>());
         services.AddSingleton<IJobStorage>(sp => sp.GetRequiredService<RedisStorageProvider>());
         services.AddSingleton<IRecurringStorage>(sp => sp.GetRequiredService<RedisStorageProvider>());
