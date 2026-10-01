@@ -152,6 +152,27 @@ public sealed class RedisIndexReconciliationTests : IClassFixture<RedisFixture>
     }
 
     [Fact]
+    public async Task SeveralNodesCallingAtOnce_OnlyOneReconciles()
+    {
+        // N1 (Positive): the lock keeps a stampede away. Six nodes ask at the same time and exactly one scans.
+        var (db, provider, _) = await ConnectAsync();
+        var id = await SucceedOneJobAsync(provider);
+        await ForgetInIndexAsync(db, id);
+        await SetMarkerAsync(db, DateTimeOffset.UtcNow.AddHours(-2));
+        var nodes = Enumerable.Range(0, 6).Select(_ =>
+        {
+            var log = new ListLog();
+            return (Provider: new RedisStorageProvider(db, log), Log: log);
+        }).ToList();
+
+        await Task.WhenAll(nodes.Select(n => Task.Run(() => n.Provider.GetJobsAsync(new JobFilter(), 1, 50))));
+
+        var reports = nodes.SelectMany(n => n.Log.Entries).Count(e => e.Level == LogLevel.Warning && e.Message.Contains("missing from the Redis job index", StringComparison.Ordinal));
+        Assert.Equal(1, reports);
+        Assert.False(await db.KeyExistsAsync(LockKey));
+    }
+
+    [Fact]
     public async Task IndexJobsIfTheyExist_SkipsAJobWhoseHashIsGone()
     {
         // N3 (purge during the scan): a job purged after it was read must not be added back to the index.
