@@ -8,6 +8,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Flaky dead-letter unit tests**: `Job_ExceedingMaxAttempts_MovesToDeadLetter` and `FailedJob_NoRetry_WhenMaxAttemptsExhausted` slept a fixed 50/100 ms before reading the metrics and could read `Failed = 0` on a slow CI runner. They now wait (bounded, 5 s) for the dead-letter result, with the same assertions. Test-only change, no library change.
 - **Samples aligned with the code (issue #177)**: nothing here changes the libraries.
   - Every web sample now has its own port in `Properties/launchSettings.json` (`5001` MinimalApi, `5002` WebApi, `5004` ConfiguredRecurring, `5007` Storage, `5008` CloudTriggers, `5009` RabbitMQ, `5010` Kafka), so they can run side by side; the `WorkerService` dashboard stays on `5005`. The root and `samples/` READMEs, the `.http` files and the endpoint lists now match the real routes.
   - Configuration keys that `NexJobSettings` silently ignored were replaced by real ones (`Workers`, `PollingInterval`, `HeartbeatInterval`), and `MinimalApi` now binds its `NexJob` section (it ran with the defaults, not the values in its `appsettings.json`).
