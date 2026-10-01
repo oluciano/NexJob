@@ -1,3 +1,4 @@
+using System.Xml.Linq;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -64,7 +65,7 @@ public sealed class SqlServerContinuationReleaseTests : IClassFixture<SqlServerF
         var deadlocks = await DeadlockCounterAsync() - before;
 
         Assert.Equal(1200, succeeded);
-        Assert.Equal(0, deadlocks);
+        Assert.True(deadlocks == 0, $"{deadlocks} deadlock(s) on the server. {await DeadlockSummaryAsync()}");
     }
 
     [Fact]
@@ -178,6 +179,38 @@ public sealed class SqlServerContinuationReleaseTests : IClassFixture<SqlServerF
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = "SELECT cntr_value FROM sys.dm_os_performance_counters WHERE counter_name = 'Number of Deadlocks/sec' AND instance_name = '_Total'";
         return Convert.ToInt64(await cmd.ExecuteScalarAsync());
+    }
+
+    // The statements and lock resources of the recent deadlocks, read from the system_health session, so a failure says what
+    // collided instead of only how many.
+    private async Task<string> DeadlockSummaryAsync()
+    {
+        await using var conn = new SqlConnection(_fixture.Container.GetConnectionString());
+        await conn.OpenAsync();
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT CAST(x.xml_report AS NVARCHAR(MAX)) FROM (
+              SELECT n.query('.') AS xml_report
+              FROM (SELECT CAST(xet.target_data AS XML) AS d
+                    FROM sys.dm_xe_session_targets xet
+                    JOIN sys.dm_xe_sessions xe ON xe.address = xet.event_session_address
+                    WHERE xe.name = 'system_health' AND xet.target_name = 'ring_buffer') t
+              CROSS APPLY t.d.nodes('//RingBufferTarget/event[@name="xml_deadlock_report"]') AS r(n)) x
+            """;
+        var lines = new List<string>();
+        await using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            var doc = XElement.Parse(reader.GetString(0));
+            var statements = doc.Descendants("inputbuf").Select(e => string.Join(" ", e.Value.Split(new[] { '\r', '\n', ' ' }, StringSplitOptions.RemoveEmptyEntries)));
+            var resources = doc.Descendants()
+                .Where(e => e.Name.LocalName is "keylock" or "pagelock" or "objectlock" or "ridlock")
+                .Select(e => $"{e.Name.LocalName} {e.Attribute("objectname")?.Value}.{e.Attribute("indexname")?.Value}")
+                .Distinct();
+            lines.Add($"statements=[{string.Join(" | ", statements)}] resources=[{string.Join(", ", resources)}]");
+        }
+
+        return lines.Count == 0 ? "No graph in system_health." : string.Join(" ;; ", lines);
     }
 
     private static async Task<List<(string Text, string Plan)>> ReleasePlansAsync(string connectionString)
