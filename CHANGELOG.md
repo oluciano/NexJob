@@ -6,6 +6,12 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **Database connection usage (issue #307)**: NexJob usually shares its database with other applications, so its footprint is now visible and bounded by design.
+  - `AddNexJobPostgres(connectionString)` builds the runtime settings store from the provider's data source, so a node keeps **one** pool instead of two (the connection limit applied twice before). A host that resolved only the settings store also gets the schema migrated now, instead of failing with `relation "nexjob_settings" does not exist`.
+  - PostgreSQL and SQL Server log one line at startup with the `Maximum Pool Size` found and the worker count, and a warning when the pool is smaller than `Workers`. A host with `Workers = 0` logs nothing. No behaviour change.
+  - New wiki section "Database connections and pool sizing" (rule of about `Workers` + 10 per node times the number of nodes, the option name in each driver, measured numbers, how to check on the database). Measured on PostgreSQL: 5 workers use 10 connections, 30 use 35, 60 use 60.
 ### Fixed
 
 - **PostgreSQL — `AddNexJobPostgres(NpgsqlDataSource)` crashed the host on databases that require a password (issue #308)**: the runtime settings store was built from `dataSource.ConnectionString`, which Npgsql returns **without the password**, so it failed with `No password has been provided but the backend requires one`, a background service threw and the host stopped within seconds. The store now opens its connections through the same `NpgsqlDataSource` as the provider (internal constructor, no public API change), so the password, the pool and any data-source configuration are shared. Affected v5.6.0 to v5.6.2 and only the `NpgsqlDataSource` overload; the connection-string overload was never affected. New integration tests run against a real PostgreSQL that requires a password.

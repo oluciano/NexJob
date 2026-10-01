@@ -275,6 +275,55 @@ builder.Services.AddNexJob(options =>
 
 ---
 
+## Database connections and pool sizing
+
+NexJob usually shares its database with other applications, so how many connections it keeps open matters. A node reuses pooled connections: each storage call takes one and returns it right away, and a job that is running does not hold a connection.
+
+**What a node uses.** Measured on PostgreSQL, one node, 3000 jobs of 200 ms, counting connections on the server:
+
+| Workers | Highest number of connections seen |
+|---|---|
+| 5 | 10 |
+| 30 | 35 |
+| 60 | 60 |
+
+So a node needs about **`Workers` + 5** connections (one per worker that is committing or heartbeating, plus the dispatcher, the server heartbeat, the recurring scheduler and retention). This was measured on PostgreSQL only; SQL Server follows the same pattern in the code but was not measured.
+
+**Sizing rule.** Set the pool of each node to about `Workers` + 10, then multiply by the number of nodes and compare with the database limit that is left after the other applications. Example: 4 nodes with 30 workers each need about 140 connections, more than PostgreSQL's default `max_connections` of 100. Either lower `Workers` or raise the database limit before you scale out.
+
+**Where to set it.** NexJob does not set a pool size, so the driver default applies (100 per pool, per node). Set it in the connection string:
+
+| Provider | Setting | Example |
+|---|---|---|
+| PostgreSQL (Npgsql) | `Maximum Pool Size` | `Host=db;Database=nexjob;Username=u;Password=p;Maximum Pool Size=40;Application Name=nexjob-worker` |
+| SQL Server (SqlClient) | `Max Pool Size` | `Server=db;Database=nexjob;User Id=u;Password=p;Max Pool Size=40;Application Name=nexjob-worker` |
+| MongoDB | `maxPoolSize` | `mongodb://host/?maxPoolSize=40` |
+| Redis | one shared multiplexer per process | no pool to size |
+
+The option has a different name in each driver (`Maximum Pool Size` for Npgsql, `Max Pool Size` for SqlClient), and a wrong name is an error or is ignored.
+
+**Too small or too large.** If the pool is smaller than `Workers`, workers wait for a connection and a call that waits longer than the connection timeout (15 seconds by default) fails. NexJob logs a warning at startup when it sees this. If the pool is much larger than you need, nothing breaks in NexJob, but a busy period can take connections the other applications on the same database need.
+
+**At startup** NexJob logs one line with the pool size it found (`NexJob database pool (PostgreSQL): Maximum Pool Size = 100, Workers = 10 ...`), or a warning when the pool is smaller than `Workers`. A host with `Workers = 0` (dashboard only) logs nothing.
+
+**One pool per node.** With `AddNexJobPostgres(connectionString)` the storage and the runtime settings store share one pool (before v5.7.0 they opened two, so the limit applied twice). With `AddNexJobPostgres(NpgsqlDataSource)` you own the data source, so configure the pool there. `UseDashboardReadReplica` opens its own pool on purpose, because it talks to another server.
+
+**See it on the database.** Give the connection an `Application Name` and count the sessions:
+
+```sql
+-- PostgreSQL
+SELECT application_name, count(*) FROM pg_stat_activity
+WHERE datname = 'nexjob' GROUP BY application_name;
+
+-- SQL Server
+SELECT program_name, COUNT(*) FROM sys.dm_exec_sessions
+WHERE is_user_process = 1 GROUP BY program_name;
+```
+
+For SQL Server, `AddNexJobSqlServer(connectionString)` shares one pool between storage and settings. If you build `SqlServerStorageProvider` yourself from a `SqlConnection`, pass one that has not been opened: SqlClient may return the connection string without the password after the first open.
+
+---
+
 ## Provider Comparison
 
 | Feature | InMemory | PostgreSQL | SQL Server | Redis | MongoDB |
