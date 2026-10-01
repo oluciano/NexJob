@@ -179,7 +179,7 @@ Quick rules:
 A payment gateway, end to end: `[Throttle("payment-gateway", maxConcurrent: 5)]` keeps you from saturating it, retry absorbs the isolated error, the breaker on the `payments` queue stops the flood if the gateway goes down, and the dead-letter handler deals with what is left.
 
 **Throttle details that matter:**
-- A throttled job **waits while already `Processing`**, holding its worker slot (and its heartbeat keeps running). It does not go back to the queue. If many jobs wait for one resource, they can occupy all your workers and starve other queues.
+- A throttled job **waits while already `Processing`**, holding its worker slot (and its heartbeat keeps running). It does not go back to the queue. If many jobs wait for one resource, they can occupy all your workers and starve other queues, so keep `Workers` comfortably above the sum of the relevant `maxConcurrent` values or isolate throttled jobs in their own queue (see [Throttling](07-Throttling.md#waiting-for-a-slot)).
 - By default the limit is **per process** (an in-memory semaphore per resource). For a limit shared by all nodes, register the Redis store with `AddNexJobDistributedThrottle()`. If that store fails, NexJob degrades to the local throttle and logs a warning.
 
 **Verified in:** `JobExecutor.cs` (`ExecuteWithThrottlingAndFiltersAsync`: waits for slots after the heartbeat has started), `ThrottleRegistry.cs` (`SemaphoreSlim` per resource; degradation to local), `NexJob.Redis/NexJobRedisExtensions.cs` (`AddNexJobDistributedThrottle`), plus the sources cited in the two answers above.

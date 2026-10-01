@@ -8,6 +8,7 @@ Demonstrates NexJob's **Resilient Outbox Producer** and **Trigger Consumer** for
 
 1. **Transactional Outbox Producer (`EnqueueKafkaAsync`)**:
    - Persists events in NexJob storage before publishing to Apache Kafka.
+   - Storage is SQL Server when `ConnectionStrings:SqlServer` is set (the shipped `appsettings.json` sets it) and in-memory otherwise; with in-memory storage the outbox only survives for the lifetime of the process.
    - Background worker publishes to the topic with idempotence (`EnableIdempotence = true`), full acks (`Acks.All`), and jittered retries.
 2. **Trigger Consumer (`AddKafkaTrigger`) & SQL Server Sink**:
    - Long-polling consumer that extracts W3C `traceparent` headers for distributed tracing.
@@ -31,7 +32,7 @@ docker compose -f samples/docker-compose.yml up -d kafka sqlserver
 dotnet run --project samples/NexJob.Sample.Kafka
 ```
 
-The Web API starts at `http://localhost:5000` (or `http://localhost:5247`) and the Dashboard at `/dashboard`.
+The Web API starts at `http://localhost:5010` and the Dashboard at `/dashboard`.
 
 ---
 
@@ -43,16 +44,16 @@ Simulate an external CRM/producer writing raw customer records directly to Kafka
 
 ```bash
 # Produce 10 customer records directly into Kafka
-curl -X POST "http://localhost:5000/customers/bulk?count=10"
+curl -X POST "http://localhost:5010/customers/bulk?count=10"
 
 # Query persisted records in SQL Server
-curl "http://localhost:5000/customers"
+curl "http://localhost:5010/customers"
 ```
 
 ### Scenario B: Publish an Event to Kafka via Outbox Producer
 
 ```bash
-curl -X POST http://localhost:5000/events \
+curl -X POST http://localhost:5010/events \
   -H "Content-Type: application/json" \
   -d '{
     "EventId": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",

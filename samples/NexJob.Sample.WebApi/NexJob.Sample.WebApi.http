@@ -1,4 +1,4 @@
-@host = http://localhost:5000
+@host = http://localhost:5002
 
 ### 1. Enqueue Fire-and-Forget Email
 POST {{host}}/jobs/email

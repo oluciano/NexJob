@@ -7,8 +7,9 @@ Production-ready sample demonstrating enterprise storage topology, distributed t
 1. **Read Replica Segregation (`UseDashboardReadReplica`)**:
    - Primary PostgreSQL database handles transactional job state transitions (`IJobStorage`).
    - Read replica offloads heavy dashboard analytics and queue inspection queries (`IDashboardStorage`).
+   - **Note:** the shipped `appsettings.json` points `NexJobPostgresReplica` at the **same** database as the primary, so out of the box nothing is offloaded. Point it at a real replica to see the isolation.
 2. **Global Distributed Throttling (`AddNexJobDistributedThrottle`)**:
-   - `[Throttle("payment-gateway", 2)]` limits concurrency across **all** worker instances using Redis atomic counters.
+   - `[Throttle("payment-gateway", 2)]` limits concurrency across **all** worker instances using slots held in Redis (one entry per running job, refreshed while it runs and reclaimed if its node crashes).
 3. **OpenTelemetry Instrumentation**:
    - Distributed tracing and metrics exports out-of-the-box (`AddNexJobInstrumentation`).
 4. **Execution Middleware Pipeline (`IJobExecutionFilter`)**:
@@ -28,7 +29,7 @@ docker compose up -d postgres redis
 dotnet run --project samples/NexJob.Sample.Storage/NexJob.Sample.Storage.csproj
 ```
 
-The application starts on `http://localhost:5000` (or the configured ASP.NET port).
+The application starts on `http://localhost:5007`.
 
 ## Testing Scenarios
 
@@ -36,15 +37,15 @@ The application starts on `http://localhost:5000` (or the configured ASP.NET por
 Enqueue 5 payments at once. Observe in console logs that only **2** payments execute concurrently, while the remaining jobs wait:
 
 ```bash
-curl -X POST "http://localhost:5000/payments/batch?count=5"
+curl -X POST "http://localhost:5007/payments/batch?count=5"
 ```
 
 ### 2. View Read Replica Storage Queries
 Inspect jobs through the segregated read replica storage provider:
 
 ```bash
-curl http://localhost:5000/jobs
+curl http://localhost:5007/jobs
 ```
 
 ### 3. Open NexJob Dashboard
-Open `http://localhost:5000/dashboard` in your browser. All metrics and queue queries hit the replica database!
+Open `http://localhost:5007/dashboard` in your browser. All metrics and queue queries hit the replica database!
