@@ -82,7 +82,7 @@ internal sealed class ServerHeartbeatService : IHostedService, IDisposable
 
         if (_dashboardStorage is not null)
         {
-            _ = RefreshQueueMetricsAsync(CancellationToken.None);
+            _ = RefreshQueueMetricsAsync(cancellationToken);
         }
     }
 
