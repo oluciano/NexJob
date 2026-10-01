@@ -6,6 +6,8 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [5.6.2] - 2026-10-01
+
 ### Fixed
 
 - **Flaky dead-letter unit tests**: `Job_ExceedingMaxAttempts_MovesToDeadLetter` and `FailedJob_NoRetry_WhenMaxAttemptsExhausted` slept a fixed 50/100 ms before reading the metrics and could read `Failed = 0` on a slow CI runner. They now wait (bounded, 5 s) for the dead-letter result, with the same assertions. Test-only change, no library change.
