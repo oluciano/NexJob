@@ -189,3 +189,7 @@ builder.Services.AddNexJob()
 ## 6. Sagas & Event-Driven Choreographies
 
 Need distributed state machines or sagas with compensating transactions over Kafka? See **[qKafka](https://github.com/oluciano/QKafka)** — the companion event-driven framework that pairs with NexJob.
+
+## Forwarding failed jobs
+
+A job created from a consumed message that exhausts its retries stays **only inside NexJob** (`Failed` in the dashboard), because the broker message was acknowledged when it became a job. To forward a copy of the original message to a Kafka topic, see [Forwarding a dead-lettered job](https://github.com/oluciano/NexJob/blob/main/docs/wiki/06-Retry-And-Dead-Letter.md#forwarding-a-dead-lettered-job-to-kafka-or-rabbitmq).

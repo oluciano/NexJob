@@ -263,6 +263,8 @@ When producing via NexJob:
 | **Host Shutdown** | The registered `IKafkaProducerClient` automatically invokes `Flush()` to ensure all in-flight messages are delivered before exit. |
 | **Serialization Error** | Serialization errors fail fast and route to dead-letter without crashing the worker host. |
 
+> A job that came from the trigger and exhausted its retries stays **only inside NexJob** (the broker message was acknowledged when it became a job). To also send a copy to a Kafka topic, see [Forwarding a dead-lettered job](06-Retry-And-Dead-Letter.md#forwarding-a-dead-lettered-job-to-kafka-or-rabbitmq).
+
 ---
 
 ## 6. Sagas & Advanced Stream Orchestration (qKafka)

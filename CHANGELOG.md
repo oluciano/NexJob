@@ -6,6 +6,9 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Documentation: forwarding a dead-lettered job to Kafka or RabbitMQ (issue #311)**: explains what is broker-native (messages that can never become a job) and what stays only inside NexJob (a job that exhausted its retries), and why. Shows a pattern with an open-generic `IDeadLetterHandler<>` that forwards the original message body of one trigger queue through the Outbox, with the caveats (polled queues, a specific handler wins, key and headers are not kept, the forward is not transactional, requeue twice, PII). The code is compiled and run by new tests in `NexJob.Kafka.Tests` and `NexJob.RabbitMQ.Tests`. A built-in forwarder is tracked in #312.
 ### Changed
 
 - **Database connection usage (issue #307)**: NexJob usually shares its database with other applications, so its footprint is now visible and bounded by design.
