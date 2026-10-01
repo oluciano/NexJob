@@ -6,6 +6,10 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **CI runners pinned to `ubuntu-24.04` (issue #302)**: all workflows used `ubuntu-latest`, which GitHub migrates to Ubuntu 26 on 2026-10-19. Pinning keeps CI and the release pipeline on a known image until the move is tested on purpose. No change to the packages.
+
 ## [5.6.2] - 2026-10-01
 
 ### Fixed
