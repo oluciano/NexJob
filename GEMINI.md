@@ -21,7 +21,7 @@ Before executing any task, read:
 
 NexJob is a production-oriented background job processing library for .NET 8.
 MIT licensed. Alternative to Hangfire — storage-pluggable, trigger-ready, OTel-native.
-Current published version: **v5.6.2**. Active development: **develop**.
+Current published version: **v5.7.0**. Active development: **develop**.
 
 ---
 
@@ -253,3 +253,6 @@ If changed: add comment `// Behavior changed in vX.Y: <reason>`.
 - **v5.6.0 — Two-node/statics in tests.** Test helpers with `static` state (for example a recording dead-letter handler) race when provider test classes run in parallel; keep such state per test or per host.
 - **v5.6.1 — Search open issues before creating one.** `gh issue list --search "<keywords>"` first; #289 duplicated an in-progress #287 and had to be closed.
 - **v5.6.1 — The dashboard chaos gate needs a running app.** `full-regression.js` exits "green-looking" with 0/1 routes when nothing listens on :5005; start the `NexJob.Sample.WorkerService` sample first and check the route count.
+- **v5.6.2 — Never wait with a fixed `Task.Delay` for a storage commit in a test.** `Job_ExceedingMaxAttempts_MovesToDeadLetter` read the metrics 50 ms after the job signalled and failed on a slow CI runner (two retries wasted); poll with a bounded timeout instead.
+- **v5.6.2 — Read the related issues before assigning a milestone.** #278 was put in the patch although #297 already absorbed it; check "absorbs/blocks" notes in linked issues first.
+- **v5.6.2 — Sample config drift is invisible to CI.** `AddNexJob()` without `IConfiguration` and unknown keys are silently ignored; `SampleConfigurationTests` now fails on both, so extend it when a sample gains settings.

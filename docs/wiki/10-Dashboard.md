@@ -98,7 +98,7 @@ builder.Services.AddNexJobStandaloneDashboard();
 //     options.Port = 5005;                 // default 5005
 //     options.Path = "/dashboard";         // default "/dashboard"
 //     options.Title = "Worker Dashboard";
-//     options.LocalhostOnly = true;        // default false: listens on all interfaces
+//     options.LocalhostOnly = true;        // default true: loopback only; false listens on all interfaces
 //     options.PollIntervalSeconds = 3;     // default 3
 // });
 
@@ -106,7 +106,7 @@ var host = builder.Build();
 host.Run();
 ```
 
-> **Security:** with `LocalhostOnly = false` (the default) the standalone dashboard listens on all interfaces, and standalone mode does not support `IDashboardAuthorizationHandler`. Anyone who can reach the port can read job payloads (which may hold personal data) and run actions such as pausing queues, requeueing and triggering jobs. NexJob logs a warning at startup in this case. Set `LocalhostOnly = true`, restrict the port with a firewall or network policy, or host the dashboard in an ASP.NET Core app where you can register an authorization handler.
+> **Security:** the standalone dashboard listens on **loopback only** by default (`LocalhostOnly = true`). Inside a container that makes it unreachable through a published port, so there you set `LocalhostOnly = false` **and** register an `IDashboardAuthorizationHandler` (see [Authorization](#authorization)) or restrict the port with a firewall or network policy. Anyone who can reach an exposed port can read job payloads (which may hold personal data) and run actions such as pausing queues, requeueing and triggering jobs. With `LocalhostOnly = false` and no handler registered, NexJob logs a warning at startup.
 
 ---
 
@@ -128,6 +128,54 @@ builder.Services.AddTransient<IDashboardAuthorizationHandler, AdminDashboardAuth
 ```
 
 The dashboard uses a **single** handler: the last `IDashboardAuthorizationHandler` registered in DI. If you need several rules, combine them inside that handler. A request the handler rejects gets `401 Unauthorized`.
+
+### Authorization in the standalone dashboard
+
+The standalone dashboard enforces the handler you register in your host (any lifetime works). It runs **no authentication middleware**, so `context.User` is never authenticated there: the example above, which reads `context.User`, would deny every request. The handler has to authenticate the request itself from `context.Request`. A handler that returns `false` can set response headers first, so it can ask the browser for credentials. This example uses HTTP Basic:
+
+```csharp
+public sealed class BasicAuthDashboardHandler(IConfiguration config) : IDashboardAuthorizationHandler
+{
+    public Task<bool> AuthorizeAsync(HttpContext context)
+    {
+        var expected = config["Dashboard:Credentials"]; // "user:password"
+        if (!string.IsNullOrEmpty(expected)
+            && TryReadCredentials(context, out var provided)
+            && CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(expected), Encoding.UTF8.GetBytes(provided)))
+        {
+            return Task.FromResult(true);
+        }
+
+        // Ask the browser for credentials. The dashboard answers 401 when this returns false.
+        context.Response.Headers.WWWAuthenticate = "Basic realm=\"NexJob\"";
+        return Task.FromResult(false);
+    }
+
+    private static bool TryReadCredentials(HttpContext context, out string credentials)
+    {
+        credentials = string.Empty;
+        var header = context.Request.Headers.Authorization.ToString();
+        if (!header.StartsWith("Basic ", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        try
+        {
+            credentials = Encoding.UTF8.GetString(Convert.FromBase64String(header["Basic ".Length..].Trim()));
+            return true;
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
+    }
+}
+
+builder.Services.AddSingleton<IDashboardAuthorizationHandler, BasicAuthDashboardHandler>();
+```
+
+Send the credentials over HTTPS (put a TLS-terminating proxy in front), because Basic is not encrypted. A handler that throws never grants access.
 
 ---
 
@@ -174,7 +222,6 @@ The settings page shows the **effective** value of each runtime setting (a runti
 |---|---|---|
 | Polling interval | `settings/polling` | Overrides `PollingInterval` |
 | Retention | `settings/retention` | Overrides `RetentionSucceeded`, `RetentionFailed`, `RetentionExpired` and `RetentionDeadLetter`, entered in days (`0` keeps that kind of job forever) |
-| Workers | `settings/workers` | Stored and displayed, but not applied yet: the worker pool is sized from `NexJobOptions.Workers` at startup (see [Configuration Reference](11-Configuration-Reference.md#runtime-settings)) |
 | Reset | `settings/reset` | Clears all overrides so the code/`appsettings.json` values apply again |
 
 Read-only clusters (`isReadOnly: true` in a federated dashboard) reject these actions. `RetentionBatchSize` has no field on the page; it can be set through `IRuntimeSettingsStore`.

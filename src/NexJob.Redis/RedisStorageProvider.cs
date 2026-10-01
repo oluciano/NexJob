@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using NexJob.Storage;
 using StackExchange.Redis;
 
@@ -23,6 +24,33 @@ public sealed class RedisStorageProvider : IStorageProvider
     private const string IndexKey = "nexjob:index:all";
     private const string IndexReadyKey = "nexjob:index:ready";
     private const int IndexChunkSize = 500;
+    private const string IndexLockKey = "nexjob:index:lock";
+
+    private const string ReleaseLockScript = @"
+        if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) end
+        return 0";
+
+    private const string RenewLockScript = @"
+        if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('pexpire', KEYS[1], ARGV[2]) end
+        return 0";
+
+    // Indexes jobs only while their hash still exists, so a job purged after it was read is not added back.
+    // ARGV is groups of four: id, created ms, status, completed ms. Returns how many ids were new in the index.
+    private const string IndexIfExistsScript = @"
+        local added = 0
+        for i = 1, #ARGV, 4 do
+          local id = ARGV[i]
+          if redis.call('exists', 'nexjob:jobs:' .. id) == 1 then
+            added = added + redis.call('zadd', 'nexjob:index:all', tonumber(ARGV[i + 1]), id)
+            if ARGV[i + 2] == 'Succeeded' then
+              redis.call('zadd', 'nexjob:status:Succeeded', tonumber(ARGV[i + 3]), id)
+            elseif ARGV[i + 2] == 'Failed' then
+              redis.call('zadd', 'nexjob:status:Failed', tonumber(ARGV[i + 3]), id)
+            end
+          end
+        end
+        return added";
+
     private const string QueueKeyPrefix = "nexjob:queue:";
     private const string QueueKeySuffix = ":z";
     private const string ServersAllKey = "nexjob:servers:all";
@@ -314,7 +342,15 @@ public sealed class RedisStorageProvider : IStorageProvider
         return { 'NEW', jobId }
         """);
 
+    // The index is rebuilt from the job hashes at most this often, by one node at a time. A node on an older version
+    // does not write the index, so jobs it leaves out are picked up by the next reconciliation.
+    private static readonly TimeSpan IndexReconcileInterval = TimeSpan.FromHours(1);
+
+    // The lock outlives a crashed node by at most this long, and is renewed after every chunk while a node holds it.
+    private static readonly TimeSpan IndexLockTtl = TimeSpan.FromMinutes(5);
+
     private readonly IDatabase _db;
+    private readonly ILogger<RedisStorageProvider>? _logger;
 
     /// <summary>
     /// Initialises the provider with an existing <see cref="IDatabase"/> instance.
@@ -322,6 +358,18 @@ public sealed class RedisStorageProvider : IStorageProvider
     public RedisStorageProvider(IDatabase database)
     {
         _db = database;
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="RedisStorageProvider"/> class with a logger, used to report the
+    /// periodic reconciliation of the job index.
+    /// </summary>
+    /// <param name="database">The Redis database.</param>
+    /// <param name="logger">The logger, or <see langword="null"/> to log nothing.</param>
+    internal RedisStorageProvider(IDatabase database, ILogger<RedisStorageProvider>? logger)
+    {
+        _db = database;
+        _logger = logger;
     }
 
     /// <inheritdoc/>
@@ -1486,6 +1534,31 @@ public sealed class RedisStorageProvider : IStorageProvider
         return (int)result;
     }
 
+    /// <summary>
+    /// Adds jobs to the index and to the Succeeded and Failed sets, but only those whose hash still exists, so a job
+    /// purged after it was read is not added back. It is internal so the tests can check that.
+    /// </summary>
+    /// <param name="jobs">The jobs to index: id, created time, status and completed time (milliseconds).</param>
+    /// <returns>How many job ids were new in the index.</returns>
+    internal async Task<long> IndexJobsIfTheyExistAsync(IReadOnlyList<(string Id, long CreatedMs, string? Status, long CompletedMs)> jobs)
+    {
+        if (jobs.Count == 0)
+        {
+            return 0;
+        }
+
+        var args = new RedisValue[jobs.Count * 4];
+        for (var i = 0; i < jobs.Count; i++)
+        {
+            args[i * 4] = jobs[i].Id;
+            args[(i * 4) + 1] = jobs[i].CreatedMs;
+            args[(i * 4) + 2] = jobs[i].Status ?? string.Empty;
+            args[(i * 4) + 3] = jobs[i].CompletedMs;
+        }
+
+        return (long)await _db.ScriptEvaluateAsync(IndexIfExistsScript, Array.Empty<RedisKey>(), args).ConfigureAwait(false);
+    }
+
     // A job leaves the Succeeded/Failed sets when it is deleted, purged or requeued.
     private static async Task RemoveFromStatusSetsAsync(IDatabase db, string id)
     {
@@ -1801,60 +1874,99 @@ public sealed class RedisStorageProvider : IStorageProvider
         return keys;
     }
 
-    // Jobs written before the index existed are indexed once (and added to the Succeeded/Failed sets). The work is
-    // idempotent, so nodes racing on the first call is harmless; the marker stops every later call from scanning.
+    // The index and the Succeeded/Failed sets are rebuilt from the job hashes when the marker is older than
+    // IndexReconcileInterval. The work is idempotent; the lock only keeps several nodes from scanning at once, and a node
+    // that loses it skips. A failed run does not advance the marker, so the next call tries again.
     private async Task EnsureIndexAsync()
     {
-        if (await _db.KeyExistsAsync(IndexReadyKey).ConfigureAwait(false))
+        if (!await IsIndexReconciliationDueAsync().ConfigureAwait(false))
         {
             return;
         }
 
-        var indexed = new List<SortedSetEntry>(IndexChunkSize);
-        var succeeded = new List<SortedSetEntry>();
-        var failed = new List<SortedSetEntry>();
+        var token = Guid.NewGuid().ToString("N");
+        if (!await _db.StringSetAsync(IndexLockKey, token, IndexLockTtl, When.NotExists).ConfigureAwait(false))
+        {
+            return;
+        }
+
+        try
+        {
+            // Another node may have finished between the check and the lock.
+            if (!await IsIndexReconciliationDueAsync().ConfigureAwait(false))
+            {
+                return;
+            }
+
+            var firstRun = !await _db.KeyExistsAsync(IndexReadyKey).ConfigureAwait(false);
+            var added = await ReconcileIndexAsync(token).ConfigureAwait(false);
+            await _db.StringSetAsync(IndexReadyKey, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture)).ConfigureAwait(false);
+
+            if (firstRun)
+            {
+                _logger?.LogInformation("Indexed {Count} existing jobs in the Redis job index.", added);
+            }
+            else if (added > 0)
+            {
+                _logger?.LogWarning(
+                    "{Count} jobs were missing from the Redis job index and have been indexed. A node running an older NexJob version writes jobs without the index; upgrade every node.",
+                    added);
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger?.LogWarning(ex, "Reconciling the Redis job index failed; it will be retried on the next dashboard or metrics call.");
+        }
+        finally
+        {
+            await ReleaseIndexLockAsync(token).ConfigureAwait(false);
+        }
+    }
+
+    private async Task<bool> IsIndexReconciliationDueAsync()
+    {
+        // The marker holds the time of the last reconciliation in milliseconds. A marker written by an older version holds
+        // "1", which reads as a very old time: reconcile once.
+        var raw = await _db.StringGetAsync(IndexReadyKey).ConfigureAwait(false);
+        var lastMs = long.TryParse(raw.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) ? parsed : 0;
+        return DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - lastMs >= IndexReconcileInterval.TotalMilliseconds;
+    }
+
+    private async Task<long> ReconcileIndexAsync(string lockToken)
+    {
+        var chunk = new List<(string Id, long CreatedMs, string? Status, long CompletedMs)>(IndexChunkSize);
         var prefix = JobKey(string.Empty);
+        long added = 0;
 
         await foreach (var key in ScanJobKeysAsync().ConfigureAwait(false))
         {
             var fields = await _db.HashGetAsync(key, new RedisValue[] { "status", "createdAt", "completedAt" }).ConfigureAwait(false);
-            var id = key.ToString()[prefix.Length..];
             var createdMs = ParseMs(fields[1]) ?? DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-            indexed.Add(new SortedSetEntry(id, createdMs));
+            chunk.Add((key.ToString()[prefix.Length..], createdMs, fields[0].IsNull ? null : fields[0].ToString(), ParseMs(fields[2]) ?? createdMs));
 
-            var completedMs = ParseMs(fields[2]) ?? createdMs;
-            if (string.Equals(fields[0], "Succeeded", StringComparison.Ordinal))
+            if (chunk.Count >= IndexChunkSize)
             {
-                succeeded.Add(new SortedSetEntry(id, completedMs));
-            }
-            else if (string.Equals(fields[0], "Failed", StringComparison.Ordinal))
-            {
-                failed.Add(new SortedSetEntry(id, completedMs));
-            }
-
-            if (indexed.Count >= IndexChunkSize)
-            {
-                await _db.SortedSetAddAsync(IndexKey, indexed.ToArray()).ConfigureAwait(false);
-                indexed.Clear();
+                added += await IndexJobsIfTheyExistAsync(chunk).ConfigureAwait(false);
+                chunk.Clear();
+                await _db.ScriptEvaluateAsync(RenewLockScript, new RedisKey[] { IndexLockKey }, new RedisValue[] { lockToken, (long)IndexLockTtl.TotalMilliseconds }).ConfigureAwait(false);
             }
         }
 
-        if (indexed.Count > 0)
-        {
-            await _db.SortedSetAddAsync(IndexKey, indexed.ToArray()).ConfigureAwait(false);
-        }
+        added += await IndexJobsIfTheyExistAsync(chunk).ConfigureAwait(false);
+        return added;
+    }
 
-        if (succeeded.Count > 0)
+    private async Task ReleaseIndexLockAsync(string lockToken)
+    {
+        try
         {
-            await _db.SortedSetAddAsync(SucceededSetKey, succeeded.ToArray()).ConfigureAwait(false);
+            await _db.ScriptEvaluateAsync(ReleaseLockScript, new RedisKey[] { IndexLockKey }, new RedisValue[] { lockToken }).ConfigureAwait(false);
         }
-
-        if (failed.Count > 0)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            await _db.SortedSetAddAsync(FailedSetKey, failed.ToArray()).ConfigureAwait(false);
+            // The lock expires by itself; a release that fails must not hide the result of the reconciliation.
+            _logger?.LogDebug(ex, "Releasing the Redis job index lock failed; it will expire.");
         }
-
-        await _db.StringSetAsync(IndexReadyKey, "1").ConfigureAwait(false);
     }
 
     // Newest first, in chunks with pipelined reads. Entries whose hash is gone are dropped from the index on the way.

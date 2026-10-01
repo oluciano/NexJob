@@ -313,6 +313,8 @@ message unacknowledged. Combined with idempotency keys, this prevents duplicate 
 
 ---
 
+A job that was created from a message and then exhausted its retries is **not** sent to the broker's dead-letter: the message was acknowledged when it became a job, so the failure stays inside NexJob (`Failed` in the dashboard). To forward a copy to a Kafka topic or a RabbitMQ exchange, see [Forwarding a dead-lettered job](06-Retry-And-Dead-Letter.md#forwarding-a-dead-lettered-job-to-kafka-or-rabbitmq).
+
 ## Active Triggers & Listener Registry (`IListenerRegistry`)
 
 NexJob includes a centralized, thread-safe registry (`IListenerRegistry`) that tracks the real-time operational status of all registered broker consumers and triggers.

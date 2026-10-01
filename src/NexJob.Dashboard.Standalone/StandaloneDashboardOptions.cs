@@ -28,10 +28,12 @@ public sealed class StandaloneDashboardOptions
 
     /// <summary>
     /// When <see langword="true"/>, the dashboard only accepts connections from localhost.
-    /// Recommended for production worker services. Defaults to <see langword="false"/>.
+    /// Defaults to <see langword="true"/>. Set it to <see langword="false"/> to listen on all interfaces
+    /// (needed inside a container), and then register an <see cref="IDashboardAuthorizationHandler"/>:
+    /// without one, anyone who can reach the port can read job payloads and run actions.
     /// Override via <c>NexJob:Dashboard:LocalhostOnly</c> in appsettings.json.
     /// </summary>
-    public bool LocalhostOnly { get; set; } = false;
+    public bool LocalhostOnly { get; set; } = true;
 
     /// <summary>
     /// How often the dashboard SSE stream polls for metrics updates, in seconds.

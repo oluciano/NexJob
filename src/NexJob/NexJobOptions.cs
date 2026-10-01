@@ -193,6 +193,12 @@ public sealed class NexJobOptions
     internal bool StorageConfigured { get; set; }
 
     /// <summary>
+    /// Set by <see cref="ApplySettings"/> when <c>appsettings.json</c> carries a <c>DefaultQueue</c> other than
+    /// <c>default</c>: the value is accepted but never applied.
+    /// </summary>
+    internal string? IgnoredDefaultQueue { get; private set; }
+
+    /// <summary>
     /// Configures queue-level behavior, such as execution windows or dynamic circuit breakers.
     /// </summary>
     /// <param name="queueName">The name of the queue to configure.</param>
@@ -232,6 +238,7 @@ public sealed class NexJobOptions
     /// </summary>
     internal void ApplySettings(NexJobSettings s)
     {
+        IgnoredDefaultQueue = string.Equals(s.DefaultQueue, "default", StringComparison.Ordinal) ? null : s.DefaultQueue;
         Workers = s.Workers;
         MaxAttempts = s.MaxAttempts;
         MaxJobLogLines = s.MaxJobLogLines;
@@ -255,5 +262,26 @@ public sealed class NexJobOptions
         Dashboard = s.Dashboard;
         HealthCheckTimeout = s.HealthCheckTimeout;
         HealthCheckFailedThreshold = s.HealthCheckFailedThreshold;
+    }
+
+    /// <summary>
+    /// Lists settings that are configured but have no effect, so the dispatcher can say so at startup
+    /// instead of ignoring them silently.
+    /// </summary>
+    /// <returns>The names of the settings that are accepted and not applied.</returns>
+    internal IReadOnlyList<string> GetIgnoredSettings()
+    {
+        var ignored = new List<string>();
+        if (IgnoredDefaultQueue is not null)
+        {
+            ignored.Add("DefaultQueue");
+        }
+
+        foreach (var queue in QueueSettings.Where(q => q.Workers.HasValue))
+        {
+            ignored.Add($"QueueSettings[{queue.Name}].Workers");
+        }
+
+        return ignored;
     }
 }

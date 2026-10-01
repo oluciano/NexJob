@@ -1,6 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using NexJob.Configuration;
 using NexJob.Storage;
 
@@ -29,6 +30,8 @@ public static class NexJobSqlServerExtensions
         services.AddSingleton<IDashboardStorage>(sp => sp.GetRequiredService<SqlServerStorageProvider>());
 
         services.AddSingleton<IRuntimeSettingsStore>(_ => new SqlServerRuntimeSettingsStore(connectionString));
+        services.AddHostedService(sp => new SqlServerPoolAdvisor(
+            sp.GetRequiredService<NexJobOptions>(), sp.GetRequiredService<ILogger<SqlServerPoolAdvisor>>(), connectionString));
         return services;
     }
 
