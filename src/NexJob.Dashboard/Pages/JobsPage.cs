@@ -129,7 +129,7 @@ internal sealed class JobsPage : IComponent
         var currentStatus = StatusFilter?.ToString() ?? string.Empty;
 
         var list = result.Items.Count == 0
-            ? HtmlFragments.EmptyState("0 0 24 24", "No jobs found matching your filters.")
+            ? HtmlFragments.EmptyState(HtmlFragments.EmptyIconInbox, "No jobs found matching your filters.")
             : $"<div class=\"job-list\">{string.Join(string.Empty, result.Items.Select(j => HtmlFragments.JobRow(j, PathPrefix, now)))}</div>";
 
         var baseUrl = $"{PathPrefix}/jobs?status={Uri.EscapeDataString(currentStatus)}&search={Uri.EscapeDataString(Search ?? string.Empty)}&tag={Uri.EscapeDataString(TagFilter ?? string.Empty)}&queue={Uri.EscapeDataString(QueueFilter ?? string.Empty)}&period={Uri.EscapeDataString(Period ?? string.Empty)}";

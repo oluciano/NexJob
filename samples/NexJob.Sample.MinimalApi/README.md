@@ -18,7 +18,7 @@ cd samples/NexJob.Sample.MinimalApi
 dotnet run
 ```
 
-The app starts at `http://localhost:5000`.
+The app starts at `http://localhost:5001`.
 
 ---
 
@@ -27,7 +27,7 @@ The app starts at `http://localhost:5000`.
 ### Enqueue a job
 
 ```bash
-curl -X POST http://localhost:5000/send?email=user@example.com
+curl -X POST http://localhost:5001/send?email=user@example.com
 
 # Response
 {
@@ -38,13 +38,13 @@ curl -X POST http://localhost:5000/send?email=user@example.com
 **To trigger failure**, use `email=fail@example.com`:
 
 ```bash
-curl -X POST http://localhost:5000/send?email=fail@example.com
+curl -X POST http://localhost:5001/send?email=fail@example.com
 ```
 
 ### Check job status
 
 ```bash
-curl http://localhost:5000/job/550e8400-e29b-41d4-a716-446655440000
+curl http://localhost:5001/job/550e8400-e29b-41d4-a716-446655440000
 
 # Response
 {
@@ -70,7 +70,7 @@ curl http://localhost:5000/job/550e8400-e29b-41d4-a716-446655440000
 2. **Dispatch** → Worker picks up immediately
 3. **Execute** → SendEmailJob throws exception (simulated failure)
 4. **Retry** → Job scheduled for retry (attempt 2)
-5. **Dispatch** → Worker retries after 1 second
+5. **Dispatch** → Worker retries after the default backoff (`attempt^4 + 15 s + jitter`, so at least 16 seconds for the first retry)
 6. **Execute** → Fails again
 7. **Dead-letter** → Job exhausted retries, status = `Failed`
 8. **Handler** → `SendEmailDeadLetterHandler.HandleAsync()` invoked

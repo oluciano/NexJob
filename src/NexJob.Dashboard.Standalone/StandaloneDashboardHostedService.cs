@@ -101,6 +101,16 @@ internal sealed class StandaloneDashboardHostedService : IHostedService
         _logger.LogInformation(
             "NexJob dashboard listening on {Url}{Path}",
             listenUrl, _options.Path);
+
+        if (!_options.LocalhostOnly)
+        {
+            _logger.LogWarning(
+                "NexJob dashboard is reachable from the network on {Url}{Path} and standalone mode has no " +
+                "authorization (IDashboardAuthorizationHandler is not supported). Anyone who can reach this port " +
+                "can read job payloads and run actions. Set LocalhostOnly = true, or host the dashboard in an " +
+                "ASP.NET Core app with an authorization handler.",
+                listenUrl, _options.Path);
+        }
     }
 
     /// <inheritdoc/>

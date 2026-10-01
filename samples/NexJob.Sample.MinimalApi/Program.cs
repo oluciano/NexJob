@@ -3,8 +3,8 @@ using NexJob.Storage;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add NexJob with default in-memory storage and register all jobs in this assembly
-builder.Services.AddNexJob()
+// Add NexJob with default in-memory storage, bind the "NexJob" configuration section and register all jobs in this assembly
+builder.Services.AddNexJob(builder.Configuration)
     .AddNexJobJobs(typeof(Program).Assembly);
 
 // Register dead-letter handler for permanent failures

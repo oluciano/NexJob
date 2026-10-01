@@ -23,7 +23,7 @@ Every cloud trigger implements the **5 Guarantees of NexJob Triggers**:
 dotnet run --project samples/NexJob.Sample.CloudTriggers/NexJob.Sample.CloudTriggers.csproj
 ```
 
-The application runs on `http://localhost:5000` (or the configured ASP.NET port).
+The application runs on `http://localhost:5008`.
 
 ## Testing Locally (Simulation Mode)
 
@@ -31,58 +31,58 @@ Even without active cloud accounts, you can test all 5 trigger job handlers usin
 
 ```bash
 # Test AWS SQS job handler
-curl -X POST http://localhost:5000/simulate/sqs
+curl -X POST http://localhost:5008/simulate/sqs
 
 # Test Azure Service Bus job handler
-curl -X POST http://localhost:5000/simulate/azuresb
+curl -X POST http://localhost:5008/simulate/azuresb
 
 # Test Google Cloud Pub/Sub job handler
-curl -X POST http://localhost:5000/simulate/pubsub
+curl -X POST http://localhost:5008/simulate/pubsub
 
 # Test Salesforce Pub/Sub gRPC job handler
-curl -X POST http://localhost:5000/simulate/salesforce
+curl -X POST http://localhost:5008/simulate/salesforce
 
 # Test Salesforce Streaming CometD job handler
-curl -X POST http://localhost:5000/simulate/salesforce-streaming
+curl -X POST http://localhost:5008/simulate/salesforce-streaming
 ```
 
-Open `http://localhost:5000/dashboard` in your browser to inspect the processed jobs.
+Open `http://localhost:5008/dashboard` in your browser to inspect the processed jobs.
 
 ## Connecting Real Cloud Providers
 
-To connect live brokers, fill in the credentials in `appsettings.json` or configure environment variables:
+To connect live brokers, fill in the credentials in `appsettings.json` or configure environment variables (for example `NexJob__Triggers__AwsSqs__QueueUrl`).
 
-### AWS SQS
-```json
-"AwsSqs": {
-  "QueueUrl": "https://sqs.us-east-1.amazonaws.com/123456789/my-queue"
-}
-```
+Trigger settings live under `NexJob:Triggers:{Broker}` in `appsettings.json`; a trigger is only registered when its key settings are present. This is the shape the sample reads:
 
-### Azure Service Bus
 ```json
-"AzureServiceBus": {
-  "ConnectionString": "Endpoint=sb://your-namespace.servicebus.windows.net/...",
-  "QueueOrTopicName": "orders"
-}
-```
-
-### Google Cloud Pub/Sub
-```json
-"GooglePubSub": {
-  "ProjectId": "your-gcp-project",
-  "SubscriptionId": "orders-sub"
-}
-```
-
-### Salesforce (Pub/Sub & Streaming)
-```json
-"Salesforce": {
-  "InstanceUrl": "https://your-domain.my.salesforce.com",
-  "ClientId": "<consumer-key>",
-  "ClientSecret": "<consumer-secret>",
-  "Username": "<user@domain.com>",
-  "Password": "<password-and-token>",
-  "Topic": "/data/AccountChangeEvent"
+{
+  "NexJob": {
+    "Triggers": {
+      "AwsSqs": {
+        "QueueUrl": "https://sqs.us-east-1.amazonaws.com/123456789/my-queue"
+      },
+      "AzureServiceBus": {
+        "ConnectionString": "Endpoint=sb://your-namespace.servicebus.windows.net/...",
+        "QueueOrTopicName": "orders"
+      },
+      "GooglePubSub": {
+        "ProjectId": "your-gcp-project",
+        "SubscriptionId": "orders-sub"
+      },
+      "Salesforce": {
+        "Topic": "/data/AccountChangeEvent",
+        "ClientId": "<consumer-key>",
+        "ClientSecret": "<consumer-secret>",
+        "AuthEndpoint": "https://login.salesforce.com/services/oauth2/token"
+      },
+      "SalesforceStreaming": {
+        "Channel": "/data/ContactChangeEvent",
+        "ClientId": "<consumer-key>",
+        "ClientSecret": "<consumer-secret>",
+        "Username": "<user@domain.com>",
+        "Password": "<password-and-token>"
+      }
+    }
+  }
 }
 ```

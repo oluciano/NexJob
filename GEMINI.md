@@ -21,7 +21,7 @@ Before executing any task, read:
 
 NexJob is a production-oriented background job processing library for .NET 8.
 MIT licensed. Alternative to Hangfire — storage-pluggable, trigger-ready, OTel-native.
-Current published version: **v5.6.1**. Active development: **develop**.
+Current published version: **v5.6.2**. Active development: **develop**.
 
 ---
 
@@ -37,7 +37,7 @@ Key architectural foundations:
 - `IDeadLetterDispatcher` — encapsulates dead-letter handler resolution and invocation
 - `IJobControlService` — programmatic requeue/delete/pause outside dashboard
 - `UseDashboardReadReplica()` — opt-in read replica for PostgreSQL and SQL Server
-- `UseDistributedThrottle()` — opt-in global Redis throttle enforcement
+- `AddNexJobDistributedThrottle()` (NexJob.Redis) — opt-in global Redis throttle enforcement
 - `NexJobBuilder` — fluent builder returned by `AddNexJob()`
 
 ---
@@ -251,3 +251,5 @@ If changed: add comment `// Behavior changed in vX.Y: <reason>`.
 - **v5.6.0 — Compile and run the code you put in the docs.** Wiki and README snippets drifted for releases (phantom APIs, examples that never executed). Build new snippets in a throwaway project against the real packages before committing them.
 - **v5.6.0 — Verify a claim in the code before writing it into an issue or a doc.** One issue was opened on an unverified assumption about how other providers behave and had to be closed; grep every provider first.
 - **v5.6.0 — Two-node/statics in tests.** Test helpers with `static` state (for example a recording dead-letter handler) race when provider test classes run in parallel; keep such state per test or per host.
+- **v5.6.1 — Search open issues before creating one.** `gh issue list --search "<keywords>"` first; #289 duplicated an in-progress #287 and had to be closed.
+- **v5.6.1 — The dashboard chaos gate needs a running app.** `full-regression.js` exits "green-looking" with 0/1 routes when nothing listens on :5005; start the `NexJob.Sample.WorkerService` sample first and check the route count.

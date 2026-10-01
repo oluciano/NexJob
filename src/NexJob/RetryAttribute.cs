@@ -29,7 +29,8 @@ public sealed class RetryAttribute : Attribute
     }
 
     /// <summary>
-    /// Maximum number of retry attempts. <c>0</c> means dead-letter immediately on first failure.
+    /// Maximum number of executions, including the first run (so <c>Attempts - 1</c> retries).
+    /// <c>0</c> and <c>1</c> both mean no retry: the job is dead-lettered on its first failure.
     /// </summary>
     public int Attempts { get; }
 

@@ -103,7 +103,7 @@ internal sealed class CatalogPage : IComponent
             var emptyBody =
                 HtmlFragments.Breadcrumbs(PathPrefix, ("Catalog", null)) +
                 HtmlFragments.PageHeader("Job Catalog & Definitions", "Registered job types and execution telemetry") +
-                HtmlFragments.EmptyState("0 0 24 24", "No job definitions found in storage.");
+                HtmlFragments.EmptyState(HtmlFragments.EmptyIconInbox, "No job definitions found in storage.");
             return HtmlShell.Wrap(Title, PathPrefix, "catalog", emptyBody, Counters, clusters: Clusters, activeCluster: ActiveCluster);
         }
 

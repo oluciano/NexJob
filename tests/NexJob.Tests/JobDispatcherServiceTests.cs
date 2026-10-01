@@ -218,15 +218,29 @@ public sealed class JobDispatcherServiceTests
         await scheduler.EnqueueAsync<AlwaysFailJob, FailInput>(new());
 
         await tcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        await Task.Delay(100);
 
+        // Behavior changed in v5.6.2: a fixed 100 ms delay raced with the commit of the failure on slow CI runners,
+        // so wait (bounded) until the dead-letter result is committed. The assertion below is unchanged.
         var storage = (InMemoryStorageProvider)host.Services.GetRequiredService<NexJob.Storage.IStorageProvider>();
-        var metrics = await storage.GetMetricsAsync();
+        var metrics = await WaitForFailedAsync(storage, expected: 1);
 
         metrics.Failed.Should().Be(1, "job must be dead-lettered when MaxAttempts is exhausted");
         metrics.Succeeded.Should().Be(0);
 
         await host.StopAsync();
+    }
+
+    private static async Task<JobMetrics> WaitForFailedAsync(InMemoryStorageProvider storage, int expected)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(5);
+        var metrics = await storage.GetMetricsAsync();
+        while (metrics.Failed < expected && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(20);
+            metrics = await storage.GetMetricsAsync();
+        }
+
+        return metrics;
     }
 
     // ─── dead-letter ──────────────────────────────────────────────────────────
@@ -246,10 +260,11 @@ public sealed class JobDispatcherServiceTests
         await scheduler.EnqueueAsync<AlwaysFailJob, FailInput>(new());
 
         await tcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        await Task.Delay(50);
 
+        // Behavior changed in v5.6.2: a fixed 50 ms delay raced with the commit of the failure on slow CI runners,
+        // so wait (bounded) until the dead-letter result is committed. The assertion below is unchanged.
         var storage = (InMemoryStorageProvider)host.Services.GetRequiredService<NexJob.Storage.IStorageProvider>();
-        var metrics = await storage.GetMetricsAsync();
+        var metrics = await WaitForFailedAsync(storage, expected: 1);
         metrics.Failed.Should().Be(1);
 
         await host.StopAsync();

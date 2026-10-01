@@ -41,7 +41,7 @@ internal sealed class RecurringPage : IComponent
             var emptyBody =
                 HtmlFragments.Breadcrumbs(PathPrefix, ("Recurring", null)) +
                 HtmlFragments.PageHeader("Recurring Jobs", "Scheduled cron jobs") +
-                HtmlFragments.EmptyState("0 0 24 24", "No recurring jobs registered.");
+                HtmlFragments.EmptyState(HtmlFragments.EmptyIconInbox, "No recurring jobs registered.");
             return HtmlShell.Wrap(Title, PathPrefix, "recurring", emptyBody, Counters, clusters: Clusters, activeCluster: ActiveCluster);
         }
 

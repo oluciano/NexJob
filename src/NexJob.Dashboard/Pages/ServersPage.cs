@@ -64,7 +64,7 @@ internal sealed class ServersPage : IComponent
                 HtmlFragments.Breadcrumbs(PathPrefix, ("Servers", null)) +
                 HtmlFragments.PageHeader("Servers", "Active worker nodes across the cluster") +
                 warningBanner +
-                HtmlFragments.EmptyState("2 2 20 8 2 2 2 14 20 8 2 2 6 6 6.01 6 6 18 6.01 18", "No active servers running.");
+                HtmlFragments.EmptyState(HtmlFragments.EmptyIconServer, "No active servers running.");
             return HtmlShell.Wrap(Title, PathPrefix, "servers", emptyBody, Counters, clusters: Clusters, activeCluster: ActiveCluster);
         }
 

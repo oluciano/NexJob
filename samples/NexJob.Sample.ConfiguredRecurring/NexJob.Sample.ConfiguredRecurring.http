@@ -1,6 +1,7 @@
-@TesteNextJob_HostAddress = http://localhost:5228
+@host = http://localhost:5004
 
-GET {{TesteNextJob_HostAddress}}/weatherforecast/
+### Service info (links to the dashboard)
+GET {{host}}/
 Accept: application/json
 
-###
+### Dashboard (browser): {{host}}/dashboard

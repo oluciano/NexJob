@@ -36,3 +36,7 @@ BenchmarkDotNet.Artifacts/
 .gemini/
 .dashboard-simulations/
 node_modules/
+
+# MkDocs staging and output (docs/site/prepare.sh)
+.site-docs/
+/site/

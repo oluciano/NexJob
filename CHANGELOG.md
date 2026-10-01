@@ -6,6 +6,34 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [5.6.2] - 2026-10-01
+
+### Fixed
+
+- **Flaky dead-letter unit tests**: `Job_ExceedingMaxAttempts_MovesToDeadLetter` and `FailedJob_NoRetry_WhenMaxAttemptsExhausted` slept a fixed 50/100 ms before reading the metrics and could read `Failed = 0` on a slow CI runner. They now wait (bounded, 5 s) for the dead-letter result, with the same assertions. Test-only change, no library change.
+- **Samples aligned with the code (issue #177)**: nothing here changes the libraries.
+  - Every web sample now has its own port in `Properties/launchSettings.json` (`5001` MinimalApi, `5002` WebApi, `5004` ConfiguredRecurring, `5007` Storage, `5008` CloudTriggers, `5009` RabbitMQ, `5010` Kafka), so they can run side by side; the `WorkerService` dashboard stays on `5005`. The root and `samples/` READMEs, the `.http` files and the endpoint lists now match the real routes.
+  - Configuration keys that `NexJobSettings` silently ignored were replaced by real ones (`Workers`, `PollingInterval`, `HeartbeatInterval`), and `MinimalApi` now binds its `NexJob` section (it ran with the defaults, not the values in its `appsettings.json`).
+  - Recurring jobs in the `WebApi` (`email`, `maintenance`) and `WorkerService` (`maintenance`) samples targeted queues no worker polled, so they were enqueued and never ran; those queues are now polled.
+  - The `WorkerService` sample dashboard now listens on `localhost` only, as its `appsettings.json` already intended.
+  - README claims that contradicted the code were corrected (default retry delay, Redis throttle slots, the Storage sample's replica string being the primary, the RabbitMQ and Kafka outbox being volatile on in-memory storage, the `CloudTriggers` configuration keys).
+  - A new test (`SampleConfigurationTests`) fails when a sample configures a key `NexJobSettings` ignores or schedules a recurring job on a queue that is not polled.
+- **Dashboard — empty-state icons (issue #284)**: the empty states on the Jobs, Queues, Recurring, Catalog, Listeners, Failed, Servers and Job detail pages passed invalid SVG path data (a `viewBox`, or a list of points), so the icon was never drawn and the browser logged `Expected moveto path command` errors. Each page now uses valid icon path data, and `HtmlFragments.EmptyState` HTML-encodes it.
+- **Standalone dashboard — network exposure warning (issue #294)**: when `LocalhostOnly` is `false` (the default), a warning is now logged at startup saying the dashboard is reachable from the network and has no authorization in standalone mode, and pointing to `LocalhostOnly = true`. The listening address and defaults are unchanged; the wiki (`10-Dashboard.md`) documents the exposure.
+
+### Changed
+
+- **Throttling documentation (issue #296)**: `07-Throttling.md` and the FAQ now state that a throttled job waits while `Processing` and holds its worker, give the `Workers` sizing rule, and explain that several `[Throttle]` attributes are acquired in declaration order while earlier slots stay held.
+- **`NexJob` package README**: the package now ships its own short README (`src/NexJob/README.md`: what it is, install, quick start, which packages to add, links to the documentation) instead of the full repository README, matching every other NexJob package.
+
+### Added
+
+- **Documentation site on GitHub Pages (issue #292)**:
+  - The wiki in `docs/wiki/` is now built with MkDocs (Material) and published to `https://oluciano.github.io/NexJob/` on every push to `main`, so the site always matches the released version.
+  - The site has a search-friendly title and description, the root README links to it, and `PackageProjectUrl` now points to it.
+  - New FAQ page (`docs/wiki/22-FAQ.md`): 12 questions on multi-node fetching, crash recovery, retention, failures, the circuit breaker, retry vs throttle, at-least-once execution, deadlines, shared databases, the dashboard, OpenTelemetry and trigger bodies. Every answer cites the source files (and tests) it was verified against.
+  - `docs/site/prepare.sh` stages a copy of the wiki (Home becomes the index, asset and Changelog links are rewritten) and leaves the wiki sources untouched; `mkdocs build` runs in strict mode, so a broken link fails the build. Pull requests that touch the docs run the same build without deploying.
+
 ## [5.6.1] - 2026-09-30
 
 ### Fixed
