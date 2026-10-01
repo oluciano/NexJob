@@ -50,6 +50,19 @@ Throttling is implemented via `SemaphoreSlim` per named resource.
 
 ---
 
+## Waiting for a slot
+
+A throttled job that does not get a slot **waits while it is already `Processing`**. It keeps its worker slot, its heartbeat keeps running, and it is **not** returned to the queue. It retries the slot about every half second until one frees or the job is cancelled (for example on shutdown).
+
+Because a waiting job occupies a worker, many jobs waiting for one resource can take every `Workers` slot of a node and starve jobs from other queues and resources. Size for it:
+
+- Keep `Workers` comfortably above the sum of the `maxConcurrent` values of the resources your jobs wait on, or
+- isolate throttled jobs in their own queue (see [Best Practices](13-Best-Practices.md#use-queues-for-workload-isolation)) so they cannot take workers from the rest.
+
+With several `[Throttle]` attributes, slots are acquired **one by one, in the order the attributes are declared**, and the ones already acquired stay held while the job waits for the next. Declare the same resources in the same order on every job type; two job types that list the same resources in opposite orders can each hold what the other needs and wait on each other.
+
+---
+
 ## When to Use Throttling
 
 | Scenario | Throttle Resource |

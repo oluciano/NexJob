@@ -8,7 +8,7 @@ Comprehensive ASP.NET Core Web API demonstrating NexJob background job execution
 
 - **Storage Flexibility**: Runs In-Memory by default, or with PostgreSQL simply by providing `ConnectionStrings:NexJobPostgres`.
 - **Job Lifecycles**: Fire-and-forget, delayed scheduling, recurring cron schedules, job continuations (`ContinueWithAsync`), and priority routing.
-- **Embedded Dashboard**: Visual dashboard accessible at `http://localhost:5000/dashboard`.
+- **Embedded Dashboard**: Visual dashboard accessible at `http://localhost:5002/dashboard`.
 - **Segregated Storage Contracts**: Uses `IDashboardStorage` and `IRecurringStorage` instead of monolithic storage interfaces.
 - **Idempotent Enqueueing**: Native idempotency keys preventing duplicate executions under concurrent load.
 
@@ -44,7 +44,7 @@ Then run the application:
 dotnet run --project samples/NexJob.Sample.WebApi
 ```
 
-The Web API starts on `http://localhost:5000` and the Dashboard is accessible at `http://localhost:5000/dashboard`.
+The Web API starts on `http://localhost:5002` and the Dashboard is accessible at `http://localhost:5002/dashboard`.
 
 ---
 
@@ -53,7 +53,7 @@ The Web API starts on `http://localhost:5000` and the Dashboard is accessible at
 ### Enqueue an Email Job (Fire-and-Forget)
 
 ```bash
-curl -X POST http://localhost:5000/jobs/email \
+curl -X POST http://localhost:5002/jobs/email \
   -H "Content-Type: application/json" \
   -d '{"To": "dev@example.com", "Subject": "Hello NexJob", "Body": "Testing background processing"}'
 ```
@@ -61,13 +61,13 @@ curl -X POST http://localhost:5000/jobs/email \
 ### Check Job Status
 
 ```bash
-curl http://localhost:5000/jobs/{job-id}/status
+curl http://localhost:5002/jobs/{job-id}/status
 ```
 
 ### Schedule a Delayed Job (Runs after 10s)
 
 ```bash
-curl -X POST http://localhost:5000/jobs/report/schedule \
+curl -X POST http://localhost:5002/jobs/report/schedule \
   -H "Content-Type: application/json" \
   -d '{"Report": {"ReportName": "Monthly-Sales", "From": "2026-01-01", "To": "2026-01-31"}, "DelaySeconds": 10}'
 ```
@@ -75,13 +75,13 @@ curl -X POST http://localhost:5000/jobs/report/schedule \
 ### Register a Recurring Job
 
 ```bash
-curl -X POST http://localhost:5000/jobs/cleanup/recurring
+curl -X POST http://localhost:5002/jobs/cleanup/recurring
 ```
 
 ### Job Continuation (Chain Email after Report)
 
 ```bash
-curl -X POST http://localhost:5000/jobs/chain \
+curl -X POST http://localhost:5002/jobs/chain \
   -H "Content-Type: application/json" \
   -d '{"To": "admin@example.com", "Subject": "Report Finished", "Body": "Your sales report is ready."}'
 ```

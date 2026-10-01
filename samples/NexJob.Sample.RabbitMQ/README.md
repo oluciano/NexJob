@@ -7,7 +7,7 @@ Demonstrates NexJob's **Resilient Outbox Producer** and **Trigger Consumer** for
 ## What This Sample Shows
 
 1. **Transactional Outbox Producer (`EnqueueRabbitMqAsync`)**:
-   - Instead of publishing directly to RabbitMQ during an HTTP request (which fails if the broker is unreachable), the message is enqueued durably in NexJob storage.
+   - Instead of publishing directly to RabbitMQ during an HTTP request (which fails if the broker is unreachable), the message is enqueued in NexJob storage. **This sample runs on in-memory storage, so the outbox only survives for the lifetime of the process**; use a persistent provider (PostgreSQL, SQL Server, Redis or MongoDB) for a durable outbox.
    - A dedicated worker publishes the message with broker **Publisher Confirms** and exponential backoff retry.
 2. **Trigger Consumer (`AddRabbitMqTrigger`)**:
    - Connects to RabbitMQ with W3C `traceparent` context extraction.
@@ -32,7 +32,7 @@ RabbitMQ Management UI will be available at `http://localhost:15672` (Login: `gu
 dotnet run --project samples/NexJob.Sample.RabbitMQ
 ```
 
-The Web API starts at `http://localhost:5000` and Dashboard at `http://localhost:5000/dashboard`.
+The Web API starts at `http://localhost:5009` and Dashboard at `http://localhost:5009/dashboard`.
 
 ---
 
@@ -41,7 +41,7 @@ The Web API starts at `http://localhost:5000` and Dashboard at `http://localhost
 ### Publish an Order via Outbox
 
 ```bash
-curl -X POST http://localhost:5000/orders \
+curl -X POST http://localhost:5009/orders \
   -H "Content-Type: application/json" \
   -d '{
     "OrderId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",

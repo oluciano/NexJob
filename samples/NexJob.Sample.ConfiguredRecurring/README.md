@@ -15,7 +15,7 @@ cd samples/NexJob.Sample.ConfiguredRecurring
 dotnet run
 ```
 
-The application will start on `http://localhost:5000` and automatically register the recurring job from `appsettings.json`.
+The application will start on `http://localhost:5004` and automatically register the recurring job from `appsettings.json`.
 
 ## Key Features
 
@@ -57,7 +57,7 @@ No code registration required. Simply define the job using the short class name 
 
 Once running, visit the dashboard at:
 ```
-http://localhost:5000/dashboard
+http://localhost:5004/dashboard
 ```
 
 Watch the job execute every minute — see execution timeline, status, metrics, and logs in real-time.
