@@ -1,44 +1,23 @@
-# Writing Tests
-
-NexJob follows a multi-layered testing strategy to ensure both speed and reliability.
-
+---
+title: "Write Unit and Integration Tests for NexJob Background Jobs"
+sidebarTitle: "Writing Tests"
+description: "Test NexJob background jobs with unit tests using mock schedulers and integration tests using InMemory storage for end-to-end verification."
 ---
 
-## Testing Pyramid & Strategy
+NexJob jobs are plain .NET classes, which makes them straightforward to test at multiple layers. Unit tests call `ExecuteAsync` directly with fakes for dependencies. Integration tests spin up a real host with InMemory storage and verify that the full enqueue-dispatch-execute path works correctly. Use both layers together to get fast feedback on business logic and confidence in end-to-end behaviour.
 
-| Layer | Project | Focus | 3N Applied | Environment |
-| :--- | :--- | :--- | :--- | :--- |
-| **Unit** | `*.Tests` | Isolated logic, branch coverage | Full (N1, N2, N3) | InMemory / Mocks |
-| **Integration** | `*.IntegrationTests` | Happy path, infra contracts | N1 | Real Storage (Docker) |
-| **Reliability** | `*.ReliabilityTests` | Chaos, concurrency, crash recovery | N2 (Complex failures) | Real Storage (Stress) |
-| **Distributed** | `*.ReliabilityTests.Distributed` | Cluster coordination, failover | N2 (Network/Cluster) | Multi-node |
+## Testing Layers
 
-> **Case Study: Recurring Job Distributed Lock (N2 Distributed)**
-> A unit test (N1/N2) can verify that the code *calls* `TryAcquireRecurringJobLockAsync`. However, only a **Distributed Reliability Test** can verify that when 5 instances of NexJob start at the exact same millisecond, exactly one instance enqueues the recurring job while the other 4 log a "lock not acquired" message. This prevents double-firing in production clusters.
+| Layer | What it tests | Storage | Speed |
+|---|---|---|---|
+| **Unit** | Isolated job logic, branch coverage | Mocks / fakes | Very fast |
+| **Integration** | Enqueue, dispatch, execution flow | InMemory | Fast |
+| **Integration (real DB)** | Storage provider contracts | Docker / Testcontainers | Slower |
+| **Reliability** | Crash recovery, race conditions | Real storage under stress | Slow |
 
-### 1. Unit Tests (The Foundation)
-Target 100% logic coverage per class. Use mocks (`Moq`) for external dependencies.
-**Mandate:** 80% global line coverage floor for PR approval.
+## Unit Testing a Job
 
-### 2. Integration Tests (Contract Validation)
-Ensure implementations (Postgres, SQL Server, etc.) correctly fulfill `IJobStorage` and `IRecurringStorage` contracts. Focus on N1 (Happy Path) across all supported providers.
-
-### 3. Reliability Tests (Hardening)
-Test complex failure scenarios that cannot be easily mocked:
-- **Crash Recovery:** Process death during execution.
-- **High Concurrency:** Race conditions in `FetchNextAsync`.
-- **Latency:** Signal-to-execution delay under load.
-
-### 4. Distributed Reliability (Cluster)
-Test multi-node invariants:
-- **Distributed Locks:** Ensuring a recurring job only fires once in a cluster.
-- **Orphaned Jobs:** Recovering jobs from a crashed node.
-
----
-
-## Unit Testing Jobs
-
-Test job logic directly by instantiating the job class and calling `ExecuteAsync`.
+Test job logic directly by instantiating the class and calling `ExecuteAsync`. Inject fakes or mocks for every dependency.
 
 ```csharp
 public sealed class SendWelcomeEmailJobTests
@@ -60,11 +39,11 @@ public sealed class SendWelcomeEmailJobTests
 }
 ```
 
----
+Unit tests run without any NexJob infrastructure — no host, no scheduler, no storage. They are the fastest way to verify business logic and cover edge cases.
 
 ## Integration Testing with InMemory Storage
 
-The dispatcher, the recurring scheduler and the registration of configured recurring jobs are **hosted services**, so they only run inside a started host. `new ServiceCollection().BuildServiceProvider()` does not start them and no job would ever execute. Build a real host, start it, and wait on a signal from the job instead of sleeping.
+The dispatcher, recurring scheduler, and registered recurring jobs are **hosted services** — they only run inside a started host. Build a real host, start it, then wait on a `TaskCompletionSource` that the job signals when it finishes. Never sleep for a fixed duration; always use `WaitAsync(timeout)` so tests fail fast if something goes wrong.
 
 ```csharp
 public sealed class JobIntegrationTests
@@ -72,23 +51,24 @@ public sealed class JobIntegrationTests
     [Fact]
     public async Task EnqueueAndExecute_CompletesSuccessfully()
     {
-        // Arrange
-        var executed = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var executed = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
         using var host = Host.CreateDefaultBuilder()
             .ConfigureServices(services =>
             {
-                services.AddNexJob(options => options.PollingInterval = TimeSpan.FromMilliseconds(50)); // InMemory by default
+                services.AddNexJob(options =>
+                    options.PollingInterval = TimeSpan.FromMilliseconds(50)); // InMemory by default
                 services.AddSingleton(executed);
                 services.AddTransient<TestJob>();
             })
             .Build();
+
         await host.StartAsync();
 
-        // Act
         var scheduler = host.Services.GetRequiredService<IScheduler>();
         await scheduler.EnqueueAsync<TestJob>();
 
-        // Assert
         (await executed.Task.WaitAsync(TimeSpan.FromSeconds(5))).Should().BeTrue();
 
         await host.StopAsync();
@@ -105,25 +85,29 @@ public sealed class TestJob(TaskCompletionSource<bool> executed) : IJob
 }
 ```
 
-`AddNexJob()` returns a `NexJobBuilder`, not an `IServiceCollection`: register your own services on `services` (as above) instead of chaining them after `AddNexJob()`. You can register jobs one by one with `AddTransient<TJob>()` or scan an assembly with `AddNexJobJobs(assembly)`.
+!!! note
+    `AddNexJob()` returns a `NexJobBuilder`, not an `IServiceCollection`. Register your own services on `services` directly, not by chaining onto `AddNexJob()`. Register jobs one by one with `AddTransient<TJob>()` or scan an assembly with `AddNexJobJobs(assembly)`.
 
----
 
-## Testing with Input
+## Testing Jobs with Input
 
 ```csharp
 [Fact]
 public async Task EnqueueWithInput_PassesInputToJob()
 {
-    var received = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+    var received = new TaskCompletionSource<int>(
+        TaskCreationOptions.RunContinuationsAsynchronously);
+
     using var host = Host.CreateDefaultBuilder()
         .ConfigureServices(services =>
         {
-            services.AddNexJob(options => options.PollingInterval = TimeSpan.FromMilliseconds(50));
+            services.AddNexJob(options =>
+                options.PollingInterval = TimeSpan.FromMilliseconds(50));
             services.AddSingleton(received);
             services.AddTransient<ProcessorJob>();
         })
         .Build();
+
     await host.StartAsync();
 
     var scheduler = host.Services.GetRequiredService<IScheduler>();
@@ -146,17 +130,17 @@ public sealed class ProcessorJob(TaskCompletionSource<int> received) : IJob<Proc
 }
 ```
 
----
-
 ## Testing Retries
 
-The default delay between attempts is 16 seconds or more, which would make a test crawl. Override `RetryDelayFactory` so retries are immediate:
+The default retry delay is 16 seconds or more — far too long for a test. Override `RetryDelayFactory` to make retries near-instant.
 
 ```csharp
 [Fact]
 public async Task JobFailsThenRetries_SucceedsOnSecondAttempt()
 {
-    var succeeded = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+    var succeeded = new TaskCompletionSource<int>(
+        TaskCreationOptions.RunContinuationsAsynchronously);
+
     using var host = Host.CreateDefaultBuilder()
         .ConfigureServices(services =>
         {
@@ -170,11 +154,12 @@ public async Task JobFailsThenRetries_SucceedsOnSecondAttempt()
             services.AddTransient<FlakyJob>();
         })
         .Build();
+
     await host.StartAsync();
 
     await host.Services.GetRequiredService<IScheduler>().EnqueueAsync<FlakyJob>();
 
-    // Succeeds on attempt 2: the first attempt failed and was retried
+    // Succeeds on attempt 2
     Assert.Equal(2, await succeeded.Task.WaitAsync(TimeSpan.FromSeconds(5)));
 
     await host.StopAsync();
@@ -185,9 +170,7 @@ public sealed class FlakyJob(IJobContext context, TaskCompletionSource<int> succ
     public Task ExecuteAsync(CancellationToken ct)
     {
         if (context.Attempt == 1)
-        {
             throw new InvalidOperationException("first attempt fails");
-        }
 
         succeeded.TrySetResult(context.Attempt);
         return Task.CompletedTask;
@@ -195,9 +178,9 @@ public sealed class FlakyJob(IJobContext context, TaskCompletionSource<int> succ
 }
 ```
 
-Count attempts with `IJobContext.Attempt`, not with a field on the job: a job is a transient service, so every attempt gets a new instance.
+!!! warning
+    Use `IJobContext.Attempt` to count attempts — never a field on the job class. Jobs are transient services, so every attempt creates a new instance and instance fields reset.
 
----
 
 ## Testing Dead-Letter Handlers
 
@@ -206,6 +189,7 @@ Count attempts with `IJobContext.Attempt`, not with a field on the job: a job is
 public async Task JobExhaustsRetries_InvokesDeadLetterHandler()
 {
     var handler = new TestDeadLetterHandler();
+
     using var host = Host.CreateDefaultBuilder()
         .ConfigureServices(services =>
         {
@@ -219,6 +203,7 @@ public async Task JobExhaustsRetries_InvokesDeadLetterHandler()
             services.AddTransient<IDeadLetterHandler<FailingJob>>(_ => handler);
         })
         .Build();
+
     await host.StartAsync();
 
     await host.Services.GetRequiredService<IScheduler>().EnqueueAsync<FailingJob>();
@@ -232,15 +217,16 @@ public async Task JobExhaustsRetries_InvokesDeadLetterHandler()
 
 public sealed class FailingJob : IJob
 {
-    public Task ExecuteAsync(CancellationToken ct) => throw new InvalidOperationException("always fails");
+    public Task ExecuteAsync(CancellationToken ct) =>
+        throw new InvalidOperationException("always fails");
 }
 
 public sealed class TestDeadLetterHandler : IDeadLetterHandler<FailingJob>
 {
-    public TaskCompletionSource Invoked { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    public TaskCompletionSource Invoked { get; } =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     public JobRecord? FailedJob { get; private set; }
-
     public Exception? LastException { get; private set; }
 
     public Task HandleAsync(JobRecord failedJob, Exception lastException, CancellationToken ct)
@@ -253,11 +239,9 @@ public sealed class TestDeadLetterHandler : IDeadLetterHandler<FailingJob>
 }
 ```
 
----
-
 ## Testing Recurring Jobs
 
-Recurring jobs declared with `options.AddRecurringJob` are registered by a hosted service when the host starts, so start the host before looking at storage:
+Recurring jobs registered with `options.AddRecurringJob` are created by a hosted service on startup. Start the host before inspecting storage.
 
 ```csharp
 [Fact]
@@ -266,13 +250,15 @@ public async Task RecurringJob_IsRegisteredOnStartup()
     using var host = Host.CreateDefaultBuilder()
         .ConfigureServices(services =>
         {
-            services.AddNexJob(options => options.AddRecurringJob<TestJob>("test-recurring", "0 0 * * *"));
+            services.AddNexJob(options =>
+                options.AddRecurringJob<TestJob>("test-recurring", "0 0 * * *"));
             services.AddSingleton(new TaskCompletionSource<bool>());
             services.AddTransient<TestJob>();
         })
         .Build();
+
     await host.StartAsync();
-    await Task.Delay(500); // let the registration service run
+    await Task.Delay(500); // allow the registration hosted service to run
 
     var storage = host.Services.GetRequiredService<IStorageProvider>();
     var recurring = await storage.GetRecurringJobsAsync();
@@ -283,24 +269,26 @@ public async Task RecurringJob_IsRegisteredOnStartup()
 }
 ```
 
----
-
 ## Testing Continuations
 
 ```csharp
 [Fact]
 public async Task ContinueWith_ChildExecutesAfterParentSucceeds()
 {
-    var childRan = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+    var childRan = new TaskCompletionSource<bool>(
+        TaskCreationOptions.RunContinuationsAsynchronously);
+
     using var host = Host.CreateDefaultBuilder()
         .ConfigureServices(services =>
         {
-            services.AddNexJob(options => options.PollingInterval = TimeSpan.FromMilliseconds(50));
+            services.AddNexJob(options =>
+                options.PollingInterval = TimeSpan.FromMilliseconds(50));
             services.AddSingleton(childRan);
             services.AddTransient<ParentJob>();
             services.AddTransient<ChildJob>();
         })
         .Build();
+
     await host.StartAsync();
 
     var scheduler = host.Services.GetRequiredService<IScheduler>();
@@ -327,20 +315,23 @@ public sealed class ChildJob(TaskCompletionSource<bool> childRan) : IJob
 }
 ```
 
----
-
 ## Tips
 
-- Wait on a `TaskCompletionSource` that the job completes (with `WaitAsync(timeout)`) instead of sleeping for a fixed time
-- Lower `PollingInterval` and `RetryDelayFactory` in tests so nothing waits for the production defaults
-- InMemory storage is fast and sufficient for unit tests
-- Use Testcontainers for integration tests against real databases
-- Keep tests deterministic — avoid real time delays where possible
+<div class="grid cards" markdown>
+  -   **Signal, don't sleep**
 
----
+    Always wait on a `TaskCompletionSource` that the job completes, then call `.WaitAsync(timeout)`. Fixed `Task.Delay` calls make tests slow and flaky.
 
-## Next Steps
+  -   **Speed up test settings**
 
-- [Common Scenarios](15-Common-Scenarios.md) — Real-world use cases
-- [Troubleshooting](16-Troubleshooting.md) — Debug failing tests
-- [Best Practices](13-Best-Practices.md) — Production guidelines
+    Set `PollingInterval` to 50 ms and `RetryDelayFactory` to return near-zero values. Production defaults make tests crawl.
+
+  -   **InMemory for unit tests**
+
+    InMemory storage is fast, requires no infrastructure, and is the right choice for unit and most integration tests.
+
+  -   **Testcontainers for DB tests**
+
+    Use Testcontainers to spin up real Postgres or SQL Server instances for storage contract tests, keeping them isolated from your CI environment.
+
+</div>

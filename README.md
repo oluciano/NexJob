@@ -209,13 +209,14 @@ builder.Services.AddNexJobStandaloneDashboard(options =>
 
 ## Documentation
 
-Complete documentation is in the [wiki](docs/wiki/Home.md). Key pages:
+Complete documentation is on the [Documentation Site](https://oluciano.github.io/NexJob/). Key pages:
 
-- **[Mental Model](docs/wiki/00-Mental-Model.md)** — how NexJob works, read this first
-- **[Getting Started](docs/wiki/01-Getting-Started.md)** — run your first job in 2 minutes
-- **[Best Practices](docs/wiki/13-Best-Practices.md)** — production guidelines
-- **[Troubleshooting](docs/wiki/16-Troubleshooting.md)** — debug common issues
-- **[Common Scenarios](docs/wiki/15-Common-Scenarios.md)** — real-world use cases with code
+- **[Mental Model](https://oluciano.github.io/NexJob/mental-model/)** — how NexJob works, read this first
+- **[Quickstart](https://oluciano.github.io/NexJob/quickstart/)** — run your first job in 2 minutes
+- **[Throttling & Circuit Breaker](https://oluciano.github.io/NexJob/guides/throttling/)** — queue circuit breakers and rate limits
+- **[Best Practices](https://oluciano.github.io/NexJob/guides/best-practices/)** — production and Kubernetes guidelines
+- **[Common Scenarios](https://oluciano.github.io/NexJob/guides/common-scenarios/)** — real-world use cases with code
+- **[Troubleshooting](https://oluciano.github.io/NexJob/reference/troubleshooting/)** — debug common issues
 
 ---
 

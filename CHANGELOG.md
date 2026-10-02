@@ -15,6 +15,10 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - Composite server node IDs (`{Host}:{PID}:{Guid}`) are now formatted cleanly across Overview, Topology Map, and Servers views as `{Host}:{PID} #{shortGuid}`, preserving the full 32-character unique ID in tooltips for inspection while keeping tables and cards compact and readable.
 - **Dashboard — In-memory Host CPU and RAM radial gauges (issue #318)**:
   - Added lightweight, volatile in-memory process CPU % and physical RAM working set tracking rendered as modern circular SVG ring gauges in the Overview and Servers views, with zero database persistence or storage schema overhead.
+- **Documentation — Modernized documentation site and structured categorization**:
+  - Reorganized documentation into modular categories (`concepts/`, `guides/`, `storage/`, `integrations/`, `reference/`), splitting storage providers and cross-cutting topics into dedicated standalone guides.
+  - Added dedicated sections for Queue Circuit Breaker resilience and clarified the architectural distinction between Message Broker Transport Queues (RabbitMQ/Kafka) and NexJob Storage Queues.
+  - Upgraded MkDocs Material configuration with responsive category tabs, expandable sidebars, admonitions, and deep purple brand theme.
 
 ### Fixed
 
