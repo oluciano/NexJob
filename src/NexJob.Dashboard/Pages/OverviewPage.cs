@@ -101,15 +101,21 @@ internal sealed class OverviewPage : IComponent
         var m = _fetchedMetrics ?? Metrics ?? new JobMetrics();
         var now = DateTimeOffset.UtcNow;
 
-        // Ensure we always have 24 hours for the chart (Requirement 2 & 3)
-        var throughput = m.HourlyThroughput.ToList();
-        if (throughput.Count == 0)
+        // Ensure we always have all 24 hours for the chart (fills missing hours with 0 to prevent single-bar blowout)
+        var throughputLookup = (m.HourlyThroughput ?? [])
+            .GroupBy(h => new DateTimeOffset(h.Hour.Year, h.Hour.Month, h.Hour.Day, h.Hour.Hour, 0, 0, TimeSpan.Zero))
+            .ToDictionary(g => g.Key, g => g.Sum(x => x.Count));
+
+        var full24Hours = new List<HourlyThroughput>(24);
+        var currentHourUtc = new DateTimeOffset(now.Year, now.Month, now.Day, now.Hour, 0, 0, TimeSpan.Zero);
+        for (var i = 23; i >= 0; i--)
         {
-            for (var i = 0; i < 24; i++)
-            {
-                throughput.Add(new HourlyThroughput { Hour = now.AddHours(-23 + i), Count = 0 });
-            }
+            var targetHour = currentHourUtc.AddHours(-i);
+            throughputLookup.TryGetValue(targetHour, out var count);
+            full24Hours.Add(new HourlyThroughput { Hour = targetHour, Count = count });
         }
+
+        var throughput = full24Hours;
 
         var max = throughput.Count > 0 ? throughput.Max(h => h.Count) : 1;
 
@@ -186,16 +192,21 @@ internal sealed class OverviewPage : IComponent
         serversSb.Append("<div class=\"card\"><div class=\"card-header\"><h3>Active Servers</h3><a href=\"").Append(PathPrefix).Append("/servers\" class=\"btn btn-secondary btn-sm\">Details</a></div><div style=\"padding:0\">");
         if (_activeServers?.Count > 0)
         {
+            var (cpuPercent, workingSetMb, memPercent, _) = HostSystemMetrics.GetCurrent();
+            var cpuColor = HtmlFragments.GetCpuColor(cpuPercent);
+            var ramColor = HtmlFragments.GetRamColor(memPercent);
+
             foreach (var s in _activeServers)
             {
-                serversSb.Append("<div style=\"padding:12px 20px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border)\">")
+                serversSb.Append("<div style=\"padding:12px 20px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:12px\">")
                     .Append("<div style=\"display:flex;align-items:center;gap:12px\">")
                     .Append("<span class=\"dot dot-succeeded\"></span>")
-                    .Append("<div><div style=\"font-weight:600\">").Append(System.Web.HttpUtility.HtmlEncode(s.Id)).Append("</div><div style=\"font-size:11px;color:var(--text-tertiary)\">").Append(System.Web.HttpUtility.HtmlEncode(string.Join(", ", s.Queues))).Append("</div></div>")
+                    .Append("<div><div style=\"font-weight:600\" title=\"").Append(System.Web.HttpUtility.HtmlAttributeEncode(s.Id)).Append("\">").Append(Helpers.FormatServerIdHtml(s.Id)).Append("</div><div style=\"font-size:11px;color:var(--text-tertiary)\">").Append(System.Web.HttpUtility.HtmlEncode(string.Join(", ", s.Queues))).Append("</div></div>")
                     .Append("</div>")
-                    .Append("<div style=\"display:flex;gap:24px;align-items:center\">")
-                    .Append("<div style=\"text-align:center\"><div style=\"font-size:10px;color:var(--text-tertiary);font-weight:700\">WORKERS</div><div style=\"font-weight:700\">").Append(s.WorkerCount).Append("</div></div>")
-                    .Append("<div style=\"text-align:center\"><div style=\"font-size:10px;color:var(--text-tertiary);font-weight:700\">CPU</div><div style=\"font-weight:700\">—</div></div>")
+                    .Append("<div style=\"display:flex;gap:16px;align-items:center\">")
+                    .Append("<div style=\"text-align:center\"><div style=\"font-size:10px;color:var(--text-tertiary);font-weight:700\">WORKERS</div><div style=\"font-weight:700;font-size:13px\">").Append(s.WorkerCount).Append("</div></div>")
+                    .Append(HtmlFragments.CircularGauge(cpuPercent, $"{cpuPercent}%", "CPU", $"{cpuPercent}%", cpuColor, size: 36))
+                    .Append(HtmlFragments.CircularGauge(memPercent, $"{workingSetMb}M", "RAM", $"{workingSetMb} MB", ramColor, size: 36))
                     .Append("</div></div>");
             }
         }
@@ -285,16 +296,24 @@ internal sealed class OverviewPage : IComponent
             listenersSb.Append("</div></div>");
         }
 
+        var totalToday = m.Succeeded + m.Failed;
+
+        var throughputCard =
+            "<div class=\"card\" style=\"padding:24px;margin-bottom:24px\">" +
+            "<div style=\"display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:8px\">" +
+            "<span class=\"section-title\" style=\"font-size:16px;font-weight:600\">Throughput — last 24h</span>" +
+            $"<span style=\"font-size:12px;color:var(--text-secondary)\">Total: <strong style=\"color:var(--text-primary)\">{totalToday}</strong> execution{(totalToday == 1 ? string.Empty : "s")}</span>" +
+            "</div>" +
+            $"<div class=\"bars\" id=\"chart-bars\" data-avg-pct=\"{avgPct}\">{bars}</div><div class=\"chart-tooltip\" id=\"chart-tip\"></div>{anomalyNote}" +
+            "</div>";
+
         var body =
             HtmlFragments.PageHeader("Overview", "Real-time job processing status") +
             topMetricsHtml +
             HtmlFragments.TopologyMap(Listeners, _queueMetrics, _activeServers, PathPrefix) +
-            "<div style=\"display:grid;grid-template-columns: 2fr 1fr; gap:24px\">" +
+            "<div id=\"overview-grid\" data-refresh=\"true\" style=\"display:grid;grid-template-columns: 2fr 1fr; gap:24px\">" +
             "<div>" +
-            "<div class=\"chart\" style=\"margin-bottom:24px\">" +
-            "<div class=\"chart-header\"><span class=\"section-title\">Throughput — last 24h</span></div>" +
-            $"<div class=\"bars\" id=\"chart-bars\" data-avg-pct=\"{avgPct}\">{bars}</div><div class=\"chart-tooltip\" id=\"chart-tip\"></div>{anomalyNote}" +
-            "</div>" +
+            throughputCard +
             recentJobsSb.ToString() +
             "</div>" +
             "<div>" +
@@ -308,35 +327,37 @@ internal sealed class OverviewPage : IComponent
             // SSE + chart tooltip JS
             $"<script>(function(){{" +
             $"var es=new EventSource('{PathPrefix}/stream');" +
-            $"es.onmessage=function(e){{" +
-            $"var m=JSON.parse(e.data);" +
-            $"if(document.getElementById('metric-enqueued'))document.getElementById('metric-enqueued').textContent=m.enqueued;" +
-            $"if(document.getElementById('metric-processing'))document.getElementById('metric-processing').textContent=m.processing;" +
-            $"if(document.getElementById('metric-succeeded'))document.getElementById('metric-succeeded').textContent=m.succeeded;" +
-            $"if(document.getElementById('metric-failed'))document.getElementById('metric-failed').textContent=m.failed;" +
-            $"if(document.getElementById('metric-recurring'))document.getElementById('metric-recurring').textContent=m.recurring;" +
-            $"}};" +
-            $"es.onerror=function(){{es.close();}};" +
-            // chart tooltip
-            $"var tip=document.getElementById('chart-tip');" +
-            $"if(tip){{document.querySelectorAll('.bar').forEach(function(b){{" +
-            $"b.addEventListener('mouseenter',function(e){{tip.textContent=b.getAttribute('data-tip');tip.style.display='block';tip.style.left=(e.clientX+12)+'px';tip.style.top=(e.clientY-32)+'px';}});" +
-            $"b.addEventListener('mousemove',function(e){{tip.style.left=(e.clientX+12)+'px';tip.style.top=(e.clientY-32)+'px';}});" +
-            $"b.addEventListener('mouseleave',function(){{tip.style.display='none';}});" +
-            $"}});}}" +
-            // average line
-            $"(function(){{" +
-            $"var el=document.getElementById('chart-bars');" +
-            $"if(!el)return;" +
-            $"var pct=parseInt(el.getAttribute('data-avg-pct')||'0');" +
-            $"if(pct<4)return;" +
-            $"var line=document.createElement('div');" +
-            $"line.className='avg-line';" +
-            $"line.style.bottom=pct+'px';" +
-            $"el.style.position='relative';" +
-            $"el.appendChild(line);" +
-            $"}})();" +
-            $"}})();</script>";
+            "es.onmessage=function(e){" +
+            "  var m=JSON.parse(e.data);" +
+            "  if(document.getElementById('metric-enqueued'))document.getElementById('metric-enqueued').textContent=m.enqueued;" +
+            "  if(document.getElementById('metric-processing'))document.getElementById('metric-processing').textContent=m.processing;" +
+            "  if(document.getElementById('metric-succeeded'))document.getElementById('metric-succeeded').textContent=m.succeeded;" +
+            "  if(document.getElementById('metric-failed'))document.getElementById('metric-failed').textContent=m.failed;" +
+            "  if(document.getElementById('metric-recurring'))document.getElementById('metric-recurring').textContent=m.recurring;" +
+            "};" +
+            "es.onerror=function(){es.close();};" +
+
+            // Chart tooltip
+            "var tip=document.getElementById('chart-tip');" +
+            "if(tip){document.querySelectorAll('.bar').forEach(function(b){" +
+            "  b.addEventListener('mouseenter',function(e){tip.textContent=b.getAttribute('data-tip');tip.style.display='block';tip.style.left=(e.clientX+12)+'px';tip.style.top=(e.clientY-32)+'px';});" +
+            "  b.addEventListener('mousemove',function(e){tip.style.left=(e.clientX+12)+'px';tip.style.top=(e.clientY-32)+'px';});" +
+            "  b.addEventListener('mouseleave',function(){tip.style.display='none';});" +
+            "});}" +
+
+            // Average line
+            "(function(){" +
+            "  var el=document.getElementById('chart-bars');" +
+            "  if(!el)return;" +
+            "  var pct=parseInt(el.getAttribute('data-avg-pct')||'0');" +
+            "  if(pct<4)return;" +
+            "  var line=document.createElement('div');" +
+            "  line.className='avg-line';" +
+            "  line.style.bottom=pct+'px';" +
+            "  el.style.position='relative';" +
+            "  el.appendChild(line);" +
+            "})();" +
+            "})();</script>";
 
         return HtmlShell.Wrap(Title, PathPrefix, "overview", body, Counters, m, Clusters, ActiveCluster);
     }

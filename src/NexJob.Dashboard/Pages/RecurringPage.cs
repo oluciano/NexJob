@@ -49,20 +49,37 @@ internal sealed class RecurringPage : IComponent
         var rows = string.Join(string.Empty, jobs.Select(j => HtmlFragments.RecurringRow(j, PathPrefix, now, ActiveCluster, ActiveWorkerQueues)));
         var actionsHeader = !isReadOnly ? "<th style=\"text-align:right\">Actions</th>" : string.Empty;
 
+        var activeCount = jobs.Count(j => j.Enabled && !j.DeletedByUser);
+        var pausedCount = jobs.Count(j => !j.Enabled && !j.DeletedByUser);
+        var deletedCount = jobs.Count(j => j.DeletedByUser);
+
+        var statsSub =
+            $"<span style=\"display:inline-flex;align-items:center;gap:6px\"><span class=\"dot dot-succeeded\" style=\"width:7px;height:7px\"></span> {activeCount} Active</span>" +
+            $"<span style=\"color:var(--border)\">·</span>" +
+            $"<span style=\"display:inline-flex;align-items:center;gap:6px\"><span class=\"dot dot-processing\" style=\"width:7px;height:7px\"></span> {pausedCount} Paused</span>" +
+            (deletedCount > 0 ? $"<span style=\"color:var(--border)\">·</span><span style=\"display:inline-flex;align-items:center;gap:6px\"><span class=\"dot dot-failed\" style=\"width:7px;height:7px\"></span> {deletedCount} Deleted</span>" : string.Empty);
+
+        var cardHeader =
+            "<div class=\"card-header\" style=\"display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px\">" +
+            "<div style=\"display:flex;align-items:center;gap:16px\">" +
+            $"<h3 style=\"margin:0;font-size:15px;font-weight:600\">Registered Schedules ({jobs.Count})</h3>" +
+            $"<div style=\"display:flex;align-items:center;gap:10px;font-size:12px;color:var(--text-secondary)\">{statsSub}</div>" +
+            "</div>" +
+            "</div>";
+
         var body =
             "<div id=\"recurring-page-content\" data-refresh=\"true\">" +
             (isReadOnly ? HtmlFragments.ReadOnlyBanner() : string.Empty) +
             HtmlFragments.Breadcrumbs(PathPrefix, ("Recurring", null)) +
             HtmlFragments.PageHeader("Recurring Jobs", "Automated background job schedules") +
             "<div class=\"card\">" +
-            $"<div class=\"card-header\"><h3>{jobs.Count} job{(jobs.Count == 1 ? string.Empty : "s")} registered</h3></div>" +
+            cardHeader +
             "<div class=\"table-container\">" +
             "<table class=\"table\">" +
             "<thead><tr>" +
-            "<th style=\"width:32px\"></th>" +
-            "<th>ID</th>" +
-            "<th>Job Type</th>" +
-            "<th>Cron</th>" +
+            "<th style=\"width:100px\">Status</th>" +
+            "<th>Job</th>" +
+            "<th>Schedule</th>" +
             "<th>Queue</th>" +
             "<th>Last Run</th>" +
             "<th>Next Run</th>" +

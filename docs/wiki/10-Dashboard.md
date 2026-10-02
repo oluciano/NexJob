@@ -14,6 +14,7 @@ Monitor, debug, and manage jobs through the enterprise Maxton-inspired UI.
 - **Real-Time Live Log Streaming (SSE):** Streaming log viewer on `/jobs/{id}` displaying logs line-by-line via Server-Sent Events as the job executes.
 - **Active Event Triggers & Listeners:** Dedicated `/listeners` page monitoring connected message brokers (RabbitMQ, Kafka, SQS, Azure Service Bus, etc.), consumer groups, target queues, and status (`Listening`, `Reconnecting`, `Faulted`).
 - **Interactive Controls & Time Filters:** Pause and Resume queues with 1 click; filter jobs by time periods (`1h`, `6h`, `24h`, `7d`).
+- **Live Node Metrics & Clean Node IDs:** Compact node formatting (`{Host}:{PID} #{shortGuid}`) with full GUID on tooltip, and in-memory volatile CPU % and physical RAM working set radial SVG gauges with zero database persistence or storage schema overhead.
 - **Self-Contained Front End:** native CSS and vanilla JS — no NPM or Webpack build and no JavaScript/CSS framework from a CDN. The only external request is the *Public Sans* web font, loaded from Google Fonts.
 
 ---
