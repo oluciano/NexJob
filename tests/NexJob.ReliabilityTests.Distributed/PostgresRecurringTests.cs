@@ -37,27 +37,23 @@ public sealed class PostgresRecurringTests
         var cron = "* * * * * *";
         var jobId = "multi-node-recurring";
 
-        var servicesNode1 = new ServiceCollection();
-        Storage()(servicesNode1);
-        servicesNode1.AddNexJob(opt =>
-        {
-            opt.Workers = 1;
-            opt.PollingInterval = pollingInterval;
-            opt.AddRecurringJob<SuccessJob>(jobId, cron);
-        });
-        servicesNode1.AddTransient<SuccessJob>(_ => new SuccessJob(() => { }, null!));
-        var host1 = servicesNode1.BuildServiceProvider().GetRequiredService<IHost>();
+        IHost BuildNode() => Host.CreateDefaultBuilder()
+            .ConfigureLogging(logging => logging.SetMinimumLevel(LogLevel.Warning))
+            .ConfigureServices(services =>
+            {
+                Storage()(services);
+                services.AddNexJob(opt =>
+                {
+                    opt.Workers = 1;
+                    opt.PollingInterval = pollingInterval;
+                    opt.AddRecurringJob<SuccessJob>(jobId, cron);
+                });
+                services.AddTransient<SuccessJob>(sp => new SuccessJob(() => { }, sp.GetRequiredService<ILogger<SuccessJob>>()));
+            })
+            .Build();
 
-        var servicesNode2 = new ServiceCollection();
-        Storage()(servicesNode2);
-        servicesNode2.AddNexJob(opt =>
-        {
-            opt.Workers = 1;
-            opt.PollingInterval = pollingInterval;
-            opt.AddRecurringJob<SuccessJob>(jobId, cron);
-        });
-        servicesNode2.AddTransient<SuccessJob>(_ => new SuccessJob(() => { }, null!));
-        var host2 = servicesNode2.BuildServiceProvider().GetRequiredService<IHost>();
+        using var host1 = BuildNode();
+        using var host2 = BuildNode();
 
         // ─── Act ───────────────────────────────────────────────────────────
         // Start both hosts simultaneously
@@ -72,23 +68,21 @@ public sealed class PostgresRecurringTests
         // ─── Assert ────────────────────────────────────────────────────────
         var storage = host1.Services.GetRequiredService<Storage.IStorageProvider>();
 
-        // We expect multiple jobs to have been created (since cron is 1s and we waited 5s),
-        // but for ANY given second, we should NOT have duplicates.
-        // A simple way to check if the lock worked:
-        // If the lock fails, we'd likely see 2x jobs for the same second.
-        // Since SuccessJob is fast, most will be Succeeded.
+        // The cron fires once per second and the lock lets only one node enqueue each occurrence.
+        // If the lock failed, two nodes would enqueue the same occurrence and two jobs would be created
+        // within the same second. (The idempotency key is "recurring:{id}" with no timestamp by design:
+        // it only blocks a new instance while the previous one is still active, so it cannot tell
+        // occurrences apart.)
 
         var filter = new JobFilter { RecurringJobId = jobId };
         var page = await storage.GetJobsAsync(filter, page: 1, pageSize: 100);
 
         page.TotalCount.Should().BeGreaterThan(0, "at least one occurrence should have fired");
 
-        // Verifying by idempotency key (which NexJob uses: "recurring:{id}:{timestamp}")
-        // but also the lock ensures only one node even ATTEMPTS the enqueue.
-        var groups = page.Items.GroupBy(j => j.IdempotencyKey);
-        foreach (var group in groups)
+        var perSecond = page.Items.GroupBy(j => j.CreatedAt.ToUnixTimeSeconds());
+        foreach (var group in perSecond)
         {
-            group.Count().Should().Be(1, $"Occurrence with key {group.Key} should only exist once across all nodes.");
+            group.Count().Should().Be(1, $"occurrence at second {group.Key} should be enqueued by only one node.");
         }
     }
 }
