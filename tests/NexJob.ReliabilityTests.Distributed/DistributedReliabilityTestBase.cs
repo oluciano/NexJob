@@ -81,4 +81,48 @@ public abstract class DistributedReliabilityTestBase
             pageSize: 1000);
         return page.TotalCount;
     }
+
+    /// <summary>
+    /// Polls <paramref name="condition"/> until it is true or <paramref name="timeout"/> elapses.
+    /// </summary>
+    protected static async Task<bool> WaitUntil(Func<Task<bool>> condition, TimeSpan timeout)
+    {
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+
+        while (stopwatch.Elapsed < timeout)
+        {
+            if (await condition())
+            {
+                return true;
+            }
+
+            await Task.Delay(50);
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Waits until every job in <paramref name="jobIds"/> is <see cref="JobStatus.Succeeded"/>.
+    /// </summary>
+    protected static Task<bool> WaitForAllSucceeded(IHost host, IReadOnlyCollection<JobId> jobIds, TimeSpan timeout)
+    {
+        var storage = host.Services.GetRequiredService<Storage.IStorageProvider>();
+
+        return WaitUntil(
+            async () =>
+            {
+                foreach (var jobId in jobIds)
+                {
+                    var job = await storage.GetJobByIdAsync(jobId);
+                    if (job?.Status != JobStatus.Succeeded)
+                    {
+                        return false;
+                    }
+                }
+
+                return true;
+            },
+            timeout);
+    }
 }
