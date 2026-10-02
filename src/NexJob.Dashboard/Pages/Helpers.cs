@@ -320,4 +320,145 @@ internal static class Helpers
             var d when d.TotalHours < 24 => $"{(int)d.TotalHours}h ago",
             var d => $"{(int)d.TotalDays}d ago",
         };
+
+    internal static string FormatSeconds(TimeSpan span)
+    {
+        if (span < TimeSpan.Zero)
+        {
+            span = TimeSpan.Zero;
+        }
+
+        if (span.TotalSeconds < 60)
+        {
+            return span.TotalSeconds.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture) + "s";
+        }
+
+        if (span.TotalHours < 1)
+        {
+            return $"{(int)span.TotalMinutes}m {span.Seconds:D2}s";
+        }
+
+        return $"{(int)span.TotalHours}h {span.Minutes:D2}m";
+    }
+
+    internal static string? DescribeCron(string cron)
+    {
+        if (string.IsNullOrWhiteSpace(cron))
+        {
+            return null;
+        }
+
+        var parts = cron.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 6)
+        {
+            if (string.Equals(parts[0], "0", StringComparison.Ordinal))
+            {
+                parts = parts[1..];
+            }
+            else
+            {
+                return null;
+            }
+        }
+
+        if (parts.Length != 5)
+        {
+            return null;
+        }
+
+        var min = parts[0];
+        var hour = parts[1];
+        var dom = parts[2];
+        var mon = parts[3];
+        var dow = parts[4];
+
+        static bool Eq(string a, string b) => string.Equals(a, b, StringComparison.Ordinal);
+
+        if (Eq(min, "*") && Eq(hour, "*") && Eq(dom, "*") && Eq(mon, "*") && Eq(dow, "*"))
+        {
+            return "Every minute";
+        }
+
+        if (min.StartsWith("*/", StringComparison.Ordinal) && int.TryParse(min[2..], out var minStep) && Eq(hour, "*") && Eq(dom, "*") && Eq(mon, "*") && Eq(dow, "*"))
+        {
+            return $"Every {minStep}m";
+        }
+
+        if (Eq(min, "0") && Eq(hour, "*") && Eq(dom, "*") && Eq(mon, "*") && Eq(dow, "*"))
+        {
+            return "Hourly";
+        }
+
+        if (Eq(min, "0") && hour.StartsWith("*/", StringComparison.Ordinal) && int.TryParse(hour[2..], out var hourStep) && Eq(dom, "*") && Eq(mon, "*") && Eq(dow, "*"))
+        {
+            return $"Every {hourStep}h";
+        }
+
+        if (int.TryParse(min, out var m) && int.TryParse(hour, out var h) && Eq(dom, "*") && Eq(mon, "*") && Eq(dow, "*"))
+        {
+            return $"Daily at {h:D2}:{m:D2}";
+        }
+
+        if (Eq(min, "0") && Eq(hour, "0") && Eq(dom, "*") && Eq(mon, "*") && Eq(dow, "0"))
+        {
+            return "Weekly on Sun";
+        }
+
+        if (Eq(min, "0") && Eq(hour, "0") && Eq(dom, "1") && Eq(mon, "*") && Eq(dow, "*"))
+        {
+            return "Monthly (1st)";
+        }
+
+        return null;
+    }
+
+    internal static (string? TraceId, string? SpanId, bool Sampled) ParseTraceParent(string? traceparent)
+    {
+        if (string.IsNullOrWhiteSpace(traceparent))
+        {
+            return (null, null, false);
+        }
+
+        var parts = traceparent.Trim().Split('-');
+        if (parts.Length >= 4 && string.Equals(parts[0], "00", StringComparison.Ordinal))
+        {
+            return (parts[1], parts[2], string.Equals(parts[3], "01", StringComparison.Ordinal));
+        }
+
+        return (null, null, false);
+    }
+
+    internal static string FormatServerId(string? serverId)
+    {
+        if (string.IsNullOrWhiteSpace(serverId))
+        {
+            return "—";
+        }
+
+        var parts = serverId.Split(':');
+        if (parts.Length == 3 && parts[2].Length >= 8)
+        {
+            return $"{parts[0]}:{parts[1]} #{parts[2][..8]}";
+        }
+
+        return serverId;
+    }
+
+    internal static string FormatServerIdHtml(string? serverId)
+    {
+        if (string.IsNullOrWhiteSpace(serverId))
+        {
+            return "—";
+        }
+
+        var parts = serverId.Split(':');
+        if (parts.Length == 3 && parts[2].Length >= 8)
+        {
+            var hostAndPid = System.Web.HttpUtility.HtmlEncode($"{parts[0]}:{parts[1]}");
+            var shortGuid = System.Web.HttpUtility.HtmlEncode(parts[2][..8]);
+            return $"{hostAndPid} <span style=\"font-size:11px;color:var(--text-tertiary);font-weight:400\">#{shortGuid}</span>";
+        }
+
+        return System.Web.HttpUtility.HtmlEncode(serverId);
+    }
 }

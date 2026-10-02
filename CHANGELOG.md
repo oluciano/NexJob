@@ -6,6 +6,26 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Dashboard — Clean 24h Hourly Trend chart (issue #318)**:
+  - Implemented normalized 24h Hourly Throughput card with 24 evenly spaced bars, responsive tooltips, dynamic average threshold line, and anomaly drop warnings.
+  - Added quick-copy buttons (`📋 Copy JSON`, `📋 Copy Logs`) with visual confirmation across Job Detail and Recurring Execution modals.
+- **Dashboard — Clean Server Node ID formatting (issue #318)**:
+  - Composite server node IDs (`{Host}:{PID}:{Guid}`) are now formatted cleanly across Overview, Topology Map, and Servers views as `{Host}:{PID} #{shortGuid}`, preserving the full 32-character unique ID in tooltips for inspection while keeping tables and cards compact and readable.
+- **Dashboard — In-memory Host CPU and RAM radial gauges (issue #318)**:
+  - Added lightweight, volatile in-memory process CPU % and physical RAM working set tracking rendered as modern circular SVG ring gauges in the Overview and Servers views, with zero database persistence or storage schema overhead.
+
+### Fixed
+
+- **Dashboard — Throughput 24h single-bar blowout (issue #318)**:
+  - The hourly throughput calculation now always normalizes and pads all 24 hours (from `now.AddHours(-23)` to `now`) with zero-counts for inactive intervals, preventing single recorded hours from stretching into full-width solid blocks.
+  - Constrained histogram `.bar` to `max-width: 24px` with centered alignment.
+- **Dashboard — Plaintext clipboard copy & style leakage prevention (issue #318)**:
+  - Added global copy event sanitization interceptor across all `.terminal-window`, `pre`, and modal log viewports, ensuring manual `Ctrl+C` / `Cmd+C` writes pure plaintext to the clipboard instead of leaking `<span class="jk">` syntax-highlighting tags or inline CSS styles into rich-text paste targets.
+  - Enhanced all code and payload terminal headers with prominent `📋 Copy JSON` and `📋 Copy Logs` buttons.
+  - Fixed modal backdrop click handling in `logModal` so mouse drag-selection of log text never prematurely closes the dialog on mouse release.
+
 ## [5.7.0] - 2026-10-01
 
 ### Security
