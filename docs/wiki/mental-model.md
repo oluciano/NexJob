@@ -34,7 +34,7 @@ There is no in-memory queue, no cached running-job list, and no local tracking a
 
 Every job moves through a well-defined set of states. All transitions are persisted to storage immediately.
 
-```
+```text
   EnqueueAsync ─────────────────────► Enqueued ◄──────────── Scheduled ◄── ScheduleAsync / ScheduleAtAsync
                                           │  ▲                    ▲
                     ContinueWithAsync     │  │ orphaned or        │ failure with attempts left
@@ -133,15 +133,14 @@ A worker crash leaves one or more jobs stuck in `Processing` with a stale `Heart
     NexJob provides **at-least-once delivery**. A job can execute more than once if the worker crashes after `ExecuteAsync` completes but before the result is persisted to storage. Design your job logic to be idempotent — the same input should always produce the same observable outcome with no harmful side effects on repetition. See the [Idempotency](concepts/idempotency.md) page for patterns and `DuplicatePolicy` options.
 
 
-
 ## Broker Queues vs NexJob Queues
 
 Do not confuse an external message broker queue (RabbitMQ, Kafka, AWS SQS) with a NexJob queue:
 
 - **Message Broker Queue (Transport):** A broker queue or topic transports messages across network boundaries between services. Messages are transient and consumed off the network buffer.
-- **NexJob Queue (Governance & Execution):** A NexJob queue is a persistent logical partition inside your storage database (PostgreSQL, MongoDB, SQL Server, Redis). It governs execution concurrency, rate throttling (`[Throttle]`), execution windows (e.g. 22:00 – 06:00), and automated **Queue Circuit Breaking**.
+- **NexJob Queue (Governance & Execution):** A NexJob queue is a persistent logical partition inside your storage database (PostgreSQL, MongoDB, SQL Server, Redis). It governs execution concurrency, rate throttling (`[Throttle]`), execution windows (for example, 22:00 to 06:00), and automated [queue circuit breaking](guides/throttling.md#queue-circuit-breaker).
 
-When using broker triggers (e.g. `NexJob.RabbitMQ`), the trigger consumes off the RabbitMQ transport queue and enqueues into a NexJob storage queue. This protects your downstream services: if an external API fails, NexJob's **Circuit Breaker** automatically pauses the logical queue without dropping messages or overwhelming your message broker.
+When using broker triggers (for example, `NexJob.RabbitMQ`), the trigger consumes off the RabbitMQ transport queue and enqueues into a NexJob storage queue. This protects your downstream services: if an external API fails, NexJob's circuit breaker automatically pauses the logical queue without dropping messages or overwhelming your message broker.
 
 ## Next steps
 

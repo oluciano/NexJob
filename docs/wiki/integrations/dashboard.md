@@ -251,13 +251,29 @@ builder.Services.AddSingleton<IDashboardAuthorizationHandler, BasicAuthDashboard
 ## Dashboard Pages
 
 <div class="grid cards" markdown>
+  -   **Overview**
+
+    The dashboard home page: cluster health, the cluster pipeline topology map, the 24h hourly throughput chart, and CPU and RAM gauges for the host process.
+
+  -   **/servers**
+
+    Every active node with its state, worker capacity, CPU, memory, polled queues, uptime, and last heartbeat. Node IDs (`{Host}:{PID}:{Guid}`) display as `{Host}:{PID} #{shortGuid}`; hover to see the full ID.
+
   -   **/jobs**
 
     Browse all jobs with filters by status, queue, and time period. Click any job to see its full execution timeline, retry history, input payload, and live SSE log stream.
 
   -   **/queues**
 
-    Per-queue depth, active worker count, and pause/resume controls. Queues with enqueued jobs but no active workers show a `⚠️ NO WORKERS` warning badge.
+    Per-queue depth, active worker count, and pause/resume controls. Queues with enqueued jobs but no active workers show a `⚠️ NO WORKERS` warning badge. Queues with a [circuit breaker](../guides/throttling.md#queue-circuit-breaker) show the current circuit state and a **Reset Circuit** button.
+
+  -   **/failed**
+
+    The dead-letter view. Switch between **Failed** jobs (retries exhausted) and **Expired** jobs (deadline exceeded), then **Requeue All** or **Delete All**. Requeue warns you when target queues have no active workers.
+
+  -   **/recurring**
+
+    Every registered recurring schedule with its status (active, paused, or deleted), cron schedule, queue, last run, and next run. Open a schedule to see its execution history.
 
   -   **/listeners**
 
