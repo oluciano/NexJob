@@ -4,22 +4,20 @@ using NexJob;
 namespace NexJob.ReliabilityTests.Distributed;
 
 /// <summary>
-/// Test dead-letter handler that records invocations.
+/// Test dead-letter handler that records invocations into the host's <see cref="DeadLetterRecorder"/>.
 /// </summary>
 /// <typeparam name="TJob">The job type.</typeparam>
 internal sealed class RecordingDeadLetterHandler<TJob> : IDeadLetterHandler<TJob>
     where TJob : notnull
 {
     private readonly ILogger<RecordingDeadLetterHandler<TJob>> _logger;
+    private readonly DeadLetterRecorder _recorder;
 
-    public static JobRecord? LastFailedJob { get; set; }
-
-    public static Exception? LastException { get; set; }
-
-    public static int InvocationCount { get; set; }
-
-    public RecordingDeadLetterHandler(ILogger<RecordingDeadLetterHandler<TJob>> logger)
-        => _logger = logger;
+    public RecordingDeadLetterHandler(ILogger<RecordingDeadLetterHandler<TJob>> logger, DeadLetterRecorder recorder)
+    {
+        _logger = logger;
+        _recorder = recorder;
+    }
 
     public Task HandleAsync(JobRecord failedJob, Exception lastException, CancellationToken cancellationToken)
     {
@@ -29,18 +27,9 @@ internal sealed class RecordingDeadLetterHandler<TJob> : IDeadLetterHandler<TJob
             typeof(TJob).Name,
             failedJob.Attempts);
 
-        LastFailedJob = failedJob;
-        LastException = lastException;
-        InvocationCount++;
+        _recorder.Record(failedJob, lastException);
 
         return Task.CompletedTask;
-    }
-
-    public static void Reset()
-    {
-        LastFailedJob = null;
-        LastException = null;
-        InvocationCount = 0;
     }
 }
 

@@ -81,13 +81,4 @@ public abstract class DistributedReliabilityTestBase
             pageSize: 1000);
         return page.TotalCount;
     }
-
-    /// <summary>
-    /// Resets recording dead-letter handler state.
-    /// Job state is now instance-based via callbacks, no static reset needed.
-    /// </summary>
-    protected static void ResetTestState()
-    {
-        RecordingDeadLetterHandler<AlwaysFailJob>.Reset();
-    }
 }

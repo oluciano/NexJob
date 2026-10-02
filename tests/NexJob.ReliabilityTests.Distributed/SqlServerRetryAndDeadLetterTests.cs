@@ -69,13 +69,14 @@ public sealed class SqlServerRetryAndDeadLetterTests
     [Fact]
     public async Task DeadLetterHandlerInvokedAfterMaxAttemptsExhausted_NoInput()
     {
-        RecordingDeadLetterHandler<AlwaysFailJob>.Reset();
+        var recorder = new DeadLetterRecorder();
 
         using var host = BuildHost(
             Storage(),
             s =>
             {
                 s.AddTransient<AlwaysFailJob>(sp => new AlwaysFailJob(() => { }, sp.GetRequiredService<ILogger<AlwaysFailJob>>()));
+                s.AddSingleton(recorder);
                 s.AddTransient<IDeadLetterHandler<AlwaysFailJob>, RecordingDeadLetterHandler<AlwaysFailJob>>();
             },
             workers: 1);
@@ -87,9 +88,9 @@ public sealed class SqlServerRetryAndDeadLetterTests
 
         await Task.Delay(10000);
 
-        RecordingDeadLetterHandler<AlwaysFailJob>.InvocationCount.Should().Be(1);
-        RecordingDeadLetterHandler<AlwaysFailJob>.LastFailedJob.Should().NotBeNull();
-        RecordingDeadLetterHandler<AlwaysFailJob>.LastFailedJob!.Id.Should().Be(jobId);
+        recorder.InvocationCount.Should().Be(1);
+        recorder.LastFailedJob.Should().NotBeNull();
+        recorder.LastFailedJob!.Id.Should().Be(jobId);
 
         var job = await WaitForJobStatus(host, jobId, JobStatus.Failed, TimeSpan.FromSeconds(15));
         job.Should().NotBeNull();
@@ -100,13 +101,14 @@ public sealed class SqlServerRetryAndDeadLetterTests
     [Fact]
     public async Task DeadLetterHandlerInvokedAfterMaxAttemptsExhausted_WithInput()
     {
-        RecordingDeadLetterHandler<AlwaysFailJobWithInput>.Reset();
+        var recorder = new DeadLetterRecorder();
 
         using var host = BuildHost(
             Storage(),
             s =>
             {
                 s.AddTransient<AlwaysFailJobWithInput>(sp => new AlwaysFailJobWithInput(() => { }, sp.GetRequiredService<ILogger<AlwaysFailJobWithInput>>()));
+                s.AddSingleton(recorder);
                 s.AddTransient<IDeadLetterHandler<AlwaysFailJobWithInput>, RecordingDeadLetterHandler<AlwaysFailJobWithInput>>();
             },
             workers: 1);
@@ -119,9 +121,9 @@ public sealed class SqlServerRetryAndDeadLetterTests
 
         await Task.Delay(10000);
 
-        RecordingDeadLetterHandler<AlwaysFailJobWithInput>.InvocationCount.Should().Be(1);
-        RecordingDeadLetterHandler<AlwaysFailJobWithInput>.LastFailedJob.Should().NotBeNull();
-        RecordingDeadLetterHandler<AlwaysFailJobWithInput>.LastFailedJob!.Id.Should().Be(jobId);
+        recorder.InvocationCount.Should().Be(1);
+        recorder.LastFailedJob.Should().NotBeNull();
+        recorder.LastFailedJob!.Id.Should().Be(jobId);
 
         var job = await WaitForJobStatus(host, jobId, JobStatus.Failed, TimeSpan.FromSeconds(15));
         job.Should().NotBeNull();
