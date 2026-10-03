@@ -55,6 +55,9 @@ internal sealed class GooglePubSubTriggerHandler : IHostedService
             JobTag: "trigger:google-pubsub"));
     }
 
+    /// <summary>Gets how long a message that can never be enqueued is held before it is nacked.</summary>
+    internal TimeSpan PermanentNackDelay { get; init; } = TimeSpan.FromSeconds(2);
+
     /// <inheritdoc/>
     public async Task StartAsync(CancellationToken cancellationToken)
     {
@@ -104,6 +107,29 @@ internal sealed class GooglePubSubTriggerHandler : IHostedService
         _logger.LogInformation("Google Pub/Sub trigger stopped.");
     }
 
+    // A message that can never become a job (no job type) is nacked, so a dead-letter policy on the subscription can park it,
+    // but only after a pause: Pub/Sub delivers a nacked message again at once, and without the pause a single such message
+    // would be redelivered hundreds of times per second.
+    private async Task<SubscriberClient.Reply> NackPermanentFailureAsync(PubsubMessage message, Exception error, CancellationToken ct)
+    {
+        _logger.LogError(
+            error,
+            "Pub/Sub message {MessageId} can never be enqueued. Nacking it in {Delay}s; set a dead-letter policy on the subscription to park it.",
+            message.MessageId,
+            PermanentNackDelay.TotalSeconds);
+
+        try
+        {
+            await Task.Delay(PermanentNackDelay, ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // Shutdown: nack at once so the message is delivered to another subscriber.
+        }
+
+        return SubscriberClient.Reply.Nack;
+    }
+
     private string ExtractJobType(PubsubMessage message)
     {
         if (message.Attributes.TryGetValue("nexjob.job_type", out var jobType) &&
@@ -124,11 +150,20 @@ internal sealed class GooglePubSubTriggerHandler : IHostedService
         PubsubMessage message,
         CancellationToken ct)
     {
+        string jobType;
+        try
+        {
+            jobType = ExtractJobType(message);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return await NackPermanentFailureAsync(message, ex, ct).ConfigureAwait(false);
+        }
+
         try
         {
             var messageId = message.MessageId;
             var traceparent = message.Attributes.TryGetValue("traceparent", out var tp) ? tp : null;
-            var jobType = ExtractJobType(message);
             var inputJson = message.Data.ToStringUtf8();
 
             var job = JobRecordFactory.Build(

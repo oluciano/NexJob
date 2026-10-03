@@ -103,6 +103,9 @@ jobs:
           - name: Salesforce
             project: tests/NexJob.Trigger.Salesforce.IntegrationTests
             filter: ''
+          - name: GooglePubSub
+            project: tests/NexJob.Trigger.GooglePubSub.IntegrationTests
+            filter: ''
 
     steps:
       - uses: actions/checkout@v6.0.2
