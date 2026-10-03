@@ -193,6 +193,13 @@ public sealed class NexJobOptions
     internal bool StorageConfigured { get; set; }
 
     /// <summary>
+    /// How long a job guarded by <see cref="ThrottleAttribute"/> waits for a free slot while it keeps its worker
+    /// slot. After this the job is returned to the queue without consuming an attempt, so a saturated resource
+    /// cannot occupy every worker. Internal on purpose; tests shorten it.
+    /// </summary>
+    internal TimeSpan ThrottleMaxWait { get; set; } = TimeSpan.FromSeconds(5);
+
+    /// <summary>
     /// Set by <see cref="ApplySettings"/> when <c>appsettings.json</c> carries a <c>DefaultQueue</c> other than
     /// <c>default</c>: the value is accepted but never applied.
     /// </summary>
