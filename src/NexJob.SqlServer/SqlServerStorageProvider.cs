@@ -89,10 +89,10 @@ public sealed class SqlServerStorageProvider : IStorageProvider
                         """
                         INSERT INTO nexjob_jobs
                             (id, job_type, input_type, input_json, schema_version, queue, priority, status,
-                             idempotency_key, attempts, max_attempts, created_at, scheduled_at, parent_job_id, recurring_job_id, tags)
+                             idempotency_key, attempts, max_attempts, created_at, scheduled_at, parent_job_id, recurring_job_id, tags, expires_at)
                         VALUES
                             (@Id, @JobType, @InputType, @InputJson, @SchemaVersion, @Queue, @Priority,
-                             @Status, @IdempotencyKey, @Attempts, @MaxAttempts, @CreatedAt, @ScheduledAt, @ParentJobId, @RecurringJobId, @Tags)
+                             @Status, @IdempotencyKey, @Attempts, @MaxAttempts, @CreatedAt, @ScheduledAt, @ParentJobId, @RecurringJobId, @Tags, @ExpiresAt)
                         """,
                         new
                         {
@@ -112,6 +112,7 @@ public sealed class SqlServerStorageProvider : IStorageProvider
                             ParentJobId = job.ParentJobId?.Value,
                             job.RecurringJobId,
                             Tags = System.Text.Json.JsonSerializer.Serialize(job.Tags),
+                            job.ExpiresAt,
                         },
                         tx);
 
@@ -146,10 +147,10 @@ public sealed class SqlServerStorageProvider : IStorageProvider
             """
             INSERT INTO nexjob_jobs
                 (id, job_type, input_type, input_json, schema_version, queue, priority, status,
-                 idempotency_key, attempts, max_attempts, created_at, scheduled_at, parent_job_id, recurring_job_id, tags)
+                 idempotency_key, attempts, max_attempts, created_at, scheduled_at, parent_job_id, recurring_job_id, tags, expires_at)
             VALUES
                 (@Id, @JobType, @InputType, @InputJson, @SchemaVersion, @Queue, @Priority,
-                 @Status, @IdempotencyKey, @Attempts, @MaxAttempts, @CreatedAt, @ScheduledAt, @ParentJobId, @RecurringJobId, @Tags)
+                 @Status, @IdempotencyKey, @Attempts, @MaxAttempts, @CreatedAt, @ScheduledAt, @ParentJobId, @RecurringJobId, @Tags, @ExpiresAt)
             """,
             new
             {
@@ -169,6 +170,7 @@ public sealed class SqlServerStorageProvider : IStorageProvider
                 ParentJobId = job.ParentJobId?.Value,
                 job.RecurringJobId,
                 Tags = System.Text.Json.JsonSerializer.Serialize(job.Tags),
+                job.ExpiresAt,
             });
 
         return new EnqueueResult(job.Id, WasRejected: false);
