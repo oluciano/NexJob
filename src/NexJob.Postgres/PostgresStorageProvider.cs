@@ -239,7 +239,7 @@ public sealed class PostgresStorageProvider : IStorageProvider, IDisposable, IAs
             """, transaction: tx);
 
         var rows = await conn.QueryAsync<JobRow>(
-            $"""
+            """
             UPDATE nexjob_jobs
             SET status                = 'Processing',
                 processing_started_at = NOW(),
@@ -253,12 +253,12 @@ public sealed class PostgresStorageProvider : IStorageProvider, IDisposable, IAs
                     array_position(@queues, queue),
                     priority ASC,
                     created_at ASC
-                LIMIT {maxBatchSize}
+                LIMIT @maxBatchSize
                 FOR UPDATE SKIP LOCKED
             )
             RETURNING *
             """,
-            new { queues = queues.ToArray() },
+            new { queues = queues.ToArray(), maxBatchSize },
             transaction: tx);
 
         await tx.CommitAsync(cancellationToken);
@@ -761,6 +761,7 @@ public sealed class PostgresStorageProvider : IStorageProvider, IDisposable, IAs
         }
 
         var clause = where.Count > 0 ? "WHERE " + string.Join(" AND ", where) : string.Empty;
+#pragma warning disable S2077 // `clause` holds only literal fragments such as "status = @status"; every value is a parameter.
         var total = await conn.ExecuteScalarAsync<int>($"SELECT COUNT(*)::int FROM nexjob_jobs {clause}", p);
 
         p.Add("limit", pageSize);
@@ -770,6 +771,7 @@ public sealed class PostgresStorageProvider : IStorageProvider, IDisposable, IAs
             $"SELECT * FROM nexjob_jobs {clause} ORDER BY created_at DESC LIMIT @limit OFFSET @offset", p))
             .Select(r => r.ToRecord())
             .ToList();
+#pragma warning restore S2077
 
         return new PagedResult<JobRecord> { Items = items, TotalCount = total, Page = page, PageSize = pageSize };
     }

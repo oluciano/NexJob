@@ -72,7 +72,7 @@ internal static class SchemaMigrator
     private static async Task MigrateInternalAsync(NpgsqlConnection conn, CancellationToken ct)
     {
         // Acquire advisory lock — blocks until acquired
-        await conn.ExecuteAsync($"SELECT pg_advisory_lock({AdvisoryLockKey})").ConfigureAwait(false);
+        await conn.ExecuteAsync("SELECT pg_advisory_lock(@key)", new { key = AdvisoryLockKey }).ConfigureAwait(false);
 
         try
         {
@@ -116,7 +116,7 @@ internal static class SchemaMigrator
         }
         finally
         {
-            await conn.ExecuteAsync($"SELECT pg_advisory_unlock({AdvisoryLockKey})").ConfigureAwait(false);
+            await conn.ExecuteAsync("SELECT pg_advisory_unlock(@key)", new { key = AdvisoryLockKey }).ConfigureAwait(false);
         }
     }
 }

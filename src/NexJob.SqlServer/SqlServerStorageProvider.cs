@@ -1,5 +1,7 @@
 #pragma warning disable MA0004
 using System.Data;
+using System.Globalization;
+using System.Text;
 using System.Text.Json;
 using Dapper;
 using Microsoft.Data.SqlClient;
@@ -162,8 +164,10 @@ public sealed class SqlServerStorageProvider : IStorageProvider
             """, transaction: tx).ConfigureAwait(false);
 
         // Build queue priority list for ordering
-        var queueList = string.Join(",", queues.Select((q, i) => $"('{q.Replace("'", "''")}',{i})"));
+        var parameters = new DynamicParameters();
+        var queueValues = BuildQueueValues(queues, parameters);
 
+#pragma warning disable S2077 // Only the generated @q0, @q1, ... names are interpolated; queue names travel as parameters.
         var row = await conn.QuerySingleOrDefaultAsync<JobRow>(
             $"""
             UPDATE nexjob_jobs
@@ -175,12 +179,14 @@ public sealed class SqlServerStorageProvider : IStorageProvider
             WHERE id = (
                 SELECT TOP 1 j.id
                 FROM nexjob_jobs j WITH (UPDLOCK, READPAST)
-                INNER JOIN (VALUES {queueList}) AS q(name, ord) ON j.queue = q.name
+                INNER JOIN (VALUES {queueValues}) AS q(name, ord) ON j.queue = q.name
                 WHERE j.status = 'Enqueued'
                 ORDER BY q.ord ASC, j.priority ASC, j.created_at ASC
             )
             """,
+            parameters,
             transaction: tx);
+#pragma warning restore S2077
 
         await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
         return row?.ToRecord();
@@ -219,8 +225,12 @@ public sealed class SqlServerStorageProvider : IStorageProvider
             """, transaction: tx).ConfigureAwait(false);
 
         // Build queue priority list for ordering
-        var queueList = string.Join(",", queues.Select((q, i) => $"('{q.Replace("'", "''")}',{i})"));
+        var parameters = new DynamicParameters();
+        var queueValues = BuildQueueValues(queues, parameters);
 
+        parameters.Add("maxBatchSize", maxBatchSize);
+
+#pragma warning disable S2077 // Only the generated @q0, @q1, ... names are interpolated; queue names travel as parameters.
         var rows = await conn.QueryAsync<JobRow>(
             $"""
             UPDATE nexjob_jobs
@@ -230,14 +240,16 @@ public sealed class SqlServerStorageProvider : IStorageProvider
                 attempts              = attempts + 1
             OUTPUT INSERTED.*
             WHERE id IN (
-                SELECT TOP ({maxBatchSize}) j.id
+                SELECT TOP (@maxBatchSize) j.id
                 FROM nexjob_jobs j WITH (UPDLOCK, READPAST)
-                INNER JOIN (VALUES {queueList}) AS q(name, ord) ON j.queue = q.name
+                INNER JOIN (VALUES {queueValues}) AS q(name, ord) ON j.queue = q.name
                 WHERE j.status = 'Enqueued'
                 ORDER BY q.ord ASC, j.priority ASC, j.created_at ASC
             )
             """,
+            parameters,
             transaction: tx);
+#pragma warning restore S2077
 
         await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
         return rows.Select(r => r.ToRecord()).ToList();
@@ -753,6 +765,7 @@ public sealed class SqlServerStorageProvider : IStorageProvider
         }
 
         var clause = where.Count > 0 ? "WHERE " + string.Join(" AND ", where) : string.Empty;
+#pragma warning disable S2077 // `clause` holds only literal fragments such as "status = @status"; every value is a parameter.
         var total = await conn.ExecuteScalarAsync<int>($"SELECT COUNT(*) FROM nexjob_jobs {clause}", p).ConfigureAwait(false);
 
         var offset = (page - 1) * pageSize;
@@ -763,6 +776,7 @@ public sealed class SqlServerStorageProvider : IStorageProvider
             $"SELECT * FROM nexjob_jobs {clause} ORDER BY created_at DESC OFFSET @offset ROWS FETCH NEXT @pageSize ROWS ONLY", p))
             .Select(r => r.ToRecord())
             .ToList();
+#pragma warning restore S2077
 
         return new PagedResult<JobRecord> { Items = items, TotalCount = total, Page = page, PageSize = pageSize };
     }
@@ -1093,6 +1107,19 @@ public sealed class SqlServerStorageProvider : IStorageProvider
     }
 
     // ── Schema ────────────────────────────────────────────────────────────────
+
+    // Builds "(@q0,0),(@q1,1),..." and binds each queue name as a parameter, so a name is never part of the SQL text.
+    private static string BuildQueueValues(IReadOnlyList<string> queues, DynamicParameters parameters)
+    {
+        var values = new StringBuilder();
+        for (var i = 0; i < queues.Count; i++)
+        {
+            parameters.Add($"q{i}", queues[i]);
+            values.Append(CultureInfo.InvariantCulture, $"{(i == 0 ? string.Empty : ",")}(@q{i},{i})");
+        }
+
+        return values.ToString();
+    }
 
     private static bool IsTerminalStatus(string? status) =>
         status is "Succeeded" or "Failed" or "Expired" or null;
