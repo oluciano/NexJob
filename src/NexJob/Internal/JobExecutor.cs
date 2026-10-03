@@ -159,11 +159,7 @@ internal sealed class JobExecutor : IDisposable, IAsyncDisposable
             sw.Stop();
             // Foreign job: the job type or input type cannot be resolved in this process/service.
             // Do not penalize attempts or move to dead-letter. Defer with backoff so the owning service can execute it.
-            if (job.Attempts > 0)
-            {
-                job.Attempts--;
-            }
-
+            // The attempt is given back by the storage (RefundAttempt): editing the local copy is not persisted.
             var retryAt = DateTimeOffset.UtcNow + _options.ForeignJobRetryDelay;
             _logger.LogWarning(
                 ex,
@@ -182,6 +178,7 @@ internal sealed class JobExecutor : IDisposable, IAsyncDisposable
                 Exception = ex,
                 RetryAt = retryAt,
                 RecurringJobId = job.RecurringJobId,
+                RefundAttempt = true,
             }, CancellationToken.None).ConfigureAwait(false);
         }
         catch (ThrottleDeferredException ex)
@@ -219,12 +216,7 @@ internal sealed class JobExecutor : IDisposable, IAsyncDisposable
         {
             sw.Stop();
             // Interrupted by shutdown: the job did not fail, the host stopped. Requeue immediately without
-            // consuming the attempt and never dead-letter, so it runs again on the next start.
-            if (job.Attempts > 0)
-            {
-                job.Attempts--;
-            }
-
+            // consuming the attempt (RefundAttempt) and never dead-letter, so it runs again on the next start.
             _logger.LogWarning(
                 ex,
                 "Job {JobId} ({JobType}) interrupted by shutdown. Requeuing without consuming the attempt.",
@@ -241,6 +233,7 @@ internal sealed class JobExecutor : IDisposable, IAsyncDisposable
                 Exception = ex,
                 RetryAt = DateTimeOffset.UtcNow,
                 RecurringJobId = job.RecurringJobId,
+                RefundAttempt = true,
             }, CancellationToken.None).ConfigureAwait(false);
         }
         catch (Exception ex)

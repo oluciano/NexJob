@@ -232,12 +232,14 @@ public sealed class JobExecutorHardeningTests
         await _sut.ExecuteJobAsync(job);
 
         // Assert
-        job.Attempts.Should().Be(0, "foreign job attempt increment must be rolled back");
+        // Behavior changed in v5.8: the attempt is given back by the storage (RefundAttempt, issue #327). Editing the local
+        // JobRecord was never persisted by the database providers, so the executor no longer touches it.
+        job.Attempts.Should().Be(1, "the executor leaves the local copy alone; the storage refunds the attempt");
         _deadLetterDispatcher.Verify(x => x.DispatchAsync(It.IsAny<JobRecord>(), It.IsAny<Exception>(), It.IsAny<CancellationToken>()), Times.Never);
         _retryPolicy.Verify(x => x.ComputeRetryAt(It.IsAny<JobRecord>(), It.IsAny<Exception>()), Times.Never);
         _storage.Verify(x => x.CommitJobResultAsync(
             job.Id,
-            It.Is<JobExecutionResult>(r => !r.Succeeded && r.RetryAt != null && r.Exception == foreignException),
+            It.Is<JobExecutionResult>(r => !r.Succeeded && r.RetryAt != null && r.Exception == foreignException && r.RefundAttempt),
             It.IsAny<CancellationToken>()), Times.Once);
     }
 
