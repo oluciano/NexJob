@@ -89,7 +89,7 @@ It guarantees that code and documentation (Wiki + Package READMEs) are strictly 
    **Mitigation checklist (Yellow and Red):**
    - Every entry that changes observable behaviour is listed in the release PR and in `docs/wiki/18-Migration.md` with what the user must do.
    - Every change to a stored format or key (schema, Redis keys, Mongo documents) has an explicit **mixed-version (rolling upgrade) statement**: what happens while old and new nodes run together, and how to recover.
-   - The distributed reliability suite (`tests/NexJob.ReliabilityTests`, not run by CI) was run and its result recorded, with every failure classified as test issue or product issue.
+   - The full reliability suite (`tests/NexJob.ReliabilityTests`) was run on every database provider (`gh workflow run reliability.yml --ref develop`, also scheduled nightly) and its result recorded, with every failure classified as test issue or product issue.
    - Code examples added or changed in the docs were compiled and executed.
    - A rollout note (upgrade one node first, what to watch) and a rollback note (previous version, whether the schema migrations are reversible) are in the release PR.
    - A patch milestone (`vX.Y.Z+1`) exists for the follow-ups already known, so they do not pile into the next minor.

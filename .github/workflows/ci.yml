@@ -76,6 +76,9 @@ jobs:
           - name: InMemory-EndToEnd
             project: tests/NexJob.IntegrationTests
             filter: '(FullyQualifiedName~InMemoryStorageProviderTests)|(FullyQualifiedName~JobExecutionEndToEndTests)'
+          - name: Reliability-InMemory
+            project: tests/NexJob.ReliabilityTests
+            filter: 'Category=Reliability.InMemory'
           - name: Redis
             project: tests/NexJob.IntegrationTests
             filter: 'FullyQualifiedName~Redis'
