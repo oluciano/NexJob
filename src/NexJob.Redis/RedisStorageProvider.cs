@@ -139,19 +139,28 @@ public sealed class RedisStorageProvider : IStorageProvider
         """
         for i = 1, #KEYS do
           local zkey = KEYS[i]
-          local members = redis.call('ZRANGE', zkey, 0, 0)
-          if #members > 0 then
+          while true do
+            local members = redis.call('ZRANGE', zkey, 0, 0)
+            if #members == 0 then
+              break
+            end
+
             local id = members[1]
             redis.call('ZREM', zkey, id)
             local jobKey = 'nexjob:jobs:' .. id
-            local now = ARGV[1]
-            redis.call('HSET', jobKey,
-              'status', 'Processing',
-              'processingStartedAt', now,
-              'heartbeatAt', now)
-            redis.call('HINCRBY', jobKey, 'attempts', 1)
-            redis.call('HSET', 'nexjob:processing', id, now)
-            return redis.call('HGETALL', jobKey)
+
+            -- A queue entry whose job no longer exists (it was deleted) is dropped. Writing to the missing key
+            -- would recreate a ghost hash without an id.
+            if redis.call('EXISTS', jobKey) == 1 then
+              local now = ARGV[1]
+              redis.call('HSET', jobKey,
+                'status', 'Processing',
+                'processingStartedAt', now,
+                'heartbeatAt', now)
+              redis.call('HINCRBY', jobKey, 'attempts', 1)
+              redis.call('HSET', 'nexjob:processing', id, now)
+              return redis.call('HGETALL', jobKey)
+            end
           end
         end
         return false
@@ -175,13 +184,17 @@ public sealed class RedisStorageProvider : IStorageProvider
             local id = members[j]
             redis.call('ZREM', zkey, id)
             local jobKey = 'nexjob:jobs:' .. id
-            redis.call('HSET', jobKey,
-              'status', 'Processing',
-              'processingStartedAt', now,
-              'heartbeatAt', now)
-            redis.call('HINCRBY', jobKey, 'attempts', 1)
-            redis.call('HSET', 'nexjob:processing', id, now)
-            table.insert(fetched, redis.call('HGETALL', jobKey))
+
+            -- Dropped when the job was deleted: writing to the missing key would recreate a ghost hash.
+            if redis.call('EXISTS', jobKey) == 1 then
+              redis.call('HSET', jobKey,
+                'status', 'Processing',
+                'processingStartedAt', now,
+                'heartbeatAt', now)
+              redis.call('HINCRBY', jobKey, 'attempts', 1)
+              redis.call('HSET', 'nexjob:processing', id, now)
+              table.insert(fetched, redis.call('HGETALL', jobKey))
+            end
           end
         end
 
@@ -1043,8 +1056,16 @@ public sealed class RedisStorageProvider : IStorageProvider
     public async Task DeleteJobAsync(JobId id, CancellationToken cancellationToken = default)
     {
         var idStr = id.Value.ToString();
-        var idempotencyKey = (string?)await _db.HashGetAsync(JobKey(idStr), "idempotencyKey").ConfigureAwait(false);
+        var fields = await _db.HashGetAsync(JobKey(idStr), ["idempotencyKey", "queue"]).ConfigureAwait(false);
+        var idempotencyKey = (string?)fields[0];
+        var queue = (string?)fields[1];
         await _db.KeyDeleteAsync(JobKey(idStr)).ConfigureAwait(false);
+        if (!string.IsNullOrEmpty(queue))
+        {
+            // A deleted job must not stay in its queue: it would be fetched as a job that no longer exists.
+            await _db.SortedSetRemoveAsync(QueueKey(queue), idStr).ConfigureAwait(false);
+        }
+
         await _db.KeyDeleteAsync(LogsKey(idStr)).ConfigureAwait(false);
         await _db.HashDeleteAsync(ProcessingKey, idStr).ConfigureAwait(false);
         await RemoveFromStatusSetsAsync(_db, idStr).ConfigureAwait(false);
