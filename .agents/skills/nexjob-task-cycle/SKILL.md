@@ -262,10 +262,13 @@ Every task that introduces or modifies public options, defaults, architecture be
 1. **Package / Root READMEs:**
    - If a new feature or behavior was added to a package, update the corresponding `src/<Package>/README.md` or root `README.md`.
 2. **Wiki Pages (`docs/wiki/*.md`):**
-   - **Configuration:** If new options or settings were introduced, update `docs/wiki/11-Configuration-Reference.md`.
-   - **Execution & Retry:** If retry/failure/dead-letter mechanics changed, update `docs/wiki/06-Retry-And-Dead-Letter.md`.
-   - **Architecture & Best Practices:** If deployment topology, queue isolation, or ops hosting guidelines were impacted, update `docs/wiki/13-Best-Practices.md`.
-   - **Dashboard & Monitoring:** If dashboard options, UI scoping, or telemetry changed, update `docs/wiki/10-Dashboard.md` and `docs/wiki/12-OpenTelemetry.md`.
+   - **Configuration:** If new options or settings were introduced, update `docs/wiki/reference/configuration.md`.
+   - **Execution & Retry:** If retry/failure/dead-letter mechanics changed, update `docs/wiki/concepts/retries-and-dead-letter.md`.
+   - **Architecture & Best Practices:** If deployment topology, queue isolation, or ops hosting guidelines were impacted, update `docs/wiki/guides/best-practices.md`.
+   - **Dashboard & Monitoring:** If dashboard options, UI scoping, or telemetry changed, update `docs/wiki/integrations/dashboard.md` and `docs/wiki/integrations/opentelemetry.md`.
+   - **Failure semantics:** If what a failure costs a job changed (attempts used or given back, shutdown, throttle, pause, deadline, crash recovery, dead-letter calls), update `docs/wiki/concepts/delivery-guarantees.md`. It is the one table that lists them; a change that is not there makes the wiki wrong.
+   - **Feature lists:** A new user-facing feature goes in the Key features list of `docs/wiki/introduction.md` and in Core Features of the root `README.md`, each name linking to its page.
+   - **Links:** The docs site builds in strict mode on every pull request, so a broken link fails it. Do not link repository paths (`docs/wiki/...`) from `CHANGELOG.md`: the wiki shows that file as a page.
 3. **Accuracy Check:** Never leave documentation to be fixed "later in release mode" if the code introducing the change is already being PR'd into `develop`.
 
 ---

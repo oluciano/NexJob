@@ -69,6 +69,16 @@ They never modify `IStorageProvider`, `JobRecord`, or any core internal.
 
 ---
 
+## Non-Goals (decided by the owner)
+
+Check this list at the start of grooming, before designing anything.
+
+- **No notification channels.** NexJob does not ship Slack, Teams, Discord, e-mail or PagerDuty integrations (issue #205). It exposes the hooks (`IDeadLetterHandler<TJob>`, `IDeadLetterForwarder`, the OpenTelemetry metrics) and documents a recipe in `docs/wiki/guides/alerts.md`.
+- **No dashboard controls over shared resources.** The dashboard does not change the worker count or connection pools at runtime; those are deployment decisions and the database is shared.
+- **No new satellite package without the owner's decision.** A package is a long-term commitment (formats, secrets, versions). Grooming starts by asking whether it should exist, and whether a documented recipe on an existing extension point is enough.
+
+---
+
 ## Architecture — Current State (v3)
 
 ### Storage interfaces (segregated)

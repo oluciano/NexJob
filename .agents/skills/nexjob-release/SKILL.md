@@ -87,7 +87,7 @@ It guarantees that code and documentation (Wiki + Package READMEs) are strictly 
    **Options when Red:** (a) release earlier, from the last known-good commit, and keep the rest in `develop`; (b) cut a fix-only branch from the last tag with the reviewed fixes and release that as a PATCH, then the features as the next MINOR; (c) proceed anyway, recording in the release PR that it is oversized and completing the mitigation checklist.
 
    **Mitigation checklist (Yellow and Red):**
-   - Every entry that changes observable behaviour is listed in the release PR and in `docs/wiki/18-Migration.md` with what the user must do.
+   - Every entry that changes observable behaviour is listed in the release PR and in `docs/wiki/reference/migration.md` with what the user must do.
    - Every change to a stored format or key (schema, Redis keys, Mongo documents) has an explicit **mixed-version (rolling upgrade) statement**: what happens while old and new nodes run together, and how to recover.
    - The full reliability suite (`tests/NexJob.ReliabilityTests`) was run on every database provider (`gh workflow run reliability.yml --ref develop`, also scheduled nightly) and its result recorded, with every failure classified as test issue or product issue.
    - Code examples added or changed in the docs were compiled and executed.
