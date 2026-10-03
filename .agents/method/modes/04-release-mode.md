@@ -52,7 +52,7 @@
 
 - [ ] Unit tests pass (`dotnet test tests/NexJob.Tests/`)
 - [ ] Integration tests pass (requires Docker)
-- [ ] Reliability tests pass (`dotnet test tests/NexJob.ReliabilityTests.Distributed -c Release`)
+- [ ] Reliability tests pass (`dotnet test tests/NexJob.ReliabilityTests -c Release`)
 - [ ] No flaky tests or timing-dependent assertions
 
 ### Documentation

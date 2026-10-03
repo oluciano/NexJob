@@ -4,19 +4,20 @@ using NexJob;
 namespace NexJob.ReliabilityTests;
 
 /// <summary>
-/// Test dead-letter handler that records invocations.
+/// Test dead-letter handler that records invocations into the host's <see cref="DeadLetterRecorder"/>.
 /// </summary>
+/// <typeparam name="TJob">The job type.</typeparam>
 internal sealed class RecordingDeadLetterHandler<TJob> : IDeadLetterHandler<TJob>
     where TJob : notnull
 {
     private readonly ILogger<RecordingDeadLetterHandler<TJob>> _logger;
+    private readonly DeadLetterRecorder _recorder;
 
-    public static JobRecord? LastFailedJob { get; set; }
-    public static Exception? LastException { get; set; }
-    public static int InvocationCount { get; set; }
-
-    public RecordingDeadLetterHandler(ILogger<RecordingDeadLetterHandler<TJob>> logger)
-        => _logger = logger;
+    public RecordingDeadLetterHandler(ILogger<RecordingDeadLetterHandler<TJob>> logger, DeadLetterRecorder recorder)
+    {
+        _logger = logger;
+        _recorder = recorder;
+    }
 
     public Task HandleAsync(JobRecord failedJob, Exception lastException, CancellationToken cancellationToken)
     {
@@ -26,24 +27,16 @@ internal sealed class RecordingDeadLetterHandler<TJob> : IDeadLetterHandler<TJob
             typeof(TJob).Name,
             failedJob.Attempts);
 
-        LastFailedJob = failedJob;
-        LastException = lastException;
-        InvocationCount++;
+        _recorder.Record(failedJob, lastException);
 
         return Task.CompletedTask;
-    }
-
-    public static void Reset()
-    {
-        LastFailedJob = null;
-        LastException = null;
-        InvocationCount = 0;
     }
 }
 
 /// <summary>
 /// Test dead-letter handler that throws to verify exception handling.
 /// </summary>
+/// <typeparam name="TJob">The job type.</typeparam>
 internal sealed class ThrowingDeadLetterHandler<TJob> : IDeadLetterHandler<TJob>
     where TJob : notnull
 {
@@ -56,27 +49,5 @@ internal sealed class ThrowingDeadLetterHandler<TJob> : IDeadLetterHandler<TJob>
     {
         _logger.LogError("Handler throwing intentionally");
         throw new InvalidOperationException("Handler intentionally throwing");
-    }
-}
-
-/// <summary>
-/// Test dead-letter handler that tracks async operations.
-/// </summary>
-internal sealed class AsyncDeadLetterHandler<TJob> : IDeadLetterHandler<TJob>
-    where TJob : notnull
-{
-    private readonly ILogger<AsyncDeadLetterHandler<TJob>> _logger;
-
-    public static TaskCompletionSource<bool> HandlerCompleted { get; } = new();
-
-    public AsyncDeadLetterHandler(ILogger<AsyncDeadLetterHandler<TJob>> logger)
-        => _logger = logger;
-
-    public async Task HandleAsync(JobRecord failedJob, Exception lastException, CancellationToken cancellationToken)
-    {
-        _logger.LogInformation("Async handler starting for job {JobId}", failedJob.Id);
-        await Task.Delay(100, cancellationToken); // Simulate async work
-        _logger.LogInformation("Async handler completed for job {JobId}", failedJob.Id);
-        HandlerCompleted.TrySetResult(true);
     }
 }

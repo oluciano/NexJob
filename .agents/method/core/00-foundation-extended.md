@@ -114,7 +114,7 @@ Provider extension methods register before `AddNexJob()` is called, so their reg
 ## Testing Strategy
 
 ### Reliability Suite
-- Project: `NexJob.ReliabilityTests.Distributed`
+- Project: `NexJob.ReliabilityTests`
 - Validates scenarios against **real storage providers** via Docker.
 - Coverage: Retry & Dead-Letter, Concurrency, Crash Recovery, Deadline Enforcement, Wake-Up Latency.
 - Providers: PostgreSQL 16, SQL Server 2022, Redis 7, MongoDB 7.

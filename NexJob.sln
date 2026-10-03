@@ -27,7 +27,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NexJob.Sample.WebApi", "sam
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NexJob.IntegrationTests", "tests\NexJob.IntegrationTests\NexJob.IntegrationTests.csproj", "{0F267AF4-CA8A-402A-85C3-636553CD5771}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NexJob.ReliabilityTests.Distributed", "tests\NexJob.ReliabilityTests.Distributed\NexJob.ReliabilityTests.Distributed.csproj", "{1F2A4D8E-5B6C-4F7A-8D9E-C3E5F7G2H3I9}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NexJob.ReliabilityTests", "tests\NexJob.ReliabilityTests\NexJob.ReliabilityTests.csproj", "{1F2A4D8E-5B6C-4F7A-8D9E-C3E5F7G2H3I9}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "benchmarks", "benchmarks", "{6ECB20C4-210F-4899-9C14-80C06D278B84}"
 EndProject
