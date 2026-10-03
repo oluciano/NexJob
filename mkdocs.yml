@@ -60,6 +60,7 @@ nav:
       - Scheduling: concepts/scheduling.md
       - Recurring Jobs: concepts/recurring-jobs.md
       - Retries & Dead Letter: concepts/retries-and-dead-letter.md
+      - Delivery Guarantees: concepts/delivery-guarantees.md
       - Continuations: concepts/continuations.md
       - Idempotency: concepts/idempotency.md
   - Guides:
