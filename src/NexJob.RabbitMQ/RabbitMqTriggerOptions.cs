@@ -65,4 +65,25 @@ public sealed class RabbitMqTriggerOptions
     /// If both are present, the message header takes precedence.
     /// </summary>
     public string? JobType { get; set; }
+
+    /// <summary>
+    /// Gets or sets the exchange to which a job from this trigger is copied once it exhausts its retries. An empty
+    /// string (the default) is the default exchange, which routes by queue name.
+    /// </summary>
+    public string ExhaustedJobsExchange { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets the routing key used when a job from this trigger is copied after exhausting its retries. When set,
+    /// the original message body is published to <see cref="ExhaustedJobsExchange"/> through the RabbitMQ Outbox
+    /// (<c>AddRabbitMqProducer</c> is required) and the job stays <c>Failed</c> in NexJob. With the default exchange the
+    /// routing key is the name of the queue that receives the copy. Only jobs created by this trigger on
+    /// <see cref="TargetQueue"/> are forwarded. Defaults to <see langword="null"/> (no forwarding).
+    /// </summary>
+    public string? ExhaustedJobsRoutingKey { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether the forwarded message carries the last error in a
+    /// <c>nexjob.error</c> header. Defaults to <see langword="false"/>.
+    /// </summary>
+    public bool ExhaustedJobsIncludeErrorHeader { get; set; }
 }
