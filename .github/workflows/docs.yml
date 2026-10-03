@@ -18,10 +18,9 @@ on:
       - '.github/workflows/docs.yml'
   workflow_dispatch:
 
+# Least privilege: the workflow can only read; the deploy job asks for the extra permissions it needs.
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
   group: pages
@@ -56,6 +55,9 @@ jobs:
     if: github.event_name != 'pull_request'
     needs: build
     runs-on: ubuntu-24.04
+    permissions:
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
