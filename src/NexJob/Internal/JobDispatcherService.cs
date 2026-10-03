@@ -9,12 +9,12 @@ namespace NexJob.Internal;
 
 /// <summary>
 /// Hosted background service that continuously polls the storage provider for
-/// ready jobs and dispatches them to a bounded worker pool via <see cref="JobExecutor"/>.
+/// ready jobs and dispatches them to a bounded worker pool via <see cref="IJobExecutor"/>.
 /// </summary>
 internal sealed class JobDispatcherService : BackgroundService
 {
     private readonly IJobStorage _storage;
-    private readonly JobExecutor _executor;
+    private readonly IJobExecutor _executor;
     private readonly IRuntimeSettingsStore _runtimeStore;
     private readonly NexJobOptions _options;
     private readonly JobWakeUpChannel _wakeUp;
@@ -29,7 +29,7 @@ internal sealed class JobDispatcherService : BackgroundService
     /// </summary>
     public JobDispatcherService(
         IJobStorage storage,
-        JobExecutor executor,
+        IJobExecutor executor,
         IRuntimeSettingsStore runtimeStore,
         NexJobOptions options,
         JobWakeUpChannel wakeUp,

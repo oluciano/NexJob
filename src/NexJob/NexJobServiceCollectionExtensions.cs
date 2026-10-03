@@ -178,7 +178,7 @@ public static class NexJobServiceCollectionExtensions
         services.AddSingleton<IJobInvokerFactory, DefaultJobInvokerFactory>();
         services.AddSingleton<IJobRetryPolicy, DefaultJobRetryPolicy>();
         services.AddSingleton<IDeadLetterDispatcher, DefaultDeadLetterDispatcher>();
-        services.AddSingleton<JobExecutor>();
+        services.AddSingleton<IJobExecutor, JobExecutor>();
         services.AddSingleton<JobCaptureLoggerProvider>();
         services.AddSingleton<ILoggerProvider>(sp => sp.GetRequiredService<JobCaptureLoggerProvider>());
         services.TryAddSingleton<IQueueCircuitBreakerManager, DefaultQueueCircuitBreakerManager>();
