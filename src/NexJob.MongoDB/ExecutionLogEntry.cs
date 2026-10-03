@@ -1,6 +1,8 @@
+using MongoDB.Bson.Serialization.Attributes;
 namespace NexJob.MongoDB;
 
 /// <summary>BSON-friendly representation of a <see cref="JobExecutionLog"/> entry stored in MongoDB.</summary>
+[BsonIgnoreExtraElements] // a node must read documents written by a newer version (rolling upgrades)
 internal sealed class ExecutionLogEntry
 {
     /// <summary>UTC timestamp when the log entry was emitted.</summary>

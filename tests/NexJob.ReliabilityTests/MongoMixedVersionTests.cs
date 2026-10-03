@@ -24,10 +24,32 @@ public sealed class MongoMixedVersionTests
     // Frozen: the elements of JobDocument in v5.7.0 (Id is stored as _id; ExecutionLogs is named execution_logs).
     private static readonly string[] PreviousVersionJobElements =
     [
-        "_id", "JobType", "InputType", "InputJson", "SchemaVersion", "Queue", "Priority", "Status", "IdempotencyKey",
-        "Attempts", "MaxAttempts", "CreatedAt", "ScheduledAt", "ProcessingStartedAt", "HeartbeatAt", "CompletedAt",
-        "RetryAt", "LastErrorMessage", "LastErrorStackTrace", "ParentJobId", "RecurringJobId", "execution_logs", "Tags",
-        "ProgressPercent", "ProgressMessage", "CheckpointJson",
+        "_id",
+        "JobType",
+        "InputType",
+        "InputJson",
+        "SchemaVersion",
+        "Queue",
+        "Priority",
+        "Status",
+        "IdempotencyKey",
+        "Attempts",
+        "MaxAttempts",
+        "CreatedAt",
+        "ScheduledAt",
+        "ProcessingStartedAt",
+        "HeartbeatAt",
+        "CompletedAt",
+        "RetryAt",
+        "LastErrorMessage",
+        "LastErrorStackTrace",
+        "ParentJobId",
+        "RecurringJobId",
+        "execution_logs",
+        "Tags",
+        "ProgressPercent",
+        "ProgressMessage",
+        "CheckpointJson",
     ];
 
     private readonly MongoReliabilityFixture _fixture;
