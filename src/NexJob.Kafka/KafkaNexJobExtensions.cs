@@ -2,6 +2,7 @@ using System.Diagnostics.CodeAnalysis;
 using Confluent.Kafka;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using NexJob.Kafka;
 
 namespace NexJob.Trigger.Kafka;
 
@@ -24,6 +25,10 @@ public static class KafkaNexJobExtensions
         services.AddOptions<KafkaTriggerOptions>()
             .Configure(configure)
             .ValidateDataAnnotations()
+            .Validate<IServiceProvider>(
+                (options, provider) => string.IsNullOrWhiteSpace(options.ExhaustedJobsTopic)
+                    || (provider.GetService<IServiceProviderIsService>()?.IsService(typeof(IKafkaProducerClient)) ?? true),
+                "KafkaTriggerOptions.ExhaustedJobsTopic needs the Kafka producer: call AddKafkaProducer(...) as well.")
             .ValidateOnStart();
 
         services.AddSingleton<IKafkaConsumer>(sp =>
@@ -54,6 +59,9 @@ public static class KafkaNexJobExtensions
         });
 
         services.AddHostedService<KafkaTriggerHandler>();
+
+        // Does nothing unless KafkaTriggerOptions.ExhaustedJobsTopic is set.
+        services.AddSingleton<IDeadLetterForwarder, KafkaDeadLetterForwarder>();
 
         return services;
     }

@@ -42,6 +42,21 @@ public sealed class KafkaTriggerOptions
     public string? DeadLetterTopic { get; set; }
 
     /// <summary>
+    /// Gets or sets the topic to which a job from this trigger is copied once it exhausts its retries. When set, the
+    /// original message body is published there through the Kafka Outbox (<c>AddKafkaProducer</c> is required) and the
+    /// job stays <c>Failed</c> in NexJob. Only jobs created by this trigger on <see cref="TargetQueue"/> are forwarded.
+    /// Not to be confused with <see cref="DeadLetterTopic"/>, which receives messages that could never become a job.
+    /// Defaults to <see langword="null"/> (no forwarding).
+    /// </summary>
+    public string? ExhaustedJobsTopic { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether the forwarded message carries the last error in a
+    /// <c>nexjob.error</c> header. Defaults to <see langword="false"/>.
+    /// </summary>
+    public bool ExhaustedJobsIncludeErrorHeader { get; set; }
+
+    /// <summary>
     /// Gets or sets the consume timeout for polling. Default: 1 second.
     /// </summary>
     public TimeSpan ConsumeTimeout { get; set; } = TimeSpan.FromSeconds(1);

@@ -192,4 +192,15 @@ Need distributed state machines or sagas with compensating transactions over Kaf
 
 ## Forwarding failed jobs
 
-A job created from a consumed message that exhausts its retries stays **only inside NexJob** (`Failed` in the dashboard), because the broker message was acknowledged when it became a job. To forward a copy of the original message to a Kafka topic, see [Forwarding a dead-lettered job](https://github.com/oluciano/NexJob/blob/main/docs/wiki/06-Retry-And-Dead-Letter.md#forwarding-a-dead-lettered-job-to-kafka-or-rabbitmq).
+A job created from a consumed message that exhausts its retries stays **only inside NexJob** (`Failed` in the dashboard), because the broker message was acknowledged when it became a job. To copy the original message body to another topic, set `ExhaustedJobsTopic` on the trigger (the Outbox producer, `AddKafkaProducer`, is required):
+
+```csharp
+.AddKafkaTrigger<ProcessOrderJob>(opt =>
+{
+    opt.Topic = "orders";
+    opt.TargetQueue = "orders";
+    opt.ExhaustedJobsTopic = "orders.exhausted";   // optional: opt.ExhaustedJobsIncludeErrorHeader = true
+});
+```
+
+Only the body is forwarded, the job stays `Failed` in NexJob, and only jobs of this trigger are forwarded. Details and limits: [Forwarding a dead-lettered job](https://github.com/oluciano/NexJob/blob/main/docs/wiki/concepts/retries-and-dead-letter.md#forwarding-a-dead-lettered-job).

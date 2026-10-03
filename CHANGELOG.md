@@ -8,6 +8,8 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Triggers — built-in forwarding of exhausted jobs for Kafka and RabbitMQ (issue #312)**: set `ExhaustedJobsTopic` on `AddKafkaTrigger(...)`, or `ExhaustedJobsRoutingKey` (and optionally `ExhaustedJobsExchange`) on `AddRabbitMqTrigger(...)`, and a job created by that trigger that exhausts its retries is copied to that destination through the Outbox. The original message body is published verbatim and the job stays `Failed` in NexJob; an optional `ExhaustedJobsIncludeErrorHeader` adds the last error as header `nexjob.error` (off by default). Only that trigger's jobs are forwarded, the Outbox publisher jobs are never forwarded, and enabling it without the matching producer fails at startup. Only the body is forwarded; the original key, headers and message properties are not stored.
+- **Core — `IDeadLetterForwarder`**: a new interface the dispatcher calls, after the typed `IDeadLetterHandler<TJob>`, for every registered forwarder whose `AppliesTo` is true, each isolated so none can stop another or the dispatcher. A handler written for a job type no longer prevents forwarding. New counters `nexjob.dead_letter.forwarded` and `nexjob.dead_letter.forward_failed`. Additive: nothing existing changes.
 - **Dashboard — Clean 24h Hourly Trend chart (issue #318)**:
   - Implemented normalized 24h Hourly Throughput card with 24 evenly spaced bars, responsive tooltips, dynamic average threshold line, and anomaly drop warnings.
   - Added quick-copy buttons (`📋 Copy JSON`, `📋 Copy Logs`) with visual confirmation across Job Detail and Recurring Execution modals.
