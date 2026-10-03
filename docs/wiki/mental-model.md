@@ -123,8 +123,8 @@ Steps 6 and 7 are committed atomically. You will never see a job stuck in `Proce
 A worker crash leaves one or more jobs stuck in `Processing` with a stale `HeartbeatAt` timestamp. NexJob handles this automatically:
 
 1. A background watcher service scans storage periodically for jobs where `UtcNow - HeartbeatAt > HeartbeatTimeout` (default: 5 minutes).
-2. Orphaned jobs are re-enqueued automatically — their attempt count is **not** incremented because the execution never completed.
-3. If an orphaned job has already exhausted all of its configured attempts, it is marked `Failed` instead of being requeued indefinitely.
+2. Orphaned jobs are re-enqueued automatically. The attempt that was running when the node died **is spent** (the job may have partly run), so a job that keeps killing its node eventually runs out of attempts.
+3. If an orphaned job has already used all of its configured attempts, it is marked `Failed` instead of being requeued indefinitely, and its dead-letter handler and forwarders are called with an `OrphanedJobException` (see [Retries & Dead Letter](concepts/retries-and-dead-letter.md#when-the-node-dies)).
 4. A fresh dispatcher instance picks up the re-enqueued jobs on its next cycle.
 
 **Graceful shutdown is not a crash.** When the host shuts down cleanly, the dispatcher stops accepting new jobs, waits up to `ShutdownTimeout` for running jobs to finish, and re-enqueues any job that is cancelled by the shutdown token — **without consuming an attempt**.
