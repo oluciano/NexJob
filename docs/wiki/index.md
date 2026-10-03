@@ -23,6 +23,22 @@ NexJob is a reliable background job processing library for .NET 8 that gives you
 
     Real-time cluster visibility with zero external dependencies.
 
+  -   [**Delivery Guarantees**](concepts/delivery-guarantees.md)
+
+    What each failure costs a job: crashes, shutdown, throttling, pauses and deadlines.
+
+  -   [**Circuit Breaker**](guides/circuit-breaker.md)
+
+    Pause a queue automatically when a dependency is down, and ramp back up safely.
+
+  -   [**Alerts**](guides/alerts.md)
+
+    Know when a job fails for good, with a ready Slack recipe.
+
+  -   [**How We Test**](reference/how-we-test.md)
+
+    Real databases, killed processes and upgrades, and what is not covered.
+
 </div>
 
 ## Get up and running
