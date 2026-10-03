@@ -586,28 +586,26 @@ public sealed class PostgresStorageProvider : IStorageProvider, IOrphanedJobRepo
     public async Task<IReadOnlyList<JobId>> RequeueOrphanedJobsAndReportAsync(
         TimeSpan heartbeatTimeout, CancellationToken cancellationToken = default)
     {
-        var now = DateTimeOffset.UtcNow;
-        var cutoff = now - heartbeatTimeout;
         await using var conn = Open();
         await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
-        var moved = await conn.QueryAsync<(Guid Id, string Status)>(
-            """
-            UPDATE nexjob_jobs
-            SET status = CASE WHEN attempts >= max_attempts THEN 'Failed' ELSE 'Enqueued' END,
-                completed_at = CASE WHEN attempts >= max_attempts THEN @now ELSE NULL END,
-                exception_message = CASE WHEN attempts >= max_attempts AND exception_message IS NULL THEN 'Orphaned execution exceeded maximum attempts.' ELSE exception_message END,
-                heartbeat_at = NULL,
-                processing_started_at = NULL
-            WHERE status = 'Processing' AND heartbeat_at < @cutoff
-            RETURNING id, status
-            """,
-            new { cutoff, now }).ConfigureAwait(false);
 
-        // A job reported here was moved by this statement, so no other node can report it too.
-        return moved
-            .Where(m => string.Equals(m.Status, "Failed", StringComparison.Ordinal))
-            .Select(m => new JobId(m.Id))
-            .ToList();
+        // The statement returns only the jobs it moved to Failed, so another node scanning at the same time cannot report them too.
+        var failedIds = await conn.QueryAsync<Guid>(
+            """
+            WITH moved AS (
+                UPDATE nexjob_jobs
+                SET status = CASE WHEN attempts >= max_attempts THEN 'Failed' ELSE 'Enqueued' END,
+                    completed_at = CASE WHEN attempts >= max_attempts THEN @now ELSE NULL END,
+                    exception_message = CASE WHEN attempts >= max_attempts AND exception_message IS NULL THEN 'Orphaned execution exceeded maximum attempts.' ELSE exception_message END,
+                    heartbeat_at = NULL,
+                    processing_started_at = NULL
+                WHERE status = 'Processing' AND heartbeat_at < @cutoff
+                RETURNING id, status)
+            SELECT id FROM moved WHERE status = 'Failed'
+            """,
+            new { cutoff = DateTimeOffset.UtcNow - heartbeatTimeout, now = DateTimeOffset.UtcNow }).ConfigureAwait(false);
+
+        return failedIds.Select(id => new JobId(id)).ToList();
     }
 
     // ── Continuations ─────────────────────────────────────────────────────────

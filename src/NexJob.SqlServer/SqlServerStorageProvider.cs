@@ -595,27 +595,28 @@ public sealed class SqlServerStorageProvider : IStorageProvider, IOrphanedJobRep
         TimeSpan heartbeatTimeout, CancellationToken cancellationToken = default)
     {
         var now = DateTimeOffset.UtcNow;
-        var cutoff = now - heartbeatTimeout;
         await using var conn = Open();
         await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
-        var moved = await conn.QueryAsync<(Guid Id, string Status)>(
+
+        // Only the jobs this statement moved to Failed come back, so another node scanning at the same time cannot report them too.
+        var failedIds = (await conn.QueryAsync<Guid>(
             """
+            DECLARE @moved TABLE (id UNIQUEIDENTIFIER, status NVARCHAR(32));
+
             UPDATE nexjob_jobs
             SET status = CASE WHEN attempts >= max_attempts THEN 'Failed' ELSE 'Enqueued' END,
                 completed_at = CASE WHEN attempts >= max_attempts THEN @now ELSE NULL END,
                 exception_message = CASE WHEN attempts >= max_attempts AND exception_message IS NULL THEN 'Orphaned execution exceeded maximum attempts.' ELSE exception_message END,
                 heartbeat_at = NULL,
                 processing_started_at = NULL
-            OUTPUT INSERTED.id, INSERTED.status
-            WHERE status = 'Processing' AND heartbeat_at < @cutoff
-            """,
-            new { cutoff, now }).ConfigureAwait(false);
+            OUTPUT INSERTED.id, INSERTED.status INTO @moved
+            WHERE status = 'Processing' AND heartbeat_at < @cutoff;
 
-        // A job reported here was moved by this statement, so no other node can report it too.
-        return moved
-            .Where(m => string.Equals(m.Status, "Failed", StringComparison.Ordinal))
-            .Select(m => new JobId(m.Id))
-            .ToList();
+            SELECT id FROM @moved WHERE status = 'Failed';
+            """,
+            new { cutoff = now - heartbeatTimeout, now }).ConfigureAwait(false)).ToList();
+
+        return failedIds.ConvertAll(id => new JobId(id));
     }
 
     // ── Continuations ─────────────────────────────────────────────────────────
