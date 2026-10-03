@@ -4,6 +4,7 @@ using MongoDB.Bson.Serialization.Attributes;
 namespace NexJob.MongoDB;
 
 /// <summary>BSON document that maps to a <see cref="RecurringJobRecord"/>.</summary>
+[BsonIgnoreExtraElements] // a node must read documents written by a newer version (rolling upgrades)
 internal sealed class RecurringJobDocument
 {
     [BsonId]

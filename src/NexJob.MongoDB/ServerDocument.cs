@@ -5,6 +5,7 @@ namespace NexJob.MongoDB;
 /// <summary>
 /// MongoDB document representing an active worker node/server.
 /// </summary>
+[BsonIgnoreExtraElements] // a node must read documents written by a newer version (rolling upgrades)
 internal sealed class ServerDocument
 {
     [BsonId]
