@@ -6,6 +6,49 @@ description: "Step-by-step migration guides for NexJob major version upgrades, i
 
 This page covers every breaking change between NexJob releases and tells you exactly what to update in your code. Schema migrations for PostgreSQL and SQL Server apply automatically at startup. Follow the steps in order for each version jump you're crossing.
 
+## v5.7.0 → v5.8.0
+
+Nothing in the public API is removed. This release changes **behaviour** that you may depend on, and it adds a stored field. Read both parts before a rolling upgrade.
+
+#### Deadlines now take effect
+
+!!! warning
+    **Behaviour change.** `deadlineAfter` was accepted but never stored by the PostgreSQL, SQL Server, MongoDB and Redis providers, so a job that was already past its deadline still ran. From v5.8.0 the deadline is stored and enforced: a job fetched after its deadline is marked `Expired` and does not execute. If your application passes `deadlineAfter`, expect `Expired` jobs where you used to see executed ones. Jobs enqueued **before** the upgrade have no stored deadline and are not affected.
+
+Other behaviour that changes, each described in the changelog:
+
+- A throttled job that cannot get its slot within about 5 seconds is returned to the queue instead of holding its worker. It does not use an attempt, and it can run in a different order than it was enqueued.
+- A job interrupted by shutdown, or deferred because its type is not available in the process, no longer consumes an attempt on database providers (it used to, in spite of the log message).
+- Pausing a queue takes effect on each node's next polling cycle; running jobs are never interrupted.
+
+#### What is stored differently
+
+| Provider | Change | What happens on upgrade |
+|---|---|---|
+| PostgreSQL | nullable `expires_at` column on `nexjob_jobs` (migration V11) | Applied automatically by the first v5.8 node that starts. Existing rows keep `NULL`. |
+| SQL Server | nullable `expires_at` column on `nexjob_jobs` (migration V11) | Same. |
+| Redis | `expiresAt` field in the job hash, set only when the job has a deadline | Nothing to run. Existing hashes simply lack the field. |
+| MongoDB | `ExpiresAt` element in the job document, written **only** when the job has a deadline | Nothing to run. Existing documents simply lack the element. |
+
+The upgrade of a storage that already holds jobs (enqueued, scheduled, with continuations, an orphan left `Processing`, finished and failed history) is covered by tests on all four database providers.
+
+#### Rolling upgrade: v5.7 and v5.8 nodes on the same storage
+
+| Provider | Old (v5.7) node reads what a v5.8 node wrote | New (v5.8) node reads what a v5.7 node wrote |
+|---|---|---|
+| PostgreSQL, SQL Server | Yes. It ignores the extra column, and its own inserts leave `expires_at` empty. | Yes, tested. |
+| Redis | Yes. It ignores the extra hash field. | Yes. |
+| MongoDB | **Yes, as long as the job has no deadline.** A document with a deadline carries an element that v5.7 does not know, and the MongoDB driver throws on it, so a v5.7 node fails to read that job. | Yes. |
+
+Two rules follow:
+
+1. **MongoDB: do not use `deadlineAfter` until every node runs v5.8.** If you must, upgrade all nodes together instead of one by one.
+2. **Until every node is on v5.8, deadlines are enforced only by v5.8 nodes.** A v5.7 node ignores the stored deadline and may still execute an expired job, as it always did.
+
+v5.8 documents also ignore elements they do not know, so the same constraint will not apply to the next upgrade.
+
+**Rollback.** Going back to v5.7 is safe on PostgreSQL, SQL Server and Redis: the extra column or field is ignored and can stay. On MongoDB, first make sure no job with a deadline is left (or remove the `ExpiresAt` element from those documents), because v5.7 cannot read them.
+
 ## v5.6.2 → v5.7.0
 
 
