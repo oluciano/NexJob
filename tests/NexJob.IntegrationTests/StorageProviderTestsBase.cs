@@ -1383,7 +1383,8 @@ public abstract class StorageProviderTestsBase
         JobId? parentJobId = null,
         int maxAttempts = 5,
         string jobType = "NexJob.IntegrationTests.FakeJob",
-        string? inputJson = null) =>
+        string? inputJson = null,
+        DateTimeOffset? expiresAt = null) =>
         new()
         {
             Id = new JobId(Guid.NewGuid()),
@@ -1397,6 +1398,7 @@ public abstract class StorageProviderTestsBase
             CreatedAt = DateTimeOffset.UtcNow,
             IdempotencyKey = idempotencyKey,
             ParentJobId = parentJobId,
+            ExpiresAt = expiresAt,
         };
 
     private static RecurringJobRecord MakeRecurring(
@@ -1911,5 +1913,69 @@ public abstract class StorageProviderTestsBase
         syncItem!.TotalRuns.Should().Be(1);
         syncItem.SucceededRuns.Should().Be(1);
         syncItem.FailedRuns.Should().Be(0);
+    }
+
+    // ── Job deadline persistence (#321) ────────────────────────────────────────
+
+    [Fact]
+    public async Task EnqueueAsync_persists_ExpiresAt_and_FetchNextAsync_returns_it()
+    {
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
+        var expiresAt = DateTimeOffset.UtcNow.AddHours(1);
+        var record = MakeJob(expiresAt: expiresAt);
+
+        await storage.EnqueueAsync(record);
+
+        var stored = await dashboard.GetJobByIdAsync(record.Id);
+        stored!.ExpiresAt.Should().NotBeNull("the deadline must be stored with the job");
+        stored.ExpiresAt!.Value.Should().BeCloseTo(expiresAt, TimeSpan.FromMilliseconds(5));
+
+        var fetched = await storage.FetchNextAsync(["default"]);
+        fetched!.ExpiresAt.Should().NotBeNull("the executor reads the deadline from the fetched job");
+        fetched.ExpiresAt!.Value.Should().BeCloseTo(expiresAt, TimeSpan.FromMilliseconds(5));
+    }
+
+    [Fact]
+    public async Task EnqueueAsync_with_duplicate_policy_persists_ExpiresAt()
+    {
+        var (storage, _, _, _) = await CreateStorageAsync();
+        var expiresAt = DateTimeOffset.UtcNow.AddHours(1);
+        var record = MakeJob(idempotencyKey: $"deadline-{Guid.NewGuid()}", expiresAt: expiresAt);
+
+        await storage.EnqueueAsync(record, DuplicatePolicy.AllowAfterFailed);
+
+        var fetched = await storage.FetchNextAsync(["default"]);
+        fetched!.ExpiresAt.Should().NotBeNull();
+        fetched.ExpiresAt!.Value.Should().BeCloseTo(expiresAt, TimeSpan.FromMilliseconds(5));
+    }
+
+    [Fact]
+    public async Task FetchNextAsync_returns_a_job_whose_deadline_already_passed_with_its_deadline()
+    {
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
+        var expiresAt = DateTimeOffset.UtcNow.AddMinutes(-5);
+        var record = MakeJob(expiresAt: expiresAt);
+
+        await storage.EnqueueAsync(record);
+        var fetched = await storage.FetchNextAsync(["default"]);
+
+        // The storage does not decide expiry: it hands the deadline to the executor, which expires the job.
+        fetched.Should().NotBeNull();
+        fetched!.ExpiresAt.Should().NotBeNull();
+        fetched.ExpiresAt!.Value.Should().BeBefore(DateTimeOffset.UtcNow);
+
+        await storage.SetExpiredAsync(fetched.Id);
+        (await dashboard.GetJobByIdAsync(record.Id))!.Status.Should().Be(JobStatus.Expired);
+    }
+
+    [Fact]
+    public async Task EnqueueAsync_without_deadline_returns_null_ExpiresAt()
+    {
+        var (storage, _, _, _) = await CreateStorageAsync();
+
+        await storage.EnqueueAsync(MakeJob());
+        var fetched = await storage.FetchNextAsync(["default"]);
+
+        fetched!.ExpiresAt.Should().BeNull("a job enqueued without a deadline never expires");
     }
 }
