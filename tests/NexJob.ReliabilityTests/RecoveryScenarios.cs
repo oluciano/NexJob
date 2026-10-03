@@ -84,6 +84,36 @@ public abstract class RecoveryScenarios : DistributedReliabilityTestBase
     }
 
     [Fact]
+    public async Task ContinuationSurvivesHostRestart_ParentRunsBeforeChild()
+    {
+        var queue = $"recovery-{Guid.NewGuid():N}";
+        var log = new ExecutionLog();
+        JobId parentId;
+        JobId childId;
+
+        // Host 1 serves another queue, so it only persists the parent and its continuation.
+        using (var host1 = BuildHost(Storage(), s => RegisterSteps(s, log), workers: 1))
+        {
+            await host1.StartAsync();
+            var scheduler = host1.Services.GetRequiredService<IScheduler>();
+            parentId = await scheduler.EnqueueAsync<StepJob>(queue: queue);
+            childId = await scheduler.ContinueWithAsync<StepJob>(parentId, queue: queue);
+            await host1.StopAsync();
+        }
+
+        log.Entries.Should().BeEmpty("the first host does not serve the queue");
+
+        using var host2 = BuildHost(Storage(), s => RegisterSteps(s, log), workers: 2, queues: [queue]);
+        await host2.StartAsync();
+
+        (await WaitForAllSucceeded(host2, [parentId, childId], Timeout)).Should().BeTrue("the stored continuation must still be linked to its parent");
+        log.Entries.Should().ContainInOrder($"done:{parentId.Value}", $"done:{childId.Value}");
+        log.Count($"done:{childId.Value}").Should().Be(1, "the child runs exactly once");
+
+        await host2.StopAsync();
+    }
+
+    [Fact]
     public async Task FailedJobStaysFailedAfterRestartAndIsNotRerun()
     {
         var queue = $"recovery-{Guid.NewGuid():N}";
@@ -113,5 +143,11 @@ public abstract class RecoveryScenarios : DistributedReliabilityTestBase
         counter.Count.Should().Be(executionsBeforeRestart, "a failed job is not run again");
 
         await host2.StopAsync();
+    }
+
+    private static void RegisterSteps(IServiceCollection services, ExecutionLog log)
+    {
+        services.AddSingleton(log);
+        services.AddTransient<StepJob>();
     }
 }

@@ -2049,4 +2049,160 @@ public abstract class StorageProviderTestsBase
 
         return null;
     }
+
+    // ── Deleting a job that was not fetched yet (#140) ─────────────────────────
+
+    [Fact]
+    public async Task DeleteJobAsync_of_an_enqueued_job_means_it_is_never_fetched_and_leaves_no_trace()
+    {
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
+        var record = MakeJob();
+        await storage.EnqueueAsync(record);
+
+        await dashboard.DeleteJobAsync(record.Id);
+
+        (await storage.FetchNextAsync(["default"])).Should().BeNull("a deleted job must not come back from the queue");
+        (await dashboard.GetJobByIdAsync(record.Id)).Should().BeNull("fetching must not recreate the deleted job");
+    }
+
+    [Fact]
+    public async Task DeleteJobAsync_of_one_enqueued_job_does_not_hide_the_next_one_in_the_queue()
+    {
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
+        var deleted = MakeJob();
+        await storage.EnqueueAsync(deleted);
+        await Task.Delay(5);
+        var kept = MakeJob();
+        await storage.EnqueueAsync(kept);
+
+        await dashboard.DeleteJobAsync(deleted.Id);
+        var fetched = await storage.FetchNextAsync(["default"]);
+
+        fetched.Should().NotBeNull();
+        fetched!.Id.Should().Be(kept.Id, "the surviving job is the one that comes out");
+        (await storage.FetchNextAsync(["default"])).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task DeleteJobAsync_of_an_unknown_or_already_deleted_id_does_not_throw()
+    {
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
+        var record = MakeJob();
+        await storage.EnqueueAsync(record);
+
+        Func<Task> act = async () =>
+        {
+            await dashboard.DeleteJobAsync(new JobId(Guid.NewGuid()));
+            await dashboard.DeleteJobAsync(record.Id);
+            await dashboard.DeleteJobAsync(record.Id);
+        };
+
+        await act.Should().NotThrowAsync();
+    }
+
+    // ── Late writes to a job that was deleted while it ran (#140) ───────────────
+
+    [Fact]
+    public async Task UpdateHeartbeatAsync_on_a_deleted_job_leaves_no_trace()
+    {
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
+        var record = await EnqueueFetchAndDeleteAsync(storage, dashboard);
+
+        await storage.UpdateHeartbeatAsync(record.Id);
+
+        (await dashboard.GetJobByIdAsync(record.Id)).Should().BeNull("a late heartbeat must not bring a deleted job back");
+    }
+
+    [Fact]
+    public async Task ReportProgressAsync_on_a_deleted_job_leaves_no_trace()
+    {
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
+        var record = await EnqueueFetchAndDeleteAsync(storage, dashboard);
+
+        await storage.ReportProgressAsync(record.Id, 50, "halfway");
+
+        (await dashboard.GetJobByIdAsync(record.Id)).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task SaveExecutionLogsAsync_on_a_deleted_job_leaves_no_trace()
+    {
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
+        var record = await EnqueueFetchAndDeleteAsync(storage, dashboard);
+
+        await dashboard.SaveExecutionLogsAsync(record.Id, []);
+
+        (await dashboard.GetJobByIdAsync(record.Id)).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task CommitJobResultAsync_on_a_deleted_job_leaves_no_trace_for_success_retry_and_failure()
+    {
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
+        var results = new[]
+        {
+            new JobExecutionResult { Succeeded = true, Logs = [] },
+            new JobExecutionResult { Succeeded = false, Exception = new InvalidOperationException("retry"), RetryAt = DateTimeOffset.UtcNow.AddMinutes(1), Logs = [] },
+            new JobExecutionResult { Succeeded = false, Exception = new InvalidOperationException("failed"), Logs = [] },
+        };
+
+        foreach (var result in results)
+        {
+            var record = await EnqueueFetchAndDeleteAsync(storage, dashboard);
+
+            await storage.CommitJobResultAsync(record.Id, result);
+
+            (await dashboard.GetJobByIdAsync(record.Id)).Should().BeNull($"a late result (succeeded={result.Succeeded}, retry={result.RetryAt is not null}) must not bring a deleted job back");
+        }
+    }
+
+    [Fact]
+    public async Task Late_writes_on_an_unknown_id_do_not_throw_and_leave_no_trace()
+    {
+        // N3 (Invalid input)
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
+        var unknown = new JobId(Guid.NewGuid());
+
+        Func<Task> act = async () =>
+        {
+            await storage.UpdateHeartbeatAsync(unknown);
+            await storage.ReportProgressAsync(unknown, 10, "x");
+            await dashboard.SaveExecutionLogsAsync(unknown, []);
+            await storage.CommitJobResultAsync(unknown, new JobExecutionResult { Succeeded = true, Logs = [] });
+        };
+
+        await act.Should().NotThrowAsync();
+        (await dashboard.GetJobByIdAsync(unknown)).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Heartbeat_progress_and_logs_still_update_a_job_that_exists()
+    {
+        // N2 (guard): the protection against deleted jobs must not stop live jobs from being updated.
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
+        var record = MakeJob();
+        await storage.EnqueueAsync(record);
+        var fetched = await storage.FetchNextAsync(["default"]);
+        var before = (await dashboard.GetJobByIdAsync(record.Id))!.HeartbeatAt;
+
+        await Task.Delay(20);
+        await storage.UpdateHeartbeatAsync(fetched!.Id);
+        await storage.ReportProgressAsync(fetched.Id, 40, "working");
+
+        var stored = await dashboard.GetJobByIdAsync(record.Id);
+        stored.Should().NotBeNull();
+        stored!.ProgressPercent.Should().Be(40);
+        stored.HeartbeatAt.Should().NotBeNull();
+        stored.HeartbeatAt.Should().BeOnOrAfter(before ?? DateTimeOffset.MinValue);
+    }
+
+    private static async Task<JobRecord> EnqueueFetchAndDeleteAsync(IJobStorage storage, IDashboardStorage dashboard)
+    {
+        var record = MakeJob();
+        await storage.EnqueueAsync(record);
+        var fetched = await storage.FetchNextAsync(["default"]);
+        fetched.Should().NotBeNull();
+        await dashboard.DeleteJobAsync(record.Id);
+        return record;
+    }
 }

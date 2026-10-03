@@ -135,23 +135,58 @@ public sealed class RedisStorageProvider : IStorageProvider
         return 1
         """);
 
+    // Writes fields to a job hash only while the job exists. A plain HSET on a deleted job would recreate a hash
+    // without an id (a ghost) that makes later reads throw.
+    private static readonly LuaScript SetJobFieldsScript = LuaScript.Prepare(
+        """
+        if redis.call('EXISTS', KEYS[1]) == 0 then
+          return 0
+        end
+
+        for i = 1, #ARGV, 2 do
+          redis.call('HSET', KEYS[1], ARGV[i], ARGV[i + 1])
+        end
+
+        return 1
+        """);
+
+    private static readonly LuaScript HeartbeatScript = LuaScript.Prepare(
+        """
+        if redis.call('EXISTS', KEYS[1]) == 0 then
+          return 0
+        end
+
+        redis.call('HSET', KEYS[1], 'heartbeatAt', ARGV[1])
+        redis.call('HSET', 'nexjob:processing', ARGV[2], ARGV[1])
+        return 1
+        """);
+
     private static readonly LuaScript FetchNextScript = LuaScript.Prepare(
         """
         for i = 1, #KEYS do
           local zkey = KEYS[i]
-          local members = redis.call('ZRANGE', zkey, 0, 0)
-          if #members > 0 then
+          while true do
+            local members = redis.call('ZRANGE', zkey, 0, 0)
+            if #members == 0 then
+              break
+            end
+
             local id = members[1]
             redis.call('ZREM', zkey, id)
             local jobKey = 'nexjob:jobs:' .. id
-            local now = ARGV[1]
-            redis.call('HSET', jobKey,
-              'status', 'Processing',
-              'processingStartedAt', now,
-              'heartbeatAt', now)
-            redis.call('HINCRBY', jobKey, 'attempts', 1)
-            redis.call('HSET', 'nexjob:processing', id, now)
-            return redis.call('HGETALL', jobKey)
+
+            -- A queue entry whose job no longer exists (it was deleted) is dropped. Writing to the missing key
+            -- would recreate a ghost hash without an id.
+            if redis.call('EXISTS', jobKey) == 1 then
+              local now = ARGV[1]
+              redis.call('HSET', jobKey,
+                'status', 'Processing',
+                'processingStartedAt', now,
+                'heartbeatAt', now)
+              redis.call('HINCRBY', jobKey, 'attempts', 1)
+              redis.call('HSET', 'nexjob:processing', id, now)
+              return redis.call('HGETALL', jobKey)
+            end
           end
         end
         return false
@@ -175,13 +210,17 @@ public sealed class RedisStorageProvider : IStorageProvider
             local id = members[j]
             redis.call('ZREM', zkey, id)
             local jobKey = 'nexjob:jobs:' .. id
-            redis.call('HSET', jobKey,
-              'status', 'Processing',
-              'processingStartedAt', now,
-              'heartbeatAt', now)
-            redis.call('HINCRBY', jobKey, 'attempts', 1)
-            redis.call('HSET', 'nexjob:processing', id, now)
-            table.insert(fetched, redis.call('HGETALL', jobKey))
+
+            -- Dropped when the job was deleted: writing to the missing key would recreate a ghost hash.
+            if redis.call('EXISTS', jobKey) == 1 then
+              redis.call('HSET', jobKey,
+                'status', 'Processing',
+                'processingStartedAt', now,
+                'heartbeatAt', now)
+              redis.call('HINCRBY', jobKey, 'attempts', 1)
+              redis.call('HSET', 'nexjob:processing', id, now)
+              table.insert(fetched, redis.call('HGETALL', jobKey))
+            end
           end
         end
 
@@ -200,11 +239,13 @@ public sealed class RedisStorageProvider : IStorageProvider
         for i = 4, #ARGV do
           local id = ARGV[i]
           local jobKey = 'nexjob:jobs:' .. id
-          redis.call('HSET', jobKey, 'status', 'Succeeded', 'completedAt', nowIso, 'heartbeatAt', '')
-          redis.call('HDEL', 'nexjob:processing', id)
-          redis.call('ZADD', 'nexjob:throughput', nowMs, id)
-          redis.call('ZADD', 'nexjob:status:Succeeded', nowMs, id)
-          releaseContinuations(id, nowTicks)
+          if redis.call('EXISTS', jobKey) == 1 then
+            redis.call('HSET', jobKey, 'status', 'Succeeded', 'completedAt', nowIso, 'heartbeatAt', '')
+            redis.call('HDEL', 'nexjob:processing', id)
+            redis.call('ZADD', 'nexjob:throughput', nowMs, id)
+            redis.call('ZADD', 'nexjob:status:Succeeded', nowMs, id)
+            releaseContinuations(id, nowTicks)
+          end
         end
 
         return 1
@@ -560,12 +601,15 @@ public sealed class RedisStorageProvider : IStorageProvider
         var id = jobId.Value.ToString();
         var now = DateTimeOffset.UtcNow;
 
-        await _db.HashSetAsync(JobKey(id), new[]
+        if (!await SetJobFieldsIfExistsAsync(_db, id, new HashEntry[]
         {
             new HashEntry("status", "Succeeded"),
             new HashEntry("completedAt", now.ToString("O", CultureInfo.InvariantCulture)),
             new HashEntry("heartbeatAt", string.Empty),
-        }).ConfigureAwait(false);
+        }).ConfigureAwait(false))
+        {
+            return;
+        }
 
         await _db.HashDeleteAsync(JobKey(id), "checkpointJson").ConfigureAwait(false);
         await _db.HashDeleteAsync(ProcessingKey, id).ConfigureAwait(false);
@@ -617,27 +661,35 @@ public sealed class RedisStorageProvider : IStorageProvider
 
         if (retryAt.HasValue)
         {
-            await _db.HashSetAsync(JobKey(id), new[]
+            if (!await SetJobFieldsIfExistsAsync(_db, id, new HashEntry[]
             {
                 new HashEntry("status", "Scheduled"),
                 new HashEntry("retryAt", retryAt.Value.ToString("O", CultureInfo.InvariantCulture)),
                 new HashEntry("exceptionMessage", exception.Message),
                 new HashEntry("exceptionStackTrace", exception.StackTrace ?? string.Empty),
                 new HashEntry("heartbeatAt", string.Empty),
-            }).ConfigureAwait(false);
+            }).ConfigureAwait(false))
+            {
+                return;
+            }
+
             await _db.SortedSetAddAsync(ScheduledKey, id, retryAt.Value.ToUnixTimeMilliseconds()).ConfigureAwait(false);
         }
         else
         {
             var now = DateTimeOffset.UtcNow;
-            await _db.HashSetAsync(JobKey(id), new[]
+            if (!await SetJobFieldsIfExistsAsync(_db, id, new HashEntry[]
             {
                 new HashEntry("status", "Failed"),
                 new HashEntry("completedAt", now.ToString("O", CultureInfo.InvariantCulture)),
                 new HashEntry("exceptionMessage", exception.Message),
                 new HashEntry("exceptionStackTrace", exception.StackTrace ?? string.Empty),
                 new HashEntry("heartbeatAt", string.Empty),
-            }).ConfigureAwait(false);
+            }).ConfigureAwait(false))
+            {
+                return;
+            }
+
             await _db.SortedSetAddAsync(FailedSetKey, id, now.ToUnixTimeMilliseconds()).ConfigureAwait(false);
         }
     }
@@ -649,7 +701,7 @@ public sealed class RedisStorageProvider : IStorageProvider
         var now = DateTimeOffset.UtcNow;
 
         await _db.HashDeleteAsync(ProcessingKey, id).ConfigureAwait(false);
-        await _db.HashSetAsync(JobKey(id), new[]
+        await SetJobFieldsIfExistsAsync(_db, id, new HashEntry[]
         {
             new HashEntry("status", "Expired"),
             new HashEntry("completedAt", now.ToString("O", CultureInfo.InvariantCulture)),
@@ -662,8 +714,10 @@ public sealed class RedisStorageProvider : IStorageProvider
     {
         var id = jobId.Value.ToString();
         var now = DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture);
-        await _db.HashSetAsync(JobKey(id), "heartbeatAt", now).ConfigureAwait(false);
-        await _db.HashSetAsync(ProcessingKey, id, now).ConfigureAwait(false);
+        await _db.ScriptEvaluateAsync(
+            HeartbeatScript.ExecutableScript,
+            new RedisKey[] { JobKey(id) },
+            new RedisValue[] { now, id }).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -1043,8 +1097,16 @@ public sealed class RedisStorageProvider : IStorageProvider
     public async Task DeleteJobAsync(JobId id, CancellationToken cancellationToken = default)
     {
         var idStr = id.Value.ToString();
-        var idempotencyKey = (string?)await _db.HashGetAsync(JobKey(idStr), "idempotencyKey").ConfigureAwait(false);
+        var fields = await _db.HashGetAsync(JobKey(idStr), ["idempotencyKey", "queue"]).ConfigureAwait(false);
+        var idempotencyKey = (string?)fields[0];
+        var queue = (string?)fields[1];
         await _db.KeyDeleteAsync(JobKey(idStr)).ConfigureAwait(false);
+        if (!string.IsNullOrEmpty(queue))
+        {
+            // A deleted job must not stay in its queue: it would be fetched as a job that no longer exists.
+            await _db.SortedSetRemoveAsync(QueueKey(queue), idStr).ConfigureAwait(false);
+        }
+
         await _db.KeyDeleteAsync(LogsKey(idStr)).ConfigureAwait(false);
         await _db.HashDeleteAsync(ProcessingKey, idStr).ConfigureAwait(false);
         await RemoveFromStatusSetsAsync(_db, idStr).ConfigureAwait(false);
@@ -1125,8 +1187,10 @@ public sealed class RedisStorageProvider : IStorageProvider
     {
         var json = JsonSerializer.Serialize(logs, JsonOpts);
         var idStr = jobId.Value.ToString();
-        await _db.StringSetAsync(LogsKey(idStr), json).ConfigureAwait(false);
-        await _db.HashSetAsync(JobKey(idStr), "executionLogs", json).ConfigureAwait(false);
+        if (await SetJobFieldsIfExistsAsync(_db, idStr, [new HashEntry("executionLogs", json)]).ConfigureAwait(false))
+        {
+            await _db.StringSetAsync(LogsKey(idStr), json).ConfigureAwait(false);
+        }
     }
 
     /// <inheritdoc/>
@@ -1170,13 +1234,15 @@ public sealed class RedisStorageProvider : IStorageProvider
 
                 if (result.TrimPayloadOnSuccess)
                 {
-                    await _db.HashSetAsync(JobKey(idStr), "inputJson", string.Empty).ConfigureAwait(false);
+                    await SetJobFieldsIfExistsAsync(_db, idStr, [new HashEntry("inputJson", string.Empty)]).ConfigureAwait(false);
                 }
             }
 
             // Persist logs (non-critical for atomicity)
-            await _db.StringSetAsync(LogsKey(idStr), logsJson).ConfigureAwait(false);
-            await _db.HashSetAsync(JobKey(idStr), "executionLogs", logsJson).ConfigureAwait(false);
+            if (await SetJobFieldsIfExistsAsync(_db, idStr, [new HashEntry("executionLogs", logsJson)]).ConfigureAwait(false))
+            {
+                await _db.StringSetAsync(LogsKey(idStr), logsJson).ConfigureAwait(false);
+            }
         }
     }
 
@@ -1200,19 +1266,19 @@ public sealed class RedisStorageProvider : IStorageProvider
     public async Task ReportProgressAsync(
         JobId jobId, int percent, string? message, CancellationToken ct = default)
     {
-        var key = (RedisKey)JobKey(jobId.Value.ToString());
-        await _db.HashSetAsync(key,
-        [
-            new HashEntry("progressPercent", percent.ToString(CultureInfo.InvariantCulture)),
-            new HashEntry("progressMessage", message ?? string.Empty),
-        ]).ConfigureAwait(false);
+        await SetJobFieldsIfExistsAsync(
+            _db,
+            jobId.Value.ToString(),
+            [
+                new HashEntry("progressPercent", percent.ToString(CultureInfo.InvariantCulture)),
+                new HashEntry("progressMessage", message ?? string.Empty),
+            ]).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
     public async Task SaveCheckpointAsync(
         JobId jobId, string checkpointJson, int? percent, string? message, CancellationToken ct = default)
     {
-        var key = (RedisKey)JobKey(jobId.Value.ToString());
         var entries = new List<HashEntry>
         {
             new HashEntry("checkpointJson", checkpointJson),
@@ -1228,7 +1294,7 @@ public sealed class RedisStorageProvider : IStorageProvider
             entries.Add(new HashEntry("progressMessage", message));
         }
 
-        await _db.HashSetAsync(key, entries.ToArray()).ConfigureAwait(false);
+        await SetJobFieldsIfExistsAsync(_db, jobId.Value.ToString(), entries.ToArray()).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -1818,6 +1884,22 @@ public sealed class RedisStorageProvider : IStorageProvider
             CheckpointJson = NullIfEmpty(d.GetValueOrDefault("checkpointJson")),
             ExpiresAt = ParseDate("expiresAt"),
         };
+    }
+
+    private static async Task<bool> SetJobFieldsIfExistsAsync(IDatabase db, string id, HashEntry[] entries)
+    {
+        var args = new RedisValue[entries.Length * 2];
+        for (var i = 0; i < entries.Length; i++)
+        {
+            args[i * 2] = entries[i].Name;
+            args[(i * 2) + 1] = entries[i].Value;
+        }
+
+        var result = await db.ScriptEvaluateAsync(
+            SetJobFieldsScript.ExecutableScript,
+            new RedisKey[] { JobKey(id) },
+            args).ConfigureAwait(false);
+        return (long)result == 1;
     }
 
     private static IReadOnlyList<string> DeserializeTags(string json)
