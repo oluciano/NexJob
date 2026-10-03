@@ -32,6 +32,10 @@ public static class NexJobMetrics
     internal static readonly Counter<long> JobsExpired =
         Meter.CreateCounter<long>("nexjob.jobs.expired", "jobs", "Number of jobs discarded because their deadline passed before execution.");
 
+    /// <summary>Counts jobs returned to the queue because a slot of their throttled resource was not available.</summary>
+    internal static readonly Counter<long> JobsThrottleDeferred =
+        Meter.CreateCounter<long>("nexjob.jobs.throttle_deferred", "jobs", "Number of jobs returned to the queue because a throttle slot was not available.");
+
     /// <summary>Records job execution duration in milliseconds.</summary>
     internal static readonly Histogram<double> JobDuration =
         Meter.CreateHistogram<double>("nexjob.job.duration", "ms", "Job execution duration in milliseconds.");

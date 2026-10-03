@@ -87,13 +87,20 @@ services.AddNexJob(opt => opt.DistributedThrottleTtl = TimeSpan.FromHours(4));
 
 ## How Waiting Works
 
-A throttled job that cannot acquire a slot does **not** return to the queue. It stays in `Processing` state, keeps its worker slot, and keeps sending heartbeats while it waits. NexJob retries the slot acquisition approximately every 500 ms until a slot frees up or the job is cancelled — for example during a graceful shutdown.
+A throttled job that cannot acquire a slot first waits briefly. During that wait it stays in `Processing`, keeps its worker slot and keeps sending heartbeats, and NexJob retries the slot acquisition about every 500 ms. This keeps short contention cheap: no storage writes and no change in ordering.
 
-!!! warning
-    **Worker starvation risk.** Because waiting jobs occupy worker slots, a burst of throttled jobs can fill every slot on a node and starve other queues and resources. Mitigate this by one of the following approaches:
+If no slot frees up within about **5 seconds**, the job is **returned to the queue** and its worker slot is released. It is scheduled again roughly a second later (with a little jitter) and tries again. Being returned this way does **not** count as an attempt: it never consumes `MaxAttempts`, never triggers a retry policy and never sends the job to dead-letter. It is also not a failure, so no failure metric is recorded.
 
-    - Keep `Workers` comfortably above the sum of all `maxConcurrent` values on resources your jobs use.
-    - Isolate throttled jobs in a dedicated queue and deploy a separate worker pool with a matching `Workers` count for just that queue.
+You can see it happen in two places:
+
+- An information log: `Job ... got no slot for throttled resource '...' ... Returning it to the queue`.
+- The `nexjob.jobs.throttle_deferred` counter (tags `nexjob.job_type` and `nexjob.resource`).
+
+!!! note
+    Because a saturated resource can no longer keep every worker busy for long, other queues and resources keep running. Jobs waiting on a saturated resource may still be delayed, and they can run in a different order than they were enqueued. If strict ordering matters for a resource, keep that work in a dedicated queue.
+
+!!! tip
+    Isolating heavily throttled jobs in their own queue, with a worker pool sized for it, is still the best way to keep a slow downstream system from competing with the rest of your workload. The 5 second limit is not configurable.
 
 
 ## When to Use Throttling
