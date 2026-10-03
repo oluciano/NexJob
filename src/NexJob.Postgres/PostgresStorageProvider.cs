@@ -16,6 +16,16 @@ public sealed class PostgresStorageProvider : IStorageProvider, IDisposable, IAs
 {
     private const int MaxEnqueueAttempts = 3;
 
+    private const string InsertJobSql =
+        """
+        INSERT INTO nexjob_jobs
+            (id, job_type, input_type, input_json, schema_version, queue, priority, status,
+             idempotency_key, attempts, max_attempts, created_at, scheduled_at, parent_job_id, recurring_job_id, tags, expires_at)
+        VALUES
+            (@Id, @JobType, @InputType, @InputJson::jsonb, @SchemaVersion, @Queue, @Priority,
+             @Status, @IdempotencyKey, @Attempts, @MaxAttempts, @CreatedAt, @ScheduledAt, @ParentJobId, @RecurringJobId, @Tags, @ExpiresAt)
+        """;
+
     private static readonly string[] ActiveStatusNames = ["Enqueued", "Processing", "Scheduled", "AwaitingContinuation"];
 
     private readonly NpgsqlDataSource _dataSource;
@@ -117,35 +127,7 @@ public sealed class PostgresStorageProvider : IStorageProvider, IDisposable, IAs
 
                 try
                 {
-                    await conn.ExecuteAsync(
-                        """
-                        INSERT INTO nexjob_jobs
-                            (id, job_type, input_type, input_json, schema_version, queue, priority, status,
-                             idempotency_key, attempts, max_attempts, created_at, scheduled_at, parent_job_id, recurring_job_id, tags)
-                        VALUES
-                            (@Id, @JobType, @InputType, @InputJson::jsonb, @SchemaVersion, @Queue, @Priority,
-                             @Status, @IdempotencyKey, @Attempts, @MaxAttempts, @CreatedAt, @ScheduledAt, @ParentJobId, @RecurringJobId, @Tags)
-                        """,
-                        new
-                        {
-                            Id = job.Id.Value,
-                            job.JobType,
-                            job.InputType,
-                            job.InputJson,
-                            job.SchemaVersion,
-                            job.Queue,
-                            Priority = (int)job.Priority,
-                            Status = job.Status.ToString(),
-                            job.IdempotencyKey,
-                            job.Attempts,
-                            job.MaxAttempts,
-                            job.CreatedAt,
-                            job.ScheduledAt,
-                            ParentJobId = job.ParentJobId?.Value,
-                            job.RecurringJobId,
-                            Tags = job.Tags.ToArray(),
-                        },
-                        tx);
+                    await conn.ExecuteAsync(InsertJobSql, ToInsertParameters(job), tx);
 
                     await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
                     return new EnqueueResult(job.Id, WasRejected: false);
@@ -175,34 +157,7 @@ public sealed class PostgresStorageProvider : IStorageProvider, IDisposable, IAs
                 $"Could not enqueue a job with idempotency key '{job.IdempotencyKey}' after {MaxEnqueueAttempts} attempts.");
         }
 
-        await conn.ExecuteAsync(
-            """
-            INSERT INTO nexjob_jobs
-                (id, job_type, input_type, input_json, schema_version, queue, priority, status,
-                 idempotency_key, attempts, max_attempts, created_at, scheduled_at, parent_job_id, recurring_job_id, tags)
-            VALUES
-                (@Id, @JobType, @InputType, @InputJson::jsonb, @SchemaVersion, @Queue, @Priority,
-                 @Status, @IdempotencyKey, @Attempts, @MaxAttempts, @CreatedAt, @ScheduledAt, @ParentJobId, @RecurringJobId, @Tags)
-            """,
-            new
-            {
-                Id = job.Id.Value,
-                job.JobType,
-                job.InputType,
-                job.InputJson,
-                job.SchemaVersion,
-                job.Queue,
-                Priority = (int)job.Priority,
-                Status = job.Status.ToString(),
-                job.IdempotencyKey,
-                job.Attempts,
-                job.MaxAttempts,
-                job.CreatedAt,
-                job.ScheduledAt,
-                ParentJobId = job.ParentJobId?.Value,
-                job.RecurringJobId,
-                Tags = job.Tags.ToArray(),
-            });
+        await conn.ExecuteAsync(InsertJobSql, ToInsertParameters(job));
 
         return new EnqueueResult(job.Id, WasRejected: false);
     }
@@ -1214,6 +1169,28 @@ public sealed class PostgresStorageProvider : IStorageProvider, IDisposable, IAs
 
     private static bool IsActiveState(JobStatus status) =>
         status is JobStatus.Enqueued or JobStatus.Processing or JobStatus.Scheduled or JobStatus.AwaitingContinuation;
+
+    private static object ToInsertParameters(JobRecord job) =>
+        new
+        {
+            Id = job.Id.Value,
+            job.JobType,
+            job.InputType,
+            job.InputJson,
+            job.SchemaVersion,
+            job.Queue,
+            Priority = (int)job.Priority,
+            Status = job.Status.ToString(),
+            job.IdempotencyKey,
+            job.Attempts,
+            job.MaxAttempts,
+            job.CreatedAt,
+            job.ScheduledAt,
+            ParentJobId = job.ParentJobId?.Value,
+            job.RecurringJobId,
+            job.ExpiresAt,
+            Tags = job.Tags.ToArray(),
+        };
 
     private NpgsqlConnection Open()
     {

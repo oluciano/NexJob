@@ -26,6 +26,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Storage — `deadlineAfter` is now enforced on PostgreSQL, SQL Server, MongoDB and Redis (issue #321)**: the job deadline (`JobRecord.ExpiresAt`) was never written by the database providers, so it came back `null` on fetch and expired jobs ran normally. It is now stored and returned (PostgreSQL and SQL Server: new nullable `expires_at` column, migration V11, applied at startup; MongoDB and Redis: new field). Jobs enqueued before the upgrade keep no deadline. **Behaviour change to be aware of:** applications that pass `deadlineAfter` will now see jobs marked `Expired` instead of executed once the deadline passes.
 - **Dashboard — Throughput 24h single-bar blowout (issue #318)**:
   - The hourly throughput calculation now always normalizes and pads all 24 hours (from `now.AddHours(-23)` to `now`) with zero-counts for inactive intervals, preventing single recorded hours from stretching into full-width solid blocks.
   - Constrained histogram `.bar` to `max-width: 24px` with centered alignment.

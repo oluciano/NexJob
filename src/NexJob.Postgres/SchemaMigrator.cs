@@ -24,6 +24,7 @@ internal static class SchemaMigrator
         new(8, "add unique index for idempotency_key", SchemaSql.V8AddIdempotencyKeyIndex),
         new(9, "add checkpoint_json column to nexjob_jobs", SchemaSql.V9AddCheckpointColumn),
         new(10, "idempotency key unique for active jobs only", SchemaSql.V10IdempotencyKeyUniqueForActiveJobsOnly),
+        new(11, "add expires_at column to nexjob_jobs", SchemaSql.V11AddExpiresAtColumn),
     ];
 
     // Arbitrary but stable numeric key for pg_advisory_lock: hash of 'nexjob'

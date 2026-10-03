@@ -154,6 +154,12 @@ internal static class SchemaSql
         ALTER TABLE nexjob_jobs ADD COLUMN IF NOT EXISTS checkpoint_json TEXT NULL;
         """;
 
+    /// <summary>V11: Add expires_at column to nexjob_jobs so the job deadline (deadlineAfter) is persisted (#321).</summary>
+    internal const string V11AddExpiresAtColumn =
+        """
+        ALTER TABLE nexjob_jobs ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ NULL;
+        """;
+
     /// <summary>Full initial schema — kept for backward compatibility. Prefer the versioned consts.</summary>
     internal const string CreateTables = V1CreateTables;
 }

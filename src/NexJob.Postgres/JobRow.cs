@@ -31,6 +31,7 @@ internal sealed class JobRow
     public int? ProgressPercent { get; set; }
     public string? ProgressMessage { get; set; }
     public string? CheckpointJson { get; set; }
+    public DateTimeOffset? ExpiresAt { get; set; }
 
     public JobRecord ToRecord() => new()
     {
@@ -62,6 +63,7 @@ internal sealed class JobRow
         ProgressPercent = ProgressPercent,
         ProgressMessage = ProgressMessage,
         CheckpointJson = CheckpointJson,
+        ExpiresAt = ExpiresAt,
     };
 
     // TrimPayloadOnSuccess rewrites input_json to '{}', so an empty payload only means "stripped"

@@ -1696,6 +1696,7 @@ public sealed class RedisStorageProvider : IStorageProvider
         new("tags", JsonSerializer.Serialize(job.Tags, JsonOpts)),
         new("progressPercent", job.ProgressPercent?.ToString(CultureInfo.InvariantCulture) ?? string.Empty),
         new("progressMessage", job.ProgressMessage ?? string.Empty),
+        new("expiresAt", job.ExpiresAt?.ToString("O", CultureInfo.InvariantCulture) ?? string.Empty),
     ];
 
     private static bool IsActiveState(JobStatus status) =>
@@ -1806,6 +1807,7 @@ public sealed class RedisStorageProvider : IStorageProvider
             ProgressPercent = int.TryParse(d.GetValueOrDefault("progressPercent"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var pp) ? pp : null,
             ProgressMessage = NullIfEmpty(d.GetValueOrDefault("progressMessage")),
             CheckpointJson = NullIfEmpty(d.GetValueOrDefault("checkpointJson")),
+            ExpiresAt = ParseDate("expiresAt"),
         };
     }
 

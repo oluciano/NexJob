@@ -11,7 +11,7 @@ Each scenario is written once, in an abstract class. A thin subclass per provide
 | `ConcurrencyScenarios` | Several workers run each job exactly once; no job is lost under concurrent enqueue and high throughput; an empty queue runs cleanly | InMemory, PostgreSQL, SQL Server, Redis, MongoDB |
 | `RetryAndDeadLetterScenarios` | A failed job is retried; the dead-letter handler runs once after the last attempt; a throwing handler does not stop the dispatcher | InMemory, PostgreSQL, SQL Server, Redis, MongoDB |
 | `RecoveryScenarios` | Jobs persisted by one host run exactly once on the next host; a failed job stays failed and is not re-run | Databases only (InMemory loses its jobs when the host stops, by design) |
-| `*DeadlineTests` | A job still waiting when its deadline passes is marked `Expired` (queue paused while the deadline elapses) | Databases, **skipped** until #321 (database providers do not persist the deadline) |
+| `*DeadlineTests` | A job still waiting when its deadline passes is marked `Expired` (queue paused while the deadline elapses) | Databases |
 | `PostgresRecurringTests` | Two nodes do not enqueue the same recurring occurrence twice | PostgreSQL |
 
 Tests count executions and wait for a condition with a timeout; they do not sleep for a fixed time. Each test that shares a database uses its own queue.
@@ -20,7 +20,6 @@ Tests count executions and wait for a condition with a timeout; they do not slee
 
 - A crash in the middle of an execution (orphan requeue). Stopping a host is graceful, so it cannot simulate one; orphan recovery has per-provider contract tests in `NexJob.IntegrationTests`.
 - Wake-up latency. Wall-clock bounds are fragile on shared CI runners.
-- Deadlines on database providers: skipped, see #321.
 - Recurring jobs on providers other than PostgreSQL.
 
 ## Running
