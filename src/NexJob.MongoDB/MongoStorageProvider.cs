@@ -1087,6 +1087,12 @@ public sealed class MongoStorageProvider : IStorageProvider
             .Unset(d => d.HeartbeatAt)
             .Set(d => d.ExecutionLogs, entries);
 
+        if (result.RefundAttempt)
+        {
+            // A job being committed was fetched, so its attempts is at least 1 and cannot go below zero.
+            jobUpdate = jobUpdate.Inc(d => d.Attempts, -1);
+        }
+
         await _jobs.UpdateOneAsync(ById(jobId), jobUpdate, cancellationToken: ct).ConfigureAwait(false);
     }
 

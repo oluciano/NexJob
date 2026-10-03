@@ -945,6 +945,10 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
         job.HeartbeatAt = null;
         job.Status = JobStatus.Scheduled;
         job.RetryAt = result.RetryAt!.Value;
+        if (result.RefundAttempt && job.Attempts > 0)
+        {
+            job.Attempts--;
+        }
     }
 
     private JobRecord? FindExistingJobByKey(string idempotencyKey)

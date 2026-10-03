@@ -241,6 +241,14 @@ public sealed class RedisStorageProvider : IStorageProvider
                        'exceptionMessage', ARGV[6], 'exceptionStackTrace', ARGV[7], 'heartbeatAt', '')
             redis.call('ZADD', 'nexjob:scheduled', tonumber(ARGV[8]), ARGV[1])
             redis.call('HDEL', 'nexjob:processing', ARGV[1])
+
+            -- Give the attempt back when the job did not really run (e.g. no throttle slot was available)
+            if ARGV[11] == '1' then
+              local attempts = tonumber(redis.call('HGET', jobKey, 'attempts')) or 0
+              if attempts > 0 then
+                redis.call('HSET', jobKey, 'attempts', attempts - 1)
+              end
+            end
           else
             -- No retry — dead letter
             redis.call('HSET', jobKey, 'status', 'Failed', 'completedAt', ARGV[3],
@@ -1141,6 +1149,7 @@ public sealed class RedisStorageProvider : IStorageProvider
             result.RetryAt?.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture) ?? "0",
             DateTimeOffset.UtcNow.UtcTicks.ToString(CultureInfo.InvariantCulture),
             DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture),
+            result.RefundAttempt ? "1" : "0",
         };
 
         // Execute atomic state transitions via Lua script
