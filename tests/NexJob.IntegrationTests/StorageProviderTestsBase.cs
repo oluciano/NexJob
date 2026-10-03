@@ -2205,4 +2205,63 @@ public abstract class StorageProviderTestsBase
         await dashboard.DeleteJobAsync(record.Id);
         return record;
     }
+
+    // ── Queue names are data, never SQL (#324) ───────────────────────────────
+
+    [Fact]
+    public async Task FetchNextAsync_finds_a_job_on_a_queue_whose_name_contains_quotes_and_sql()
+    {
+        var (storage, _, _, _) = await CreateStorageAsync();
+        const string queue = "o'brien'); DROP TABLE nexjob_jobs;--";
+        var record = MakeJob(queue: queue);
+        await storage.EnqueueAsync(record);
+
+        var fetched = await storage.FetchNextAsync([queue]);
+
+        fetched.Should().NotBeNull();
+        fetched!.Id.Should().Be(record.Id);
+    }
+
+    [Fact]
+    public async Task FetchBatchAsync_with_a_hostile_queue_name_returns_nothing_and_leaves_other_jobs_alone()
+    {
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
+        var kept = MakeJob();
+        await storage.EnqueueAsync(kept);
+
+        var fetched = await storage.FetchBatchAsync(["x'); DELETE FROM nexjob_jobs;--", "default"], 5);
+
+        fetched.Should().ContainSingle().Which.Id.Should().Be(kept.Id, "the real queue in the same list still works");
+        (await dashboard.GetJobByIdAsync(kept.Id)).Should().NotBeNull("the statement in the name must not run");
+    }
+
+    [Fact]
+    public async Task FetchBatchAsync_drains_queues_in_the_order_of_the_list_even_when_a_later_queue_is_older()
+    {
+        var (storage, _, _, _) = await CreateStorageAsync();
+        var older = MakeJob(queue: "low");
+        await storage.EnqueueAsync(older);
+        await Task.Delay(5);
+        var newer = MakeJob(queue: "high");
+        await storage.EnqueueAsync(newer);
+
+        // One at a time: the order that matters is which job is chosen first (the order of the rows returned by a batch
+        // is not part of the contract).
+        (await storage.FetchBatchAsync(["high", "low"], 1)).Should().ContainSingle().Which.Id.Should().Be(newer.Id);
+        (await storage.FetchBatchAsync(["high", "low"], 1)).Should().ContainSingle().Which.Id.Should().Be(older.Id);
+    }
+
+    [Fact]
+    public async Task FetchBatchAsync_never_returns_more_than_the_batch_size()
+    {
+        var (storage, _, _, _) = await CreateStorageAsync();
+        for (var i = 0; i < 4; i++)
+        {
+            await storage.EnqueueAsync(MakeJob());
+        }
+
+        (await storage.FetchBatchAsync(["default"], 3)).Should().HaveCount(3);
+        (await storage.FetchBatchAsync(["default"], 3)).Should().HaveCount(1);
+        (await storage.FetchBatchAsync(["default"], 0)).Should().BeEmpty();
+    }
 }
