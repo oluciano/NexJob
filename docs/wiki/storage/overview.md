@@ -28,6 +28,10 @@ NexJob decouples job scheduling from persistence through a single `IStorageProvi
 
 For most applications, inject `IStorageProvider` to access all three concerns through one dependency. When you only need one aspect — for example, pointing dashboard reads at a read replica — override just `IDashboardStorage` without touching the others.
 
+### Optional capabilities for a custom provider
+
+A storage you write yourself implements the three interfaces above. One more contract is optional: `IOrphanedJobReporter`. Its `RequeueOrphanedJobsAndReportAsync` does what `RequeueOrphanedJobsAsync` does and returns the ids of the jobs it moved to `Failed` because they had no attempts left, so the orphan watcher can call the dead-letter handler and forwarders for them. A provider that does not implement it still works: those jobs become `Failed`, but nothing is called for them. A job must be reported by the call that moved it and by no other, so that several nodes never dead-letter the same job twice. See [Delivery Guarantees](../concepts/delivery-guarantees.md).
+
 ## Programmatic job control
 
 `IJobControlService` pauses and resumes queues, requeues or deletes jobs and resets a circuit breaker from code. See [Runtime Control](../guides/runtime-control.md).

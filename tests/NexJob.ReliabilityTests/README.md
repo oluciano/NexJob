@@ -28,7 +28,6 @@ Tests count executions and wait for a condition with a timeout; they do not slee
 ## What is not covered
 
 - A real process crash on PostgreSQL, Redis and MongoDB: it is tested with a killed process on SQL Server only, and the others are covered by the orphan scenarios, which recreate the state a crash leaves.
-- A job whose attempts are exhausted by crashes does not call dead-letter handlers or forwarders (#340).
 - Connection counts for SQL Server run three nodes in one process, so they share one ADO.NET pool; the figures are an upper-bound guard, not a model of three processes.
 - Authentication on Redis (the container has no password) and MongoDB through a live object beyond what the container requires.
 - Wake-up latency. Wall-clock bounds are fragile on shared CI runners.
