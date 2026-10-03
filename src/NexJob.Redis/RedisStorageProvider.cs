@@ -11,7 +11,7 @@ namespace NexJob.Redis;
 /// All mutations that require atomicity use Lua scripts evaluated server-side,
 /// guaranteeing consistent state even with multiple worker instances.
 /// </summary>
-public sealed class RedisStorageProvider : IStorageProvider
+public sealed class RedisStorageProvider : IStorageProvider, IOrphanedJobReporter
 {
     private const string ProcessingKey = "nexjob:processing";
     private const string ScheduledKey = "nexjob:scheduled";
@@ -896,6 +896,14 @@ public sealed class RedisStorageProvider : IStorageProvider
     public async Task RequeueOrphanedJobsAsync(
         TimeSpan heartbeatTimeout, CancellationToken cancellationToken = default)
     {
+        await RequeueOrphanedJobsAndReportAsync(heartbeatTimeout, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<JobId>> RequeueOrphanedJobsAndReportAsync(
+        TimeSpan heartbeatTimeout, CancellationToken cancellationToken = default)
+    {
+        var failed = new List<JobId>();
         var cutoff = DateTimeOffset.UtcNow - heartbeatTimeout;
         var processingEntries = await _db.HashGetAllAsync(ProcessingKey).ConfigureAwait(false);
 
@@ -931,8 +939,15 @@ public sealed class RedisStorageProvider : IStorageProvider
             var createdAt = DateTimeOffset.TryParse(createdAtStr, CultureInfo.InvariantCulture,
                 DateTimeStyles.RoundtripKind, out var ca) ? ca : DateTimeOffset.UtcNow;
 
-            await RunRequeueOrphanScriptAsync(_db, id, heartbeatText, queue, QueueScore(priority, createdAt)).ConfigureAwait(false);
+            // 4 means this script call moved the job to Failed, and the script runs atomically per job, so only one node reports it.
+            var outcome = await RunRequeueOrphanScriptAsync(_db, id, heartbeatText, queue, QueueScore(priority, createdAt)).ConfigureAwait(false);
+            if (outcome == 4 && Guid.TryParse(id, out var guid))
+            {
+                failed.Add(new JobId(guid));
+            }
         }
+
+        return failed;
     }
 
     /// <inheritdoc/>
