@@ -1,5 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using NexJob.Configuration;
 using NexJob.Storage;
@@ -55,16 +56,12 @@ public static class NexJobPostgresExtensions
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(dataSource);
 
-        services.AddSingleton(_ =>
-        {
-            // The connection-string overload migrates when its provider is built; this one has to as well, otherwise a new
-            // database has no tables. It is done here and not in the constructor, which the dashboard's read replica also
-            // uses and must never run DDL.
-#pragma warning disable RS0030 // Sync-over-async is acceptable here: runs once at startup, before any requests are served.
-            SchemaMigrator.MigrateAsync(dataSource).GetAwaiter().GetResult();
-#pragma warning restore RS0030
-            return new PostgresStorageProvider(dataSource);
-        });
+        services.AddSingleton(_ => new PostgresStorageProvider(dataSource));
+
+        // The connection-string overload migrates when its provider is built; this one migrates when the host starts, before
+        // any other hosted service. It is not done in the provider constructor, which the dashboard's read replica also uses
+        // and which must never run DDL.
+        services.AddSingleton<IHostedService>(_ => new PostgresSchemaInitializer(dataSource));
         services.AddSingleton<IStorageProvider>(sp => sp.GetRequiredService<PostgresStorageProvider>());
         services.AddSingleton<IJobStorage>(sp => sp.GetRequiredService<PostgresStorageProvider>());
         services.AddSingleton<IRecurringStorage>(sp => sp.GetRequiredService<PostgresStorageProvider>());

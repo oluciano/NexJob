@@ -57,6 +57,10 @@ builder.Services.AddNexJob(options =>
     On Azure SQL, enable the built-in read-scale endpoint by appending `ApplicationIntent=ReadOnly` to your replica connection string and pointing it at the same server. No additional infrastructure required.
 
 
+## Using an existing `SqlConnection`
+
+`new SqlServerStorageProvider(connection, options)` takes a `SqlConnection` and opens its own connections from the connection string it keeps. With SQL Server authentication, SqlClient removes the password from `ConnectionString` the moment a connection is opened, so pass a connection that is **not open**, or add `Persist Security Info=True` to its connection string. An open connection whose password is gone is refused at construction with an `ArgumentException` that says so (before v5.8 the first new connection failed with `Login failed`). Integrated security and Microsoft Entra authentication have no password to lose and are not affected. This constructor does not apply migrations.
+
 ## Storage segregation
 
 If you want to use separate credentials for job operations and dashboard queries — for example, a read-only database user for the dashboard — override `IDashboardStorage` directly:

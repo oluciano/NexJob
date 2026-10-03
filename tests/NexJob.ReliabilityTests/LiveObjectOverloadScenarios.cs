@@ -38,10 +38,10 @@ public abstract class LiveObjectOverloadScenarios : DistributedReliabilityTestBa
             workers: 2,
             queues: [queue]);
 
-        _ = host.Services.GetRequiredService<Storage.IStorageProvider>(); // creates the provider and its schema
+        await host.StartAsync(); // the schema may only exist once the host has started
         var control = host.Services.GetRequiredService<IJobControlService>();
-        await control.PauseQueueAsync(queue); // before the dispatcher starts, so no polling cycle can race with it
-        await host.StartAsync();
+        await control.PauseQueueAsync(queue);
+        await Task.Delay(Grace); // a pause is read on the next polling cycle (100 ms here)
         var jobId = await host.Services.GetRequiredService<IScheduler>().EnqueueAsync<SuccessJob>(queue: queue);
 
         await Task.Delay(Grace);

@@ -17,6 +17,10 @@ Each scenario is written once, in an abstract class. A thin subclass per provide
 | `OrphanScenarios` | A job left `Processing` by a node that died is requeued by the watcher and runs once, costing one attempt; one on its last attempt is failed and never runs; a live job with a fresh heartbeat is never given back; the recurring lock of a dead node is taken over after its TTL | PostgreSQL, SQL Server, Redis, MongoDB |
 | `MultiNodeScenarios` | Three nodes on one queue run every job exactly once and share the work; a node that stops and one that starts late lose nothing; two nodes with the same recurring job enqueue one occurrence per second; two orphan watchers do not give an orphan back twice | PostgreSQL, SQL Server, Redis, MongoDB |
 | `SqlServerCrashTests` | A NexJob node runs in its own process (`NexJob.ReliabilityTests.Worker`) and is killed with `Process.Kill` while its job runs; another host recovers the job, which runs once | SQL Server (the others share the code path) |
+| `LiveObjectOverloadScenarios` | `AddNexJobPostgres(NpgsqlDataSource)`, `AddNexJobRedis(IConnectionMultiplexer)` and `AddNexJobMongoDB(IMongoDatabase)` on a real database: a job runs, the runtime settings store reads and writes, and NexJob does not dispose what the application owns | PostgreSQL, Redis, MongoDB |
+| `ConnectionCountScenarios` | The database server sees about one connection per worker under load (asked from its own system views), for one node and for three | PostgreSQL, SQL Server, Redis, MongoDB |
+| `PoolScenarios` | With a connection pool smaller than the workers every job still finishes, with its first attempt | PostgreSQL, SQL Server |
+| `SqlServerConnectionObjectTests` | The `SqlConnection` constructor: a closed connection works, an open one whose password is gone is refused with a clear message | SQL Server |
 | `PostgresRecurringTests` | Two nodes do not enqueue the same recurring occurrence twice | PostgreSQL |
 
 Tests count executions and wait for a condition with a timeout; they do not sleep for a fixed time. Each test that shares a database uses its own queue.
@@ -25,6 +29,8 @@ Tests count executions and wait for a condition with a timeout; they do not slee
 
 - A real process crash on PostgreSQL, Redis and MongoDB: it is tested with a killed process on SQL Server only, and the others are covered by the orphan scenarios, which recreate the state a crash leaves.
 - A job whose attempts are exhausted by crashes does not call dead-letter handlers or forwarders (#340).
+- Connection counts for SQL Server run three nodes in one process, so they share one ADO.NET pool; the figures are an upper-bound guard, not a model of three processes.
+- Authentication on Redis (the container has no password) and MongoDB through a live object beyond what the container requires.
 - Wake-up latency. Wall-clock bounds are fragile on shared CI runners.
 
 ## Running
