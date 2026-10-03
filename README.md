@@ -98,22 +98,50 @@ The job expires if not started within 5 minutes — no silent failures, no zombi
 
 ## Core Features
 
-- **`IJob` / `IJob<T>`** — simple and structured job interfaces
-- **Predictable retries** — a configurable global delay policy plus per-job `[Retry]` with exponential backoff
-- **Deadline enforcement** — jobs expire if not executed in time (`deadlineAfter`)
-- **Dead-letter handlers** — automatic fallback when all retries are exhausted
-- **Multi-service safe deferral** — foreign jobs from other microservices are automatically deferred without penalizing attempts or dead-lettering
-- **Concurrency throttling** — `[Throttle]` attribute for per-resource limits
-- **Distributed throttling** — `AddNexJobDistributedThrottle()` enforces global cluster-wide rate limits via Redis
-- **Job continuations** — chain jobs with parent/child relationships
-- **Idempotency** — `DuplicatePolicy` controls re-enqueue behavior
-- **Recurring jobs** — via code or `appsettings.json`
-- **Job filters** — `IJobExecutionFilter` middleware for cross-cutting behaviour
-- **Job retention** — automatic cleanup of terminal jobs with configurable TTL
-- **Read replicas** — `UseDashboardReadReplica()` offloads dashboard queries to read replicas (PostgreSQL, SQL Server)
-- **Resilient Outbox** — transaction-safe event producers for RabbitMQ and Apache Kafka
-- **OpenTelemetry** — traces and metrics built-in
-- **Built-in dashboard** — standalone dark UI, zero configuration
+**Write and run jobs**
+
+- **[`IJob` / `IJob<T>`](https://oluciano.github.io/NexJob/concepts/job-types/)** — simple and structured job interfaces, with full dependency injection
+- **[Job filters](https://oluciano.github.io/NexJob/guides/job-filters/)** — `IJobExecutionFilter` middleware for cross-cutting behaviour
+- **[Progress and checkpoints](https://oluciano.github.io/NexJob/guides/job-context/#progress-checkpoints-for-long-running-jobs)** — report progress, and resume a retried job from its last checkpoint instead of starting over
+- **[Job continuations](https://oluciano.github.io/NexJob/concepts/continuations/)** — chain jobs with parent/child relationships
+- **[Job priority](https://oluciano.github.io/NexJob/concepts/scheduling/#priority)** — `JobPriority` controls the order within a queue
+
+**Stay reliable**
+
+- **[Predictable retries](https://oluciano.github.io/NexJob/concepts/retries-and-dead-letter/)** — a configurable global delay policy plus per-job `[Retry]` with exponential backoff
+- **[Dead-letter handlers and forwarders](https://oluciano.github.io/NexJob/concepts/retries-and-dead-letter/)** — a fallback when all retries are exhausted, and a hook for [alerts](https://oluciano.github.io/NexJob/guides/alerts/)
+- **[Crash recovery](https://oluciano.github.io/NexJob/concepts/delivery-guarantees/)** — a job left behind by a node that died is found by its stale heartbeat and run again, or dead-lettered if it had no attempts left
+- **[Deadline enforcement](https://oluciano.github.io/NexJob/concepts/scheduling/#deadlines)** — jobs expire if not executed in time (`deadlineAfter`)
+- **[Idempotency](https://oluciano.github.io/NexJob/concepts/idempotency/)** — `DuplicatePolicy` controls re-enqueue behavior
+- **[Queue circuit breaker](https://oluciano.github.io/NexJob/guides/circuit-breaker/)** — pauses a queue when a dependency is down, probes it with one job and ramps back up gradually
+- **[Concurrency throttling](https://oluciano.github.io/NexJob/guides/throttling/)** — `[Throttle]` for per-resource limits, and `AddNexJobDistributedThrottle()` for global cluster-wide limits via Redis
+- **[Execution windows](https://oluciano.github.io/NexJob/guides/execution-windows/)** — restrict a queue to certain hours, such as nights only
+- **[Delivery guarantees](https://oluciano.github.io/NexJob/concepts/delivery-guarantees/)** — one table of what each failure costs a job
+
+**Schedule**
+
+- **[Recurring jobs](https://oluciano.github.io/NexJob/concepts/recurring-jobs/)** — via code or [`appsettings.json`](https://oluciano.github.io/NexJob/concepts/recurring-jobs/#configuration-via-appsettingsjson), with time zones
+- **[Delayed and scheduled jobs](https://oluciano.github.io/NexJob/concepts/scheduling/#scheduled-execution)** — run after a delay or at a specific time
+
+**Operate**
+
+- **[Built-in dashboard](https://oluciano.github.io/NexJob/integrations/dashboard/)** — standalone dark UI, zero configuration
+- **[Runtime control](https://oluciano.github.io/NexJob/guides/runtime-control/)** — pause and resume queues, requeue failed jobs, delete jobs and reset circuit breakers with `IJobControlService`
+- **[Alerts](https://oluciano.github.io/NexJob/guides/alerts/)** — know when a job fails for good, with a Slack recipe and the metrics to alert on
+- **[Health checks](https://oluciano.github.io/NexJob/guides/best-practices/#monitoring-and-alerting)** and **[OpenTelemetry](https://oluciano.github.io/NexJob/integrations/opentelemetry/)** — traces and metrics built-in
+- **[Job retention](https://oluciano.github.io/NexJob/guides/best-practices/#control-storage-growth-with-retention-policies)** — automatic cleanup of terminal jobs with configurable TTL
+
+**Storage and integrations**
+
+- **[Five storage providers](https://oluciano.github.io/NexJob/storage/overview/)** — PostgreSQL, SQL Server, Redis, MongoDB and in-memory
+- **[Read replicas](https://oluciano.github.io/NexJob/storage/postgresql/#dashboard-read-replica)** — `UseDashboardReadReplica()` offloads dashboard queries (PostgreSQL, SQL Server)
+- **[Several services on one database](https://oluciano.github.io/NexJob/guides/multi-service/)** — queue isolation, and foreign jobs from other microservices are deferred without penalizing attempts or dead-lettering
+- **[External triggers](https://oluciano.github.io/NexJob/integrations/triggers/)** — turn Kafka, RabbitMQ, AWS SQS, Azure Service Bus, Google Pub/Sub and Salesforce messages into jobs
+- **[Resilient Outbox](https://oluciano.github.io/NexJob/integrations/rabbitmq/)** — transaction-safe event producers for RabbitMQ and Apache Kafka
+
+**Trust**
+
+- **[Tested on real databases](https://oluciano.github.io/NexJob/reference/how-we-test/)** — scenarios with several nodes, a killed process and upgrades from the previous version, and an honest list of what is not covered
 
 ---
 
@@ -213,9 +241,12 @@ Complete documentation is on the [Documentation Site](https://oluciano.github.io
 
 - **[Mental Model](https://oluciano.github.io/NexJob/mental-model/)** — how NexJob works, read this first
 - **[Quickstart](https://oluciano.github.io/NexJob/quickstart/)** — run your first job in 2 minutes
-- **[Throttling & Circuit Breaker](https://oluciano.github.io/NexJob/guides/throttling/)** — queue circuit breakers and rate limits
+- **[Delivery Guarantees](https://oluciano.github.io/NexJob/concepts/delivery-guarantees/)** — what each failure costs a job: crashes, shutdown, throttling, pauses, deadlines
+- **[Circuit Breaker](https://oluciano.github.io/NexJob/guides/circuit-breaker/)** and **[Throttling](https://oluciano.github.io/NexJob/guides/throttling/)** — protect a queue from a failing dependency, and limit concurrency
+- **[Alerts](https://oluciano.github.io/NexJob/guides/alerts/)** — get notified when a job fails for good
 - **[Best Practices](https://oluciano.github.io/NexJob/guides/best-practices/)** — production and Kubernetes guidelines
 - **[Common Scenarios](https://oluciano.github.io/NexJob/guides/common-scenarios/)** — real-world use cases with code
+- **[How We Test](https://oluciano.github.io/NexJob/reference/how-we-test/)** — what the test suite proves, and what it does not
 - **[Troubleshooting](https://oluciano.github.io/NexJob/reference/troubleshooting/)** — debug common issues
 
 ---
