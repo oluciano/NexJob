@@ -161,6 +161,28 @@ node .agents/skills/nexjob-dashboard-chaos-gate/scripts/full-regression.js
 
 If any check fails: **STOP**. Fix the issue, verify again, and only continue when 100% green.
 
+### Packaging rehearsal (nothing is published)
+
+`dotnet pack` succeeding does not prove that a user can install the packages. Rehearse the release the way a user will meet it, with a release-candidate version and a local feed. Do this before opening the Release PR; it takes a few minutes.
+
+1. **Every packable project is in the publish workflow.** The projects under `src/` that are packable must be exactly the ones `publish.yml` packs (a new package that is missing from that list is never published).
+   ```bash
+   comm -3 <(grep -L "<IsPackable>false" src/*/*.csproj | xargs -n1 basename | sed 's/\.csproj//' | sort) \
+           <(grep -o "dotnet pack src/[A-Za-z.]*/" .github/workflows/publish.yml | sed 's|dotnet pack src/||; s|/||' | sort)
+   ```
+   No output means they match.
+2. **Pack everything as `X.Y.Z-rc.1` into a local folder.**
+   ```bash
+   FEED=$(mktemp -d)
+   for p in src/*/*.csproj; do dotnet pack "$p" -c Release -p:MinVerVersionOverride=X.Y.Z-rc.1 --output "$FEED"; done
+   ```
+   Open each `.nupkg`: it has the DLL, the XML documentation, the README and the license, and its dependency on `NexJob` is `X.Y.Z-rc.1`.
+3. **Install them in an empty application.** Create a new project **outside the repository**, with a `nuget.config` that lists the local feed and nuget.org (use `packageSourceMapping` so `NexJob*` comes only from the local feed), and reference **all** the packages at once. It must restore and build with 0 warnings: this catches version conflicts between packages.
+4. **Run it on every provider.** In that application, register a job that succeeds and one that fails with an `IDeadLetterHandler`, and check that the first ends `Succeeded`, the second `Failed` and the handler is called once, on InMemory, PostgreSQL, SQL Server, Redis and MongoDB. Use throwaway containers on high ports (`docker run --rm -p 35432:5432 ...`) and stop them afterwards. **Never use the ports of the `dev-*` containers**, they belong to the developer. Remember to register the job classes in DI.
+5. **Public API against the last release** (optional, manual): compare the public types and members of `NexJob.dll` between the last published version and the release candidate. Anything removed is a breaking change and needs a major version.
+
+If any step fails, fix it on `develop` and rehearse again. Do not publish the release candidate to NuGet: `publish.yml` only publishes tags on `main`, and a published NuGet version cannot be deleted.
+
 ---
 
 ## Phase 5: Version Bump, Changelog & Release PR to `main`

@@ -37,7 +37,7 @@ Tests count executions and wait for a condition with a timeout; they do not slee
 
 - **Pull requests** run the unit, contract, broker and sample tests, plus the reliability scenarios that match the files changed.
 - **Every night (04:00 UTC)** the full reliability suite runs on every database. A release waits for green nights.
-- **Before a release** the stress run and the dashboard gate run.
+- **Before a release** the stress run and the dashboard gate run, and the packages are installed from a local feed into an empty application and exercised on every provider.
 
 ## What is not covered
 
