@@ -2049,4 +2049,54 @@ public abstract class StorageProviderTestsBase
 
         return null;
     }
+
+    // ── Deleting a job that was not fetched yet (#140) ─────────────────────────
+
+    [Fact]
+    public async Task DeleteJobAsync_of_an_enqueued_job_means_it_is_never_fetched_and_leaves_no_trace()
+    {
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
+        var record = MakeJob();
+        await storage.EnqueueAsync(record);
+
+        await dashboard.DeleteJobAsync(record.Id);
+
+        (await storage.FetchNextAsync(["default"])).Should().BeNull("a deleted job must not come back from the queue");
+        (await dashboard.GetJobByIdAsync(record.Id)).Should().BeNull("fetching must not recreate the deleted job");
+    }
+
+    [Fact]
+    public async Task DeleteJobAsync_of_one_enqueued_job_does_not_hide_the_next_one_in_the_queue()
+    {
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
+        var deleted = MakeJob();
+        await storage.EnqueueAsync(deleted);
+        await Task.Delay(5);
+        var kept = MakeJob();
+        await storage.EnqueueAsync(kept);
+
+        await dashboard.DeleteJobAsync(deleted.Id);
+        var fetched = await storage.FetchNextAsync(["default"]);
+
+        fetched.Should().NotBeNull();
+        fetched!.Id.Should().Be(kept.Id, "the surviving job is the one that comes out");
+        (await storage.FetchNextAsync(["default"])).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task DeleteJobAsync_of_an_unknown_or_already_deleted_id_does_not_throw()
+    {
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
+        var record = MakeJob();
+        await storage.EnqueueAsync(record);
+
+        Func<Task> act = async () =>
+        {
+            await dashboard.DeleteJobAsync(new JobId(Guid.NewGuid()));
+            await dashboard.DeleteJobAsync(record.Id);
+            await dashboard.DeleteJobAsync(record.Id);
+        };
+
+        await act.Should().NotThrowAsync();
+    }
 }
