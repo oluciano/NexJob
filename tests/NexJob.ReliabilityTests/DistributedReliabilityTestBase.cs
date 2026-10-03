@@ -22,7 +22,8 @@ public abstract class DistributedReliabilityTestBase
         IReadOnlyList<string>? queues = null,
         TimeSpan? heartbeatTimeout = null,
         TimeSpan? heartbeatInterval = null,
-        int maxAttempts = 3)
+        int maxAttempts = 3,
+        Action<NexJobOptions>? configureOptions = null)
     {
         return Host.CreateDefaultBuilder()
             .ConfigureLogging(logging =>
@@ -53,6 +54,7 @@ public abstract class DistributedReliabilityTestBase
 
                     opt.PollingInterval = pollingInterval ?? TimeSpan.FromMilliseconds(100);
                     opt.RetryDelayFactory = _ => TimeSpan.FromMilliseconds(200); // Fast retries for tests
+                    configureOptions?.Invoke(opt);
                 });
                 registerJobs(services);
             })
