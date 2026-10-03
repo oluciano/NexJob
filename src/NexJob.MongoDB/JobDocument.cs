@@ -39,6 +39,7 @@ internal sealed class JobDocument
     public int? ProgressPercent { get; set; }
     public string? ProgressMessage { get; set; }
     public string? CheckpointJson { get; set; }
+    public DateTimeOffset? ExpiresAt { get; set; }
 
     // Every DateTimeOffset is stored at +00:00: the string serializer sorts and compares lexically, which is only
     // correct when all values share one offset.
@@ -77,6 +78,7 @@ internal sealed class JobDocument
         ProgressPercent = r.ProgressPercent,
         ProgressMessage = r.ProgressMessage,
         CheckpointJson = r.CheckpointJson,
+        ExpiresAt = r.ExpiresAt?.ToUniversalTime(),
     };
 
     public JobRecord ToRecord() => new()
@@ -114,5 +116,6 @@ internal sealed class JobDocument
         ProgressPercent = ProgressPercent,
         ProgressMessage = ProgressMessage,
         CheckpointJson = CheckpointJson,
+        ExpiresAt = ExpiresAt,
     };
 }
