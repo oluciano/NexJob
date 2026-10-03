@@ -234,6 +234,8 @@ The [`samples/`](samples/) directory provides comprehensive, runnable reference 
 | [`NexJob.Sample.Kafka`](samples/NexJob.Sample.Kafka) | Streaming Broker | `5010` | Partitioned Outbox event publishing + consumer trigger with offset tracking |
 | [`NexJob.Sample.Storage`](samples/NexJob.Sample.Storage) | Enterprise Topology | `5007` | PostgreSQL primary + read replica (`UseDashboardReadReplica`), Redis throttle (`AddNexJobDistributedThrottle`), OTel |
 | [`NexJob.Sample.CloudTriggers`](samples/NexJob.Sample.CloudTriggers) | Unified Cloud Consumers | `5008` | AWS SQS, Azure Service Bus, GCP Pub/Sub, Salesforce gRPC & CometD with `/simulate/*` endpoints |
+| [`NexJob.Sample.Reliability`](samples/NexJob.Sample.Reliability) | Reliability behaviors | `5011` | `[Retry]`, checkpoint resume, deadline, dead-letter, queue circuit breaker, `IJobControlService`, health checks |
+| [`NexJob.Sample.Providers`](samples/NexJob.Sample.Providers) | One app, any storage | `5012` | InMemory / PostgreSQL / SQL Server / Redis / MongoDB chosen by `Sample:Provider` |
 
 A full local test stack (PostgreSQL 16, Redis 7, RabbitMQ 3.13, and Kafka KRaft) is provided in [`samples/docker-compose.yml`](samples/docker-compose.yml).
 

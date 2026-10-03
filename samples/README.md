@@ -16,6 +16,8 @@ Welcome to the comprehensive NexJob samples directory. This directory provides p
 | [`NexJob.Sample.Kafka`](./NexJob.Sample.Kafka) | Web (ASP.NET Core) | SQL Server (InMemory if no connection string) | Apache Kafka | Event Outbox Producer, Consumer Trigger with partition commit, consumer groups |
 | [`NexJob.Sample.Storage`](./NexJob.Sample.Storage) | Web (ASP.NET Core) | PostgreSQL + Redis | None | Read Replica isolation (`UseDashboardReadReplica`), Distributed Throttle, OpenTelemetry, Filter Pipeline (`IJobExecutionFilter`) |
 | [`NexJob.Sample.CloudTriggers`](./NexJob.Sample.CloudTriggers) | Web (ASP.NET Core) | InMemory | AWS SQS, Azure Service Bus, GCP Pub/Sub, Salesforce | Unified cloud consumer triggers, 5 Trigger Guarantees, interactive `/simulate/*` endpoints |
+| [`NexJob.Sample.Reliability`](./NexJob.Sample.Reliability) | Web (ASP.NET Core) | InMemory | None | `[Retry]`, checkpoints, deadlines, dead-letter handler, queue circuit breaker, `IJobControlService`, health checks |
+| [`NexJob.Sample.Providers`](./NexJob.Sample.Providers) | Web (ASP.NET Core) | InMemory / PostgreSQL / SQL Server / Redis / MongoDB | None | The same app on any storage provider, chosen by `Sample:Provider`; copy-paste registration per provider |
 
 ---
 
@@ -26,7 +28,8 @@ A complete local development environment is provided in [`docker-compose.yml`](.
 - **Redis 7** (`localhost:6379`)
 - **RabbitMQ 3.13 Management** (`localhost:5672`, Management UI at `http://localhost:15672`)
 - **Apache Kafka (KRaft)** (`localhost:9092`)
-- **SQL Server** (`localhost:1433`), used by the Kafka sample
+- **SQL Server** (`localhost:1433`), used by the Kafka and Providers samples
+- **MongoDB 7** (`localhost:27017`), used by the Providers sample
 
 ### Starting Infrastructure
 ```bash
@@ -58,6 +61,8 @@ Every web sample ships a `Properties/launchSettings.json` with its own port, so 
 | CloudTriggers | `http://localhost:5008` |
 | RabbitMQ | `http://localhost:5009` |
 | Kafka | `http://localhost:5010` |
+| Reliability | `http://localhost:5011` |
+| Providers | `http://localhost:5012` |
 
 ---
 
@@ -138,3 +143,19 @@ dotnet run --project samples/NexJob.Sample.CloudTriggers/NexJob.Sample.CloudTrig
 - Simulate Google Pub/Sub: `POST http://localhost:5008/simulate/pubsub`
 - Simulate Salesforce Pub/Sub: `POST http://localhost:5008/simulate/salesforce`
 - Simulate Salesforce Streaming: `POST http://localhost:5008/simulate/salesforce-streaming`
+
+### 9. Reliability behaviors (`NexJob.Sample.Reliability`)
+One endpoint per behavior: retries, checkpoint resume, deadline expiry, dead-letter handler, queue circuit breaker, programmatic control and health checks. In-memory storage, no infrastructure.
+```bash
+dotnet run --project samples/NexJob.Sample.Reliability/NexJob.Sample.Reliability.csproj
+```
+- See [`NexJob.Sample.Reliability/README.md`](./NexJob.Sample.Reliability/README.md) for each endpoint and what to expect: `http://localhost:5011`
+
+### 10. One app, any storage provider (`NexJob.Sample.Providers`)
+The same small app on InMemory, PostgreSQL, SQL Server, Redis or MongoDB, chosen by `Sample:Provider`.
+```bash
+docker compose up -d postgres
+dotnet run --project samples/NexJob.Sample.Providers/NexJob.Sample.Providers.csproj -- --Sample:Provider=Postgres
+```
+- Which provider is running: `GET http://localhost:5012/provider`
+- Enqueue a job: `POST http://localhost:5012/jobs?message=hello`
