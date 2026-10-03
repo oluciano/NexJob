@@ -60,7 +60,7 @@ internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
 
         _ackChannel = Channel.CreateUnbounded<JobId>(new UnboundedChannelOptions { SingleReader = true });
         _ackCts = new CancellationTokenSource();
-        _ackFlusherTask = Task.Run(RunBatchAckFlusherAsync);
+        _ackFlusherTask = Task.Run(RunBatchAckFlusherAsync, _ackCts.Token);
     }
 
     /// <summary>Gets the delays between retries of a failed success commit. Overridable for tests.</summary>

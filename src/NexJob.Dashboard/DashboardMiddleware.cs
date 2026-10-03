@@ -114,7 +114,7 @@ public sealed class DashboardMiddleware
         }
 
         context.Response.ContentType = "text/html; charset=utf-8";
-        await context.Response.WriteAsync(html).ConfigureAwait(false);
+        await context.Response.WriteAsync(html, context.RequestAborted).ConfigureAwait(false);
     }
 
     private static bool TryGetJobId(string subPath, out JobId jobId)
