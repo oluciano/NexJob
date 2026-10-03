@@ -121,10 +121,10 @@ public sealed class PostgresStorageProvider : IStorageProvider, IDisposable, IAs
                         """
                         INSERT INTO nexjob_jobs
                             (id, job_type, input_type, input_json, schema_version, queue, priority, status,
-                             idempotency_key, attempts, max_attempts, created_at, scheduled_at, parent_job_id, recurring_job_id, tags)
+                             idempotency_key, attempts, max_attempts, created_at, scheduled_at, parent_job_id, recurring_job_id, tags, expires_at)
                         VALUES
                             (@Id, @JobType, @InputType, @InputJson::jsonb, @SchemaVersion, @Queue, @Priority,
-                             @Status, @IdempotencyKey, @Attempts, @MaxAttempts, @CreatedAt, @ScheduledAt, @ParentJobId, @RecurringJobId, @Tags)
+                             @Status, @IdempotencyKey, @Attempts, @MaxAttempts, @CreatedAt, @ScheduledAt, @ParentJobId, @RecurringJobId, @Tags, @ExpiresAt)
                         """,
                         new
                         {
@@ -144,6 +144,7 @@ public sealed class PostgresStorageProvider : IStorageProvider, IDisposable, IAs
                             ParentJobId = job.ParentJobId?.Value,
                             job.RecurringJobId,
                             Tags = job.Tags.ToArray(),
+                            job.ExpiresAt,
                         },
                         tx);
 
@@ -179,10 +180,10 @@ public sealed class PostgresStorageProvider : IStorageProvider, IDisposable, IAs
             """
             INSERT INTO nexjob_jobs
                 (id, job_type, input_type, input_json, schema_version, queue, priority, status,
-                 idempotency_key, attempts, max_attempts, created_at, scheduled_at, parent_job_id, recurring_job_id, tags)
+                 idempotency_key, attempts, max_attempts, created_at, scheduled_at, parent_job_id, recurring_job_id, tags, expires_at)
             VALUES
                 (@Id, @JobType, @InputType, @InputJson::jsonb, @SchemaVersion, @Queue, @Priority,
-                 @Status, @IdempotencyKey, @Attempts, @MaxAttempts, @CreatedAt, @ScheduledAt, @ParentJobId, @RecurringJobId, @Tags)
+                 @Status, @IdempotencyKey, @Attempts, @MaxAttempts, @CreatedAt, @ScheduledAt, @ParentJobId, @RecurringJobId, @Tags, @ExpiresAt)
             """,
             new
             {
@@ -202,6 +203,7 @@ public sealed class PostgresStorageProvider : IStorageProvider, IDisposable, IAs
                 ParentJobId = job.ParentJobId?.Value,
                 job.RecurringJobId,
                 Tags = job.Tags.ToArray(),
+                job.ExpiresAt,
             });
 
         return new EnqueueResult(job.Id, WasRejected: false);
