@@ -14,7 +14,7 @@ namespace NexJob.SqlServer;
 /// Uses <c>WITH (UPDLOCK, READPAST)</c> for atomic job claiming, preventing
 /// double-processing across multiple workers or server instances.
 /// </summary>
-public sealed class SqlServerStorageProvider : IStorageProvider
+public sealed class SqlServerStorageProvider : IStorageProvider, IOrphanedJobReporter
 {
     private const int MaxEnqueueAttempts = 3;
 
@@ -587,11 +587,18 @@ public sealed class SqlServerStorageProvider : IStorageProvider
     public async Task RequeueOrphanedJobsAsync(
         TimeSpan heartbeatTimeout, CancellationToken cancellationToken = default)
     {
+        await RequeueOrphanedJobsAndReportAsync(heartbeatTimeout, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<JobId>> RequeueOrphanedJobsAndReportAsync(
+        TimeSpan heartbeatTimeout, CancellationToken cancellationToken = default)
+    {
         var now = DateTimeOffset.UtcNow;
         var cutoff = now - heartbeatTimeout;
         await using var conn = Open();
         await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await conn.ExecuteAsync(
+        var moved = await conn.QueryAsync<(Guid Id, string Status)>(
             """
             UPDATE nexjob_jobs
             SET status = CASE WHEN attempts >= max_attempts THEN 'Failed' ELSE 'Enqueued' END,
@@ -599,9 +606,16 @@ public sealed class SqlServerStorageProvider : IStorageProvider
                 exception_message = CASE WHEN attempts >= max_attempts AND exception_message IS NULL THEN 'Orphaned execution exceeded maximum attempts.' ELSE exception_message END,
                 heartbeat_at = NULL,
                 processing_started_at = NULL
+            OUTPUT INSERTED.id, INSERTED.status
             WHERE status = 'Processing' AND heartbeat_at < @cutoff
             """,
             new { cutoff, now }).ConfigureAwait(false);
+
+        // A job reported here was moved by this statement, so no other node can report it too.
+        return moved
+            .Where(m => string.Equals(m.Status, "Failed", StringComparison.Ordinal))
+            .Select(m => new JobId(m.Id))
+            .ToList();
     }
 
     // ── Continuations ─────────────────────────────────────────────────────────
