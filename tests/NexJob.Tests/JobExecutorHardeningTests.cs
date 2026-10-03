@@ -289,6 +289,79 @@ public sealed class JobExecutorHardeningTests
             It.IsAny<CancellationToken>()), Times.Once);
     }
 
+    // ─── Attempt refund through the storage (#327) ─────────────────────────
+
+    /// <summary>N1 (Positive): a foreign job is committed with RefundAttempt so database providers give the attempt back.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task ExecuteJobAsync_WhenForeignJobTypeExceptionThrown_CommitsWithRefundAttempt()
+    {
+        var job = new JobRecord { Id = JobId.New(), JobType = "ForeignService.Job", Attempts = 2, MaxAttempts = 3 };
+        _invokerFactory.Setup(x => x.PrepareAsync(job, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new ForeignJobTypeException(job.JobType, "Cannot load job type"));
+
+        await _sut.ExecuteJobAsync(job);
+
+        _storage.Verify(x => x.CommitJobResultAsync(
+            job.Id,
+            It.Is<JobExecutionResult>(r => !r.Succeeded && r.RetryAt != null && r.RefundAttempt),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    /// <summary>N1 (Positive): a job interrupted by shutdown is requeued with RefundAttempt, not dead-lettered.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task ExecuteJobAsync_WhenInterruptedByShutdown_CommitsWithRefundAttempt()
+    {
+        var job = new JobRecord { Id = JobId.New(), JobType = "TestJob", Attempts = 2, MaxAttempts = 3 };
+        using var shutdown = new CancellationTokenSource();
+        _invokerFactory.Setup(x => x.PrepareAsync(job, It.IsAny<CancellationToken>()))
+            .Callback(() => shutdown.Cancel())
+            .ThrowsAsync(new OperationCanceledException(shutdown.Token));
+
+        await _sut.ExecuteJobAsync(job, shutdown.Token);
+
+        _storage.Verify(x => x.CommitJobResultAsync(
+            job.Id,
+            It.Is<JobExecutionResult>(r => !r.Succeeded && r.RetryAt != null && r.RefundAttempt),
+            It.IsAny<CancellationToken>()), Times.Once);
+        _deadLetterDispatcher.Verify(x => x.DispatchAsync(It.IsAny<JobRecord>(), It.IsAny<Exception>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    /// <summary>N2 (Negative): a job that genuinely fails is not refunded; it keeps consuming attempts.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task ExecuteJobAsync_WhenJobFailsNormally_DoesNotRefundTheAttempt()
+    {
+        var job = new JobRecord { Id = JobId.New(), JobType = "TestJob", Attempts = 1, MaxAttempts = 3 };
+        var failure = new InvalidOperationException("real failure");
+        _invokerFactory.Setup(x => x.PrepareAsync(job, It.IsAny<CancellationToken>())).ThrowsAsync(failure);
+        _retryPolicy.Setup(x => x.ComputeRetryAt(job, failure)).Returns(DateTimeOffset.UtcNow.AddSeconds(1));
+
+        await _sut.ExecuteJobAsync(job);
+
+        _storage.Verify(x => x.CommitJobResultAsync(
+            job.Id,
+            It.Is<JobExecutionResult>(r => !r.Succeeded && r.RetryAt != null && !r.RefundAttempt),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    /// <summary>N3 (Boundary): the executor leaves the local attempt count alone at zero; the storage guards the floor.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task ExecuteJobAsync_WhenAttemptsZeroAndInterrupted_DoesNotGoNegative()
+    {
+        var job = new JobRecord { Id = JobId.New(), JobType = "TestJob", Attempts = 0, MaxAttempts = 3 };
+        using var shutdown = new CancellationTokenSource();
+        _invokerFactory.Setup(x => x.PrepareAsync(job, It.IsAny<CancellationToken>()))
+            .Callback(() => shutdown.Cancel())
+            .ThrowsAsync(new OperationCanceledException(shutdown.Token));
+
+        await _sut.ExecuteJobAsync(job, shutdown.Token);
+
+        job.Attempts.Should().BeGreaterOrEqualTo(0);
+    }
+
     // ─── Helpers ───────────────────────────────────────────────────────────
 
     private JobInvocationContext SetupSuccessfulInvoker(JobRecord job, ThrottleAttribute[]? throttles = null)
