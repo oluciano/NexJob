@@ -47,7 +47,7 @@ jobs:
           PROVIDER: ${{ matrix.provider }}
         run: |
           if [ "$EVENT" = "pull_request" ]; then
-            FILTER="Category=Reliability.Distributed&(FullyQualifiedName~${PROVIDER}ConcurrencyTests|FullyQualifiedName~${PROVIDER}RecoveryTests)"
+            FILTER="Category=Reliability.Distributed&(FullyQualifiedName~${PROVIDER}ConcurrencyTests|FullyQualifiedName~${PROVIDER}RecoveryTests|FullyQualifiedName~${PROVIDER}ContinuationTests)"
           else
             FILTER="Category=Reliability.Distributed&FullyQualifiedName~${PROVIDER}"
           fi
