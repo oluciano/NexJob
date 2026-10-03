@@ -119,6 +119,45 @@ public abstract class ControlServiceScenarios : DistributedReliabilityTestBase
     }
 
     [Fact]
+    public async Task DeletingARunningJob_DoesNotResurrectItOrBlockTheWorker()
+    {
+        // N2: the job is deleted while it executes; its late result must neither bring it back nor break the host.
+        var queue = NewQueue();
+        var log = new ExecutionLog();
+        var gate = new ParentGate();
+        using var host = BuildHost(
+            Storage(),
+            s =>
+            {
+                s.AddSingleton(log);
+                s.AddSingleton(gate);
+                s.AddTransient<GatedParentJob>();
+                s.AddTransient<StepJob>();
+            },
+            workers: 1,
+            queues: [queue]);
+        await host.StartAsync();
+        var scheduler = host.Services.GetRequiredService<IScheduler>();
+        var stopped = false;
+        host.Services.GetRequiredService<IHostApplicationLifetime>().ApplicationStopping.Register(() => stopped = true);
+
+        var running = await scheduler.EnqueueAsync<GatedParentJob>(queue: queue);
+        (await WaitUntil(() => Task.FromResult(log.Count($"start:{running.Value}") == 1), Timeout)).Should().BeTrue("the job should start");
+
+        await host.Services.GetRequiredService<IJobControlService>().DeleteJobAsync(running);
+        gate.OpenToSucceed();
+        await Task.Delay(Grace);
+
+        (await StatusOf(host, running)).Should().BeNull("a late result must not bring a deleted job back");
+        stopped.Should().BeFalse();
+
+        var next = await scheduler.EnqueueAsync<StepJob>(queue: queue);
+        (await WaitForJobStatus(host, next, JobStatus.Succeeded, Timeout)).Should().NotBeNull("the worker is free again");
+
+        await host.StopAsync();
+    }
+
+    [Fact]
     public async Task UnknownJobId_IsIgnoredByRequeueAndDelete()
     {
         // N3 (Invalid input)
