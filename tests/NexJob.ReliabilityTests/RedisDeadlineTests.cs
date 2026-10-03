@@ -23,7 +23,7 @@ public sealed class RedisDeadlineTests
     private Action<IServiceCollection> Storage() =>
         s => s.AddNexJobRedis(_fixture.ConnectionString);
 
-    [Fact(Skip = "Blocked by #321: database providers do not persist the job deadline (ExpiresAt)")]
+    [Fact]
     public async Task JobNotExecutedAfterDeadline_NoInput()
     {
         using var host = BuildHost(
@@ -51,7 +51,7 @@ public sealed class RedisDeadlineTests
         await host.StopAsync();
     }
 
-    [Fact(Skip = "Blocked by #321: database providers do not persist the job deadline (ExpiresAt)")]
+    [Fact]
     public async Task JobNotExecutedAfterDeadline_WithInput()
     {
         using var host = BuildHost(
@@ -123,7 +123,7 @@ public sealed class RedisDeadlineTests
         await host.StopAsync();
     }
 
-    [Fact(Skip = "Blocked by #321: database providers do not persist the job deadline (ExpiresAt)")]
+    [Fact]
     public async Task ExpirationRespectedEvenAfterRetries_NoInput()
     {
         using var host = BuildHost(
@@ -144,7 +144,7 @@ public sealed class RedisDeadlineTests
         await host.StopAsync();
     }
 
-    [Fact(Skip = "Blocked by #321: database providers do not persist the job deadline (ExpiresAt)")]
+    [Fact]
     public async Task ExpirationRespectedEvenAfterRetries_WithInput()
     {
         using var host = BuildHost(

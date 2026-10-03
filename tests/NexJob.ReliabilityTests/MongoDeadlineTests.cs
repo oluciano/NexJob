@@ -23,7 +23,7 @@ public sealed class MongoDeadlineTests
     private Action<IServiceCollection> Storage() =>
         s => s.AddNexJobMongoDB(_fixture.ConnectionString, databaseName: "nexjob_reliability");
 
-    [Fact(Skip = "Blocked by #321: database providers do not persist the job deadline (ExpiresAt)")]
+    [Fact]
     public async Task JobNotExecutedAfterDeadline_NoInput()
     {
         using var host = BuildHost(
@@ -41,7 +41,8 @@ public sealed class MongoDeadlineTests
         var scheduler = host.Services.GetRequiredService<IScheduler>();
         var jobId = await scheduler.EnqueueAsync<SuccessJob>(deadlineAfter: TimeSpan.FromMilliseconds(100));
 
-        await Task.Delay(3000);
+        await Task.Delay(500);
+        await control.ResumeQueueAsync("default");
 
         var job = await WaitForJobStatus(host, jobId, JobStatus.Expired, TimeSpan.FromSeconds(10));
         job.Should().NotBeNull("job should be marked as Expired");
@@ -50,7 +51,7 @@ public sealed class MongoDeadlineTests
         await host.StopAsync();
     }
 
-    [Fact(Skip = "Blocked by #321: database providers do not persist the job deadline (ExpiresAt)")]
+    [Fact]
     public async Task JobNotExecutedAfterDeadline_WithInput()
     {
         using var host = BuildHost(
@@ -70,7 +71,8 @@ public sealed class MongoDeadlineTests
             new SuccessInput("test"),
             deadlineAfter: TimeSpan.FromMilliseconds(100));
 
-        await Task.Delay(3000);
+        await Task.Delay(500);
+        await control.ResumeQueueAsync("default");
 
         var job = await WaitForJobStatus(host, jobId, JobStatus.Expired, TimeSpan.FromSeconds(10));
         job.Should().NotBeNull("job should be marked as Expired");
@@ -121,7 +123,7 @@ public sealed class MongoDeadlineTests
         await host.StopAsync();
     }
 
-    [Fact(Skip = "Blocked by #321: database providers do not persist the job deadline (ExpiresAt)")]
+    [Fact]
     public async Task ExpirationRespectedEvenAfterRetries_NoInput()
     {
         using var host = BuildHost(
@@ -135,8 +137,6 @@ public sealed class MongoDeadlineTests
         var scheduler = host.Services.GetRequiredService<IScheduler>();
         var jobId = await scheduler.EnqueueAsync<AlwaysFailJob>(deadlineAfter: TimeSpan.FromMilliseconds(150));
 
-        await Task.Delay(3000);
-
         var job = await WaitForJobStatus(host, jobId, JobStatus.Expired, TimeSpan.FromSeconds(10));
         job.Should().NotBeNull("job should expire rather than retry indefinitely");
         job!.Status.Should().Be(JobStatus.Expired);
@@ -144,7 +144,7 @@ public sealed class MongoDeadlineTests
         await host.StopAsync();
     }
 
-    [Fact(Skip = "Blocked by #321: database providers do not persist the job deadline (ExpiresAt)")]
+    [Fact]
     public async Task ExpirationRespectedEvenAfterRetries_WithInput()
     {
         using var host = BuildHost(
@@ -159,8 +159,6 @@ public sealed class MongoDeadlineTests
         var jobId = await scheduler.EnqueueAsync<AlwaysFailJobWithInput, AlwaysFailInput>(
             new AlwaysFailInput("test"),
             deadlineAfter: TimeSpan.FromMilliseconds(150));
-
-        await Task.Delay(3000);
 
         var job = await WaitForJobStatus(host, jobId, JobStatus.Expired, TimeSpan.FromSeconds(10));
         job.Should().NotBeNull();
