@@ -39,7 +39,8 @@ jobs:
           dotnet-version: 8.0.x
 
       - name: Build
-        run: dotnet build tests/NexJob.ReliabilityTests --configuration Release
+        # The worker project references the tests and is started by the crash test as a separate process.
+        run: dotnet build tests/NexJob.ReliabilityTests.Worker --configuration Release
 
       - name: Run reliability tests
         env:
@@ -47,7 +48,7 @@ jobs:
           PROVIDER: ${{ matrix.provider }}
         run: |
           if [ "$EVENT" = "pull_request" ]; then
-            FILTER="Category=Reliability.Distributed&(FullyQualifiedName~${PROVIDER}ConcurrencyTests|FullyQualifiedName~${PROVIDER}RecoveryTests|FullyQualifiedName~${PROVIDER}ContinuationTests)"
+            FILTER="Category=Reliability.Distributed&(FullyQualifiedName~${PROVIDER}ConcurrencyTests|FullyQualifiedName~${PROVIDER}RecoveryTests|FullyQualifiedName~${PROVIDER}ContinuationTests|FullyQualifiedName~${PROVIDER}OrphanTests|FullyQualifiedName~${PROVIDER}CrashTests)"
           else
             FILTER="Category=Reliability.Distributed&FullyQualifiedName~${PROVIDER}"
           fi

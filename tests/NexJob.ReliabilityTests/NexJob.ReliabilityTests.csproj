@@ -11,6 +11,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="NexJob.ReliabilityTests.Worker" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\NexJob\NexJob.csproj" />
     <ProjectReference Include="..\..\src\NexJob.Postgres\NexJob.Postgres.csproj" />
     <ProjectReference Include="..\..\src\NexJob.SqlServer\NexJob.SqlServer.csproj" />

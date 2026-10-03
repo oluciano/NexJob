@@ -14,15 +14,18 @@ Each scenario is written once, in an abstract class. A thin subclass per provide
 | `ContinuationScenarios` | A child created with `ContinueWithAsync` waits for its parent, runs once after the parent succeeds and never runs if the parent fails; chains run in order and fan-out runs each child once; an unknown parent runs nothing | InMemory, PostgreSQL, SQL Server, Redis, MongoDB |
 | `ControlServiceScenarios` | Pausing a queue stops execution and resuming releases it; a failed job can be requeued and gets fresh attempts; a deleted job is gone and never runs, also when it is deleted while it runs; unknown ids are ignored | InMemory, PostgreSQL, SQL Server, Redis, MongoDB |
 | `*DeadlineTests` | A job still waiting when its deadline passes is marked `Expired` (queue paused while the deadline elapses) | Databases |
+| `OrphanScenarios` | A job left `Processing` by a node that died is requeued by the watcher and runs once, costing one attempt; one on its last attempt is failed and never runs; a live job with a fresh heartbeat is never given back; the recurring lock of a dead node is taken over after its TTL | PostgreSQL, SQL Server, Redis, MongoDB |
+| `MultiNodeScenarios` | Three nodes on one queue run every job exactly once and share the work; a node that stops and one that starts late lose nothing; two nodes with the same recurring job enqueue one occurrence per second; two orphan watchers do not give an orphan back twice | PostgreSQL, SQL Server, Redis, MongoDB |
+| `SqlServerCrashTests` | A NexJob node runs in its own process (`NexJob.ReliabilityTests.Worker`) and is killed with `Process.Kill` while its job runs; another host recovers the job, which runs once | SQL Server (the others share the code path) |
 | `PostgresRecurringTests` | Two nodes do not enqueue the same recurring occurrence twice | PostgreSQL |
 
 Tests count executions and wait for a condition with a timeout; they do not sleep for a fixed time. Each test that shares a database uses its own queue.
 
 ## What is not covered
 
-- A crash in the middle of an execution (orphan requeue). Stopping a host is graceful, so it cannot simulate one; orphan recovery has per-provider contract tests in `NexJob.IntegrationTests`.
+- A real process crash on PostgreSQL, Redis and MongoDB: it is tested with a killed process on SQL Server only, and the others are covered by the orphan scenarios, which recreate the state a crash leaves.
+- A job whose attempts are exhausted by crashes does not call dead-letter handlers or forwarders (#340).
 - Wake-up latency. Wall-clock bounds are fragile on shared CI runners.
-- Recurring jobs on providers other than PostgreSQL.
 
 ## Running
 
