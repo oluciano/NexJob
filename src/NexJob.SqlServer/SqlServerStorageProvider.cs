@@ -49,10 +49,21 @@ public sealed class SqlServerStorageProvider : IStorageProvider
     /// Initialises the provider with an existing <see cref="SqlConnection"/>.
     /// Migrations are NOT applied when using this constructor.
     /// </summary>
+    /// <remarks>
+    /// The provider keeps the connection string of <paramref name="connection"/> and opens its own connections with it.
+    /// With SQL Server authentication, SqlClient removes the password from <see cref="SqlConnection.ConnectionString"/> as
+    /// soon as the connection is opened (unless <c>Persist Security Info=True</c>), so pass a connection that is not open.
+    /// </remarks>
     /// <param name="connection">The connection.</param>
     /// <param name="options">The nex job options.</param>
+    /// <exception cref="ArgumentException">
+    /// The connection is already open and uses SQL Server authentication, so its password is no longer known.
+    /// </exception>
     public SqlServerStorageProvider(SqlConnection connection, NexJobOptions options)
     {
+        ArgumentNullException.ThrowIfNull(connection);
+        EnsureCredentialsAreKnown(connection);
+
         _connection = connection;
         _connectionString = connection.ConnectionString;
     }
@@ -1119,6 +1130,29 @@ public sealed class SqlServerStorageProvider : IStorageProvider
         }
 
         return values.ToString();
+    }
+
+    // An open connection with SQL Server authentication has lost its password: the provider would fail to log in much later.
+    private static void EnsureCredentialsAreKnown(SqlConnection connection)
+    {
+        if (connection.State == ConnectionState.Closed)
+        {
+            return;
+        }
+
+        var builder = new SqlConnectionStringBuilder(connection.ConnectionString);
+        var usesSqlLogin = !builder.IntegratedSecurity
+            && builder.Authentication == SqlAuthenticationMethod.NotSpecified
+            && !string.IsNullOrEmpty(builder.UserID);
+
+        if (usesSqlLogin && string.IsNullOrEmpty(builder.Password))
+        {
+            throw new ArgumentException(
+                "The SqlConnection is already open, so SqlClient has removed the password from its ConnectionString, and the "
+                + "provider needs it to open its own connections. Pass a connection that is not open, or add "
+                + "'Persist Security Info=True' to the connection string.",
+                nameof(connection));
+        }
     }
 
     private static bool IsTerminalStatus(string? status) =>
