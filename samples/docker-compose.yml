@@ -85,9 +85,24 @@ services:
     volumes:
       - sqlserver-data:/var/opt/mssql
 
+  mongodb:
+    image: mongo:7
+    container_name: nexjob-sample-mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
 volumes:
   postgres-data:
   redis-data:
   rabbitmq-data:
   kafka-data:
   sqlserver-data:
+  mongodb-data:

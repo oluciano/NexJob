@@ -222,10 +222,12 @@ The repository ships with ready-to-run reference architectures covering every Ne
 | [`NexJob.Sample.ConfiguredRecurring`](https://github.com/oluciano/NexJob/tree/develop/samples/NexJob.Sample.ConfiguredRecurring) | Recurring jobs declared in `appsettings.json` | 5004 |
 | [`NexJob.Sample.RabbitMQ`](https://github.com/oluciano/NexJob/tree/develop/samples/NexJob.Sample.RabbitMQ) | Resilient outbox producer + trigger consumer | 5009 |
 | [`NexJob.Sample.Kafka`](https://github.com/oluciano/NexJob/tree/develop/samples/NexJob.Sample.Kafka) | Partitioned outbox publishing + consumer trigger | 5010 |
+| [`NexJob.Sample.Reliability`](https://github.com/oluciano/NexJob/tree/develop/samples/NexJob.Sample.Reliability) | Retry, checkpoint, deadline, dead-letter, circuit breaker, job control, health | 5011 |
+| [`NexJob.Sample.Providers`](https://github.com/oluciano/NexJob/tree/develop/samples/NexJob.Sample.Providers) | The same app on PostgreSQL, SQL Server, Redis, MongoDB or InMemory | 5012 |
 | [`NexJob.Sample.Storage`](https://github.com/oluciano/NexJob/tree/develop/samples/NexJob.Sample.Storage) | PostgreSQL read replica, distributed throttle, OTel | 5007 |
 | [`NexJob.Sample.CloudTriggers`](https://github.com/oluciano/NexJob/tree/develop/samples/NexJob.Sample.CloudTriggers) | AWS SQS, Azure Service Bus, GCP Pub/Sub, Salesforce | 5008 |
 
-A full local test stack (PostgreSQL 16, Redis 7, RabbitMQ 3.13, and Kafka KRaft) is provided in [`samples/docker-compose.yml`](https://github.com/oluciano/NexJob/tree/develop/samples/docker-compose.yml).
+A full local test stack (PostgreSQL 16, Redis 7, RabbitMQ 3.13, Kafka KRaft, SQL Server 2022 and MongoDB 7) is provided in [`samples/docker-compose.yml`](https://github.com/oluciano/NexJob/tree/develop/samples/docker-compose.yml).
 
 ## Next steps
 
