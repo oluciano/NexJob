@@ -161,7 +161,7 @@ NexJob is designed to surface diagnostic information through structured logs, me
 
     **Check 3: Job was orphaned, not failed by a retry**
 
-    If an orphaned job has consumed all its attempts, it is marked `Failed` with the message `"Orphaned execution exceeded maximum attempts."` — the dead-letter handler is **not** called in this case. Check whether the job record shows an orphan message in the execution log.
+    If an orphaned job has consumed all its attempts, it is marked `Failed` with the message `"Orphaned execution exceeded maximum attempts."`. From v5.8.0 the dead-letter handler and the `IDeadLetterForwarder`s **are** called for it, with an `OrphanedJobException` (on the built-in providers; a custom storage that does not implement `IOrphanedJobReporter` still fails the job without calling them). If the handler did not run, look in the logs for the warning `... stopped sending heartbeats and no attempts were left`. See [When the node dies](../concepts/retries-and-dead-letter.md#when-the-node-dies).
 
 
 ???+ "Dashboard not loading or showing no data"
@@ -247,7 +247,7 @@ NexJob is designed to surface diagnostic information through structured logs, me
 
     **Worker count and throttle sizing**
 
-    Throttled jobs wait in `Processing`, holding their worker slot while the slot is unavailable. If many jobs wait on the same throttle resource, they can consume all workers and starve other queues. Keep `Workers` comfortably above the sum of the `maxConcurrent` values across your throttles, or isolate throttled jobs in a dedicated queue.
+    A throttled job that cannot get its slot waits briefly in `Processing`, holding its worker slot, and after about 5 seconds is returned to the queue (it does not use an attempt), so a saturated resource no longer keeps every worker busy for long. Jobs on that resource can still be delayed and run in a different order than they were enqueued. Keep `Workers` above the sum of the `maxConcurrent` values across your throttles, or isolate throttled jobs in a dedicated queue. See [How Waiting Works](../guides/throttling.md#how-waiting-works).
 
     **Retention and log accumulation**
 

@@ -113,89 +113,12 @@ You can see it happen in two places:
 | Memory-intensive operations | `"heavy-compute"` |
 | Third-party webhook delivery | `"webhook-sender"` |
 
-## Queue Circuit Breaker
+## Related: circuit breaker and execution windows
 
-`[Throttle]` governs steady-state concurrency. The **queue circuit breaker** handles severe downstream outages — it pauses an entire queue when consecutive failures reach a threshold, lets a canary job probe recovery, and gradually ramps concurrency back up to prevent thundering herds.
+Two queue-level controls used to live on this page and now have their own:
 
-Configure it per queue with `ConfigureQueue`:
-
-```csharp
-builder.Services.AddNexJob(options =>
-{
-    options.ConfigureQueue("payments", queue =>
-    {
-        queue.EnableCircuitBreaker(cb =>
-        {
-            cb.ConsecutiveFailuresThreshold = 5;
-            cb.OpenDuration = TimeSpan.FromSeconds(30);   // first cooldown
-            cb.BackoffMultiplier = 2.0;                   // doubles on each repeated failure
-            cb.MaxOpenDuration = TimeSpan.FromMinutes(10);
-            cb.RecoveryDuration = TimeSpan.FromMinutes(2);
-            cb.RecoveryConcurrency = 2;                   // anti-thundering-herd ramp-up
-
-            // Trip on 5xx, timeouts, 429, 401, and network drops
-            cb.BreakOnTransientHttpErrors(includeAuthErrors: true);
-            cb.BreakOn<TimeoutException>();
-        });
-    });
-});
-```
-
-### Circuit States
-
-<div class="grid cards" markdown>
-  -   **Closed**
-
-    Normal processing. All jobs execute at full worker concurrency.
-
-  -   **Open**
-
-    Consecutive failures exceeded the threshold. The queue is paused and jobs accumulate in storage without burning retries. Exponential backoff multiplies the cooldown on repeated probe failures.
-
-  -   **Half-Open**
-
-    Cooldown elapsed. One canary job is dispatched to probe downstream health.
-
-  -   **Recovering**
-
-    Canary succeeded. Concurrency is capped at `RecoveryConcurrency` for `RecoveryDuration` to let the downstream service stabilise before full throughput resumes.
-
-</div>
-
-### Programmatic Control
-
-You can reset the circuit breaker from code — useful when you receive a recovery webhook from the downstream provider:
-
-```csharp
-await jobControlService.ResetQueueCircuitAsync("payments");
-```
-
-The dashboard at `/queues` also shows circuit state visually and exposes a **Reset Circuit** button for operators.
-
-## Execution Window Settings
-
-For scenarios where you need to restrict a queue to specific time windows — for example, batch imports that should only run during off-peak hours — configure `ExecutionWindow` on the queue. Workers skip that queue outside the window; jobs accumulate safely in storage and execute as soon as the window opens.
-
-```csharp
-builder.Services.AddNexJob(options =>
-{
-    options.ConfigureQueue("batch-imports", queue =>
-    {
-        queue.ExecutionWindow = new ExecutionWindowSettings
-        {
-            StartTime = new TimeOnly(22, 0),   // 10 PM
-            EndTime   = new TimeOnly(6, 0),    // 6 AM (crosses midnight)
-            TimeZone  = "America/New_York",    // IANA or Windows timezone ID
-        };
-    });
-});
-```
-
-`ExecutionWindowSettings` handles windows that cross midnight automatically — set `StartTime` after `EndTime` to define an overnight window (e.g. 22:00 – 06:00).
-
-!!! note
-    `ExecutionWindow` only controls when a queue's workers fetch jobs. Throttling with `[Throttle]` and circuit breakers apply independently within those windows.
-
+- [Circuit Breaker](circuit-breaker.md): pauses a queue automatically during a downstream outage.
+- [Execution Windows](execution-windows.md): restricts a queue to a time window, such as nights only.
 
 ## Common Throttle Patterns
 

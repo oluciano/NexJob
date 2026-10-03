@@ -60,10 +60,15 @@ nav:
       - Scheduling: concepts/scheduling.md
       - Recurring Jobs: concepts/recurring-jobs.md
       - Retries & Dead Letter: concepts/retries-and-dead-letter.md
+      - Delivery Guarantees: concepts/delivery-guarantees.md
       - Continuations: concepts/continuations.md
       - Idempotency: concepts/idempotency.md
   - Guides:
-      - Throttling & Circuit Breaker: guides/throttling.md
+      - Throttling: guides/throttling.md
+      - Circuit Breaker: guides/circuit-breaker.md
+      - Execution Windows: guides/execution-windows.md
+      - Runtime Control: guides/runtime-control.md
+      - Multi-Service: guides/multi-service.md
       - Alerts: guides/alerts.md
       - Job Filters: guides/job-filters.md
       - Job Context: guides/job-context.md
@@ -87,4 +92,5 @@ nav:
       - Troubleshooting: reference/troubleshooting.md
       - FAQ: reference/faq.md
       - Migration: reference/migration.md
+      - How We Test: reference/how-we-test.md
       - Changelog: reference/changelog.md

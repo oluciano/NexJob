@@ -99,6 +99,8 @@ public sealed class ChargeCardJob : IJob<ChargeInput> { ... }
 
 When an external service goes down, retries can pile up and hammer it further. Enable the queue circuit breaker to pause a queue automatically and ramp traffic back up gradually when the service recovers.
 
+See the [Circuit Breaker guide](circuit-breaker.md) for the states, selective exceptions and how to reset it.
+
 ```csharp
 builder.Services.AddNexJob(options =>
 {
@@ -130,7 +132,7 @@ In environments where multiple services share a database cluster:
 
 - Run a dedicated dashboard container with `DisableWorkers = true` so operational monitoring does not consume worker threads or take lock slots from backend workers.
 - Scope the dashboard to relevant queues with `options.Queues = ["serviceA-queue"]` so each team sees only their own jobs.
-- NexJob handles foreign job types safely by rolling back attempt counts and deferring via `ForeignJobRetryDelay` rather than dead-lettering them.
+- NexJob handles foreign job types safely by rolling back attempt counts and deferring via `ForeignJobRetryDelay` rather than dead-lettering them. See the [Multi-Service guide](multi-service.md).
 
 ## Storage Selection and Connection Pool Sizing
 
@@ -203,7 +205,7 @@ Write cancellable jobs — honour the `CancellationToken` throughout your async 
 
 ## Monitoring and Alerting
 
-Enable OpenTelemetry from day one. NexJob emits traces and metrics for every job execution and queue depth change.
+Enable OpenTelemetry from day one. NexJob emits traces and metrics for every job execution and queue depth change. To be notified when a job fails for good, see the [Alerts guide](alerts.md).
 
 Set up alerts on:
 
