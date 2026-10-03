@@ -1211,12 +1211,14 @@ public sealed class SqlServerStorageProvider : IStorageProvider
             UPDATE nexjob_jobs
             SET status = 'Scheduled', retry_at = @retryAt,
                 exception_message = @msg, exception_stack_trace = @stack,
-                heartbeat_at = NULL, execution_logs = @Logs
+                heartbeat_at = NULL, execution_logs = @Logs,
+                attempts = CASE WHEN @refund = 1 AND attempts > 0 THEN attempts - 1 ELSE attempts END
             WHERE id = @id
             """,
             new
             {
                 id = jobId.Value,
+                refund = result.RefundAttempt,
                 retryAt = result.RetryAt!.Value,
                 msg = result.Exception?.Message,
                 stack = result.Exception?.StackTrace,

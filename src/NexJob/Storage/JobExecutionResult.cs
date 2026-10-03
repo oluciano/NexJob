@@ -25,6 +25,13 @@ public sealed class JobExecutionResult
     public DateTimeOffset? RetryAt { get; init; }
 
     /// <summary>
+    /// Gets a value indicating whether the attempt consumed by this execution must be given back when the job is
+    /// retried (<see cref="RetryAt"/> is set). Used when the job did not really run, for example when it is returned
+    /// to the queue because a throttle slot was not available. Ignored when the job succeeded or has no retry.
+    /// </summary>
+    public bool RefundAttempt { get; init; }
+
+    /// <summary>
     /// Identifier of the recurring job that spawned this instance.
     /// <see langword="null"/> for manually enqueued jobs.
     /// </summary>

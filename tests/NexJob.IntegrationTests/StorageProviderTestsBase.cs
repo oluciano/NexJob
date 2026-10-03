@@ -1978,4 +1978,75 @@ public abstract class StorageProviderTestsBase
 
         fetched!.ExpiresAt.Should().BeNull("a job enqueued without a deadline never expires");
     }
+
+    // ── Attempt refund on retry (#299) ─────────────────────────────────────────
+
+    [Fact]
+    public async Task CommitJobResultAsync_with_RefundAttempt_gives_the_attempt_back_on_retry()
+    {
+        var (storage, _, _, _) = await CreateStorageAsync();
+        await storage.EnqueueAsync(MakeJob());
+        var first = await storage.FetchNextAsync(["default"]);
+        first!.Attempts.Should().Be(1);
+
+        await storage.CommitJobResultAsync(first.Id, RetryResult(refundAttempt: true));
+
+        var second = await FetchWithinAsync(storage, TimeSpan.FromSeconds(5));
+        second.Should().NotBeNull();
+        second!.Attempts.Should().Be(1, "a refunded attempt must not count: the job did not really run");
+    }
+
+    [Fact]
+    public async Task CommitJobResultAsync_without_RefundAttempt_keeps_consuming_attempts_on_retry()
+    {
+        var (storage, _, _, _) = await CreateStorageAsync();
+        await storage.EnqueueAsync(MakeJob());
+        var first = await storage.FetchNextAsync(["default"]);
+
+        await storage.CommitJobResultAsync(first!.Id, RetryResult(refundAttempt: false));
+
+        var second = await FetchWithinAsync(storage, TimeSpan.FromSeconds(5));
+        second!.Attempts.Should().Be(2, "a genuine failure keeps consuming attempts");
+    }
+
+    [Fact]
+    public async Task CommitJobResultAsync_ignores_RefundAttempt_when_the_job_succeeded()
+    {
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
+        var record = MakeJob();
+        await storage.EnqueueAsync(record);
+        var first = await storage.FetchNextAsync(["default"]);
+
+        await storage.CommitJobResultAsync(first!.Id, new JobExecutionResult { Succeeded = true, Logs = [], RefundAttempt = true });
+
+        var stored = await dashboard.GetJobByIdAsync(record.Id);
+        stored!.Status.Should().Be(JobStatus.Succeeded);
+        stored.Attempts.Should().Be(1, "the refund only applies when the job is retried");
+    }
+
+    private static JobExecutionResult RetryResult(bool refundAttempt) => new()
+    {
+        Succeeded = false,
+        Exception = new InvalidOperationException("retry"),
+        RetryAt = DateTimeOffset.UtcNow.AddMilliseconds(-1),
+        Logs = [],
+        RefundAttempt = refundAttempt,
+    };
+
+    private static async Task<JobRecord?> FetchWithinAsync(IJobStorage storage, TimeSpan timeout)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        while (DateTime.UtcNow < deadline)
+        {
+            var job = await storage.FetchNextAsync(["default"]);
+            if (job is not null)
+            {
+                return job;
+            }
+
+            await Task.Delay(50);
+        }
+
+        return null;
+    }
 }

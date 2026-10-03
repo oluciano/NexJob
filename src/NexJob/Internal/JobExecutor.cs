@@ -13,6 +13,9 @@ namespace NexJob.Internal;
 /// </summary>
 internal sealed class JobExecutor : IDisposable, IAsyncDisposable
 {
+    // How long a job returned for lack of a throttle slot stays out of the queue (a little jitter is added).
+    private static readonly TimeSpan ThrottleRequeueDelay = TimeSpan.FromSeconds(1);
+
     private readonly IJobStorage _storage;
     private readonly IJobInvokerFactory _invokerFactory;
     private readonly IJobRetryPolicy _retryPolicy;
@@ -181,6 +184,37 @@ internal sealed class JobExecutor : IDisposable, IAsyncDisposable
                 RecurringJobId = job.RecurringJobId,
             }, CancellationToken.None).ConfigureAwait(false);
         }
+        catch (ThrottleDeferredException ex)
+        {
+            sw.Stop();
+            // The throttled resource stayed saturated: free the worker slot instead of keeping it while waiting.
+            // The attempt is refunded by the storage, so this never counts towards MaxAttempts or dead-letter.
+            var retryAt = DateTimeOffset.UtcNow
+                + ThrottleRequeueDelay
+                + TimeSpan.FromMilliseconds(System.Security.Cryptography.RandomNumberGenerator.GetInt32(500));
+
+            _logger.LogInformation(
+                ex,
+                "Job {JobId} ({JobType}) got no slot for throttled resource '{Resource}' within {Waited}s. Returning it to the queue until {RetryAt} without consuming an attempt.",
+                job.Id,
+                job.JobType,
+                ex.Resource,
+                ex.Waited.TotalSeconds,
+                retryAt);
+
+            activity?.SetTag("nexjob.throttle_deferred", true);
+            NexJobMetrics.JobsThrottleDeferred.Add(1, new TagList { { "nexjob.job_type", job.JobType }, { "nexjob.resource", ex.Resource } });
+
+            await _storage.CommitJobResultAsync(job.Id, new JobExecutionResult
+            {
+                Succeeded = false,
+                Logs = logScope.Entries,
+                Exception = ex,
+                RetryAt = retryAt,
+                RecurringJobId = job.RecurringJobId,
+                RefundAttempt = true,
+            }, CancellationToken.None).ConfigureAwait(false);
+        }
         catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
         {
             sw.Stop();
@@ -322,27 +356,34 @@ internal sealed class JobExecutor : IDisposable, IAsyncDisposable
         CancellationToken cancellationToken)
     {
         var acquired = new List<ThrottleAttribute>();
-
-        foreach (var attr in ctx.ThrottleAttributes)
-        {
-            _logger.LogDebug("Job waiting for throttle slot on resource '{Resource}' (max={Max})",
-                attr.Resource, attr.MaxConcurrent);
-
-            while (!await _throttleRegistry.TryAcquireWithWaitAsync(
-                attr.Resource,
-                attr.MaxConcurrent,
-                TimeSpan.FromMilliseconds(500),
-                cancellationToken).ConfigureAwait(false))
-            {
-                // Slot still taken: back off (with jitter) instead of spinning against the throttle store.
-                await Task.Delay(TimeSpan.FromMilliseconds(250 + System.Security.Cryptography.RandomNumberGenerator.GetInt32(100)), cancellationToken).ConfigureAwait(false);
-            }
-
-            acquired.Add(attr);
-        }
+        var waitStarted = Stopwatch.StartNew();
 
         try
         {
+            foreach (var attr in ctx.ThrottleAttributes)
+            {
+                _logger.LogDebug("Job waiting for throttle slot on resource '{Resource}' (max={Max})",
+                    attr.Resource, attr.MaxConcurrent);
+
+                while (!await _throttleRegistry.TryAcquireWithWaitAsync(
+                    attr.Resource,
+                    attr.MaxConcurrent,
+                    TimeSpan.FromMilliseconds(500),
+                    cancellationToken).ConfigureAwait(false))
+                {
+                    // Waiting keeps this job's worker slot, so the wait is bounded: past it, hand the slot back.
+                    if (waitStarted.Elapsed >= _options.ThrottleMaxWait)
+                    {
+                        throw new ThrottleDeferredException(attr.Resource, waitStarted.Elapsed);
+                    }
+
+                    // Slot still taken: back off (with jitter) instead of spinning against the throttle store.
+                    await Task.Delay(TimeSpan.FromMilliseconds(250 + System.Security.Cryptography.RandomNumberGenerator.GetInt32(100)), cancellationToken).ConfigureAwait(false);
+                }
+
+                acquired.Add(attr);
+            }
+
             // Terminal delegate: invokes the actual job
             JobExecutionDelegate jobInvoker = ct =>
                 ctx.Invoker(ctx.JobInstance, ctx.Input, ct);

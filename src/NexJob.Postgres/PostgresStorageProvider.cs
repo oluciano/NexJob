@@ -1260,12 +1260,14 @@ public sealed class PostgresStorageProvider : IStorageProvider, IDisposable, IAs
             UPDATE nexjob_jobs
             SET status = 'Scheduled', retry_at = @retryAt,
                 exception_message = @msg, exception_stack_trace = @stack,
-                heartbeat_at = NULL, execution_logs = @Logs::jsonb
+                heartbeat_at = NULL, execution_logs = @Logs::jsonb,
+                attempts = CASE WHEN @refund THEN GREATEST(attempts - 1, 0) ELSE attempts END
             WHERE id = @id
             """,
             new
             {
                 id = jobId.Value,
+                refund = result.RefundAttempt,
                 retryAt = result.RetryAt!.Value,
                 msg = result.Exception?.Message,
                 stack = result.Exception?.StackTrace,
