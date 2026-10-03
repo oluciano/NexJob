@@ -18,7 +18,8 @@ public abstract class DistributedReliabilityTestBase
         Action<IServiceCollection> registerStorage,
         Action<IServiceCollection> registerJobs,
         int workers = 2,
-        TimeSpan? pollingInterval = null)
+        TimeSpan? pollingInterval = null,
+        IReadOnlyList<string>? queues = null)
     {
         return Host.CreateDefaultBuilder()
             .ConfigureLogging(logging =>
@@ -32,6 +33,11 @@ public abstract class DistributedReliabilityTestBase
                 {
                     opt.Workers = workers;
                     opt.MaxAttempts = 3;
+                    if (queues is not null)
+                    {
+                        opt.Queues = queues;
+                    }
+
                     opt.PollingInterval = pollingInterval ?? TimeSpan.FromMilliseconds(100);
                     opt.RetryDelayFactory = _ => TimeSpan.FromMilliseconds(200); // Fast retries for tests
                 });
