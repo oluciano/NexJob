@@ -24,6 +24,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Docs — what pausing a queue and deleting a job guarantee (issue #140)**: pausing takes effect on each node's next polling cycle (a job fetched by a cycle already in flight can still run, and running jobs are never interrupted); deleting a running job does not stop it and its result is discarded. Written in the `IJobControlService` documentation, the storage guide and the troubleshooting page.
 - **Core — `JobDispatcherService` depends on an internal `IJobExecutor` (issue #167)**: the dispatcher no longer depends on the concrete `JobExecutor`, so its polling loop and worker pool can be tested with a fake executor. Internal refactor; no behaviour change.
 - **Tests — Reliability suites merged into `NexJob.ReliabilityTests` (issue #297, absorbs #278)**: the InMemory and Distributed suites are one project with shared scenario classes and a thin subclass per provider, with real assertions (execution counts, condition waits) instead of fixed delays. The suite went from 236 tests with 28 failures (about 2 minutes) to 98 tests with none (about 14 seconds), 16 of them skipped until #321. CI now runs it in three tiers: the InMemory scenarios on every pull request, a concurrency and restart subset per database provider on pull requests that touch storage or the dispatcher, and every scenario nightly and on demand. Test and CI only; no library behaviour changed.
 

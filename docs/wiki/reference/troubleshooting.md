@@ -41,7 +41,7 @@ NexJob is designed to surface diagnostic information through structured logs, me
 
     **Check 4 — Queue is paused**
 
-    A queue paused from the dashboard or via `IRuntimeSettingsStore` stops the dispatcher from fetching from it entirely. Check the dashboard Queues page for a paused badge.
+    A queue paused from the dashboard or via `IRuntimeSettingsStore` stops the dispatcher from fetching from it entirely. Check the dashboard Queues page for a paused badge. A pause is picked up on each node's next polling cycle, so a job fetched by a cycle that was already running can still start right after you pause.
 
     **Check 5 — All worker slots are occupied**
 

@@ -16,6 +16,10 @@ public interface IJobControlService
     /// <summary>
     /// Permanently deletes a job record and its logs.
     /// </summary>
+    /// <remarks>
+    /// A job that is already running is not interrupted: it finishes, and its result, heartbeat and progress are
+    /// discarded. Deleting never brings the job back.
+    /// </remarks>
     /// <param name="id">The unique identifier of the job.</param>
     /// <param name="ct">Token to cancel the operation.</param>
     Task DeleteJobAsync(JobId id, CancellationToken ct = default);
@@ -23,6 +27,11 @@ public interface IJobControlService
     /// <summary>
     /// Pauses a queue. Workers will skip this queue until resumed.
     /// </summary>
+    /// <remarks>
+    /// The pause is read by each worker node on its next polling cycle, so it takes effect within one cycle, not at
+    /// the instant of the call: a job already fetched by a cycle that was in flight when the pause was stored still
+    /// runs. Jobs that are already running are never interrupted.
+    /// </remarks>
     /// <param name="queue">The name of the queue to pause.</param>
     /// <param name="ct">Token to cancel the operation.</param>
     Task PauseQueueAsync(string queue, CancellationToken ct = default);
