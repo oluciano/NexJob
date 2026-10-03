@@ -20,6 +20,7 @@ Other behaviour that changes, each described in the changelog:
 - A throttled job that cannot get its slot within about 5 seconds is returned to the queue instead of holding its worker. It does not use an attempt, and it can run in a different order than it was enqueued.
 - A job interrupted by shutdown, or deferred because its type is not available in the process, no longer consumes an attempt on database providers (it used to, in spite of the log message).
 - Pausing a queue takes effect on each node's next polling cycle; running jobs are never interrupted.
+- A job whose attempts are used up because the node running it died now calls its `IDeadLetterHandler<TJob>` and the `IDeadLetterForwarder`s, with an `OrphanedJobException`. Before, it became `Failed` silently. If you have a handler that alerts or forwards, expect it to start firing for those jobs.
 
 #### What is stored differently
 
