@@ -9,7 +9,7 @@ namespace NexJob.Internal;
 /// and <see cref="Channel{T}"/> priority queues. Intended for development and unit testing only —
 /// all state is lost when the process restarts.
 /// </summary>
-internal sealed class InMemoryStorageProvider : IStorageProvider
+internal sealed class InMemoryStorageProvider : IStorageProvider, IOrphanedJobReporter
 {
     // ─── state ───────────────────────────────────────────────────────────────
 
@@ -405,9 +405,16 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
     }
 
     /// <inheritdoc/>
-    public Task RequeueOrphanedJobsAsync(TimeSpan heartbeatTimeout, CancellationToken cancellationToken = default)
+    public async Task RequeueOrphanedJobsAsync(TimeSpan heartbeatTimeout, CancellationToken cancellationToken = default)
+    {
+        await RequeueOrphanedJobsAndReportAsync(heartbeatTimeout, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc/>
+    public Task<IReadOnlyList<JobId>> RequeueOrphanedJobsAndReportAsync(TimeSpan heartbeatTimeout, CancellationToken cancellationToken = default)
     {
         var cutoff = DateTimeOffset.UtcNow - heartbeatTimeout;
+        var failed = new List<JobId>();
 
         foreach (var job in _jobs.Values)
         {
@@ -440,6 +447,7 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
                     job.ProcessingStartedAt = null;
                     job.HeartbeatAt = null;
                     job.LastErrorMessage ??= "Orphaned execution exceeded maximum attempts.";
+                    failed.Add(job.Id);
                 }
                 else
                 {
@@ -451,7 +459,7 @@ internal sealed class InMemoryStorageProvider : IStorageProvider
             }
         }
 
-        return Task.CompletedTask;
+        return Task.FromResult<IReadOnlyList<JobId>>(failed);
     }
 
     /// <inheritdoc/>
