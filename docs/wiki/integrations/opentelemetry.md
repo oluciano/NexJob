@@ -242,3 +242,6 @@ Log.Logger = new LoggerConfiguration()
 - **Azure Application Insights**
 - **AWS CloudWatch**
 - **Google Cloud Monitoring**
+
+!!! tip
+    To turn these metrics into alerts (jobs that exhausted their attempts, expired jobs, a queue nobody drains), see the [Alerts](../guides/alerts.md) guide.

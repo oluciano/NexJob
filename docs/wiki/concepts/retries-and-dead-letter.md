@@ -244,6 +244,9 @@ builder.Services.AddSingleton<IDeadLetterForwarder, AuditForwarder>();
 
 The dispatcher counts forwards in `nexjob.dead_letter.forwarded` and failed ones in `nexjob.dead_letter.forward_failed` (tag `nexjob.forwarder` with the forwarder type name).
 
+!!! tip
+    To be **notified** when a job exhausts its attempts (Slack, Teams, e-mail, Grafana), see the [Alerts](../guides/alerts.md) guide.
+
 ## Choosing the Right Strategy
 
 Use the table below to pick the right approach for common failure scenarios:
