@@ -29,7 +29,7 @@
 - xUnit with full isolation per fixture
 - `.NET 8 SDK` required
 
-**Location:** `tests/NexJob.ReliabilityTests.Distributed/`
+**Location:** `tests/NexJob.ReliabilityTests/`
 
 ---
 
@@ -84,7 +84,7 @@
 - Zero warnings
 
 **Deliverables:**
-1. Test file (tests/NexJob.ReliabilityTests.Distributed/...)
+1. Test file (tests/NexJob.ReliabilityTests/...)
 2. Works with all providers
 3. Deterministic outcomes
 
@@ -143,18 +143,18 @@ public class RetryAndDeadLetterTests : IAsyncLifetime
 
 **Run all providers:**
 ```bash
-dotnet test tests/NexJob.ReliabilityTests.Distributed -c Release --verbosity normal
+dotnet test tests/NexJob.ReliabilityTests -c Release --verbosity normal
 ```
 
 **Run single provider:**
 ```bash
-dotnet test tests/NexJob.ReliabilityTests.Distributed -c Release \
+dotnet test tests/NexJob.ReliabilityTests -c Release \
   --filter "Category=Reliability.Distributed&ClassName~Postgres"
 ```
 
 **Run single scenario across all:**
 ```bash
-dotnet test tests/NexJob.ReliabilityTests.Distributed -c Release \
+dotnet test tests/NexJob.ReliabilityTests -c Release \
   --filter "Category=Reliability.Distributed&ClassName~RetryAndDeadLetter"
 ```
 

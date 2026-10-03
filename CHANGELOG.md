@@ -20,6 +20,10 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - Added dedicated sections for Queue Circuit Breaker resilience and clarified the architectural distinction between Message Broker Transport Queues (RabbitMQ/Kafka) and NexJob Storage Queues.
   - Upgraded MkDocs Material configuration with responsive category tabs, expandable sidebars, admonitions, and deep purple brand theme.
 
+### Changed
+
+- **Tests — Reliability suites merged into `NexJob.ReliabilityTests` (issue #297, absorbs #278)**: the InMemory and Distributed suites are one project with shared scenario classes and a thin subclass per provider, with real assertions (execution counts, condition waits) instead of fixed delays. The suite went from 236 tests with 28 failures (about 2 minutes) to 98 tests with none (about 14 seconds), 16 of them skipped until #321. Test-only change; no library behaviour changed.
+
 ### Fixed
 
 - **Dashboard — Throughput 24h single-bar blowout (issue #318)**:

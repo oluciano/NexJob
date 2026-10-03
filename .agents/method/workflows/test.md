@@ -10,8 +10,7 @@
 | :--- | :--- | :--- | :--- | :--- |
 | **Unit** | `*.Tests` | Isolated logic, branch coverage | Full (N1, N2, N3) | InMemory / Mocks |
 | **Integration** | `*.IntegrationTests` | Happy path, infra contracts | N1 | Real Storage (Docker) |
-| **Reliability** | `*.ReliabilityTests` | Chaos, concurrency, crash recovery | N2 (Complex failures) | Real Storage (Stress) |
-| **Distributed** | `*.ReliabilityTests.Distributed` | Cluster coordination, failover | N2 (Network/Cluster) | Multi-node |
+| **Reliability** | `*.ReliabilityTests` | Concurrency, restart recovery, retry and dead-letter on InMemory and real databases | N2 (Complex failures) | InMemory + Real Storage (Docker) |
 
 ---
 
@@ -110,7 +109,7 @@ Then: Job is marked Expired, handler never invoked
 
 For critical scenarios (deadline, retry, crash recovery):
 - Test against real storage providers
-- Use `NexJob.ReliabilityTests.Distributed` pattern
+- Use `NexJob.ReliabilityTests` pattern
 - Cover all providers (PostgreSQL, SQL Server, MongoDB, Redis)
 
 ---
@@ -196,7 +195,7 @@ public class FeatureNameTests
 **Storage:** Real database/cache (Docker via Testcontainers)
 
 ### Reliability Tests
-**Location:** `tests/NexJob.ReliabilityTests.Distributed/`
+**Location:** `tests/NexJob.ReliabilityTests/`
 **Use:** Critical scenarios across all providers
 **Scenarios:**
 - Retry & Dead-Letter
@@ -217,7 +216,7 @@ public class FeatureNameTests
 
 **Command to run:**
 ```bash
-dotnet test tests/NexJob.ReliabilityTests.Distributed -c Release
+dotnet test tests/NexJob.ReliabilityTests -c Release
 ```
 
 ---
