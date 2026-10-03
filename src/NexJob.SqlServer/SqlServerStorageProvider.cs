@@ -16,6 +16,16 @@ public sealed class SqlServerStorageProvider : IStorageProvider
 {
     private const int MaxEnqueueAttempts = 3;
 
+    private const string InsertJobSql =
+        """
+        INSERT INTO nexjob_jobs
+            (id, job_type, input_type, input_json, schema_version, queue, priority, status,
+             idempotency_key, attempts, max_attempts, created_at, scheduled_at, parent_job_id, recurring_job_id, tags, expires_at)
+        VALUES
+            (@Id, @JobType, @InputType, @InputJson, @SchemaVersion, @Queue, @Priority,
+             @Status, @IdempotencyKey, @Attempts, @MaxAttempts, @CreatedAt, @ScheduledAt, @ParentJobId, @RecurringJobId, @Tags, @ExpiresAt)
+        """;
+
     private readonly string _connectionString;
     private readonly SqlConnection? _connection;
 
@@ -85,36 +95,7 @@ public sealed class SqlServerStorageProvider : IStorageProvider
 
                 try
                 {
-                    await conn.ExecuteAsync(
-                        """
-                        INSERT INTO nexjob_jobs
-                            (id, job_type, input_type, input_json, schema_version, queue, priority, status,
-                             idempotency_key, attempts, max_attempts, created_at, scheduled_at, parent_job_id, recurring_job_id, tags, expires_at)
-                        VALUES
-                            (@Id, @JobType, @InputType, @InputJson, @SchemaVersion, @Queue, @Priority,
-                             @Status, @IdempotencyKey, @Attempts, @MaxAttempts, @CreatedAt, @ScheduledAt, @ParentJobId, @RecurringJobId, @Tags, @ExpiresAt)
-                        """,
-                        new
-                        {
-                            Id = job.Id.Value,
-                            job.JobType,
-                            job.InputType,
-                            job.InputJson,
-                            job.SchemaVersion,
-                            job.Queue,
-                            Priority = (int)job.Priority,
-                            Status = job.Status.ToString(),
-                            job.IdempotencyKey,
-                            job.Attempts,
-                            job.MaxAttempts,
-                            job.CreatedAt,
-                            job.ScheduledAt,
-                            ParentJobId = job.ParentJobId?.Value,
-                            job.RecurringJobId,
-                            Tags = System.Text.Json.JsonSerializer.Serialize(job.Tags),
-                            job.ExpiresAt,
-                        },
-                        tx);
+                    await conn.ExecuteAsync(InsertJobSql, ToInsertParameters(job), tx);
 
                     await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
                     return new EnqueueResult(job.Id, WasRejected: false);
@@ -143,35 +124,7 @@ public sealed class SqlServerStorageProvider : IStorageProvider
                 $"Could not enqueue a job with idempotency key '{job.IdempotencyKey}' after {MaxEnqueueAttempts} attempts.");
         }
 
-        await conn.ExecuteAsync(
-            """
-            INSERT INTO nexjob_jobs
-                (id, job_type, input_type, input_json, schema_version, queue, priority, status,
-                 idempotency_key, attempts, max_attempts, created_at, scheduled_at, parent_job_id, recurring_job_id, tags, expires_at)
-            VALUES
-                (@Id, @JobType, @InputType, @InputJson, @SchemaVersion, @Queue, @Priority,
-                 @Status, @IdempotencyKey, @Attempts, @MaxAttempts, @CreatedAt, @ScheduledAt, @ParentJobId, @RecurringJobId, @Tags, @ExpiresAt)
-            """,
-            new
-            {
-                Id = job.Id.Value,
-                job.JobType,
-                job.InputType,
-                job.InputJson,
-                job.SchemaVersion,
-                job.Queue,
-                Priority = (int)job.Priority,
-                Status = job.Status.ToString(),
-                job.IdempotencyKey,
-                job.Attempts,
-                job.MaxAttempts,
-                job.CreatedAt,
-                job.ScheduledAt,
-                ParentJobId = job.ParentJobId?.Value,
-                job.RecurringJobId,
-                Tags = System.Text.Json.JsonSerializer.Serialize(job.Tags),
-                job.ExpiresAt,
-            });
+        await conn.ExecuteAsync(InsertJobSql, ToInsertParameters(job));
 
         return new EnqueueResult(job.Id, WasRejected: false);
     }
@@ -1140,6 +1093,28 @@ public sealed class SqlServerStorageProvider : IStorageProvider
     }
 
     // ── Schema ────────────────────────────────────────────────────────────────
+
+    private static object ToInsertParameters(JobRecord job) =>
+        new
+        {
+            Id = job.Id.Value,
+            job.JobType,
+            job.InputType,
+            job.InputJson,
+            job.SchemaVersion,
+            job.Queue,
+            Priority = (int)job.Priority,
+            Status = job.Status.ToString(),
+            job.IdempotencyKey,
+            job.Attempts,
+            job.MaxAttempts,
+            job.CreatedAt,
+            job.ScheduledAt,
+            ParentJobId = job.ParentJobId?.Value,
+            job.RecurringJobId,
+            Tags = System.Text.Json.JsonSerializer.Serialize(job.Tags),
+            job.ExpiresAt,
+        };
 
     private static bool IsTerminalStatus(string? status) =>
         status is "Succeeded" or "Failed" or "Expired" or null;
