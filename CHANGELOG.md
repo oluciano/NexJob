@@ -22,7 +22,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
-- **Tests — Reliability suites merged into `NexJob.ReliabilityTests` (issue #297, absorbs #278)**: the InMemory and Distributed suites are one project with shared scenario classes and a thin subclass per provider, with real assertions (execution counts, condition waits) instead of fixed delays. The suite went from 236 tests with 28 failures (about 2 minutes) to 98 tests with none (about 14 seconds), 16 of them skipped until #321. Test-only change; no library behaviour changed.
+- **Tests — Reliability suites merged into `NexJob.ReliabilityTests` (issue #297, absorbs #278)**: the InMemory and Distributed suites are one project with shared scenario classes and a thin subclass per provider, with real assertions (execution counts, condition waits) instead of fixed delays. The suite went from 236 tests with 28 failures (about 2 minutes) to 98 tests with none (about 14 seconds), 16 of them skipped until #321. CI now runs it in three tiers: the InMemory scenarios on every pull request, a concurrency and restart subset per database provider on pull requests that touch storage or the dispatcher, and every scenario nightly and on demand. Test and CI only; no library behaviour changed.
 
 ### Fixed
 

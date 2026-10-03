@@ -35,7 +35,15 @@ dotnet test tests/NexJob.ReliabilityTests -c Release --filter "Category=Reliabil
 dotnet test tests/NexJob.ReliabilityTests -c Release --filter "FullyQualifiedName~PostgresConcurrencyTests"
 ```
 
-CI excludes this project from the regular run (`FullyQualifiedName!~Reliability`).
+## In CI
+
+| Tier | When | What |
+|---|---|---|
+| 1 | Every pull request (`ci.yml`, job `Reliability-InMemory`) | The InMemory scenarios |
+| 2 | Pull requests that touch a storage provider, `src/NexJob/Internal/**` or this project (`reliability.yml`) | Concurrency and restart scenarios, one parallel job per database provider |
+| 3 | Nightly at 04:00 UTC and on demand (`gh workflow run reliability.yml`) | Every scenario on every database provider |
+
+The unit-test job still excludes this project (`FullyQualifiedName!~Reliability`).
 
 ## Adding a scenario
 
