@@ -1,3 +1,4 @@
+using System.Diagnostics.Metrics;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -133,6 +134,54 @@ public sealed class DeadLetterForwarderTests
         healthy.Forwarded.Should().HaveCount(1);
     }
 
+    // ─── Metrics ──────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task DispatchAsync_CountsForwardedAndFailedForwards_PerForwarder()
+    {
+        var measurements = new List<(string Instrument, string? Forwarder, long Value)>();
+        using var listener = new MeterListener();
+        listener.InstrumentPublished = (instrument, l) =>
+        {
+            if (instrument.Name is "nexjob.dead_letter.forwarded" or "nexjob.dead_letter.forward_failed")
+            {
+                l.EnableMeasurementEvents(instrument);
+            }
+        };
+        listener.SetMeasurementEventCallback<long>((instrument, value, tags, _) =>
+        {
+            string? forwarder = null;
+            foreach (var tag in tags)
+            {
+                if (string.Equals(tag.Key, "nexjob.forwarder", StringComparison.Ordinal))
+                {
+                    forwarder = tag.Value as string;
+                }
+            }
+
+            lock (measurements)
+            {
+                measurements.Add((instrument.Name, forwarder, value));
+            }
+        });
+        listener.Start();
+
+        var dispatcher = MakeDispatcher(s =>
+        {
+            s.AddSingleton<IDeadLetterForwarder>(new CountedOkForwarder());
+            s.AddSingleton<IDeadLetterForwarder>(new CountedFailingForwarder());
+        });
+
+        await dispatcher.DispatchAsync(MakeJob(), new InvalidOperationException("failure"));
+
+        lock (measurements)
+        {
+            measurements.Should().Contain(("nexjob.dead_letter.forwarded", nameof(CountedOkForwarder), 1L));
+            measurements.Should().Contain(("nexjob.dead_letter.forward_failed", nameof(CountedFailingForwarder), 1L));
+            measurements.Should().NotContain(m => m.Instrument == "nexjob.dead_letter.forwarded" && m.Forwarder == nameof(CountedFailingForwarder));
+        }
+    }
+
     // ─── Helpers ──────────────────────────────────────────────────────────────
 
     private static DefaultDeadLetterDispatcher MakeDispatcher(Action<IServiceCollection> configure)
@@ -200,5 +249,20 @@ public sealed class DeadLetterForwarderTests
             LastException = lastException;
             return Task.CompletedTask;
         }
+    }
+
+    private sealed class CountedOkForwarder : IDeadLetterForwarder
+    {
+        public bool AppliesTo(JobRecord failedJob) => true;
+
+        public Task ForwardAsync(JobRecord failedJob, Exception lastException, CancellationToken cancellationToken) => Task.CompletedTask;
+    }
+
+    private sealed class CountedFailingForwarder : IDeadLetterForwarder
+    {
+        public bool AppliesTo(JobRecord failedJob) => true;
+
+        public Task ForwardAsync(JobRecord failedJob, Exception lastException, CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("forward failed");
     }
 }
