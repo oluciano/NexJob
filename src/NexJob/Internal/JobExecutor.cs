@@ -11,7 +11,7 @@ namespace NexJob.Internal;
 /// Orchestrates the execution of a single NexJob job, including deadline enforcement,
 /// DI scope management, input deserialization, throttling, and failure handling.
 /// </summary>
-internal sealed class JobExecutor : IDisposable, IAsyncDisposable
+internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
 {
     // How long a job returned for lack of a throttle slot stays out of the queue (a little jitter is added).
     private static readonly TimeSpan ThrottleRequeueDelay = TimeSpan.FromSeconds(1);
@@ -96,12 +96,7 @@ internal sealed class JobExecutor : IDisposable, IAsyncDisposable
         _ackCts.Dispose();
     }
 
-    /// <summary>
-    /// Executes the job asynchronously.
-    /// </summary>
-    /// <param name="job">The job.</param>
-    /// <param name="cancellationToken">A cancellation token to observe while executing the job.</param>
-    /// <returns>A task representing the asynchronous operation.</returns>
+    /// <inheritdoc/>
     public async Task ExecuteJobAsync(JobRecord job, CancellationToken cancellationToken = default)
     {
         if (await TryHandleExpirationAsync(job).ConfigureAwait(false))
