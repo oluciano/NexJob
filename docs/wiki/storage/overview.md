@@ -30,32 +30,7 @@ For most applications, inject `IStorageProvider` to access all three concerns th
 
 ## Programmatic job control
 
-`IJobControlService` gives you programmatic access to pause/resume queues, requeue or delete specific jobs, and reset a queue's circuit breaker — all without going through the dashboard UI. It is registered automatically as a singleton when you call `AddNexJob()`.
-
-```csharp
-public sealed class MaintenanceService(IJobControlService control)
-{
-    public async Task PerformMaintenanceAsync(JobId jobId, CancellationToken ct)
-    {
-        // Pause a queue to prevent workers from dequeuing new jobs
-        await control.PauseQueueAsync("reports", ct);
-
-        // Remove a specific job
-        await control.DeleteJobAsync(jobId, ct);
-
-        // Resume processing when ready
-        await control.ResumeQueueAsync("reports", ct);
-    }
-}
-```
-
-!!! note "What pausing and deleting guarantee"
-    - **Pausing takes effect on the next polling cycle**, not at the instant of the call. Each worker node reads the paused queues at the start of every cycle, so a job fetched by a cycle that was already in flight when you paused can still run. Jobs that are already running are never interrupted. If you must be sure that nothing starts, pause the queue and wait one polling interval.
-    - **Pausing is shared by every node** that uses the same storage, because it is stored with the runtime settings.
-    - **Deleting a running job does not stop it.** The job finishes, its result is discarded, and the deleted job never comes back. Deleting a job that is still waiting means it will never be fetched.
-    - **Requeueing** a failed job resets its attempts to zero, so it gets a full set of attempts again.
-
-Other available methods: `RequeueJobAsync`, `ResetQueueCircuitAsync`.
+`IJobControlService` pauses and resumes queues, requeues or deletes jobs and resets a circuit breaker from code. See [Runtime Control](../guides/runtime-control.md).
 
 ## InMemory (default)
 

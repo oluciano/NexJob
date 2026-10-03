@@ -63,7 +63,10 @@ nav:
       - Continuations: concepts/continuations.md
       - Idempotency: concepts/idempotency.md
   - Guides:
-      - Throttling & Circuit Breaker: guides/throttling.md
+      - Throttling: guides/throttling.md
+      - Circuit Breaker: guides/circuit-breaker.md
+      - Execution Windows: guides/execution-windows.md
+      - Runtime Control: guides/runtime-control.md
       - Alerts: guides/alerts.md
       - Job Filters: guides/job-filters.md
       - Job Context: guides/job-context.md

@@ -99,6 +99,8 @@ public sealed class ChargeCardJob : IJob<ChargeInput> { ... }
 
 When an external service goes down, retries can pile up and hammer it further. Enable the queue circuit breaker to pause a queue automatically and ramp traffic back up gradually when the service recovers.
 
+See the [Circuit Breaker guide](circuit-breaker.md) for the states, selective exceptions and how to reset it.
+
 ```csharp
 builder.Services.AddNexJob(options =>
 {
