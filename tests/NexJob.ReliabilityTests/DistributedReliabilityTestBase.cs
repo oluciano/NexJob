@@ -19,7 +19,8 @@ public abstract class DistributedReliabilityTestBase
         Action<IServiceCollection> registerJobs,
         int workers = 2,
         TimeSpan? pollingInterval = null,
-        IReadOnlyList<string>? queues = null)
+        IReadOnlyList<string>? queues = null,
+        TimeSpan? heartbeatTimeout = null)
     {
         return Host.CreateDefaultBuilder()
             .ConfigureLogging(logging =>
@@ -36,6 +37,11 @@ public abstract class DistributedReliabilityTestBase
                     if (queues is not null)
                     {
                         opt.Queues = queues;
+                    }
+
+                    if (heartbeatTimeout is not null)
+                    {
+                        opt.HeartbeatTimeout = heartbeatTimeout.Value;
                     }
 
                     opt.PollingInterval = pollingInterval ?? TimeSpan.FromMilliseconds(100);
