@@ -95,6 +95,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NexJob.StressTests", "tests
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NexJob.ReliabilityTests.Worker", "tests\NexJob.ReliabilityTests.Worker\NexJob.ReliabilityTests.Worker.csproj", "{9295FB34-CC68-4EFE-9901-D1E47B70A591}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NexJob.Trigger.GooglePubSub.IntegrationTests", "tests\NexJob.Trigger.GooglePubSub.IntegrationTests\NexJob.Trigger.GooglePubSub.IntegrationTests.csproj", "{15F4A0A6-1F07-45AB-9864-22ACD01A9D88}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -268,6 +270,10 @@ Global
 		{9295FB34-CC68-4EFE-9901-D1E47B70A591}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{9295FB34-CC68-4EFE-9901-D1E47B70A591}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{9295FB34-CC68-4EFE-9901-D1E47B70A591}.Release|Any CPU.Build.0 = Release|Any CPU
+		{15F4A0A6-1F07-45AB-9864-22ACD01A9D88}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{15F4A0A6-1F07-45AB-9864-22ACD01A9D88}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{15F4A0A6-1F07-45AB-9864-22ACD01A9D88}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{15F4A0A6-1F07-45AB-9864-22ACD01A9D88}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{06E9B0C8-A9B6-4DE4-A1CC-C52159A873D1} = {EFA88835-38F5-4A7A-9B3A-9444915331C6}
@@ -311,5 +317,6 @@ Global
 		{8F16378F-6FC7-4EFD-BC45-4BC04C575E50} = {813786C2-B2DA-44EF-B157-202670E42D45}
 		{8FCCE204-C8F4-4BDD-968D-4BB177CE6B3B} = {E96B56A5-5E21-43D0-A041-2AAB3B9E7280}
 		{9295FB34-CC68-4EFE-9901-D1E47B70A591} = {E96B56A5-5E21-43D0-A041-2AAB3B9E7280}
+		{15F4A0A6-1F07-45AB-9864-22ACD01A9D88} = {E96B56A5-5E21-43D0-A041-2AAB3B9E7280}
 	EndGlobalSection
 EndGlobal
