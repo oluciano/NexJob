@@ -12,7 +12,7 @@ namespace NexJob.Postgres;
 /// Uses <c>SELECT FOR UPDATE SKIP LOCKED</c> for atomic job claiming, preventing
 /// double-processing across multiple workers or server instances.
 /// </summary>
-public sealed class PostgresStorageProvider : IStorageProvider, IDisposable, IAsyncDisposable
+public sealed class PostgresStorageProvider : IStorageProvider, IOrphanedJobReporter, IDisposable, IAsyncDisposable
 {
     private const int MaxEnqueueAttempts = 3;
 
@@ -579,11 +579,18 @@ public sealed class PostgresStorageProvider : IStorageProvider, IDisposable, IAs
     public async Task RequeueOrphanedJobsAsync(
         TimeSpan heartbeatTimeout, CancellationToken cancellationToken = default)
     {
+        await RequeueOrphanedJobsAndReportAsync(heartbeatTimeout, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<JobId>> RequeueOrphanedJobsAndReportAsync(
+        TimeSpan heartbeatTimeout, CancellationToken cancellationToken = default)
+    {
         var now = DateTimeOffset.UtcNow;
         var cutoff = now - heartbeatTimeout;
         await using var conn = Open();
         await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await conn.ExecuteAsync(
+        var moved = await conn.QueryAsync<(Guid Id, string Status)>(
             """
             UPDATE nexjob_jobs
             SET status = CASE WHEN attempts >= max_attempts THEN 'Failed' ELSE 'Enqueued' END,
@@ -592,8 +599,15 @@ public sealed class PostgresStorageProvider : IStorageProvider, IDisposable, IAs
                 heartbeat_at = NULL,
                 processing_started_at = NULL
             WHERE status = 'Processing' AND heartbeat_at < @cutoff
+            RETURNING id, status
             """,
             new { cutoff, now }).ConfigureAwait(false);
+
+        // A job reported here was moved by this statement, so no other node can report it too.
+        return moved
+            .Where(m => string.Equals(m.Status, "Failed", StringComparison.Ordinal))
+            .Select(m => new JobId(m.Id))
+            .ToList();
     }
 
     // ── Continuations ─────────────────────────────────────────────────────────
