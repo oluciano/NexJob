@@ -145,6 +145,28 @@ The `JobRecord` passed to your handler gives you everything you need to diagnose
 
 </div>
 
+### When the node dies
+
+A job can also run out of attempts without ever reporting an error: the process running it died (out of memory, `kill -9`, a lost machine) and each recovery used up an attempt. When the orphan watcher finds such a job with no attempts left, it marks it `Failed` and runs the same dead-letter handling: the typed `IDeadLetterHandler<TJob>` and every `IDeadLetterForwarder`.
+
+The exception you receive is an `OrphanedJobException`, because the job never threw one. It carries the job id and how many attempts were used, so a handler can tell a crash from an ordinary failure:
+
+```csharp
+public Task HandleAsync(JobRecord failedJob, Exception lastException, CancellationToken ct)
+{
+    if (lastException is OrphanedJobException)
+    {
+        // The node died while running this job: likely a poison input (for example, out of memory).
+    }
+
+    return Task.CompletedTask;
+}
+```
+
+- **Once per job.** The storage reports a job to the node whose scan moved it, so several nodes running the watcher never dead-letter the same job twice.
+- **After the move.** The job is already `Failed` in storage when the handler runs. If the handler throws, or the node stops right then, the job stays `Failed` and the handler is not called again.
+- **Custom storage providers.** Dead-letter handling for crashed jobs needs the storage to implement `IOrphanedJobReporter`. A provider that does not still fails those jobs, without calling any handler.
+
 ### Safety Guarantees
 
 !!! note

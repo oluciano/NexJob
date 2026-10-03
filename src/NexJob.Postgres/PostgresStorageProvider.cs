@@ -12,7 +12,7 @@ namespace NexJob.Postgres;
 /// Uses <c>SELECT FOR UPDATE SKIP LOCKED</c> for atomic job claiming, preventing
 /// double-processing across multiple workers or server instances.
 /// </summary>
-public sealed class PostgresStorageProvider : IStorageProvider, IDisposable, IAsyncDisposable
+public sealed class PostgresStorageProvider : IStorageProvider, IOrphanedJobReporter, IDisposable, IAsyncDisposable
 {
     private const int MaxEnqueueAttempts = 3;
 
@@ -579,21 +579,33 @@ public sealed class PostgresStorageProvider : IStorageProvider, IDisposable, IAs
     public async Task RequeueOrphanedJobsAsync(
         TimeSpan heartbeatTimeout, CancellationToken cancellationToken = default)
     {
-        var now = DateTimeOffset.UtcNow;
-        var cutoff = now - heartbeatTimeout;
+        await RequeueOrphanedJobsAndReportAsync(heartbeatTimeout, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<JobId>> RequeueOrphanedJobsAndReportAsync(
+        TimeSpan heartbeatTimeout, CancellationToken cancellationToken = default)
+    {
         await using var conn = Open();
         await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await conn.ExecuteAsync(
+
+        // The statement returns only the jobs it moved to Failed, so another node scanning at the same time cannot report them too.
+        var failedIds = await conn.QueryAsync<Guid>(
             """
-            UPDATE nexjob_jobs
-            SET status = CASE WHEN attempts >= max_attempts THEN 'Failed' ELSE 'Enqueued' END,
-                completed_at = CASE WHEN attempts >= max_attempts THEN @now ELSE NULL END,
-                exception_message = CASE WHEN attempts >= max_attempts AND exception_message IS NULL THEN 'Orphaned execution exceeded maximum attempts.' ELSE exception_message END,
-                heartbeat_at = NULL,
-                processing_started_at = NULL
-            WHERE status = 'Processing' AND heartbeat_at < @cutoff
+            WITH moved AS (
+                UPDATE nexjob_jobs
+                SET status = CASE WHEN attempts >= max_attempts THEN 'Failed' ELSE 'Enqueued' END,
+                    completed_at = CASE WHEN attempts >= max_attempts THEN @now ELSE NULL END,
+                    exception_message = CASE WHEN attempts >= max_attempts AND exception_message IS NULL THEN 'Orphaned execution exceeded maximum attempts.' ELSE exception_message END,
+                    heartbeat_at = NULL,
+                    processing_started_at = NULL
+                WHERE status = 'Processing' AND heartbeat_at < @cutoff
+                RETURNING id, status)
+            SELECT id FROM moved WHERE status = 'Failed'
             """,
-            new { cutoff, now }).ConfigureAwait(false);
+            new { cutoff = DateTimeOffset.UtcNow - heartbeatTimeout, now = DateTimeOffset.UtcNow }).ConfigureAwait(false);
+
+        return failedIds.Select(id => new JobId(id)).ToList();
     }
 
     // ── Continuations ─────────────────────────────────────────────────────────

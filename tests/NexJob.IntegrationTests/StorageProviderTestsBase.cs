@@ -289,6 +289,60 @@ public abstract class StorageProviderTestsBase
         updated.CompletedAt.Should().NotBeNull();
     }
 
+    // ── Orphan requeue reports the jobs it failed (issue #340) ─────────────────
+
+    private static IOrphanedJobReporter Reporter(IJobStorage storage) =>
+        storage.Should().BeAssignableTo<IOrphanedJobReporter>("every built-in provider reports the jobs the orphan scan failed").Subject;
+
+    [Fact]
+    public async Task RequeueOrphanedJobsAndReportAsync_ReportsTheJobItFailed()
+    {
+        // N1 (Positive)
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
+        await storage.EnqueueAsync(MakeJob(maxAttempts: 1));
+        var fetched = (await storage.FetchNextAsync(["default"]))!;
+
+        await Task.Delay(10);
+        var failed = await Reporter(storage).RequeueOrphanedJobsAndReportAsync(TimeSpan.Zero);
+
+        failed.Should().ContainSingle().Which.Should().Be(fetched.Id);
+        (await dashboard.GetJobByIdAsync(fetched.Id))!.Status.Should().Be(JobStatus.Failed);
+    }
+
+    [Fact]
+    public async Task RequeueOrphanedJobsAndReportAsync_DoesNotReportJobsThatWereRequeuedOrAreAlive()
+    {
+        // N2 (Negative): only jobs that became Failed are reported.
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
+        await storage.EnqueueAsync(MakeJob(maxAttempts: 3));
+        var retried = (await storage.FetchNextAsync(["default"]))!;
+        await Task.Delay(10);
+
+        var failed = await Reporter(storage).RequeueOrphanedJobsAndReportAsync(TimeSpan.Zero);
+
+        failed.Should().BeEmpty("a job with attempts left goes back to the queue, it is not dead-lettered");
+        (await dashboard.GetJobByIdAsync(retried.Id))!.Status.Should().Be(JobStatus.Enqueued);
+
+        await storage.EnqueueAsync(MakeJob(maxAttempts: 1));
+        await storage.FetchNextAsync(["default"]);
+        (await Reporter(storage).RequeueOrphanedJobsAndReportAsync(TimeSpan.FromMinutes(5))).Should().BeEmpty("a fresh heartbeat is not an orphan");
+    }
+
+    [Fact]
+    public async Task RequeueOrphanedJobsAndReportAsync_ReportsAJobOnlyOnce_AndNothingWhenThereIsNothing()
+    {
+        // N3 (Boundary): the second scan of the same job, and an empty store.
+        var (storage, _, _, _) = await CreateStorageAsync();
+        (await Reporter(storage).RequeueOrphanedJobsAndReportAsync(TimeSpan.Zero)).Should().BeEmpty();
+
+        await storage.EnqueueAsync(MakeJob(maxAttempts: 1));
+        var fetched = (await storage.FetchNextAsync(["default"]))!;
+        await Task.Delay(10);
+
+        (await Reporter(storage).RequeueOrphanedJobsAndReportAsync(TimeSpan.Zero)).Should().ContainSingle().Which.Should().Be(fetched.Id);
+        (await Reporter(storage).RequeueOrphanedJobsAndReportAsync(TimeSpan.Zero)).Should().BeEmpty("the job already failed, a second node must not report it again");
+    }
+
     [Fact]
     public async Task RequeueOrphanedJobsAsync_does_not_touch_fresh_heartbeat()
     {

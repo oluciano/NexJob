@@ -62,6 +62,98 @@ public abstract class OrphanScenarios : DistributedReliabilityTestBase
     }
 
     [Fact]
+    public async Task OrphanedJobOnItsLastAttempt_CallsTheDeadLetterHandlerExactlyOnce_WithAnOrphanedJobException()
+    {
+        // N1 (Positive, issue #340): a job that kills its node every time must reach the operator's dead-letter handler.
+        var queue = NewQueue();
+        var log = new ExecutionLog();
+        var recorder = new DeadLetterRecorder();
+        var orphan = await LeaveOrphanAsync(queue, log, maxAttempts: 1);
+
+        using var host = BuildHost(
+            Storage(),
+            s =>
+            {
+                Register(s, log);
+                s.AddSingleton(recorder);
+                s.AddTransient<IDeadLetterHandler<StepJob>, RecordingDeadLetterHandler<StepJob>>();
+            },
+            workers: 1,
+            queues: [queue],
+            heartbeatTimeout: HeartbeatTimeout,
+            maxAttempts: 1);
+        await host.StartAsync();
+
+        (await WaitUntil(() => Task.FromResult(recorder.InvocationCount > 0), Timeout)).Should().BeTrue("the handler is called when the watcher fails the job");
+        await Task.Delay(Grace + HeartbeatTimeout + HeartbeatTimeout); // more watcher cycles: it must not be called again
+
+        recorder.InvocationCount.Should().Be(1);
+        recorder.LastFailedJob!.Id.Should().Be(orphan);
+        recorder.LastException.Should().BeOfType<OrphanedJobException>();
+        await host.StopAsync();
+    }
+
+    [Fact]
+    public async Task OrphanedJobWithAttemptsLeft_IsRequeued_AndTheDeadLetterHandlerIsNotCalled()
+    {
+        // N2 (Negative): giving the job back is not a failure.
+        var queue = NewQueue();
+        var log = new ExecutionLog();
+        var recorder = new DeadLetterRecorder();
+        var orphan = await LeaveOrphanAsync(queue, log, maxAttempts: 3);
+
+        using var host = BuildHost(
+            Storage(),
+            s =>
+            {
+                Register(s, log);
+                s.AddSingleton(recorder);
+                s.AddTransient<IDeadLetterHandler<StepJob>, RecordingDeadLetterHandler<StepJob>>();
+            },
+            workers: 1,
+            queues: [queue],
+            heartbeatTimeout: HeartbeatTimeout);
+        await host.StartAsync();
+
+        (await WaitForJobStatus(host, orphan, JobStatus.Succeeded, Timeout)).Should().NotBeNull();
+
+        recorder.InvocationCount.Should().Be(0);
+        await host.StopAsync();
+    }
+
+    [Fact]
+    public async Task OrphanedJobsOnTheirLastAttempt_WithAThrowingDeadLetterHandler_StillFailAndTheWatcherKeepsRunning()
+    {
+        // N3 (Invalid): a handler that throws never stops the watcher or the other jobs found in the same scan.
+        var queue = NewQueue();
+        var log = new ExecutionLog();
+        var first = await LeaveOrphanAsync(queue, log, maxAttempts: 1);
+        var second = await LeaveOrphanAsync(queue, log, maxAttempts: 1);
+
+        using var host = BuildHost(
+            Storage(),
+            s =>
+            {
+                Register(s, log);
+                s.AddTransient<IDeadLetterHandler<StepJob>, ThrowingDeadLetterHandler<StepJob>>();
+            },
+            workers: 1,
+            queues: [queue],
+            heartbeatTimeout: HeartbeatTimeout,
+            maxAttempts: 1);
+        var stopped = false;
+        host.Services.GetRequiredService<IHostApplicationLifetime>().ApplicationStopping.Register(() => stopped = true);
+        await host.StartAsync();
+
+        (await WaitForJobStatus(host, first, JobStatus.Failed, Timeout)).Should().NotBeNull();
+        (await WaitForJobStatus(host, second, JobStatus.Failed, Timeout)).Should().NotBeNull();
+        await Task.Delay(HeartbeatTimeout + HeartbeatTimeout);
+
+        stopped.Should().BeFalse();
+        await host.StopAsync();
+    }
+
+    [Fact]
     public async Task LiveJob_IsNotMistakenForAnOrphan_WhileItsHeartbeatIsFresh()
     {
         // N2 (Negative): a slow job on a healthy node must not be requeued under it.
