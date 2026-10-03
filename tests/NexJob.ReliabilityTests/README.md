@@ -1,100 +1,46 @@
 # NexJob.ReliabilityTests
 
-Distributed reliability testing suite for NexJob. Validates all scenarios against **real storage providers** via Docker (Testcontainers).
+End-to-end reliability scenarios that run the full pipeline (scheduler, dispatcher, executor, storage) with several workers, on InMemory and on real databases through Testcontainers.
 
-## What's Tested
+## How it is organised
 
-Every storage provider (Postgres, SQL Server, Redis, MongoDB) is tested against the following scenarios:
+Each scenario is written once, in an abstract class. A thin subclass per provider says how to register its storage.
 
-- **Retry & Dead-Letter** — Retry execution, handler invocation, exception resilience
-- **Concurrency** — Duplicate prevention, concurrent enqueue, stress scenarios
-- **Crash Recovery** — Job persistence, state consistency across restarts
-- **Deadline Enforcement** — Expiration handling, enforcement before execution
-- **Wake-Up Latency** — Signaling efficiency, queue-specific dispatch
+| Scenario class | What it proves | Providers |
+|---|---|---|
+| `ConcurrencyScenarios` | Several workers run each job exactly once; no job is lost under concurrent enqueue and high throughput; an empty queue runs cleanly | InMemory, PostgreSQL, SQL Server, Redis, MongoDB |
+| `RetryAndDeadLetterScenarios` | A failed job is retried; the dead-letter handler runs once after the last attempt; a throwing handler does not stop the dispatcher | InMemory, PostgreSQL, SQL Server, Redis, MongoDB |
+| `RecoveryScenarios` | Jobs persisted by one host run exactly once on the next host; a failed job stays failed and is not re-run | Databases only (InMemory loses its jobs when the host stops, by design) |
+| `*DeadlineTests` | A job still waiting when its deadline passes is marked `Expired` (queue paused while the deadline elapses) | Databases, **skipped** until #321 (database providers do not persist the deadline) |
+| `PostgresRecurringTests` | Two nodes do not enqueue the same recurring occurrence twice | PostgreSQL |
 
-## Both IJob and IJob<T> Variants
+Tests count executions and wait for a condition with a timeout; they do not sleep for a fixed time. Each test that shares a database uses its own queue.
 
-Every test scenario exists in two forms to ensure both job interfaces work correctly:
-- `_NoInput` — uses `IJob` stubs (SuccessJob, AlwaysFailJob, etc.)
-- `_WithInput` — uses `IJob<T>` stubs (SuccessJobWithInput, AlwaysFailJobWithInput, etc.)
+## What is not covered
 
-This dual coverage ensures the entire dispatcher pipeline, serializer, and executor cache are validated for both interfaces.
+- A crash in the middle of an execution (orphan requeue). Stopping a host is graceful, so it cannot simulate one; orphan recovery has per-provider contract tests in `NexJob.IntegrationTests`.
+- Wake-up latency. Wall-clock bounds are fragile on shared CI runners.
+- Deadlines on database providers: skipped, see #321.
+- Recurring jobs on providers other than PostgreSQL.
 
-## Provider Support
+## Running
 
-| Provider    | Status | Notes |
-|-------------|--------|-------|
-| PostgreSQL  | ✅     | Full coverage via pg_notify  |
-| SQL Server  | ✅     | sp_getapplock contention  mitigated with workers=2 |
-| Redis       | ✅     | TTL index async tolerance in deadline tests |
-| MongoDB     | ✅     | TTL index async tolerance in deadline tests |
-
-## Running Tests
-
-### All tests
 ```bash
-dotnet test tests/NexJob.ReliabilityTests -c Release --verbosity normal
+# InMemory only (seconds, no Docker)
+dotnet test tests/NexJob.ReliabilityTests -c Release --filter "Category=Reliability.InMemory"
+
+# Real databases (needs Docker)
+dotnet test tests/NexJob.ReliabilityTests -c Release --filter "Category=Reliability.Distributed"
+
+# One provider
+dotnet test tests/NexJob.ReliabilityTests -c Release --filter "FullyQualifiedName~PostgresConcurrencyTests"
 ```
 
-### Single provider
-```bash
-dotnet test tests/NexJob.ReliabilityTests -c Release \
-  --filter "Category=Reliability.Distributed&ClassName~Postgres"
-```
+CI excludes this project from the regular run (`FullyQualifiedName!~Reliability`).
 
-### Single category across all providers
-```bash
-dotnet test tests/NexJob.ReliabilityTests -c Release \
-  --filter "Category=Reliability.Distributed&ClassName~Concurrency"
-```
+## Adding a scenario
 
-## Project Structure
-
-```
-DistributedReliabilityTestBase.cs      — Base class with host builder and utilities
-SuccessJob.cs                          — IJob stubs (no input)
-SuccessJobInput.cs                     — IJob<T> stubs (with input)
-RecordingDeadLetterHandler.cs          — Dead-letter handler test fixtures
-*ReliabilityFixture.cs                 — Testcontainers fixtures (4 providers)
-Postgres*Tests.cs                      — Postgres test classes (5 categories)
-SqlServer*Tests.cs                     — SQL Server test classes (5 categories)
-Redis*Tests.cs                         — Redis test classes (5 categories)
-Mongo*Tests.cs                         — MongoDB test classes (5 categories)
-TEST_GENERATION_GUIDE.md               — Guide for adding remaining test classes
-```
-
-## Test Count
-
-- **RetryAndDeadLetterTests** — 5 tests × 2 variants × 4 providers = 40 tests ✅
-- **ConcurrencyTests** — 5 tests × 2 variants × 4 providers = 40 tests (1/4 providers)
-- **RecoveryTests** — 5 tests × 2 variants × 4 providers = 40 tests (0/4 providers)
-- **DeadlineTests** — 6 tests × 2 variants × 4 providers = 48 tests (1/4 providers)
-- **WakeUpLatencyTests** — 4 tests × 2 variants × 4 providers = 32 tests (0/4 providers)
-
-**Total: ~200 tests when all categories are complete**
-
-## Adding New Test Classes
-
-See `TEST_GENERATION_GUIDE.md` for:
-- Test pattern for each category
-- Provider-specific adjustments
-- Both IJob and IJob<T> variant pattern
-- Code generation strategy
-
-## Requirements
-
-- Docker (Testcontainers manages container lifecycle)
-- .NET 8 SDK
-- 0 warnings in Release builds (TreatWarningsAsErrors=true)
-
-## Zero-Warnings Requirement
-
-All code compiles without warnings in Release mode. StyleCop compliance is enforced at build time.
-
-## Notes
-
-- Each test class is fully isolated via `IClassFixture<ProviderFixture>`
-- Containers are created/destroyed per test class (not per test method)
-- Static state (ExecutionCount, LastFailedJob, etc.) is reset via `ResetTestState()`
-- All job types are `sealed` per architecture guidelines
-- CancellationToken is propagated throughout all async chains
+1. Add a `[Fact]` to the matching `*Scenarios` class, or a new abstract class.
+2. Count executions with `ExecutionCounter` and wait with `WaitUntil` / `WaitForAllSucceeded`.
+3. Use `BuildHost(..., queues: [uniqueQueue])` when tests share a database.
+4. Add a subclass per provider (`Trait("Category", "Reliability.InMemory")` or `"Reliability.Distributed"`).
