@@ -20,7 +20,9 @@ public abstract class DistributedReliabilityTestBase
         int workers = 2,
         TimeSpan? pollingInterval = null,
         IReadOnlyList<string>? queues = null,
-        TimeSpan? heartbeatTimeout = null)
+        TimeSpan? heartbeatTimeout = null,
+        TimeSpan? heartbeatInterval = null,
+        int maxAttempts = 3)
     {
         return Host.CreateDefaultBuilder()
             .ConfigureLogging(logging =>
@@ -33,7 +35,7 @@ public abstract class DistributedReliabilityTestBase
                 services.AddNexJob(opt =>
                 {
                     opt.Workers = workers;
-                    opt.MaxAttempts = 3;
+                    opt.MaxAttempts = maxAttempts;
                     if (queues is not null)
                     {
                         opt.Queues = queues;
@@ -42,6 +44,11 @@ public abstract class DistributedReliabilityTestBase
                     if (heartbeatTimeout is not null)
                     {
                         opt.HeartbeatTimeout = heartbeatTimeout.Value;
+                    }
+
+                    if (heartbeatInterval is not null)
+                    {
+                        opt.HeartbeatInterval = heartbeatInterval.Value;
                     }
 
                     opt.PollingInterval = pollingInterval ?? TimeSpan.FromMilliseconds(100);
