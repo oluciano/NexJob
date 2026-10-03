@@ -165,6 +165,14 @@ Every feature or bug fix must produce at least 3 distinct test categories:
 - **N2 — Negative:** Expected failure scenarios fail gracefully (timeouts, broker drops, dead-letter dispatch).
 - **N3 — Invalid Input:** Boundary values, nulls, empty collections, malformed payloads.
 
+### Red-First Proof (mandatory)
+Writing the tests first is not enough: show that they test something.
+1. **Run the new tests against the current code and watch them fail for the right reason** (the behaviour under test, not a compile error or a missing fixture). Quote the failing assertion in the issue or PR.
+2. **Commit the red tests on their own** (`test(scope): <what>, red (#id)`) before the fix. Guard tests that already pass (N2/N3 that protect existing behaviour) may sit in the same commit, but say which are red and which are guards.
+3. **Prove an assertion bites when it could pass vacuously** (it only checks "does not throw", the object exists, a fixed sleep elapsed, or a counter nobody reads): change the expected value on purpose once, confirm the failure shows the real value, then revert it.
+4. **If the red run shows the premise was wrong** (the bug lives elsewhere, or the behaviour is already correct), stop and go back to Phase 0. Do not bend the test until it fails.
+5. **Storage fixes go one commit per provider**, each turning the shared contract test green for that provider.
+
 ### The Immutable Test Contract Rule:
 - **NEVER** rewrite, rename, or delete an existing passing test to make new code pass.
 - When an existing test breaks: fix the production code, not the test.
