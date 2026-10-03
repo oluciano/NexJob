@@ -1112,8 +1112,8 @@ public sealed class SqlServerStorageProvider : IStorageProvider
             job.ScheduledAt,
             ParentJobId = job.ParentJobId?.Value,
             job.RecurringJobId,
-            Tags = System.Text.Json.JsonSerializer.Serialize(job.Tags),
             job.ExpiresAt,
+            Tags = System.Text.Json.JsonSerializer.Serialize(job.Tags),
         };
 
     private static bool IsTerminalStatus(string? status) =>

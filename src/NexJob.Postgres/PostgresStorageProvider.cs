@@ -1165,8 +1165,8 @@ public sealed class PostgresStorageProvider : IStorageProvider, IDisposable, IAs
             job.ScheduledAt,
             ParentJobId = job.ParentJobId?.Value,
             job.RecurringJobId,
-            Tags = job.Tags.ToArray(),
             job.ExpiresAt,
+            Tags = job.Tags.ToArray(),
         };
 
     private static bool IsTerminalStatus(string? status) =>
