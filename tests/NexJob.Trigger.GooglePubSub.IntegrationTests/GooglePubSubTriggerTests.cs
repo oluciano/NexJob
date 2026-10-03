@@ -3,7 +3,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Moq;
-using NexJob.Storage;
 using Xunit;
 
 namespace NexJob.Trigger.GooglePubSub.IntegrationTests;
@@ -61,15 +60,15 @@ public sealed class GooglePubSubTriggerTests : IClassFixture<PubSubEmulatorFixtu
         // N2 (Negative): the first enqueue fails, the message must come back and then be enqueued.
         var (topic, subscription) = await _fixture.CreateTopicAndSubscriptionAsync();
         var calls = 0;
-        var storage = new Mock<IStorageProvider>();
-        storage
+        var scheduler = new Mock<IScheduler>();
+        scheduler
             .Setup(s => s.EnqueueAsync(It.IsAny<JobRecord>(), It.IsAny<DuplicatePolicy>(), It.IsAny<CancellationToken>()))
             .Returns<JobRecord, DuplicatePolicy, CancellationToken>((job, _, _) =>
                 Interlocked.Increment(ref calls) == 1
                     ? throw new InvalidOperationException("Simulated storage failure")
-                    : Task.FromResult(new EnqueueResult(job.Id, WasRejected: false)));
+                    : Task.FromResult(job.Id));
 
-        using var host = await StartAsync(subscription, typeof(TestJob).AssemblyQualifiedName, services => services.AddSingleton(storage.Object));
+        using var host = await StartAsync(subscription, typeof(TestJob).AssemblyQualifiedName, services => services.AddSingleton(scheduler.Object));
         await _fixture.PublishAsync(topic, "hello");
 
         var redelivered = await WaitUntilAsync(() => Volatile.Read(ref calls) >= 2);
@@ -85,19 +84,19 @@ public sealed class GooglePubSubTriggerTests : IClassFixture<PubSubEmulatorFixtu
         // N3 (Invalid input): no nexjob.job_type attribute and no JobType configured.
         var (topic, subscription) = await _fixture.CreateTopicAndSubscriptionAsync();
         var attempts = 0;
-        var storage = new Mock<IStorageProvider>();
-        storage
+        var scheduler = new Mock<IScheduler>();
+        scheduler
             .Setup(s => s.EnqueueAsync(It.IsAny<JobRecord>(), It.IsAny<DuplicatePolicy>(), It.IsAny<CancellationToken>()))
             .Returns<JobRecord, DuplicatePolicy, CancellationToken>((job, _, _) =>
             {
                 Interlocked.Increment(ref attempts);
-                return Task.FromResult(new EnqueueResult(job.Id, WasRejected: false));
+                return Task.FromResult(job.Id);
             });
         var warnings = new WarningCounter();
 
         using var host = await StartAsync(subscription, jobType: null, services =>
         {
-            services.AddSingleton(storage.Object);
+            services.AddSingleton(scheduler.Object);
             services.AddSingleton<ILoggerProvider>(warnings);
         });
         await _fixture.PublishAsync(topic, "no type");
@@ -119,7 +118,7 @@ public sealed class GooglePubSubTriggerTests : IClassFixture<PubSubEmulatorFixtu
             .ConfigureServices(services =>
             {
                 services.AddNexJob();
-                configure?.Invoke(services);
+                configure?.Invoke(services); // after AddNexJob, so a replacement scheduler wins
                 services.AddNexJobGooglePubSubTrigger(options =>
                 {
                     options.ProjectId = PubSubEmulatorFixture.ProjectId;
