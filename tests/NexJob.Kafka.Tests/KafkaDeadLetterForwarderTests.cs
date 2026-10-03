@@ -219,19 +219,19 @@ public sealed class KafkaDeadLetterForwarderTests
         IReadOnlyList<string>? tags = null,
         string? lastErrorMessage = null,
         string? inputJson = null) => new()
-    {
-        Id = JobId.New(),
-        JobType = "Orders.ProcessOrderJob, Orders",
-        InputType = typeof(string).AssemblyQualifiedName!,
-        InputJson = inputJson ?? JsonSerializer.Serialize(body),
-        Queue = queue,
-        IdempotencyKey = idempotencyKey,
-        Tags = tags ?? ["trigger:kafka"],
-        LastErrorMessage = lastErrorMessage,
-        Status = JobStatus.Failed,
-        Attempts = 3,
-        MaxAttempts = 3,
-    };
+        {
+            Id = JobId.New(),
+            JobType = "Orders.ProcessOrderJob, Orders",
+            InputType = typeof(string).AssemblyQualifiedName!,
+            InputJson = inputJson ?? JsonSerializer.Serialize(body),
+            Queue = queue,
+            IdempotencyKey = idempotencyKey,
+            Tags = tags ?? ["trigger:kafka"],
+            LastErrorMessage = lastErrorMessage,
+            Status = JobStatus.Failed,
+            Attempts = 3,
+            MaxAttempts = 3,
+        };
 
     private sealed class Captured
     {

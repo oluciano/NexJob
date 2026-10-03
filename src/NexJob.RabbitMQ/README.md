@@ -165,4 +165,15 @@ Or bind a whole section of your own: `.AddRabbitMqTrigger(options => builder.Con
 
 ## Forwarding failed jobs
 
-A job created from a consumed message that exhausts its retries stays **only inside NexJob** (`Failed` in the dashboard), because the broker message was acknowledged when it became a job. To forward a copy of the original message to a RabbitMQ exchange, see [Forwarding a dead-lettered job](https://github.com/oluciano/NexJob/blob/main/docs/wiki/06-Retry-And-Dead-Letter.md#forwarding-a-dead-lettered-job-to-kafka-or-rabbitmq).
+A job created from a consumed message that exhausts its retries stays **only inside NexJob** (`Failed` in the dashboard), because the broker message was acknowledged when it became a job. To copy the original message body to another queue, set `ExhaustedJobsRoutingKey` on the trigger (the Outbox producer, `AddRabbitMqProducer`, is required):
+
+```csharp
+.AddRabbitMqTrigger<ProcessOrderJob>(opt =>
+{
+    opt.QueueName = "orders";
+    opt.TargetQueue = "orders";
+    opt.ExhaustedJobsRoutingKey = "orders.exhausted";   // default exchange: the queue name; optional: opt.ExhaustedJobsExchange
+});
+```
+
+Only the body is forwarded, the job stays `Failed` in NexJob, and only jobs of this trigger are forwarded. Details and limits: [Forwarding a dead-lettered job](https://github.com/oluciano/NexJob/blob/main/docs/wiki/concepts/retries-and-dead-letter.md#forwarding-a-dead-lettered-job).

@@ -238,6 +238,10 @@ For high-throughput scenarios where eventual delivery is acceptable, use the def
 
 ---
 
+## Forwarding exhausted jobs
+
+Set `ExhaustedJobsTopic` on the trigger to copy a job to another topic once it exhausts its retries. The copy goes through the Outbox producer (`AddKafkaProducer` is required) and the job stays `Failed` in NexJob. Only the message body is forwarded. See [Forwarding a dead-lettered job](../concepts/retries-and-dead-letter.md#forwarding-a-dead-lettered-job) for the full behaviour and its limits.
+
 ## Reliability and Failure Handling
 
 | Failure Scenario | Behavior |

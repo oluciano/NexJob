@@ -201,6 +201,10 @@ builder.Services.AddNexJob()
 
 ---
 
+## Forwarding exhausted jobs
+
+Set `ExhaustedJobsRoutingKey` (and, if you do not use the default exchange, `ExhaustedJobsExchange`) on the trigger to copy a job to another queue once it exhausts its retries. The copy goes through the Outbox producer (`AddRabbitMqProducer` is required) and the job stays `Failed` in NexJob. Only the message body is forwarded. See [Forwarding a dead-lettered job](../concepts/retries-and-dead-letter.md#forwarding-a-dead-lettered-job) for the full behaviour and its limits.
+
 ## Reliability and Failure Handling
 
 | Failure Scenario | Behavior |
