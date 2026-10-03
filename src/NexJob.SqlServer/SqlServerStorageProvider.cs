@@ -1094,28 +1094,6 @@ public sealed class SqlServerStorageProvider : IStorageProvider
 
     // ── Schema ────────────────────────────────────────────────────────────────
 
-    private static object ToInsertParameters(JobRecord job) =>
-        new
-        {
-            Id = job.Id.Value,
-            job.JobType,
-            job.InputType,
-            job.InputJson,
-            job.SchemaVersion,
-            job.Queue,
-            Priority = (int)job.Priority,
-            Status = job.Status.ToString(),
-            job.IdempotencyKey,
-            job.Attempts,
-            job.MaxAttempts,
-            job.CreatedAt,
-            job.ScheduledAt,
-            ParentJobId = job.ParentJobId?.Value,
-            job.RecurringJobId,
-            job.ExpiresAt,
-            Tags = System.Text.Json.JsonSerializer.Serialize(job.Tags),
-        };
-
     private static bool IsTerminalStatus(string? status) =>
         status is "Succeeded" or "Failed" or "Expired" or null;
 
@@ -1145,6 +1123,28 @@ public sealed class SqlServerStorageProvider : IStorageProvider
         // Error 2601: cannot insert duplicate key row (index-specific, but same root cause)
         return ex.Number is 2627 or 2601;
     }
+
+    private static object ToInsertParameters(JobRecord job) =>
+        new
+        {
+            Id = job.Id.Value,
+            job.JobType,
+            job.InputType,
+            job.InputJson,
+            job.SchemaVersion,
+            job.Queue,
+            Priority = (int)job.Priority,
+            Status = job.Status.ToString(),
+            job.IdempotencyKey,
+            job.Attempts,
+            job.MaxAttempts,
+            job.CreatedAt,
+            job.ScheduledAt,
+            ParentJobId = job.ParentJobId?.Value,
+            job.RecurringJobId,
+            job.ExpiresAt,
+            Tags = System.Text.Json.JsonSerializer.Serialize(job.Tags),
+        };
 
     private SqlConnection Open() => _connection is not null ? new SqlConnection(_connection.ConnectionString) : new SqlConnection(_connectionString);
 

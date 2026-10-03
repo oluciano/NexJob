@@ -1147,28 +1147,6 @@ public sealed class PostgresStorageProvider : IStorageProvider, IDisposable, IAs
 
     // ── Schema ────────────────────────────────────────────────────────────────
 
-    private static object ToInsertParameters(JobRecord job) =>
-        new
-        {
-            Id = job.Id.Value,
-            job.JobType,
-            job.InputType,
-            job.InputJson,
-            job.SchemaVersion,
-            job.Queue,
-            Priority = (int)job.Priority,
-            Status = job.Status.ToString(),
-            job.IdempotencyKey,
-            job.Attempts,
-            job.MaxAttempts,
-            job.CreatedAt,
-            job.ScheduledAt,
-            ParentJobId = job.ParentJobId?.Value,
-            job.RecurringJobId,
-            job.ExpiresAt,
-            Tags = job.Tags.ToArray(),
-        };
-
     private static bool IsTerminalStatus(string? status) =>
         status is "Succeeded" or "Failed" or "Expired" or null;
 
@@ -1191,6 +1169,28 @@ public sealed class PostgresStorageProvider : IStorageProvider, IDisposable, IAs
 
     private static bool IsActiveState(JobStatus status) =>
         status is JobStatus.Enqueued or JobStatus.Processing or JobStatus.Scheduled or JobStatus.AwaitingContinuation;
+
+    private static object ToInsertParameters(JobRecord job) =>
+        new
+        {
+            Id = job.Id.Value,
+            job.JobType,
+            job.InputType,
+            job.InputJson,
+            job.SchemaVersion,
+            job.Queue,
+            Priority = (int)job.Priority,
+            Status = job.Status.ToString(),
+            job.IdempotencyKey,
+            job.Attempts,
+            job.MaxAttempts,
+            job.CreatedAt,
+            job.ScheduledAt,
+            ParentJobId = job.ParentJobId?.Value,
+            job.RecurringJobId,
+            job.ExpiresAt,
+            Tags = job.Tags.ToArray(),
+        };
 
     private NpgsqlConnection Open()
     {
