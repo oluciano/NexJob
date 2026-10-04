@@ -26,6 +26,7 @@ builder.Services.AddNexJob(options =>
 !!! note
     `ExecutionWindow` only controls when a queue's workers fetch jobs. Throttling with `[Throttle]` and circuit breakers apply independently within those windows.
 
+
 ## When to use it
 
 - Batch imports, reports or clean-ups that should not compete with daytime traffic.
@@ -36,7 +37,8 @@ Jobs enqueued outside the window are not lost: they wait in the queue and start 
 !!! warning
     A job with `deadlineAfter` keeps its clock running while it waits for the window. If the deadline is shorter than the wait, the job expires instead of running. See [Delivery Guarantees](../concepts/delivery-guarantees.md).
 
+
 ## See also
 
 - [Configuration](../reference/configuration.md#executionwindowsettings): every setting of the window.
-- [Circuit Breaker](circuit-breaker.md) and [Throttling](throttling.md): the other queue-level controls.
+- [Circuit Breaker](../guides/circuit-breaker.md) and [Throttling](../guides/throttling.md): the other queue-level controls.

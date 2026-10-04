@@ -109,7 +109,7 @@ These answers describe verified behavior as of v5.6.1 and later.
 
     States:
 
-    ```
+    ```text
     Closed ──(N consecutive failures)──► Open ──(OpenDuration)──► HalfOpen
       ▲                                                               │
       │                                         one canary job runs ─┤
@@ -156,7 +156,7 @@ These answers describe verified behavior as of v5.6.1 and later.
     - The destination accepts only N concurrent calls → **throttle**.
     - Retries are exhausted and the job still matters → **dead-letter handler** (alert, compensate, park for human review).
 
-    A throttled job that cannot get its slot waits briefly in `Processing`, holding its worker slot, and after about 5 seconds goes back to the queue without using an attempt. Jobs on a saturated resource can be delayed and can run in a different order. Keep `Workers` above the sum of your `maxConcurrent` values, or isolate throttled jobs in their own queue.
+    A throttled job that cannot get its slot waits briefly in `Processing`, holding its worker slot, and after about 5 seconds goes back to the queue without using an attempt. Jobs on a saturated resource can be delayed and can run in a different order. Keep `Workers` well above the sum of your `maxConcurrent` values, or isolate throttled jobs in their own queue.
 
 
 ???+ "Why was my job marked Expired instead of running?"

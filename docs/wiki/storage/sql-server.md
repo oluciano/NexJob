@@ -104,7 +104,7 @@ NexJob holds a connection only for the duration of each storage call — a runni
 
 Set `Max Pool Size` in your connection string to match:
 
-```
+```text
 Server=db;Database=nexjob;User Id=u;Password=p;Max Pool Size=40;Application Name=nexjob-worker
 ```
 

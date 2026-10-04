@@ -9,15 +9,16 @@ NexJob does not send notifications itself. It exposes the **signals**, and you c
 ## The signals
 
 | What you want to know | Best signal | Also available |
-|---|---|---|
+| --- | --- | --- |
 | A job **used all its attempts** (including a job whose node kept dying) | An [`IDeadLetterForwarder`](#recipe-post-to-slack) of your own, called once per such job | Dashboard **Failed / DLQ**; an `Error` log, `Job {JobId} exhausted all attempts - moving to dead-letter` (a job whose node died logs a `Warning` instead: `... stopped sending heartbeats and no attempts were left`) |
-| A job **passed its deadline** before it started | Counter `nexjob.jobs.expired` | Dashboard **Failed / DLQ**, *Expired* tab |
-| Failures are **rising** (retries included) | Counter `nexjob.jobs.failed` (one increment per failed *attempt*) | Dashboard overview |
+| A job **passed its deadline** before it started | Counter `nexjob.jobs.expired` | Dashboard **Failed / DLQ**, _Expired_ tab |
+| Failures are **rising** (retries included) | Counter `nexjob.jobs.failed` (one increment per failed _attempt_) | Dashboard overview |
 | A queue **is not draining** | Gauge `nexjob.queue.depth` growing; gauge `nexjob.workers.active` at 0 | Dashboard **Queues**: `⚠️ NO WORKERS` badge |
 | A queue's **circuit breaker opened** | Dashboard **Queues**: circuit state and **Reset Circuit** | There is no metric for the circuit state yet |
 
 !!! note
     `nexjob.jobs.failed` counts **every failed attempt**, including those that will be retried, so it is not "the job is dead". For that, use a forwarder: it is called only when the attempts are over.
+
 
 ## Recipe: post to Slack
 
@@ -127,6 +128,7 @@ If you already run Grafana or Alertmanager, you can alert without any code. Expo
 
 !!! note
     Your metrics exporter renames these (dots usually become underscores, and counters usually end in `_total`). Look the exact names up in your metrics explorer before writing the rule.
+
 
 ## See also
 

@@ -90,7 +90,7 @@ When you call `EnqueueAsync`, NexJob captures the current W3C `traceparent` from
 
 The same propagation applies to **broker triggers** (Kafka, RabbitMQ, Azure Service Bus, AWS SQS, Google Pub/Sub). Each trigger extracts `traceparent` from the broker message headers or attributes before enqueuing the job, connecting the producing service's trace to the NexJob execution span.
 
-```
+```text
 HTTP Request (span A)
   └─ nexjob.enqueue (span B, child of A)
        └─ nexjob.execute (span C, child of B — runs asynchronously on a worker)
@@ -220,7 +220,7 @@ Log.Logger = new LoggerConfiguration()
         ```
 
   === "Datadog"
-    ```
+    ```text
         @NexJob.Queue:payments @NexJob.Attempt:>1
         ```
 
@@ -245,3 +245,4 @@ Log.Logger = new LoggerConfiguration()
 
 !!! tip
     To turn these metrics into alerts (jobs that exhausted their attempts, expired jobs, a queue nobody drains), see the [Alerts](../guides/alerts.md) guide.
+

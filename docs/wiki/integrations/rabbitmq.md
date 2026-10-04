@@ -86,7 +86,7 @@ The outbox producer persists messages to NexJob storage before publishing them t
 
 ### Architecture
 
-```
+```text
 [Application Service]
        │
        ▼ scheduler.EnqueueRabbitMqAsync(...)

@@ -63,6 +63,7 @@ nav:
       - Delivery Guarantees: concepts/delivery-guarantees.md
       - Continuations: concepts/continuations.md
       - Idempotency: concepts/idempotency.md
+      - Queues: concepts/queues.md
   - Guides:
       - Throttling: guides/throttling.md
       - Circuit Breaker: guides/circuit-breaker.md

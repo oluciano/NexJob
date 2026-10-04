@@ -9,7 +9,7 @@ A job library is only as good as what it does on the worst day. NexJob tests the
 ## The layers
 
 | Layer | What it proves | Runs |
-|---|---|---|
+| --- | --- | --- |
 | **Unit tests** | Retry policy, dead-letter dispatch, filters, scheduler, options, dashboard rendering and the trigger handlers, with fake storage and brokers | Every pull request |
 | **Storage contract tests** | The same set of tests on **InMemory, PostgreSQL, SQL Server, Redis and MongoDB**: enqueue, fetch, commit, retries, orphan recovery, deduplication, recurring locks, continuations | Every pull request (real databases in containers) |
 | **Broker integration tests** | Kafka, RabbitMQ, AWS SQS, Salesforce and the Google Pub/Sub emulator: a message becomes a job and is acknowledged, a failed enqueue is not acknowledged | Every pull request |
@@ -52,5 +52,5 @@ Being clear about gaps matters more than a long list of passing tests:
 ## See also
 
 - [Delivery Guarantees](../concepts/delivery-guarantees.md): the behaviour these tests check.
-- [Migration](migration.md): what changes between versions and what the upgrade tests cover.
+- [Migration](../reference/migration.md): what changes between versions and what the upgrade tests cover.
 - The scenario list and the commands to run it yourself live in the repository: `tests/NexJob.ReliabilityTests/README.md`.

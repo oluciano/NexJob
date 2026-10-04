@@ -110,7 +110,7 @@ builder.Services.AddNexJob(options =>
 });
 ```
 
-A dispatcher only processes the queues listed in its `Queues` configuration. Deploy separate worker instances with different queue lists to achieve workload isolation.
+A dispatcher only processes the queues listed in its `Queues` configuration. Deploy separate worker instances with different queue lists to achieve workload isolation. See [Queues](../concepts/queues.md) for fetch order, per-queue settings and runtime control.
 
 ## Deadlines
 

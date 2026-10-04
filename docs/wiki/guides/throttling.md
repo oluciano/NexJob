@@ -48,7 +48,7 @@ public sealed class ProcessOrderJob : IJob<OrderInput>
 By default, `[Throttle]` is enforced **per worker process** using an in-memory semaphore. In a multi-node deployment the effective cluster-wide limit is `maxConcurrent × numberOfNodes`.
 
 | Deployment | `maxConcurrent` | Effective limit |
-|---|---|---|
+| --- | --- | --- |
 | 1 node | 5 | 5 |
 | 3 nodes | 5 | 15 |
 | 10 nodes | 5 | 50 |
@@ -99,6 +99,7 @@ You can see it happen in two places:
 !!! note
     Because a saturated resource can no longer keep every worker busy for long, other queues and resources keep running. Jobs waiting on a saturated resource may still be delayed, and they can run in a different order than they were enqueued. If strict ordering matters for a resource, keep that work in a dedicated queue.
 
+
 !!! tip
     Isolating heavily throttled jobs in their own queue, with a worker pool sized for it, is still the best way to keep a slow downstream system from competing with the rest of your workload. The 5 second limit is not configurable.
 
@@ -106,61 +107,64 @@ You can see it happen in two places:
 ## When to Use Throttling
 
 | Scenario | Suggested resource name |
-|---|---|
+| --- | --- |
 | External API with rate limits | `"api-name"` |
 | Database connection pool | `"database"` |
 | File system I/O | `"file-writes"` |
 | Memory-intensive operations | `"heavy-compute"` |
 | Third-party webhook delivery | `"webhook-sender"` |
 
-## Related: circuit breaker and execution windows
+## Related: Circuit Breaker and Execution Windows
 
-Two queue-level controls used to live on this page and now have their own:
+Two queue-level controls used to live on this page and now have their own pages:
 
-- [Circuit Breaker](circuit-breaker.md): pauses a queue automatically during a downstream outage.
-- [Execution Windows](execution-windows.md): restricts a queue to a time window, such as nights only.
+- [Circuit Breaker](../guides/circuit-breaker.md): pauses a queue automatically during a downstream outage.
+- [Execution Windows](../guides/execution-windows.md): restricts a queue to a time window, such as nights only.
 
 ## Common Throttle Patterns
 
 ???+ "Stripe / payment gateway"
     ```csharp
-    [Throttle("stripe", maxConcurrent: 10)]
-    public sealed class ChargeCardJob : IJob<ChargeInput>
-    {
-        public async Task ExecuteAsync(ChargeInput input, CancellationToken ct)
-        {
-            await _stripe.ChargeAsync(input.CustomerId, input.Amount, ct);
-        }
-    }
-    ```
-    Cap concurrent charges to stay within Stripe's API concurrency limits without rate-limiting errors.
+      [Throttle("stripe", maxConcurrent: 10)]
+      public sealed class ChargeCardJob : IJob<ChargeInput>
+      {
+          public async Task ExecuteAsync(ChargeInput input, CancellationToken ct)
+          {
+              await _stripe.ChargeAsync(input.CustomerId, input.Amount, ct);
+          }
+      }
+      ```
+
+      Cap concurrent charges to stay within Stripe's API concurrency limits without rate-limiting errors.
 
 
 ???+ "Memory-intensive report generation"
     ```csharp
-    [Throttle("heavy-compute", maxConcurrent: 2)]
-    public sealed class GenerateReportJob : IJob<ReportInput>
-    {
-        public async Task ExecuteAsync(ReportInput input, CancellationToken ct)
-        {
-            // Each report uses ~500 MB RAM; cap at 2 to avoid OOM on a 1 GB pod
-            await _reports.BuildAsync(input.ReportId, ct);
-        }
-    }
-    ```
-    Deploy this job to a dedicated queue with `Workers = 2` to match the throttle limit and avoid any waiting overhead.
+      [Throttle("heavy-compute", maxConcurrent: 2)]
+      public sealed class GenerateReportJob : IJob<ReportInput>
+      {
+          public async Task ExecuteAsync(ReportInput input, CancellationToken ct)
+          {
+              // Each report uses ~500 MB RAM; cap at 2 to avoid OOM on a 1 GB pod
+              await _reports.BuildAsync(input.ReportId, ct);
+          }
+      }
+      ```
+
+      Deploy this job to a dedicated queue with `Workers = 2` to match the throttle limit and avoid any waiting overhead.
 
 
 ???+ "Shared database connection pool"
     ```csharp
-    [Throttle("legacy-db", maxConcurrent: 5)]
-    public sealed class LegacyDataSyncJob : IJob<SyncInput>
-    {
-        public async Task ExecuteAsync(SyncInput input, CancellationToken ct)
-        {
-            await _legacyDb.SyncRecordsAsync(input.TableName, ct);
-        }
-    }
-    ```
-    Protect a legacy database whose connection pool is limited to a small number of connections.
+      [Throttle("legacy-db", maxConcurrent: 5)]
+      public sealed class LegacyDataSyncJob : IJob<SyncInput>
+      {
+          public async Task ExecuteAsync(SyncInput input, CancellationToken ct)
+          {
+              await _legacyDb.SyncRecordsAsync(input.TableName, ct);
+          }
+      }
+      ```
+
+      Protect a legacy database whose connection pool is limited to a small number of connections.
 

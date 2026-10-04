@@ -15,6 +15,7 @@ Nothing in the public API is removed. This release changes **behaviour** that yo
 !!! warning
     **Behaviour change.** `deadlineAfter` was accepted but never stored by the PostgreSQL, SQL Server, MongoDB and Redis providers, so a job that was already past its deadline still ran. From v5.8.0 the deadline is stored and enforced: a job fetched after its deadline is marked `Expired` and does not execute. If your application passes `deadlineAfter`, expect `Expired` jobs where you used to see executed ones. Jobs enqueued **before** the upgrade have no stored deadline and are not affected.
 
+
 Other behaviour that changes, each described in the changelog:
 
 - A throttled job that cannot get its slot within about 5 seconds is returned to the queue instead of holding its worker. It does not use an attempt, and it can run in a different order than it was enqueued.
@@ -25,7 +26,7 @@ Other behaviour that changes, each described in the changelog:
 #### What is stored differently
 
 | Provider | Change | What happens on upgrade |
-|---|---|---|
+| --- | --- | --- |
 | PostgreSQL | nullable `expires_at` column on `nexjob_jobs` (migration V11) | Applied automatically by the first v5.8 node that starts. Existing rows keep `NULL`. |
 | SQL Server | nullable `expires_at` column on `nexjob_jobs` (migration V11) | Same. |
 | Redis | `expiresAt` field in the job hash, set only when the job has a deadline | Nothing to run. Existing hashes simply lack the field. |
@@ -36,7 +37,7 @@ The upgrade of a storage that already holds jobs (enqueued, scheduled, with cont
 #### Rolling upgrade: v5.7 and v5.8 nodes on the same storage
 
 | Provider | Old (v5.7) node reads what a v5.8 node wrote | New (v5.8) node reads what a v5.7 node wrote |
-|---|---|---|
+| --- | --- | --- |
 | PostgreSQL, SQL Server | Yes. It ignores the extra column, and its own inserts leave `expires_at` empty. | Yes, tested. |
 | Redis | Yes. It ignores the extra hash field. | Yes. |
 | MongoDB | **Yes, as long as the job has no deadline.** A document with a deadline carries an element that v5.7 does not know, and the MongoDB driver throws on it, so a v5.7 node fails to read that job. | Yes. |
@@ -110,7 +111,7 @@ NexJob now uses an index hint on continuation-release statements to eliminate de
 
 On v5.6.0–v5.6.2, `AddNexJobPostgres(NpgsqlDataSource)` crashed the host on databases that require a password:
 
-```
+```text
 No password has been provided but the backend requires one.
 ```
 

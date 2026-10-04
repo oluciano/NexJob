@@ -201,7 +201,7 @@ NexJob is designed to surface diagnostic information through structured logs, me
 
     If the dashboard is mounted in a host that never called `AddNexJob()`, you may see a startup exception:
 
-    ```
+    ```text
     InvalidOperationException: No service for type 'Microsoft.Extensions.Caching.Memory.IMemoryCache'
     ```
 
@@ -273,7 +273,7 @@ NexJob is designed to surface diagnostic information through structured logs, me
 
     On NexJob v5.6.0–v5.6.2, passing a pre-built `NpgsqlDataSource` to `AddNexJobPostgres` caused the host to crash within seconds on databases that require a password:
 
-    ```
+    ```text
     No password has been provided but the backend requires one.
     ```
 

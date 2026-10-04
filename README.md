@@ -163,16 +163,16 @@ All providers implement `IRuntimeSettingsStore` — runtime configuration persis
 
 | Package | NuGet | Description |
 |---|---|---|
-| `NexJob.Dashboard` | [![NuGet](https://img.shields.io/badge/nuget-v5.7.0-blue)](https://www.nuget.org/packages/NexJob.Dashboard) | Embedded ASP.NET Core dashboard middleware |
-| `NexJob.Dashboard.Standalone` | [![NuGet](https://img.shields.io/badge/nuget-v5.7.0-blue)](https://www.nuget.org/packages/NexJob.Dashboard.Standalone) | Embedded HTTP dashboard server for Worker Services |
-| `NexJob.OpenTelemetry` | [![NuGet](https://img.shields.io/badge/nuget-v5.7.0-blue)](https://www.nuget.org/packages/NexJob.OpenTelemetry) | OTel SDK instrumentation |
-| `NexJob.Trigger.AzureServiceBus` | [![NuGet](https://img.shields.io/badge/nuget-v5.7.0-blue)](https://www.nuget.org/packages/NexJob.Trigger.AzureServiceBus) | Azure Service Bus trigger |
-| `NexJob.Trigger.AwsSqs` | [![NuGet](https://img.shields.io/badge/nuget-v5.7.0-blue)](https://www.nuget.org/packages/NexJob.Trigger.AwsSqs) | AWS SQS trigger |
-| `NexJob.RabbitMQ` | [![NuGet](https://img.shields.io/badge/nuget-v5.7.0-blue)](https://www.nuget.org/packages/NexJob.RabbitMQ) | RabbitMQ trigger & resilient outbox producer |
-| `NexJob.Kafka` | [![NuGet](https://img.shields.io/badge/nuget-v5.7.0-blue)](https://www.nuget.org/packages/NexJob.Kafka) | Apache Kafka trigger & resilient outbox producer |
-| `NexJob.Trigger.GooglePubSub` | [![NuGet](https://img.shields.io/badge/nuget-v5.7.0-blue)](https://www.nuget.org/packages/NexJob.Trigger.GooglePubSub) | Google Cloud Pub/Sub trigger |
-| `NexJob.Trigger.Salesforce` | [![NuGet](https://img.shields.io/badge/nuget-v5.7.0-blue)](https://www.nuget.org/packages/NexJob.Trigger.Salesforce) | Salesforce Pub/Sub API trigger (gRPC & Avro) |
-| `NexJob.Trigger.SalesforceStreaming` | [![NuGet](https://img.shields.io/badge/nuget-v5.7.0-blue)](https://www.nuget.org/packages/NexJob.Trigger.SalesforceStreaming) | Salesforce Streaming API trigger (CometD & Bayeux) |
+| `NexJob.Dashboard` | [![NuGet](https://img.shields.io/badge/nuget-v5.8.0-blue)](https://www.nuget.org/packages/NexJob.Dashboard) | Embedded ASP.NET Core dashboard middleware |
+| `NexJob.Dashboard.Standalone` | [![NuGet](https://img.shields.io/badge/nuget-v5.8.0-blue)](https://www.nuget.org/packages/NexJob.Dashboard.Standalone) | Embedded HTTP dashboard server for Worker Services |
+| `NexJob.OpenTelemetry` | [![NuGet](https://img.shields.io/badge/nuget-v5.8.0-blue)](https://www.nuget.org/packages/NexJob.OpenTelemetry) | OTel SDK instrumentation |
+| `NexJob.Trigger.AzureServiceBus` | [![NuGet](https://img.shields.io/badge/nuget-v5.8.0-blue)](https://www.nuget.org/packages/NexJob.Trigger.AzureServiceBus) | Azure Service Bus trigger |
+| `NexJob.Trigger.AwsSqs` | [![NuGet](https://img.shields.io/badge/nuget-v5.8.0-blue)](https://www.nuget.org/packages/NexJob.Trigger.AwsSqs) | AWS SQS trigger |
+| `NexJob.RabbitMQ` | [![NuGet](https://img.shields.io/badge/nuget-v5.8.0-blue)](https://www.nuget.org/packages/NexJob.RabbitMQ) | RabbitMQ trigger & resilient outbox producer |
+| `NexJob.Kafka` | [![NuGet](https://img.shields.io/badge/nuget-v5.8.0-blue)](https://www.nuget.org/packages/NexJob.Kafka) | Apache Kafka trigger & resilient outbox producer |
+| `NexJob.Trigger.GooglePubSub` | [![NuGet](https://img.shields.io/badge/nuget-v5.8.0-blue)](https://www.nuget.org/packages/NexJob.Trigger.GooglePubSub) | Google Cloud Pub/Sub trigger |
+| `NexJob.Trigger.Salesforce` | [![NuGet](https://img.shields.io/badge/nuget-v5.8.0-blue)](https://www.nuget.org/packages/NexJob.Trigger.Salesforce) | Salesforce Pub/Sub API trigger (gRPC & Avro) |
+| `NexJob.Trigger.SalesforceStreaming` | [![NuGet](https://img.shields.io/badge/nuget-v5.8.0-blue)](https://www.nuget.org/packages/NexJob.Trigger.SalesforceStreaming) | Salesforce Streaming API trigger (CometD & Bayeux) |
 
 ---
 
@@ -328,6 +328,11 @@ v5.7.0  ✅ Standalone dashboard is loopback-only by default and enforces `IDash
            is gone from the dashboard, Postgres `NpgsqlDataSource` registration no longer crashes the host, SQL Server
            deadlocks under concurrent workers fixed, Redis job index reconciled hourly under a lock, database connection
            pool guidance and startup advisory
+v5.8.0  ✅ `deadlineAfter` enforced on every database provider (new `expires_at`, migration V11), a saturated `[Throttle]`
+           resource no longer starves a node and an interrupted job keeps its attempt, jobs exhausted by crashes reach
+           dead-letter handlers, `IDeadLetterForwarder` with built-in Kafka/RabbitMQ forwarding, Redis delete ghost and
+           MongoDB rolling-upgrade fixes, 24h throughput chart and CPU/RAM gauges in the dashboard, new guides (alerts,
+           circuit breaker, execution windows, runtime control, delivery guarantees, queues)
 ```
 
 ---

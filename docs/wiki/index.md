@@ -11,29 +11,36 @@ NexJob is a reliable background job processing library for .NET 8 that gives you
 
     Install NexJob and run your first job in under 5 minutes.
 
+
   -   [**Mental Model**](mental-model.md)
 
     Understand storage-first design, state machines, and crash recovery.
+
 
   -   [**Storage Providers**](storage/overview.md)
 
     Choose from PostgreSQL, SQL Server, Redis, MongoDB, or InMemory.
 
+
   -   [**Dashboard**](integrations/dashboard.md)
 
     Real-time cluster visibility with zero external dependencies.
+
 
   -   [**Delivery Guarantees**](concepts/delivery-guarantees.md)
 
     What each failure costs a job: crashes, shutdown, throttling, pauses and deadlines.
 
+
   -   [**Circuit Breaker**](guides/circuit-breaker.md)
 
     Pause a queue automatically when a dependency is down, and ramp back up safely.
 
+
   -   [**Alerts**](guides/alerts.md)
 
     Know when a job fails for good, with a ready Slack recipe.
+
 
   -   [**How We Test**](reference/how-we-test.md)
 
@@ -64,7 +71,7 @@ Call `AddNexJob()` in your `Program.cs` and scan your assembly for job types:
 
     ```csharp
     using NexJob;
-
+    
     builder.Services.AddNexJob()
                    .AddNexJobJobs(typeof(Program).Assembly);
     ```
@@ -77,13 +84,13 @@ Implement `IJob` for parameterless jobs or `IJob<T>` for jobs that carry input:
     public sealed class SendWelcomeEmailJob : IJob<SendWelcomeEmailInput>
     {
         private readonly IEmailService _email;
-
+    
         public SendWelcomeEmailJob(IEmailService email) => _email = email;
-
+    
         public async Task ExecuteAsync(SendWelcomeEmailInput input, CancellationToken ct)
             => await _email.SendAsync(input.Email, "Welcome!", ct);
     }
-
+    
     public sealed record SendWelcomeEmailInput(string Email, string UserName);
     ```
 
@@ -93,7 +100,7 @@ Resolve `IScheduler` and enqueue your job from any service, controller, or minim
 
     ```csharp
     var scheduler = app.Services.GetRequiredService<IScheduler>();
-
+    
     await scheduler.EnqueueAsync<SendWelcomeEmailJob, SendWelcomeEmailInput>(
         new SendWelcomeEmailInput("user@example.com", "Jane"),
         deadlineAfter: TimeSpan.FromMinutes(5));
@@ -110,21 +117,26 @@ Resolve `IScheduler` and enqueue your job from any service, controller, or minim
 
     Configurable global delay policy plus per-job `[Retry]` with exponential backoff. Exhausted retries automatically invoke your dead-letter handler.
 
+
   -   **Deadline Enforcement**
 
     Pass `deadlineAfter` at enqueue time. Jobs that are not started before the deadline are marked `Expired` — eliminating zombie jobs and stale side effects.
+
 
   -   **Real-Time Dashboard**
 
     Built-in dark UI with cluster topology map, live SSE log stream, job catalog, and on-demand ad-hoc triggering. Zero external dependencies.
 
+
   -   **Concurrency Throttling**
 
     Apply `[Throttle]` per resource to cap local concurrency. Add `AddNexJobDistributedThrottle()` for cluster-wide rate limits enforced through Redis.
 
+
   -   **Recurring Jobs**
 
     Register recurring jobs in code or declare them entirely in `appsettings.json` with timezone support — no cron syntax boilerplate in your startup code.
+
 
   -   **OpenTelemetry**
 

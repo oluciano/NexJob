@@ -135,12 +135,7 @@ A worker crash leaves one or more jobs stuck in `Processing` with a stale `Heart
 
 ## Broker Queues vs NexJob Queues
 
-Do not confuse an external message broker queue (RabbitMQ, Kafka, AWS SQS) with a NexJob queue:
-
-- **Message Broker Queue (Transport):** A broker queue or topic transports messages across network boundaries between services. Messages are transient and consumed off the network buffer.
-- **NexJob Queue (Governance & Execution):** A NexJob queue is a persistent logical partition inside your storage database (PostgreSQL, MongoDB, SQL Server, Redis). It governs execution concurrency, rate throttling (`[Throttle]`), execution windows (for example, 22:00 to 06:00), and automated [queue circuit breaking](guides/circuit-breaker.md).
-
-When using broker triggers (for example, `NexJob.RabbitMQ`), the trigger consumes off the RabbitMQ transport queue and enqueues into a NexJob storage queue. This protects your downstream services: if an external API fails, NexJob's circuit breaker automatically pauses the logical queue without dropping messages or overwhelming your message broker.
+A NexJob queue is not a message broker queue (RabbitMQ, Kafka, AWS SQS). A broker queue transports messages between services; a NexJob queue is a persistent partition in your storage database that governs execution. Broker triggers consume from the broker and enqueue into a NexJob queue. See [Queues](concepts/queues.md#broker-queues-vs-nexjob-queues) for the full comparison.
 
 ## Next steps
 

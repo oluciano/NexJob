@@ -154,7 +154,7 @@ Start your application as normal:
 
     NexJob starts the dispatcher as a hosted `BackgroundService`. Once the job is enqueued, you will see output like:
 
-    ```
+    ```text
     Hello at 2026-04-08T12:00:00Z
     ```
 
@@ -206,7 +206,7 @@ dotnet run
 
 Expected output:
 
-```
+```text
 Hello at 2026-04-08T12:00:00Z
 ```
 

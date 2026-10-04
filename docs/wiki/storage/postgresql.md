@@ -129,8 +129,8 @@ builder.Services.AddNexJob();
 !!! note
     When you pass an `NpgsqlDataSource`, you own its lifetime and pool configuration. NexJob will not create a second pool alongside it.
 
-NexJob applies its schema migrations at startup with this overload too, exactly as with a connection string, so a new database works without any preparation. Before v5.8 this overload skipped the migrations and a host on an empty database failed with `relation "nexjob_settings" does not exist`. The user behind the data source needs the privileges to create tables the first time. The dashboard read replica (`UseDashboardReadReplica`) never runs migrations.
 
+NexJob applies its schema migrations at startup with this overload too, exactly as with a connection string, so a new database works without any preparation. Before v5.8 this overload skipped the migrations and a host on an empty database failed with `relation "nexjob_settings" does not exist`. The user behind the data source needs the privileges to create tables the first time. The dashboard read replica (`UseDashboardReadReplica`) never runs migrations.
 
 ## Connection pool sizing
 
@@ -138,7 +138,7 @@ NexJob holds a connection only for the duration of each storage call — a runni
 
 Set `Maximum Pool Size` in your connection string to match:
 
-```
+```text
 Host=db;Database=nexjob;Username=u;Password=p;Maximum Pool Size=40;Application Name=nexjob-worker
 ```
 

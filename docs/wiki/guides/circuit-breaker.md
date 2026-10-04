@@ -37,13 +37,16 @@ builder.Services.AddNexJob(options =>
 
     Normal processing. All jobs execute at full worker concurrency.
 
+
   -   **Open**
 
     Consecutive failures exceeded the threshold. The queue is paused and jobs accumulate in storage without burning retries. Exponential backoff multiplies the cooldown on repeated probe failures.
 
+
   -   **Half-Open**
 
     Cooldown elapsed. One canary job is dispatched to probe downstream health.
+
 
   -   **Recovering**
 
@@ -70,7 +73,7 @@ The dashboard at `/queues` also shows circuit state visually and exposes a **Res
 ## Seeing it
 
 - The dashboard **Queues** page shows the circuit state of each queue and has a **Reset Circuit** button. See [Dashboard](../integrations/dashboard.md#dashboard-pages).
-- There is **no metric** for the circuit state yet. To be told when it opens, alert on jobs piling up in the queue (`nexjob.queue.depth`); see [Alerts](alerts.md).
+- There is **no metric** for the circuit state yet. To be told when it opens, alert on jobs piling up in the queue (`nexjob.queue.depth`); see [Alerts](../guides/alerts.md).
 
 ## Try it
 
@@ -78,6 +81,6 @@ The `NexJob.Sample.Reliability` sample trips a circuit with `POST /circuit/trip`
 
 ## See also
 
-- [Throttling](throttling.md): steady-state concurrency limits, which work together with the breaker.
+- [Throttling](../guides/throttling.md): steady-state concurrency limits, which work together with the breaker.
 - [Retries & Dead Letter](../concepts/retries-and-dead-letter.md): what happens to one job that keeps failing.
-- [Runtime Control](runtime-control.md): reset a circuit from code.
+- [Runtime Control](../guides/runtime-control.md): reset a circuit from code.

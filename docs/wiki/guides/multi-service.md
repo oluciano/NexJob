@@ -1,5 +1,5 @@
 ---
-title: "Several Services on One Database: Queues and Foreign Jobs"
+title: "Multi-Service: Queues and Foreign Jobs Across Microservices"
 sidebarTitle: "Multi-Service"
 description: "Run several microservices on the same NexJob storage safely: queue isolation, how jobs of another service are deferred, dashboards per service and mixed versions during an upgrade."
 ---
@@ -27,7 +27,7 @@ If a service fetches a job whose type (or input type) it cannot load, the job is
 This is a safety net, not a design. If two services poll the **same** queue they keep handing each other's jobs back: nothing breaks, but fetches are wasted and execution is delayed. A foreign job that no running service owns waits in the queue, visible in the dashboard, until one of them is deployed.
 
 | Setup | Result |
-|---|---|
+| --- | --- |
 | One queue per service | Clean. No foreign fetches. |
 | Several services on the same queue | Works, with wasted fetches and delays while jobs bounce. |
 | A job type that no running service has | The job waits as `Enqueued` and is deferred each time a service fetches it. Deploy the owner, or delete the job. |
@@ -38,7 +38,7 @@ Run one dashboard per team, limited to that team's queues, so the counters and l
 
 ## Things that are shared
 
-- **Pausing a queue** is stored in the database, so it applies to every node of every service that polls that queue. See [Runtime Control](runtime-control.md).
+- **Pausing a queue** is stored in the database, so it applies to every node of every service that polls that queue. See [Runtime Control](../guides/runtime-control.md).
 - **Recurring jobs** are stored in the database. Give each recurring job an id and a queue that belong to one service.
 - **Retention and the orphan watcher** run in every node. They act on the whole database, not only on the jobs of their own service.
 
