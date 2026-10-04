@@ -9,6 +9,7 @@ description: >-
 # NexJob Release Cycle Skill
 
 This skill enforces an audit-proof, disciplined, and automated workflow for releasing **NexJob** to NuGet and GitHub.
+It executes the canonical governance defined in `.agents/method/modes/04-release-mode.md`.
 It guarantees that code and documentation (Wiki + Package READMEs) are strictly aligned before any release reaches `main`.
 
 ---

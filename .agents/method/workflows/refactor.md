@@ -1,26 +1,41 @@
 # Workflow: Refactor
 
-## Constraint: NO BEHAVIOR CHANGE
+**When:** Improving internal code structure, maintainability, or readability without changing any observable behavior.
 
-## Steps
-1. Define scope — what changes, what doesn't, how to verify
-2. Execution (02-execution-mode) → refactored code only
-   - Improved clarity or structure
-   - Zero warnings
-3. Validation (03-validation-mode) → behavior unchanged check
-   - All original tests pass unmodified
-   - StyleCop compliant
+---
 
-## Stop conditions
-- Tests need modification → STOP, ask
-- Public API changes → STOP, ask
-- Behavior becomes less obvious → STOP, ask
-- Architecture changes creeping in → STOP, ask
-- Tempted to rewrite a test to make it pass → STOP, this is a behavior change
+## 1. Absolute Constraint: Strict Behavioral Parity
+A refactor **MUST NOT** alter observable behavior or public API contracts:
+- Zero changes to public method signatures or types.
+- Zero changes to storage schemas or serialization formats.
+- All existing tests MUST pass completely unmodified.
 
-## Exit criteria
-- [ ] All original tests pass (unmodified)
-- [ ] Behavior identical
-- [ ] Zero warnings (Release build)
-- [ ] StyleCop compliant
-- [ ] No CHANGELOG entry needed
+---
+
+## 2. Pre-Flight & Context Warmup Gate (Phase 1)
+- **WIP Limit = 1:** Verify no other issue has the `in-progress` label.
+- **Mark in-progress:** Label the issue and post kickoff comment.
+- **Branch Isolation:** `git checkout -b refactor/<issue-id>-<description>`.
+
+---
+
+## 3. Execution (Phase 3)
+- Mode: `.agents/method/modes/02-execution-mode.md`.
+- Refactor code in small, incremental steps.
+- Maintain StyleCop compliance, XML documentation, and async conventions.
+- Do NOT rewrite or modify any existing passing tests.
+
+---
+
+## 4. Stop Conditions (Mandatory Escalation)
+- An existing test breaks and requires modification → **STOP**. (This indicates behavior changed).
+- A public API signature needs to change → **STOP**. (Requires architect approval).
+- A storage table/key format needs alteration → **STOP**.
+
+---
+
+## 5. Automated Verification & Exit Criteria
+- [ ] All existing unit, integration, and reliability tests pass 100% unmodified
+- [ ] Zero compiler warnings in Release build (`TreatWarningsAsErrors = true`)
+- [ ] `dotnet format --verify-no-changes` passes cleanly
+- [ ] Public API surface unchanged

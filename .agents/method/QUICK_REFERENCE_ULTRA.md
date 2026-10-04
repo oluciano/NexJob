@@ -15,8 +15,11 @@ load: foundation-minimal + refactor + execution-mode + validation-mode
 ## reliability
 load: foundation-minimal + reliability + execution-mode
 
+## trigger
+load: foundation-minimal + trigger + execution-mode + validation-mode
+
 ## release
-load: release-mode (04-release-mode.md)
+load: release-mode (04-release-mode.md) [orchestrated via nexjob-release skill]
 
 ---
 

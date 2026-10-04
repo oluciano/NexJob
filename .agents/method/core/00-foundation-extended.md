@@ -10,21 +10,25 @@ See `ARCHITECTURE.md` for the authoritative system design.
 
 ---
 
-## Dispatcher Architecture
+## Dispatcher & Executor Architecture
 
-### JobDispatcherService is an orchestrator
-`ExecuteJobAsync` is a thin orchestrator — it calls private named methods for each stage.
-Do not add inline business logic to it. Each stage has a single responsibility:
+### JobDispatcherService manages the polling loop and worker concurrency
+`JobDispatcherService` is a stateless polling service that:
+- Periodically queries `IJobStorage.FetchNextAsync` for eligible jobs across queues.
+- Manages concurrency worker slots and respects queue-level pauses and circuit breakers.
+- Hands each fetched job to `IJobExecutor.ExecuteJobAsync`.
 
-- `TryHandleExpirationAsync` — deadline check only
-- `PrepareInvocationAsync` — type resolution, migration, deserialization, DI scope
-- `ExecuteWithThrottlingAndFiltersAsync` — throttle acquisition + filter pipeline + job invocation
-- `HandleFailureAsync` — retry calculation + decision logging
-- `RecordSuccessMetrics` — metrics only
+### JobExecutor is the execution pipeline orchestrator
+Extracted from the dispatcher in v3, `JobExecutor` executes a single job through defined stages:
+- `TryHandleExpirationAsync` — deadline check before execution starts.
+- `_invokerFactory.PrepareAsync` — type resolution, schema migration, deserialization, and DI scope (`JobInvocationContext`).
+- `ExecuteWithThrottlingAndFiltersAsync` — local/distributed throttle acquisition + filter pipeline + job invocation.
+- `HandleFailureAsync` — retry delay calculation via `IJobRetryPolicy` and dead-letter dispatch via `IDeadLetterDispatcher`.
+- `RecordSuccessMetrics` — OpenTelemetry metrics and duration recording.
 
 ### JobInvocationContext owns the DI scope
-`JobInvocationContext` implements `IDisposable` and disposes the DI scope on `Dispose()`.
-Always use `using var context = await PrepareInvocationAsync(job)` — never dispose manually.
+`JobInvocationContext` implements `IDisposable` and disposes the job's DI scope on `Dispose()`.
+Always use `using var context = await _invokerFactory.PrepareAsync(job, ct)` — never dispose manually.
 
 ### Decision logging is mandatory at decision points
 The dispatcher must log the *reason* for every automatic decision:
@@ -143,6 +147,7 @@ Verify these during implementation/fix:
 - Always use `async/await`.
 - Always propagate `CancellationToken`.
 - Never ignore cancellation.
+- Always use `.ConfigureAwait(false)` in library projects, EXCEPT in Blazor component rendering (`src/NexJob.Dashboard/Pages` and components) where `DispatcherSynchronizationContext` must be preserved.
 
 ### Class Design
 - Classes must be `sealed` by default.

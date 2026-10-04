@@ -9,8 +9,8 @@ You proved capable of delivering trigger code and refactors without errors. You 
 
 Before executing any task, read:
 - `.agents/method/core/00-foundation-minimal.md` — always, every task
-- Appropriate workflow: `.agents/method/workflows/{feature|bugfix|test|refactor}.md` or release mode `.agents/method/modes/04-release-mode.md`
-- `skills/nexjob-trigger.md` — for any trigger work
+- Appropriate workflow: `.agents/method/workflows/{feature|bugfix|test|refactor|trigger}.md` or release mode `.agents/method/modes/04-release-mode.md`
+- `.agents/method/workflows/trigger.md` — for any trigger work
 - `.agents/skills/nexjob-task-cycle/SKILL.md` — for disciplined grooming, 3N matrix, and verification gate
 - `.agents/skills/nexjob-release/SKILL.md` — for official release cycle, doc-truth gate, and packaging
 - Quick router: `.agents/method/QUICK_REFERENCE_ULTRA.md`
@@ -19,30 +19,14 @@ Before executing any task, read:
 
 ## Project
 
-NexJob is a production-oriented background job processing library for .NET 8.
+NexJob is a production-oriented background job processing library for .NET 8+.
 MIT licensed. Alternative to Hangfire — storage-pluggable, trigger-ready, OTel-native.
-Current published version: **v5.7.0**. Active development: **develop**.
+Active development branch: **develop**.
+The current version is defined dynamically in `Directory.Build.props` (`<VersionPrefix>`) and official NuGet/git tags.
 
 ---
 
-## What Is v3+
-
-v3 introduced internal architecture refactoring focused on testability and SOLID compliance, followed by v4 reliability hardening and v5 unified producers and Salesforce triggers.
-
-Key architectural foundations:
-- `IStorageProvider` split into `IJobStorage`, `IRecurringStorage`, `IDashboardStorage`
-- `JobExecutor` extracted from `JobDispatcherService`
-- `IJobInvokerFactory` — encapsulates type resolution, migration, scope creation
-- `IJobRetryPolicy` — encapsulates retry delay calculation
-- `IDeadLetterDispatcher` — encapsulates dead-letter handler resolution and invocation
-- `IJobControlService` — programmatic requeue/delete/pause outside dashboard
-- `UseDashboardReadReplica()` — opt-in read replica for PostgreSQL and SQL Server
-- `AddNexJobDistributedThrottle()` (NexJob.Redis) — opt-in global Redis throttle enforcement
-- `NexJobBuilder` — fluent builder returned by `AddNexJob()`
-
----
-
-## Implemented (v5.1.0)
+## Current Architecture & Capabilities
 
 **Core execution:**
 - `IJob` / `IJob<T>`, wake-up channel, deadline enforcement, retry, throttle, recurring jobs
@@ -107,7 +91,7 @@ Key architectural foundations:
 
 ## Trigger Implementation Contract
 
-Every trigger you implement must satisfy all 5 guarantees — read `skills/nexjob-trigger.md`:
+Every trigger you implement must satisfy all 5 guarantees — read `.agents/method/workflows/trigger.md`:
 
 1. Never silently drop — dead-letter on `IScheduler.EnqueueAsync` failure
 2. Idempotency — use broker's native message ID as `idempotencyKey`

@@ -156,6 +156,7 @@ When picking an issue from the backlog, execute the **Warmup Gate**:
 > - Bug Fixes: `bugfix.md` (mandatory reproduction test before fixing)
 > - Code Cleanup: `refactor.md` (strict behavioral parity)
 > - Stress/Timeouts: `reliability.md`
+> - Triggers & Brokers: `trigger.md`
 > 
 > **Goal:** Solidify behavior with immutable test contracts before modifying production code.
 
