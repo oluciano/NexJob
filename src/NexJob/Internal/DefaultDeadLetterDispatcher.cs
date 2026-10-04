@@ -1,7 +1,9 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Linq.Expressions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using NexJob.Telemetry;
 
 namespace NexJob.Internal;
 
@@ -31,6 +33,30 @@ internal sealed class DefaultDeadLetterDispatcher : IDeadLetterDispatcher
 
     /// <inheritdoc/>
     public async Task DispatchAsync(JobRecord job, Exception lastException, CancellationToken ct = default)
+    {
+        await InvokeTypedHandlerAsync(job, lastException, ct).ConfigureAwait(false);
+        await InvokeForwardersAsync(job, lastException, ct).ConfigureAwait(false);
+    }
+
+    private static Func<object, JobRecord, Exception, CancellationToken, Task> GetOrBuildInvoker(Type handlerType)
+    {
+        return InvokerCache.GetOrAdd(handlerType, static ht =>
+        {
+            var handlerParam = Expression.Parameter(typeof(object), "handler");
+            var jobParam = Expression.Parameter(typeof(JobRecord), "job");
+            var exParam = Expression.Parameter(typeof(Exception), "ex");
+            var ctParam = Expression.Parameter(typeof(CancellationToken), "ct");
+
+            var handleMethod = ht.GetMethod(nameof(IDeadLetterHandler<IJob>.HandleAsync))!;
+            var cast = Expression.Convert(handlerParam, ht);
+            var call = Expression.Call(cast, handleMethod, jobParam, exParam, ctParam);
+
+            return Expression.Lambda<Func<object, JobRecord, Exception, CancellationToken, Task>>(
+                call, handlerParam, jobParam, exParam, ctParam).Compile();
+        });
+    }
+
+    private async Task InvokeTypedHandlerAsync(JobRecord job, Exception lastException, CancellationToken ct)
     {
         try
         {
@@ -68,21 +94,50 @@ internal sealed class DefaultDeadLetterDispatcher : IDeadLetterDispatcher
         }
     }
 
-    private static Func<object, JobRecord, Exception, CancellationToken, Task> GetOrBuildInvoker(Type handlerType)
+    private async Task InvokeForwardersAsync(JobRecord job, Exception lastException, CancellationToken ct)
     {
-        return InvokerCache.GetOrAdd(handlerType, static ht =>
+        try
         {
-            var handlerParam = Expression.Parameter(typeof(object), "handler");
-            var jobParam = Expression.Parameter(typeof(JobRecord), "job");
-            var exParam = Expression.Parameter(typeof(Exception), "ex");
-            var ctParam = Expression.Parameter(typeof(CancellationToken), "ct");
+            using var scope = _scopeFactory.CreateScope();
 
-            var handleMethod = ht.GetMethod(nameof(IDeadLetterHandler<IJob>.HandleAsync))!;
-            var cast = Expression.Convert(handlerParam, ht);
-            var call = Expression.Call(cast, handleMethod, jobParam, exParam, ctParam);
+            foreach (var forwarder in scope.ServiceProvider.GetServices<IDeadLetterForwarder>())
+            {
+                await InvokeForwarderAsync(forwarder, job, lastException, ct).ConfigureAwait(false);
+            }
+        }
+        catch (Exception resolveEx)
+        {
+            _logger.LogError(
+                resolveEx,
+                "Dead-letter forwarders could not be resolved for job {JobId} — forwarding skipped",
+                job.Id);
+        }
+    }
 
-            return Expression.Lambda<Func<object, JobRecord, Exception, CancellationToken, Task>>(
-                call, handlerParam, jobParam, exParam, ctParam).Compile();
-        });
+    private async Task InvokeForwarderAsync(IDeadLetterForwarder forwarder, JobRecord job, Exception lastException, CancellationToken ct)
+    {
+        var name = forwarder.GetType().Name;
+
+        try
+        {
+            if (!forwarder.AppliesTo(job))
+            {
+                return;
+            }
+
+            await forwarder.ForwardAsync(job, lastException, ct).ConfigureAwait(false);
+
+            NexJobMetrics.DeadLettersForwarded.Add(1, new TagList { { "nexjob.forwarder", name } });
+            _logger.LogDebug("Dead-letter forwarder {Forwarder} forwarded job {JobId}", name, job.Id);
+        }
+        catch (Exception forwardEx)
+        {
+            NexJobMetrics.DeadLetterForwardsFailed.Add(1, new TagList { { "nexjob.forwarder", name } });
+            _logger.LogError(
+                forwardEx,
+                "Dead-letter forwarder {Forwarder} threw for job {JobId} — forwarder errors are swallowed",
+                name,
+                job.Id);
+        }
     }
 }

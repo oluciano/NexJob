@@ -42,6 +42,10 @@ builder.Services.AddNexJob(opt =>
         opt.Topic = topicName;
         opt.GroupId = groupId;
         opt.TargetQueue = "customers-queue";
+
+        // A registration that exhausts its retries stays Failed in NexJob and a copy of the message body is
+        // published to this topic through the Outbox producer above.
+        opt.ExhaustedJobsTopic = builder.Configuration["Kafka:ExhaustedJobsTopic"] ?? $"{topicName}.exhausted";
     })
     .AddNexJobJobs(typeof(Program).Assembly);
 

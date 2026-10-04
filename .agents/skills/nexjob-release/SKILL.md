@@ -9,6 +9,7 @@ description: >-
 # NexJob Release Cycle Skill
 
 This skill enforces an audit-proof, disciplined, and automated workflow for releasing **NexJob** to NuGet and GitHub.
+It executes the canonical governance defined in `.agents/method/modes/04-release-mode.md`.
 It guarantees that code and documentation (Wiki + Package READMEs) are strictly aligned before any release reaches `main`.
 
 ---
@@ -87,9 +88,9 @@ It guarantees that code and documentation (Wiki + Package READMEs) are strictly 
    **Options when Red:** (a) release earlier, from the last known-good commit, and keep the rest in `develop`; (b) cut a fix-only branch from the last tag with the reviewed fixes and release that as a PATCH, then the features as the next MINOR; (c) proceed anyway, recording in the release PR that it is oversized and completing the mitigation checklist.
 
    **Mitigation checklist (Yellow and Red):**
-   - Every entry that changes observable behaviour is listed in the release PR and in `docs/wiki/18-Migration.md` with what the user must do.
+   - Every entry that changes observable behaviour is listed in the release PR and in `docs/wiki/reference/migration.md` with what the user must do.
    - Every change to a stored format or key (schema, Redis keys, Mongo documents) has an explicit **mixed-version (rolling upgrade) statement**: what happens while old and new nodes run together, and how to recover.
-   - The distributed reliability suite (`tests/NexJob.ReliabilityTests.Distributed`, not run by CI) was run and its result recorded, with every failure classified as test issue or product issue.
+   - The full reliability suite (`tests/NexJob.ReliabilityTests`) was run on every database provider (`gh workflow run reliability.yml --ref develop`, also scheduled nightly) and its result recorded, with every failure classified as test issue or product issue.
    - Code examples added or changed in the docs were compiled and executed.
    - A rollout note (upgrade one node first, what to watch) and a rollback note (previous version, whether the schema migrations are reversible) are in the release PR.
    - A patch milestone (`vX.Y.Z+1`) exists for the follow-ups already known, so they do not pile into the next minor.
@@ -119,11 +120,19 @@ Always ask the user explicitly before proceeding:
    - Identify packages with code changes in this release (e.g. `src/NexJob.Dashboard/README.md`, `src/NexJob.Kafka/README.md`).
    - Check if options, methods, endpoints, themes, or UI features are accurately described.
    - If outdated or missing info, **edit the README immediately**.
-3. **Audit Wiki (`docs/wiki/`):**
-   - Check relevant wiki pages (e.g. `10-Dashboard.md`, `19-Triggers.md`, `20-Kafka.md`, `Home.md`).
+3. **Mintlify Customer-Facing Documentation Sync (Interactive Step):**
+   - Prompt the user:
+     > *"Do you have any customer-facing documentation generated or updated in Mintlify (`mintlify-docs`)? If yes, trigger the review/generation in Mintlify now and reply 'gerou' or 'pronto'. If no Mintlify updates are needed, reply 'skip'."*
+   - When the user confirms (e.g. 'gerou' or 'pronto'):
+     - Execute `python3 docs/site/sync-from-mintlify.py`.
+     - The script automatically pulls latest commits (`git pull`) from `mintlify-docs`, converts MDX to MkDocs Material Markdown, and updates `docs/wiki/`.
+     - Run `docs/site/prepare.sh && mkdocs build` to verify 0 broken links with `strict: true`.
+   - If 'skip': proceed with the existing documentation files.
+4. **Audit Wiki (`docs/wiki/`):**
+   - Check relevant wiki pages (e.g. `integrations/dashboard.md`, `integrations/triggers.md`, `integrations/kafka.md`, `concepts/`).
    - Check for obsolete signatures, missing screenshots/explanations of new UI screens, or omitted configuration parameters.
    - If outdated, **edit the Wiki pages immediately**.
-4. **Commit & Push Docs Direct to `develop`:**
+5. **Commit & Push Docs Direct to `develop`:**
    - Commit all doc and wiki updates with message: `docs: synchronize wiki, root readme and package readmes for vX.Y.Z release`.
    - Push directly to `origin/develop`.
 
@@ -152,6 +161,28 @@ node .agents/skills/nexjob-dashboard-chaos-gate/scripts/full-regression.js
 ```
 
 If any check fails: **STOP**. Fix the issue, verify again, and only continue when 100% green.
+
+### Packaging rehearsal (nothing is published)
+
+`dotnet pack` succeeding does not prove that a user can install the packages. Rehearse the release the way a user will meet it, with a release-candidate version and a local feed. Do this before opening the Release PR; it takes a few minutes.
+
+1. **Every packable project is in the publish workflow.** The projects under `src/` that are packable must be exactly the ones `publish.yml` packs (a new package that is missing from that list is never published).
+   ```bash
+   comm -3 <(grep -L "<IsPackable>false" src/*/*.csproj | xargs -n1 basename | sed 's/\.csproj//' | sort) \
+           <(grep -o "dotnet pack src/[A-Za-z.]*/" .github/workflows/publish.yml | sed 's|dotnet pack src/||; s|/||' | sort)
+   ```
+   No output means they match.
+2. **Pack everything as `X.Y.Z-rc.1` into a local folder.**
+   ```bash
+   FEED=$(mktemp -d)
+   for p in src/*/*.csproj; do dotnet pack "$p" -c Release -p:MinVerVersionOverride=X.Y.Z-rc.1 --output "$FEED"; done
+   ```
+   Open each `.nupkg`: it has the DLL, the XML documentation, the README and the license, and its dependency on `NexJob` is `X.Y.Z-rc.1`.
+3. **Install them in an empty application.** Create a new project **outside the repository**, with a `nuget.config` that lists the local feed and nuget.org (use `packageSourceMapping` so `NexJob*` comes only from the local feed), and reference **all** the packages at once. It must restore and build with 0 warnings: this catches version conflicts between packages.
+4. **Run it on every provider.** In that application, register a job that succeeds and one that fails with an `IDeadLetterHandler`, and check that the first ends `Succeeded`, the second `Failed` and the handler is called once, on InMemory, PostgreSQL, SQL Server, Redis and MongoDB. Use throwaway containers on high ports (`docker run --rm -p 35432:5432 ...`) and stop them afterwards. **Never use the ports of the `dev-*` containers**, they belong to the developer. Remember to register the job classes in DI.
+5. **Public API against the last release** (optional, manual): compare the public types and members of `NexJob.dll` between the last published version and the release candidate. Anything removed is a breaking change and needs a major version.
+
+If any step fails, fix it on `develop` and rehearse again. Do not publish the release candidate to NuGet: `publish.yml` only publishes tags on `main`, and a published NuGet version cannot be deleted.
 
 ---
 

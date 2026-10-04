@@ -66,7 +66,27 @@ lifetime.ApplicationStarted.Register(() =>
 
         await scheduler.EnqueueAsync<HealthCheckJob>(queue: "default");
 
-        for (int i = 0; i < 20; i++)
+        // Scheduled job in the future
+        await scheduler.ScheduleAsync<HealthCheckJob>(
+            TimeSpan.FromMinutes(10),
+            queue: "default");
+
+        // Flaky job that recovers on attempt 3 (shows retry loop & recovery)
+        await scheduler.EnqueueAsync<FlakyApiJob, FlakyApiInput>(
+            new FlakyApiInput("crm-sync-customer", FailUntilAttempt: 2),
+            tags: ["demo:retry-recovery", "crm"]);
+
+        // Flaky job with longer retry backoff (shows Awaiting Retry / Backoff state)
+        await scheduler.EnqueueAsync<FlakyApiJob, FlakyApiInput>(
+            new FlakyApiInput("external-billing-partner", FailUntilAttempt: 5),
+            tags: ["demo:in-retry", "billing"]);
+
+        // Dead-letter job that exhausts retries
+        await scheduler.EnqueueAsync<DeadLetterSampleJob, DeadLetterInput>(
+            new DeadLetterInput("TX-9908", "Suspected multi-card fraud burst"),
+            tags: ["demo:dead-letter", "security"]);
+
+        for (int i = 0; i < 200; i++)
         {
             await scheduler.EnqueueAsync<ProcessOrderJob, ProcessOrderInput>(
                 new ProcessOrderInput(Guid.NewGuid(), 100m + i));

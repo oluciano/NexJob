@@ -65,6 +65,10 @@ The job expires if it does not start within 5 minutes: no silent failures, no zo
 ## Learn more
 
 - **Documentation:** https://oluciano.github.io/NexJob/
+- **What happens when something fails:** https://oluciano.github.io/NexJob/concepts/delivery-guarantees/
+- **Retries and dead-letter handling:** https://oluciano.github.io/NexJob/concepts/retries-and-dead-letter/
+- **Protect a queue (circuit breaker, throttling):** https://oluciano.github.io/NexJob/guides/circuit-breaker/
+- **Get alerts when a job fails for good:** https://oluciano.github.io/NexJob/guides/alerts/
 - **Source, issues and full README:** https://github.com/oluciano/NexJob
 - **Changelog:** https://github.com/oluciano/NexJob/blob/main/CHANGELOG.md
 

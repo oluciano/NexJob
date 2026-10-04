@@ -4,6 +4,7 @@ using MongoDB.Bson.Serialization.Attributes;
 namespace NexJob.MongoDB;
 
 /// <summary>BSON document that maps to a <see cref="JobRecord"/>.</summary>
+[BsonIgnoreExtraElements] // a node must read documents written by a newer version (rolling upgrades)
 internal sealed class JobDocument
 {
     [BsonId]
@@ -39,6 +40,8 @@ internal sealed class JobDocument
     public int? ProgressPercent { get; set; }
     public string? ProgressMessage { get; set; }
     public string? CheckpointJson { get; set; }
+    [BsonIgnoreIfNull] // not written without a deadline, so a node of the previous version can still read the job
+    public DateTimeOffset? ExpiresAt { get; set; }
 
     // Every DateTimeOffset is stored at +00:00: the string serializer sorts and compares lexically, which is only
     // correct when all values share one offset.
@@ -77,6 +80,7 @@ internal sealed class JobDocument
         ProgressPercent = r.ProgressPercent,
         ProgressMessage = r.ProgressMessage,
         CheckpointJson = r.CheckpointJson,
+        ExpiresAt = r.ExpiresAt?.ToUniversalTime(),
     };
 
     public JobRecord ToRecord() => new()
@@ -114,5 +118,6 @@ internal sealed class JobDocument
         ProgressPercent = ProgressPercent,
         ProgressMessage = ProgressMessage,
         CheckpointJson = CheckpointJson,
+        ExpiresAt = ExpiresAt,
     };
 }

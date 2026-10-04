@@ -73,7 +73,7 @@ internal sealed class ThrottleRegistry
         {
             if (distributedAcquired)
             {
-                await SafeReleaseDistributedAsync(resource).ConfigureAwait(false);
+                await SafeReleaseDistributedAsync(resource, CancellationToken.None).ConfigureAwait(false);
             }
 
             throw;
@@ -83,7 +83,7 @@ internal sealed class ThrottleRegistry
         {
             if (distributedAcquired)
             {
-                await SafeReleaseDistributedAsync(resource).ConfigureAwait(false);
+                await SafeReleaseDistributedAsync(resource, CancellationToken.None).ConfigureAwait(false);
             }
 
             return false;
@@ -145,7 +145,7 @@ internal sealed class ThrottleRegistry
         {
             if (distributedAcquired)
             {
-                await SafeReleaseDistributedAsync(resource).ConfigureAwait(false);
+                await SafeReleaseDistributedAsync(resource, CancellationToken.None).ConfigureAwait(false);
             }
 
             throw;
@@ -155,7 +155,7 @@ internal sealed class ThrottleRegistry
         {
             if (distributedAcquired)
             {
-                await SafeReleaseDistributedAsync(resource).ConfigureAwait(false);
+                await SafeReleaseDistributedAsync(resource, CancellationToken.None).ConfigureAwait(false);
             }
 
             return false;

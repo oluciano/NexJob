@@ -1,6 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using NexJob.RabbitMQ;
 using RabbitMQ.Client;
 
 namespace NexJob.Trigger.RabbitMQ;
@@ -24,10 +25,17 @@ public static class RabbitMqNexJobExtensions
         services.AddOptions<RabbitMqTriggerOptions>()
             .Configure(configure)
             .ValidateDataAnnotations()
+            .Validate<IServiceProvider>(
+                (options, provider) => string.IsNullOrWhiteSpace(options.ExhaustedJobsRoutingKey)
+                    || (provider.GetService<IServiceProviderIsService>()?.IsService(typeof(IRabbitMqProducerClient)) ?? true),
+                "RabbitMqTriggerOptions.ExhaustedJobsRoutingKey needs the RabbitMQ producer: call AddRabbitMqProducer(...) as well.")
             .ValidateOnStart();
 
         services.AddSingleton<IConnectionFactory>(_ => new ConnectionFactory());
         services.AddHostedService<RabbitMqTriggerHandler>();
+
+        // Does nothing unless RabbitMqTriggerOptions.ExhaustedJobsRoutingKey is set.
+        services.AddSingleton<IDeadLetterForwarder, RabbitMqDeadLetterForwarder>();
 
         return services;
     }

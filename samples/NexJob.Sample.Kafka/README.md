@@ -70,3 +70,7 @@ Watch console logs:
 3. Kafka Trigger consumes the message.
 4. `ProcessUserEventJob` executes and logs the event!
 
+
+## Forwarding exhausted jobs
+
+The trigger sets `ExhaustedJobsTopic` (default `<topic>.exhausted`, or `Kafka:ExhaustedJobsTopic` in configuration). A registration whose job exhausts its retries stays `Failed` in the NexJob dashboard, and a copy of the original message body is published to that topic through the Outbox producer. Consume that topic to inspect or reprocess what failed. Only the body is forwarded.

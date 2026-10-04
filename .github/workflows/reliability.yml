@@ -1,0 +1,70 @@
+name: Reliability
+
+# Tier 2: pull requests that touch storage or the dispatcher run a concurrency and restart subset per provider.
+# Tier 3: nightly and on demand (run it before a release) run every scenario per provider.
+# Tier 1 (InMemory, every pull request) is a job in ci.yml.
+
+on:
+  pull_request:
+    branches: [develop, main]
+    paths:
+      - 'src/NexJob.Postgres/**'
+      - 'src/NexJob.SqlServer/**'
+      - 'src/NexJob.Redis/**'
+      - 'src/NexJob.MongoDB/**'
+      - 'src/NexJob/Internal/**'
+      - 'tests/NexJob.ReliabilityTests/**'
+      - '.github/workflows/reliability.yml'
+  schedule:
+    - cron: '0 4 * * *'
+  workflow_dispatch:
+
+jobs:
+  reliability:
+    name: Reliability - ${{ matrix.provider }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    strategy:
+      fail-fast: false
+      matrix:
+        provider: [Postgres, SqlServer, Redis, Mongo]
+
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5.2.0
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Build
+        # The worker project references the tests and is started by the crash test as a separate process.
+        run: dotnet build tests/NexJob.ReliabilityTests.Worker --configuration Release
+
+      - name: Run reliability tests
+        env:
+          EVENT: ${{ github.event_name }}
+          PROVIDER: ${{ matrix.provider }}
+        run: |
+          if [ "$EVENT" = "pull_request" ]; then
+            FILTER="Category=Reliability.Distributed&(FullyQualifiedName~${PROVIDER}ConcurrencyTests|FullyQualifiedName~${PROVIDER}RecoveryTests|FullyQualifiedName~${PROVIDER}ContinuationTests|FullyQualifiedName~${PROVIDER}OrphanTests|FullyQualifiedName~${PROVIDER}CrashTests|FullyQualifiedName~${PROVIDER}LiveObjectTests|FullyQualifiedName~${PROVIDER}ConnectionTests|FullyQualifiedName~${PROVIDER}PoolTests|FullyQualifiedName~${PROVIDER}ConnectionObjectTests)"
+          else
+            FILTER="Category=Reliability.Distributed&FullyQualifiedName~${PROVIDER}"
+          fi
+          echo "Filter: $FILTER"
+          dotnet test tests/NexJob.ReliabilityTests \
+            --no-build \
+            --configuration Release \
+            --verbosity normal \
+            --filter "$FILTER" \
+            --logger "trx;LogFileName=reliability-${PROVIDER}.trx" \
+            --blame-hang \
+            --blame-hang-timeout 5m
+
+      - name: Upload reliability test artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reliability-${{ matrix.provider }}-artifacts
+          path: tests/NexJob.ReliabilityTests/TestResults/**/*.trx

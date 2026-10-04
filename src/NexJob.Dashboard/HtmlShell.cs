@@ -57,6 +57,11 @@ internal static class HtmlShell
             --border: #dbdade;
             --border-light: #eae9ec;
             --shadow: 0 4px 18px 0 rgba(75, 70, 92, 0.08);
+            --terminal-bg: #f8f7fa;
+            --terminal-header: #edecee;
+            --terminal-border: #dbdade;
+            --terminal-text: #2f2b3d;
+            --terminal-subtext: #6f6b7d;
         }
 
         [data-theme="dark"] {
@@ -73,6 +78,11 @@ internal static class HtmlShell
             --border: #43495e;
             --border-light: #43495e;
             --shadow: 0 4px 18px 0 rgba(15, 20, 34, 0.4);
+            --terminal-bg: #161924;
+            --terminal-header: #202436;
+            --terminal-border: #43495e;
+            --terminal-text: #cfd3db;
+            --terminal-subtext: #a5a3ae;
         }
 
         [data-theme="blue-theme"] {
@@ -91,6 +101,11 @@ internal static class HtmlShell
             --text-tertiary: #64748b;
             --border: #232c66;
             --shadow: 0 4px 20px 0 rgba(0, 0, 0, 0.5);
+            --terminal-bg: #070c29;
+            --terminal-header: #0f1535;
+            --terminal-border: #232c66;
+            --terminal-text: #e2e8f0;
+            --terminal-subtext: #94a3b8;
         }
 
         [data-theme="semi-dark"] {
@@ -106,6 +121,11 @@ internal static class HtmlShell
             --text-tertiary: #94a3b8;
             --border: #e2e8f0;
             --shadow: 0 4px 18px 0 rgba(75, 70, 92, 0.08);
+            --terminal-bg: #f8fafc;
+            --terminal-header: #f1f5f9;
+            --terminal-border: #e2e8f0;
+            --terminal-text: #1e293b;
+            --terminal-subtext: #64748b;
         }
 
         [data-theme="bordered-theme"] {
@@ -121,6 +141,11 @@ internal static class HtmlShell
             --text-tertiary: #a19fa8;
             --border: #c8c7ce;
             --shadow: none;
+            --terminal-bg: #fafafa;
+            --terminal-header: #f0f0f2;
+            --terminal-border: #c8c7ce;
+            --terminal-text: #2f2b3d;
+            --terminal-subtext: #6f6b7d;
         }
 
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -241,34 +266,61 @@ internal static class HtmlShell
 
         /* Terminal Window Aesthetic */
         .terminal-window {
-            background: #141724; border: 1px solid #282d47; border-radius: 8px;
-            box-shadow: 0 8px 24px rgba(0,0,0,0.3); overflow: hidden;
+            background: var(--terminal-bg, #141724); border: 1px solid var(--terminal-border, #282d47); border-radius: 8px;
+            box-shadow: var(--shadow); overflow: hidden;
         }
         .terminal-header {
-            background: #1c2136; padding: 8px 14px; display: flex; align-items: center;
-            justify-content: space-between; border-bottom: 1px solid #282d47;
+            background: var(--terminal-header, #1c2136); padding: 8px 14px; display: flex; align-items: center;
+            justify-content: space-between; border-bottom: 1px solid var(--terminal-border, #282d47);
         }
         .terminal-dots { display: flex; gap: 6px; align-items: center; }
         .terminal-dots span { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
         .terminal-dots span:nth-child(1) { background: #ff5f56; }
         .terminal-dots span:nth-child(2) { background: #ffbd2e; }
         .terminal-dots span:nth-child(3) { background: #27c93f; }
-        .terminal-title { font-size: 11px; font-family: monospace; color: #94a3b8; font-weight: 600; }
-        .terminal-body { padding: 14px 18px; color: #e2e8f0; }
-        .terminal-body pre { color: #e2e8f0 !important; }
+        .terminal-title { font-size: 11px; font-family: monospace; color: var(--terminal-subtext, #94a3b8); font-weight: 600; }
+        .terminal-body { padding: 14px 18px; color: var(--terminal-text, #e2e8f0); }
+        .terminal-body pre { color: var(--terminal-text, #e2e8f0) !important; }
 
         /* JSON Syntax Highlighting Tokens in Terminal */
-        .jk { color: #00cfd5; font-weight: 600; }
-        .js { color: #28c76f; }
-        .jn { color: #ff9f43; font-weight: 500; }
-        .jb { color: #7367f0; font-weight: 600; }
+        .jk { color: var(--primary); font-weight: 600; }
+        .js { color: var(--success); }
+        .jn { color: var(--warning); font-weight: 500; }
+        .jb { color: var(--secondary); font-weight: 600; }
 
         .copy-btn {
-            background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15);
-            color: #94a3b8; font-size: 11px; padding: 3px 8px; border-radius: 4px;
-            cursor: pointer; transition: var(--transition);
+            background: var(--bg-primary); border: 1px solid var(--border);
+            color: var(--text-secondary); font-size: 11px; padding: 4px 10px; border-radius: 4px;
+            cursor: pointer; transition: var(--transition); display: inline-flex; align-items: center; gap: 6px; font-weight: 500;
         }
-        .copy-btn:hover { background: var(--primary); color: #fff; border-color: var(--primary); }
+        .copy-btn:hover { color: #fff; background: var(--primary); border-color: var(--primary); }
+        .copy-btn.copied { background: var(--success) !important; color: #fff !important; border-color: var(--success) !important; }
+
+        /* Mini Radial Gauge */
+        .mini-gauge-wrap {
+            display: inline-flex; align-items: center; gap: 8px; cursor: default;
+        }
+        .mini-gauge-svg {
+            flex-shrink: 0;
+        }
+        .gauge-bg {
+            stroke: var(--bg-tertiary);
+        }
+        .gauge-bar {
+            transition: stroke-dashoffset 0.6s ease-in-out, stroke 0.3s ease;
+        }
+        .gauge-val-text {
+            font-family: inherit;
+        }
+        .mini-gauge-info {
+            display: flex; flex-direction: column; line-height: 1.15;
+        }
+        .mini-gauge-title {
+            font-size: 10px; font-weight: 700; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.5px;
+        }
+        .mini-gauge-sub {
+            font-size: 11px; font-weight: 600; color: var(--text-secondary);
+        }
 
         /* Theme Customizer Drawer (Offcanvas) */
         .theme-drawer-backdrop {
@@ -400,15 +452,16 @@ internal static class HtmlShell
         .chart { padding: 24px; background: var(--bg-secondary); border-radius: var(--radius); }
         .chart-header { margin-bottom: 24px; }
         .section-title { font-size: 16px; font-weight: 600; color: var(--text-primary); }
-        .bars { display: flex; align-items: flex-end; gap: 6px; height: 120px; padding-bottom: 25px; border-bottom: 2px solid var(--border); position: relative; }
-        .bar-wrap { flex: 1; display: flex; flex-direction: column; align-items: center; height: 100%; justify-content: flex-end; position: relative; }
-        .bar { width: 100%; background: var(--primary) !important; border-radius: 4px 4px 0 0; transition: height 0.3s ease; cursor: pointer; min-height: 2px; }
-        .bar:hover { filter: brightness(1.1); transform: scaleX(1.1); }
+        .bars { display: flex; align-items: flex-end; gap: 4px; height: 120px; padding-bottom: 25px; border-bottom: 2px solid var(--border); position: relative; }
+        .bar-wrap { flex: 1; display: flex; flex-direction: column; align-items: center; height: 100%; justify-content: flex-end; position: relative; min-width: 0; }
+        .bar { width: 100%; max-width: 24px; background: var(--primary) !important; border-radius: 4px 4px 0 0; transition: height 0.3s ease; cursor: pointer; min-height: 2px; }
+        .bar:hover { filter: brightness(1.2); transform: scaleY(1.05); }
         .bar.anomaly { background: var(--error); }
         .bar-label { position: absolute; bottom: -22px; font-size: 10px; color: var(--text-tertiary); font-weight: 600; }
         .chart-tooltip { position: fixed; background: #2f3349; color: #fff; padding: 6px 12px; border-radius: 4px; font-size: 12px; pointer-events: none; display: none; z-index: 1000; box-shadow: 0 4px 12px rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); }
         .avg-line { position: absolute; left: 0; right: 0; border-top: 1px dashed var(--text-tertiary); opacity: 0.4; pointer-events: none; z-index: 1; }
         .anomaly-note { font-size: 12px; color: var(--error); margin-top: 16px; font-weight: 500; display: flex; align-items: center; gap: 6px; }
+
 
         /* Cluster Topology Map */
         .topology-card { margin-bottom: 24px; padding: 20px; background: var(--bg-primary); border-radius: var(--radius); border: 1px solid var(--border); box-shadow: var(--shadow); }
@@ -426,12 +479,30 @@ internal static class HtmlShell
         .topo-box:hover { border-color: var(--primary); transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
         .topo-title { font-size: 11px; font-weight: 700; color: var(--text-tertiary); text-transform: uppercase; margin-bottom: 4px; display: flex; align-items: center; justify-content: space-between; }
         .topo-val { font-size: 13px; font-weight: 600; color: var(--text-primary); }
-        .topo-sub { font-size: 11px; color: var(--text-secondary); margin-top: 2px; }
         .pulse-live { width: 6px; height: 6px; border-radius: 50%; background: var(--success); display: inline-block; box-shadow: 0 0 8px var(--success); }
+
+        /* Job Lifecycle Pipeline */
+        .lifecycle-card { margin-bottom: 24px; padding: 22px 24px; background: var(--bg-primary); border-radius: var(--radius); border: 1px solid var(--border); box-shadow: var(--shadow); }
+        .lifecycle-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; flex-wrap: wrap; gap: 12px; }
+        .lifecycle-stepper { display: flex; align-items: center; justify-content: space-between; gap: 8px; overflow-x: auto; padding: 6px 0; }
+        .lifecycle-node { flex: 1; min-width: 170px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; transition: var(--transition); position: relative; }
+        .lifecycle-node:hover { transform: translateY(-2px); box-shadow: 0 4px 14px rgba(0,0,0,0.2); }
+        .lifecycle-node.active { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary); }
+        .lifecycle-node.success { border-color: var(--success); }
+        .lifecycle-node.failed { border-color: var(--error); }
+        .lifecycle-node.warning { border-color: var(--warning); }
+        .lifecycle-connector { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 0 6px; flex-shrink: 0; min-width: 80px; }
+        .lifecycle-metric-badge { font-size: 10px; font-weight: 700; text-transform: uppercase; padding: 2px 7px; border-radius: 10px; margin-bottom: 4px; white-space: nowrap; }
+        .lifecycle-arrow svg { color: var(--primary); }
+        @media (max-width: 768px) {
+            .lifecycle-stepper { flex-direction: column; align-items: stretch; gap: 12px; }
+            .lifecycle-connector { transform: rotate(90deg); margin: 6px 0; }
+        }
+        .retry-loop-banner { margin-top: 18px; padding: 14px 18px; background: var(--bg-secondary); border: 1px solid var(--warning); border-radius: 10px; display: flex; align-items: flex-start; gap: 14px; position: relative; overflow: hidden; }
+        .retry-loop-banner::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--warning); }
         """;
 
     private static readonly string CoreVersion = GetAssemblyVersion(typeof(JobRecord).Assembly);
-    private static readonly string DashboardVersion = GetAssemblyVersion(typeof(HtmlShell).Assembly);
 
     /// <summary>Wraps the content in the standard HTML shell.</summary>
     internal static string Wrap(
@@ -479,9 +550,13 @@ internal static class HtmlShell
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.563-2.512 5.563-5.563C22 6.5 17.5 2 12 2z"/></svg>
                     <span>Themes</span>
                 </button>
+                <a href="https://oluciano.github.io/NexJob/" target="_blank" class="header-btn" title="Documentation">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+                    <span>Docs ↗</span>
+                </a>
                 <a href="https://github.com/oluciano/NexJob" target="_blank" class="header-btn" title="GitHub Repository">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg>
-                    <span>Docs ↗</span>
+                    <span>GitHub</span>
                 </a>
             </div>
         </header>
@@ -558,8 +633,8 @@ internal static class HtmlShell
                     </a>
                 </div>
                 <div class="sidebar-footer">
-                    <span>NexJob Core v{{CoreVersion}}</span>
-                    <a href="https://github.com/oluciano/NexJob/releases/tag/v{{DashboardVersion}}" target="_blank" style="color:var(--text-secondary);text-decoration:none;font-weight:600">v{{DashboardVersion}}</a>
+                    <span>NexJob</span>
+                    <a href="https://oluciano.github.io/NexJob/" target="_blank" title="NexJob Documentation &amp; Releases" style="color:var(--text-secondary);text-decoration:none;font-weight:600">v{{CoreVersion}}</a>
                 </div>
             </nav>
 
@@ -703,6 +778,47 @@ internal static class HtmlShell
                 var res = await fetch('{{pathPrefix}}/jobs/bulk-' + action + clusterParam, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: ids }) });
                 if (res.ok) location.reload();
             };
+
+            // ── Clean Plaintext Copy & Code Clipboard Handler ───────────────────────
+            window.nexJobCopyCode = function(btn) {
+                var term = btn.closest('.terminal-window, .card, dialog, details') || btn.parentElement;
+                var pre = term ? term.querySelector('pre') : null;
+                var text = pre ? (pre.innerText || pre.textContent) : '';
+                if (!text) return;
+                var orig = btn.innerHTML;
+                navigator.clipboard.writeText(text).then(function() {
+                    btn.innerHTML = '✓ Copied!';
+                    btn.classList.add('copied');
+                    setTimeout(function() { btn.innerHTML = orig; btn.classList.remove('copied'); }, 1500);
+                }).catch(function() {
+                    var ta = document.createElement('textarea');
+                    ta.value = text;
+                    ta.style.position = 'fixed';
+                    ta.style.opacity = '0';
+                    document.body.appendChild(ta);
+                    ta.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(ta);
+                    btn.innerHTML = '✓ Copied!';
+                    setTimeout(function() { btn.innerHTML = orig; }, 1500);
+                });
+            };
+
+            // Intercept manual Ctrl+C / Cmd+C inside code/payload blocks to guarantee clean plaintext
+            // (prevents browser from injecting <span class="jk"> HTML into rich-text paste targets!)
+            document.addEventListener('copy', function(e) {
+                var sel = window.getSelection();
+                if (!sel || sel.isCollapsed) return;
+                var anchor = sel.anchorNode;
+                var el = anchor ? (anchor.nodeType === 1 ? anchor : anchor.parentElement) : null;
+                if (el && el.closest('.terminal-window, pre, .terminal-body, #logModalContent, #logModal')) {
+                    var plainText = sel.toString();
+                    if (e.clipboardData) {
+                        e.clipboardData.setData('text/plain', plainText);
+                        e.preventDefault();
+                    }
+                }
+            });
 
             async function nexJobPoll() {
                 setTimeout(nexJobPoll, 5000);

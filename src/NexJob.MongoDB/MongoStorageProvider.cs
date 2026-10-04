@@ -12,7 +12,7 @@ namespace NexJob.MongoDB;
 /// Uses <c>FindOneAndUpdate</c> for atomic job claiming, preventing double-processing
 /// across multiple workers or server instances.
 /// </summary>
-public sealed class MongoStorageProvider : IStorageProvider
+public sealed class MongoStorageProvider : IStorageProvider, IOrphanedJobReporter
 {
     private const int MaxEnqueueAttempts = 3;
 
@@ -409,8 +409,15 @@ public sealed class MongoStorageProvider : IStorageProvider
     /// <inheritdoc/>
     public async Task RequeueOrphanedJobsAsync(TimeSpan heartbeatTimeout, CancellationToken cancellationToken = default)
     {
+        await RequeueOrphanedJobsAndReportAsync(heartbeatTimeout, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<JobId>> RequeueOrphanedJobsAndReportAsync(TimeSpan heartbeatTimeout, CancellationToken cancellationToken = default)
+    {
         var now = DateTimeOffset.UtcNow;
         var cutoff = now - heartbeatTimeout;
+        var failed = new List<JobId>();
 
         var exhaustedFilter = Builders<JobDocument>.Filter.And(
             Builders<JobDocument>.Filter.Eq(d => d.Status, JobStatus.Processing),
@@ -429,15 +436,16 @@ public sealed class MongoStorageProvider : IStorageProvider
             .Unset(d => d.HeartbeatAt)
             .Unset(d => d.ProcessingStartedAt);
 
-        await _jobs.UpdateManyAsync(exhaustedWithoutErrorFilter, exhaustedWithoutErrorUpdate, cancellationToken: cancellationToken).ConfigureAwait(false);
-
         var exhaustedUpdate = Builders<JobDocument>.Update
             .Set(d => d.Status, JobStatus.Failed)
             .Set(d => d.CompletedAt, now)
             .Unset(d => d.HeartbeatAt)
             .Unset(d => d.ProcessingStartedAt);
 
-        await _jobs.UpdateManyAsync(exhaustedFilter, exhaustedUpdate, cancellationToken: cancellationToken).ConfigureAwait(false);
+        // One document at a time: FindOneAndUpdate is atomic per document and returns the one this call moved, so the
+        // jobs reported here are exactly the ones this node failed, even when several nodes scan at once.
+        await FailExhaustedAsync(exhaustedWithoutErrorFilter, exhaustedWithoutErrorUpdate, failed, cancellationToken).ConfigureAwait(false);
+        await FailExhaustedAsync(exhaustedFilter, exhaustedUpdate, failed, cancellationToken).ConfigureAwait(false);
 
         var retryFilter = Builders<JobDocument>.Filter.And(
             Builders<JobDocument>.Filter.Eq(d => d.Status, JobStatus.Processing),
@@ -450,6 +458,7 @@ public sealed class MongoStorageProvider : IStorageProvider
             .Unset(d => d.ProcessingStartedAt);
 
         await _jobs.UpdateManyAsync(retryFilter, retryUpdate, cancellationToken: cancellationToken).ConfigureAwait(false);
+        return failed;
     }
 
     // ── Continuations ─────────────────────────────────────────────────────────
@@ -1087,6 +1096,12 @@ public sealed class MongoStorageProvider : IStorageProvider
             .Unset(d => d.HeartbeatAt)
             .Set(d => d.ExecutionLogs, entries);
 
+        if (result.RefundAttempt)
+        {
+            // A job being committed was fetched, so its attempts is at least 1 and cannot go below zero.
+            jobUpdate = jobUpdate.Inc(d => d.Attempts, -1);
+        }
+
         await _jobs.UpdateOneAsync(ById(jobId), jobUpdate, cancellationToken: ct).ConfigureAwait(false);
     }
 
@@ -1183,5 +1198,24 @@ public sealed class MongoStorageProvider : IStorageProvider
         _servers.Indexes.CreateOne(new CreateIndexModel<ServerDocument>(
             Builders<ServerDocument>.IndexKeys.Ascending(d => d.HeartbeatAt),
             new CreateIndexOptions { Name = "heartbeat_ttl", ExpireAfter = TimeSpan.FromHours(1) }));
+    }
+
+    private async Task FailExhaustedAsync(
+        FilterDefinition<JobDocument> filter,
+        UpdateDefinition<JobDocument> update,
+        List<JobId> failed,
+        CancellationToken cancellationToken)
+    {
+        var options = new FindOneAndUpdateOptions<JobDocument> { ReturnDocument = ReturnDocument.After };
+        while (true)
+        {
+            var moved = await _jobs.FindOneAndUpdateAsync(filter, update, options, cancellationToken).ConfigureAwait(false);
+            if (moved is null)
+            {
+                return;
+            }
+
+            failed.Add(moved.Id);
+        }
     }
 }

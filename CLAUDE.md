@@ -7,35 +7,35 @@ It defines architecture, constraints, and behavioral guarantees.
 
 ## Project Status
 
-NexJob is a production-oriented background job processing library.
-Current published version: **v5.7.0**
-Active development: **develop**
+NexJob is a production-oriented background job processing library for .NET 8+.
+Active development branch: **develop**.
+The current version is defined dynamically in `Directory.Build.props` (`<VersionPrefix>`) and official NuGet/git tags.
 
-### Implemented (v3.0.0)
+### Current Architecture & Capabilities
 - `IJob` / `IJob<T>` — simple and structured jobs
-- Wake-up channel — near-zero latency local dispatch
+- Wake-up channel — near-zero latency local dispatch via internal channel
 - `deadlineAfter` — deadline enforcement before execution
-- `IDeadLetterHandler<TJob>` — permanent failure fallback
-- Retry policies — global + per-job `[Retry]` attribute
+- `IDeadLetterHandler<TJob>` & `IDeadLetterForwarder` — permanent failure fallback
+- Retry policies — global + per-job `[Retry]` attribute + `IJobRetryPolicy`
 - `[Throttle]` — resource-based concurrency limits + distributed via Redis
 - `IJobContext` — injectable runtime context
 - Recurring jobs — via code + via `appsettings.json`
-- Schema migrations — auto-applied at startup
+- Schema migrations — auto-applied at startup across persistent providers
 - Graceful shutdown
-- Dashboard — light/dark UI, timeline, live updates, standalone mode
+- Dashboard — light/dark UI, timeline, live updates, standalone HTTP server mode
 - OpenTelemetry — `NexJobActivitySource` + `NexJobMetrics`
-- 5 storage providers: InMemory, PostgreSQL, SQL Server, Redis, MongoDB
+- 5 storage providers: InMemory, PostgreSQL (SKIP LOCKED), SQL Server (UPDLOCK, READPAST), Redis, MongoDB
 - `DuplicatePolicy` — atomic deduplication across all providers
-- `CommitJobResultAsync` — idempotent result commit
+- `CommitJobResultAsync` — idempotent atomic result commit
 - `IJobExecutionFilter` — middleware pipeline
 - Job retention + auto-cleanup
 - `IStorageProvider` split: `IJobStorage`, `IRecurringStorage`, `IDashboardStorage`
-- `JobExecutor` — extracted from `JobDispatcherService`
+- `JobExecutor` — extracted execution pipeline orchestrator
 - `IJobInvokerFactory`, `IJobRetryPolicy`, `IDeadLetterDispatcher`, `IJobControlService`
 - `NexJobBuilder` — fluent builder returned by `AddNexJob()`
 - `UseDashboardReadReplica()` — opt-in read replica (PostgreSQL, SQL Server)
 - `AddNexJobDistributedThrottle()` (NexJob.Redis) — opt-in global Redis throttle enforcement
-- Triggers: AzureServiceBus, AwsSqs, RabbitMQ, Kafka, GooglePubSub
+- Triggers & Outbox: AzureServiceBus, AwsSqs, RabbitMQ, Kafka, GooglePubSub, Salesforce (gRPC), SalesforceStreaming (CometD)
 
 ---
 
@@ -54,7 +54,7 @@ Active development: **develop**
 - Documentation, wiki, CHANGELOG
 
 **Hard rule:** Trigger packages are external consumers of core.
-They call `IScheduler.EnqueueAsync` and `JobWakeUpChannel.Signal()`.
+They call `IScheduler.EnqueueAsync`. They NEVER reference or call `JobWakeUpChannel` directly (the scheduler handles signaling internally).
 They never modify `IStorageProvider`, `JobRecord`, or any core internal.
 
 ---
@@ -66,6 +66,16 @@ They never modify `IStorageProvider`, `JobRecord`, or any core internal.
 3. Predictability over magic
 4. Developer experience matters
 5. Reliability by design
+
+---
+
+## Non-Goals (decided by the owner)
+
+Check this list at the start of grooming, before designing anything.
+
+- **No notification channels.** NexJob does not ship Slack, Teams, Discord, e-mail or PagerDuty integrations (issue #205). It exposes the hooks (`IDeadLetterHandler<TJob>`, `IDeadLetterForwarder`, the OpenTelemetry metrics) and documents a recipe in `docs/wiki/guides/alerts.md`.
+- **No dashboard controls over shared resources.** The dashboard does not change the worker count or connection pools at runtime; those are deployment decisions and the database is shared.
+- **No new satellite package without the owner's decision.** A package is a long-term commitment (formats, secrets, versions). Grooming starts by asking whether it should exist, and whether a documented recipe on an existing extension point is enough.
 
 ---
 
@@ -97,9 +107,7 @@ NexJob.Trigger.{Broker}   ← external package, depends only on NexJob core
       ↓
 JobRecordFactory.Build()  ← shared factory
       ↓
-IScheduler.EnqueueAsync() ← existing contract, unchanged
-      ↓
-JobWakeUpChannel.Signal() ← existing mechanism, unchanged
+IScheduler.EnqueueAsync() ← persists job and signals wake-up channel internally
 ```
 
 ---

@@ -68,6 +68,10 @@ internal sealed class ServersPage : IComponent
             return HtmlShell.Wrap(Title, PathPrefix, "servers", emptyBody, Counters, clusters: Clusters, activeCluster: ActiveCluster);
         }
 
+        var (cpuPercent, workingSetMb, memPercent, _) = HostSystemMetrics.GetCurrent();
+        var cpuColor = HtmlFragments.GetCpuColor(cpuPercent);
+        var ramColor = HtmlFragments.GetRamColor(memPercent);
+
         var tableBody = string.Join(string.Empty, servers.Select(s =>
         {
             var uptime = DateTimeOffset.UtcNow - s.StartedAt;
@@ -101,11 +105,16 @@ internal sealed class ServersPage : IComponent
                 queuesStr = "-";
             }
 
+            var cpuGauge = HtmlFragments.CircularGauge(cpuPercent, $"{cpuPercent}%", "CPU", $"{cpuPercent}%", cpuColor, size: 34);
+            var memGauge = HtmlFragments.CircularGauge(memPercent, $"{workingSetMb}M", "RAM", $"{workingSetMb} MB", ramColor, size: 34);
+
             return
                 $"<tr>" +
-                $"<td style=\"font-family:monospace;font-size:12px\" title=\"{HttpUtility.HtmlEncode(s.Id)}\">{HttpUtility.HtmlEncode(s.Id)}</td>" +
+                $"<td style=\"font-family:monospace;font-size:12px\" title=\"{HttpUtility.HtmlAttributeEncode(s.Id)}\">{Helpers.FormatServerIdHtml(s.Id)}</td>" +
                 $"<td>{badge}</td>" +
                 $"<td>{s.WorkerCount}</td>" +
+                $"<td>{cpuGauge}</td>" +
+                $"<td>{memGauge}</td>" +
                 $"<td>{queuesStr}</td>" +
                 $"<td>{uptimeStr}</td>" +
                 $"<td>{heartbeatStr}</td>" +
@@ -123,12 +132,14 @@ internal sealed class ServersPage : IComponent
             $"<div class=\"card-header\"><h3>{servers.Count} active node{(servers.Count == 1 ? string.Empty : "s")} processing {totalWorkers} concurrent jobs</h3></div>" +
             "<div class=\"table-container\"><table class=\"table\">" +
             "<thead><tr>" +
-            "<th style=\"width:30%\">Server ID</th>" +
-            "<th style=\"width:10%\">State</th>" +
-            "<th style=\"width:10%\">Capacity</th>" +
-            "<th style=\"width:20%\">Queues</th>" +
-            "<th style=\"width:15%\">Uptime</th>" +
-            "<th style=\"width:15%\">Heartbeat</th>" +
+            "<th style=\"width:24%\">Server ID</th>" +
+            "<th style=\"width:8%\">State</th>" +
+            "<th style=\"width:8%\">Capacity</th>" +
+            "<th style=\"width:15%\">CPU</th>" +
+            "<th style=\"width:15%\">Memory</th>" +
+            "<th style=\"width:12%\">Queues</th>" +
+            "<th style=\"width:9%\">Uptime</th>" +
+            "<th style=\"width:9%\">Heartbeat</th>" +
             "</tr></thead>" +
             $"<tbody>{tableBody}</tbody>" +
             "</table></div>" +

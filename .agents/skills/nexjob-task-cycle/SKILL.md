@@ -156,6 +156,7 @@ When picking an issue from the backlog, execute the **Warmup Gate**:
 > - Bug Fixes: `bugfix.md` (mandatory reproduction test before fixing)
 > - Code Cleanup: `refactor.md` (strict behavioral parity)
 > - Stress/Timeouts: `reliability.md`
+> - Triggers & Brokers: `trigger.md`
 > 
 > **Goal:** Solidify behavior with immutable test contracts before modifying production code.
 
@@ -164,6 +165,14 @@ Every feature or bug fix must produce at least 3 distinct test categories:
 - **N1 — Positive:** Happy path operates as expected.
 - **N2 — Negative:** Expected failure scenarios fail gracefully (timeouts, broker drops, dead-letter dispatch).
 - **N3 — Invalid Input:** Boundary values, nulls, empty collections, malformed payloads.
+
+### Red-First Proof (mandatory)
+Writing the tests first is not enough: show that they test something.
+1. **Run the new tests against the current code and watch them fail for the right reason** (the behaviour under test, not a compile error or a missing fixture). Quote the failing assertion in the issue or PR.
+2. **Commit the red tests on their own** (`test(scope): <what>, red (#id)`) before the fix. Guard tests that already pass (N2/N3 that protect existing behaviour) may sit in the same commit, but say which are red and which are guards.
+3. **Prove an assertion bites when it could pass vacuously** (it only checks "does not throw", the object exists, a fixed sleep elapsed, or a counter nobody reads): change the expected value on purpose once, confirm the failure shows the real value, then revert it.
+4. **If the red run shows the premise was wrong** (the bug lives elsewhere, or the behaviour is already correct), stop and go back to Phase 0. Do not bend the test until it fails.
+5. **Storage fixes go one commit per provider**, each turning the shared contract test green for that provider.
 
 ### The Immutable Test Contract Rule:
 - **NEVER** rewrite, rename, or delete an existing passing test to make new code pass.
@@ -254,10 +263,13 @@ Every task that introduces or modifies public options, defaults, architecture be
 1. **Package / Root READMEs:**
    - If a new feature or behavior was added to a package, update the corresponding `src/<Package>/README.md` or root `README.md`.
 2. **Wiki Pages (`docs/wiki/*.md`):**
-   - **Configuration:** If new options or settings were introduced, update `docs/wiki/11-Configuration-Reference.md`.
-   - **Execution & Retry:** If retry/failure/dead-letter mechanics changed, update `docs/wiki/06-Retry-And-Dead-Letter.md`.
-   - **Architecture & Best Practices:** If deployment topology, queue isolation, or ops hosting guidelines were impacted, update `docs/wiki/13-Best-Practices.md`.
-   - **Dashboard & Monitoring:** If dashboard options, UI scoping, or telemetry changed, update `docs/wiki/10-Dashboard.md` and `docs/wiki/12-OpenTelemetry.md`.
+   - **Configuration:** If new options or settings were introduced, update `docs/wiki/reference/configuration.md`.
+   - **Execution & Retry:** If retry/failure/dead-letter mechanics changed, update `docs/wiki/concepts/retries-and-dead-letter.md`.
+   - **Architecture & Best Practices:** If deployment topology, queue isolation, or ops hosting guidelines were impacted, update `docs/wiki/guides/best-practices.md`.
+   - **Dashboard & Monitoring:** If dashboard options, UI scoping, or telemetry changed, update `docs/wiki/integrations/dashboard.md` and `docs/wiki/integrations/opentelemetry.md`.
+   - **Failure semantics:** If what a failure costs a job changed (attempts used or given back, shutdown, throttle, pause, deadline, crash recovery, dead-letter calls), update `docs/wiki/concepts/delivery-guarantees.md`. It is the one table that lists them; a change that is not there makes the wiki wrong.
+   - **Feature lists:** A new user-facing feature goes in the Key features list of `docs/wiki/introduction.md` and in Core Features of the root `README.md`, each name linking to its page.
+   - **Links:** The docs site builds in strict mode on every pull request, so a broken link fails it. Do not link repository paths (`docs/wiki/...`) from `CHANGELOG.md`: the wiki shows that file as a page.
 3. **Accuracy Check:** Never leave documentation to be fixed "later in release mode" if the code introducing the change is already being PR'd into `develop`.
 
 ---

@@ -12,9 +12,19 @@ namespace NexJob.Postgres;
 /// Uses <c>SELECT FOR UPDATE SKIP LOCKED</c> for atomic job claiming, preventing
 /// double-processing across multiple workers or server instances.
 /// </summary>
-public sealed class PostgresStorageProvider : IStorageProvider, IDisposable, IAsyncDisposable
+public sealed class PostgresStorageProvider : IStorageProvider, IOrphanedJobReporter, IDisposable, IAsyncDisposable
 {
     private const int MaxEnqueueAttempts = 3;
+
+    private const string InsertJobSql =
+        """
+        INSERT INTO nexjob_jobs
+            (id, job_type, input_type, input_json, schema_version, queue, priority, status,
+             idempotency_key, attempts, max_attempts, created_at, scheduled_at, parent_job_id, recurring_job_id, tags, expires_at)
+        VALUES
+            (@Id, @JobType, @InputType, @InputJson::jsonb, @SchemaVersion, @Queue, @Priority,
+             @Status, @IdempotencyKey, @Attempts, @MaxAttempts, @CreatedAt, @ScheduledAt, @ParentJobId, @RecurringJobId, @Tags, @ExpiresAt)
+        """;
 
     private static readonly string[] ActiveStatusNames = ["Enqueued", "Processing", "Scheduled", "AwaitingContinuation"];
 
@@ -117,35 +127,7 @@ public sealed class PostgresStorageProvider : IStorageProvider, IDisposable, IAs
 
                 try
                 {
-                    await conn.ExecuteAsync(
-                        """
-                        INSERT INTO nexjob_jobs
-                            (id, job_type, input_type, input_json, schema_version, queue, priority, status,
-                             idempotency_key, attempts, max_attempts, created_at, scheduled_at, parent_job_id, recurring_job_id, tags)
-                        VALUES
-                            (@Id, @JobType, @InputType, @InputJson::jsonb, @SchemaVersion, @Queue, @Priority,
-                             @Status, @IdempotencyKey, @Attempts, @MaxAttempts, @CreatedAt, @ScheduledAt, @ParentJobId, @RecurringJobId, @Tags)
-                        """,
-                        new
-                        {
-                            Id = job.Id.Value,
-                            job.JobType,
-                            job.InputType,
-                            job.InputJson,
-                            job.SchemaVersion,
-                            job.Queue,
-                            Priority = (int)job.Priority,
-                            Status = job.Status.ToString(),
-                            job.IdempotencyKey,
-                            job.Attempts,
-                            job.MaxAttempts,
-                            job.CreatedAt,
-                            job.ScheduledAt,
-                            ParentJobId = job.ParentJobId?.Value,
-                            job.RecurringJobId,
-                            Tags = job.Tags.ToArray(),
-                        },
-                        tx);
+                    await conn.ExecuteAsync(InsertJobSql, ToInsertParameters(job), tx);
 
                     await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
                     return new EnqueueResult(job.Id, WasRejected: false);
@@ -175,34 +157,7 @@ public sealed class PostgresStorageProvider : IStorageProvider, IDisposable, IAs
                 $"Could not enqueue a job with idempotency key '{job.IdempotencyKey}' after {MaxEnqueueAttempts} attempts.");
         }
 
-        await conn.ExecuteAsync(
-            """
-            INSERT INTO nexjob_jobs
-                (id, job_type, input_type, input_json, schema_version, queue, priority, status,
-                 idempotency_key, attempts, max_attempts, created_at, scheduled_at, parent_job_id, recurring_job_id, tags)
-            VALUES
-                (@Id, @JobType, @InputType, @InputJson::jsonb, @SchemaVersion, @Queue, @Priority,
-                 @Status, @IdempotencyKey, @Attempts, @MaxAttempts, @CreatedAt, @ScheduledAt, @ParentJobId, @RecurringJobId, @Tags)
-            """,
-            new
-            {
-                Id = job.Id.Value,
-                job.JobType,
-                job.InputType,
-                job.InputJson,
-                job.SchemaVersion,
-                job.Queue,
-                Priority = (int)job.Priority,
-                Status = job.Status.ToString(),
-                job.IdempotencyKey,
-                job.Attempts,
-                job.MaxAttempts,
-                job.CreatedAt,
-                job.ScheduledAt,
-                ParentJobId = job.ParentJobId?.Value,
-                job.RecurringJobId,
-                Tags = job.Tags.ToArray(),
-            });
+        await conn.ExecuteAsync(InsertJobSql, ToInsertParameters(job));
 
         return new EnqueueResult(job.Id, WasRejected: false);
     }
@@ -284,7 +239,7 @@ public sealed class PostgresStorageProvider : IStorageProvider, IDisposable, IAs
             """, transaction: tx);
 
         var rows = await conn.QueryAsync<JobRow>(
-            $"""
+            """
             UPDATE nexjob_jobs
             SET status                = 'Processing',
                 processing_started_at = NOW(),
@@ -298,12 +253,12 @@ public sealed class PostgresStorageProvider : IStorageProvider, IDisposable, IAs
                     array_position(@queues, queue),
                     priority ASC,
                     created_at ASC
-                LIMIT {maxBatchSize}
+                LIMIT @maxBatchSize
                 FOR UPDATE SKIP LOCKED
             )
             RETURNING *
             """,
-            new { queues = queues.ToArray() },
+            new { queues = queues.ToArray(), maxBatchSize },
             transaction: tx);
 
         await tx.CommitAsync(cancellationToken);
@@ -624,21 +579,33 @@ public sealed class PostgresStorageProvider : IStorageProvider, IDisposable, IAs
     public async Task RequeueOrphanedJobsAsync(
         TimeSpan heartbeatTimeout, CancellationToken cancellationToken = default)
     {
-        var now = DateTimeOffset.UtcNow;
-        var cutoff = now - heartbeatTimeout;
+        await RequeueOrphanedJobsAndReportAsync(heartbeatTimeout, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<JobId>> RequeueOrphanedJobsAndReportAsync(
+        TimeSpan heartbeatTimeout, CancellationToken cancellationToken = default)
+    {
         await using var conn = Open();
         await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await conn.ExecuteAsync(
+
+        // The statement returns only the jobs it moved to Failed, so another node scanning at the same time cannot report them too.
+        var failedIds = await conn.QueryAsync<Guid>(
             """
-            UPDATE nexjob_jobs
-            SET status = CASE WHEN attempts >= max_attempts THEN 'Failed' ELSE 'Enqueued' END,
-                completed_at = CASE WHEN attempts >= max_attempts THEN @now ELSE NULL END,
-                exception_message = CASE WHEN attempts >= max_attempts AND exception_message IS NULL THEN 'Orphaned execution exceeded maximum attempts.' ELSE exception_message END,
-                heartbeat_at = NULL,
-                processing_started_at = NULL
-            WHERE status = 'Processing' AND heartbeat_at < @cutoff
+            WITH moved AS (
+                UPDATE nexjob_jobs
+                SET status = CASE WHEN attempts >= max_attempts THEN 'Failed' ELSE 'Enqueued' END,
+                    completed_at = CASE WHEN attempts >= max_attempts THEN @now ELSE NULL END,
+                    exception_message = CASE WHEN attempts >= max_attempts AND exception_message IS NULL THEN 'Orphaned execution exceeded maximum attempts.' ELSE exception_message END,
+                    heartbeat_at = NULL,
+                    processing_started_at = NULL
+                WHERE status = 'Processing' AND heartbeat_at < @cutoff
+                RETURNING id, status)
+            SELECT id FROM moved WHERE status = 'Failed'
             """,
-            new { cutoff, now }).ConfigureAwait(false);
+            new { cutoff = DateTimeOffset.UtcNow - heartbeatTimeout, now = DateTimeOffset.UtcNow }).ConfigureAwait(false);
+
+        return failedIds.Select(id => new JobId(id)).ToList();
     }
 
     // ── Continuations ─────────────────────────────────────────────────────────
@@ -806,6 +773,7 @@ public sealed class PostgresStorageProvider : IStorageProvider, IDisposable, IAs
         }
 
         var clause = where.Count > 0 ? "WHERE " + string.Join(" AND ", where) : string.Empty;
+#pragma warning disable S2077 // `clause` holds only literal fragments such as "status = @status"; every value is a parameter.
         var total = await conn.ExecuteScalarAsync<int>($"SELECT COUNT(*)::int FROM nexjob_jobs {clause}", p);
 
         p.Add("limit", pageSize);
@@ -815,6 +783,7 @@ public sealed class PostgresStorageProvider : IStorageProvider, IDisposable, IAs
             $"SELECT * FROM nexjob_jobs {clause} ORDER BY created_at DESC LIMIT @limit OFFSET @offset", p))
             .Select(r => r.ToRecord())
             .ToList();
+#pragma warning restore S2077
 
         return new PagedResult<JobRecord> { Items = items, TotalCount = total, Page = page, PageSize = pageSize };
     }
@@ -1215,6 +1184,28 @@ public sealed class PostgresStorageProvider : IStorageProvider, IDisposable, IAs
     private static bool IsActiveState(JobStatus status) =>
         status is JobStatus.Enqueued or JobStatus.Processing or JobStatus.Scheduled or JobStatus.AwaitingContinuation;
 
+    private static object ToInsertParameters(JobRecord job) =>
+        new
+        {
+            Id = job.Id.Value,
+            job.JobType,
+            job.InputType,
+            job.InputJson,
+            job.SchemaVersion,
+            job.Queue,
+            Priority = (int)job.Priority,
+            Status = job.Status.ToString(),
+            job.IdempotencyKey,
+            job.Attempts,
+            job.MaxAttempts,
+            job.CreatedAt,
+            job.ScheduledAt,
+            ParentJobId = job.ParentJobId?.Value,
+            job.RecurringJobId,
+            job.ExpiresAt,
+            Tags = job.Tags.ToArray(),
+        };
+
     private NpgsqlConnection Open()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -1283,12 +1274,14 @@ public sealed class PostgresStorageProvider : IStorageProvider, IDisposable, IAs
             UPDATE nexjob_jobs
             SET status = 'Scheduled', retry_at = @retryAt,
                 exception_message = @msg, exception_stack_trace = @stack,
-                heartbeat_at = NULL, execution_logs = @Logs::jsonb
+                heartbeat_at = NULL, execution_logs = @Logs::jsonb,
+                attempts = CASE WHEN @refund THEN GREATEST(attempts - 1, 0) ELSE attempts END
             WHERE id = @id
             """,
             new
             {
                 id = jobId.Value,
+                refund = result.RefundAttempt,
                 retryAt = result.RetryAt!.Value,
                 msg = result.Exception?.Message,
                 stack = result.Exception?.StackTrace,

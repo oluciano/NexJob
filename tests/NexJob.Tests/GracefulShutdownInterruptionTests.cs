@@ -75,10 +75,12 @@ public sealed class GracefulShutdownInterruptionTests
 
         await sut.ExecuteJobAsync(job, shutdown.Token);
 
-        job.Attempts.Should().Be(2, "the interrupted attempt must not count");
+        // Behavior changed in v5.8: the attempt is given back by the storage (RefundAttempt, issue #327). Editing the local
+        // JobRecord was never persisted by the database providers, so the executor no longer touches it.
+        job.Attempts.Should().Be(3, "the executor leaves the local copy alone; the storage refunds the attempt");
         storage.Verify(x => x.CommitJobResultAsync(
             job.Id,
-            It.Is<JobExecutionResult>(r => !r.Succeeded && r.RetryAt != null && r.RetryAt <= DateTimeOffset.UtcNow.AddSeconds(1)),
+            It.Is<JobExecutionResult>(r => !r.Succeeded && r.RetryAt != null && r.RetryAt <= DateTimeOffset.UtcNow.AddSeconds(1) && r.RefundAttempt),
             It.IsAny<CancellationToken>()), Times.Once);
         deadLetter.Verify(x => x.DispatchAsync(It.IsAny<JobRecord>(), It.IsAny<Exception>(), It.IsAny<CancellationToken>()), Times.Never);
         retry.Verify(x => x.ComputeRetryAt(It.IsAny<JobRecord>(), It.IsAny<Exception>()), Times.Never);

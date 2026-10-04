@@ -482,6 +482,55 @@ internal static class HtmlFragments
         return $"<a href=\"{url}\" style=\"text-decoration:none;color:inherit\">{content}</a>";
     }
 
+    /// <summary>Renders a compact circular SVG gauge for volatile metrics (CPU, RAM).</summary>
+    internal static string CircularGauge(int percent, string centerText, string label, string subtext, string color, int size = 36)
+    {
+        var clamped = Math.Clamp(percent, 0, 100);
+        var dashOffset = 100 - clamped;
+        return
+            $"<div class=\"mini-gauge-wrap\" title=\"{HtmlAttributeEncode(label)}: {clamped}% ({HtmlAttributeEncode(subtext)})\">" +
+            $"<svg width=\"{size}\" height=\"{size}\" viewBox=\"0 0 36 36\" class=\"mini-gauge-svg\">" +
+            $"<path class=\"gauge-bg\" d=\"M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831\" fill=\"none\" stroke=\"var(--bg-tertiary)\" stroke-width=\"3.5\" />" +
+            $"<path class=\"gauge-bar\" stroke-dasharray=\"100, 100\" stroke-dashoffset=\"{dashOffset}\" d=\"M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831\" fill=\"none\" stroke=\"{color}\" stroke-width=\"3.5\" stroke-linecap=\"round\" />" +
+            $"<text x=\"18\" y=\"20.5\" class=\"gauge-val-text\" text-anchor=\"middle\" font-size=\"8.5\" font-weight=\"700\" fill=\"var(--text-primary)\">{HtmlEncode(centerText)}</text>" +
+            $"</svg>" +
+            $"<div class=\"mini-gauge-info\">" +
+            $"<span class=\"mini-gauge-title\">{HtmlEncode(label)}</span>" +
+            $"<span class=\"mini-gauge-sub\">{HtmlEncode(subtext)}</span>" +
+            $"</div>" +
+            $"</div>";
+    }
+
+    internal static string GetCpuColor(int percent)
+    {
+        if (percent >= 85)
+        {
+            return "var(--error)";
+        }
+
+        if (percent >= 60)
+        {
+            return "var(--warning)";
+        }
+
+        return "var(--primary)";
+    }
+
+    internal static string GetRamColor(int percent)
+    {
+        if (percent >= 90)
+        {
+            return "var(--error)";
+        }
+
+        if (percent >= 70)
+        {
+            return "var(--warning)";
+        }
+
+        return "var(--success)";
+    }
+
     /// <summary>Renders a compact queue row for high-density monitoring with control actions.</summary>
     internal static string QueueCard(
         QueueMetrics queue,
@@ -590,22 +639,37 @@ internal static class HtmlFragments
         var clusterSuffix = activeCluster is not null ? $"?cluster={Uri.EscapeDataString(activeCluster.Id)}" : string.Empty;
         var isReadOnly = activeCluster?.IsReadOnly == true;
 
-        var rowStyle = !job.Enabled ? "style=\"opacity:0.7;background:var(--bg-secondary)\"" : string.Empty;
-        var statusLabel = job.Enabled ? "<span class=\"badge badge-success\">Active</span>" : "<span class=\"badge badge-warning\">Paused</span>";
-        if (job.DeletedByUser)
-        {
-            statusLabel = "<span class=\"badge badge-error\">Deleted</span>";
-        }
+        var rowStyle = !job.Enabled ? "style=\"opacity:0.75;background:var(--bg-secondary)\"" : string.Empty;
 
-        var dotClass = !job.Enabled ? "dot-processing" : "dot-succeeded";
+        string statusBadge;
+        string dotClass;
         if (job.DeletedByUser)
         {
+            statusBadge = "<span class=\"badge badge-error\" style=\"font-size:11px;padding:2px 8px\">Deleted</span>";
             dotClass = "dot-failed";
         }
+        else if (job.Enabled)
+        {
+            statusBadge = "<span class=\"badge badge-success\" style=\"font-size:11px;padding:2px 8px\">Active</span>";
+            dotClass = "dot-succeeded";
+        }
+        else
+        {
+            statusBadge = "<span class=\"badge badge-warning\" style=\"font-size:11px;padding:2px 8px\">Paused</span>";
+            dotClass = "dot-processing";
+        }
 
-        var statusDot = $"<span class=\"dot {dotClass}\"></span>";
+        var statusDot = $"<span class=\"dot {dotClass}\" style=\"width:8px;height:8px\"></span>";
 
-        string nextHtml = "—";
+        var cronDesc = Helpers.DescribeCron(effectiveCron);
+        var cronOverrideTag = job.CronOverride is not null
+            ? "<span style=\"font-size:10px;color:var(--warning);margin-left:4px\" title=\"Schedule overridden by operator\">[custom]</span>"
+            : string.Empty;
+        var cronDescHtml = cronDesc is not null
+            ? $"<div style=\"font-size:11px;color:var(--text-tertiary);margin-top:2px\">{HtmlEncode(cronDesc)}</div>"
+            : string.Empty;
+
+        string nextHtml = "<span style=\"color:var(--text-tertiary)\">—</span>";
         if (!job.DeletedByUser && job.Enabled && job.NextExecution.HasValue)
         {
             if (job.NextExecution.Value <= now)
@@ -614,22 +678,32 @@ internal static class HtmlFragments
             }
             else
             {
-                nextHtml = $"<span style=\"color:var(--primary);font-weight:500\">in {Helpers.FormatCountdown(job.NextExecution.Value - now)}</span>";
+                var exactTime = job.NextExecution.Value.ToString("HH:mm:ss 'UTC'", System.Globalization.CultureInfo.InvariantCulture);
+                nextHtml =
+                    $"<div style=\"display:flex;flex-direction:column;gap:1px\">" +
+                    $"<span style=\"font-size:12px;font-weight:500;color:var(--text-primary)\">in {Helpers.FormatCountdown(job.NextExecution.Value - now)}</span>" +
+                    $"<span style=\"font-size:10px;color:var(--text-tertiary)\">{exactTime}</span>" +
+                    $"</div>";
             }
         }
 
         // Last run
-        string lastRunHtml = "<span style=\"color:var(--text-tertiary)\">never</span>";
+        string lastRunHtml = "<span style=\"color:var(--text-tertiary);font-size:12px\">Never</span>";
         if (job.LastExecutedAt.HasValue)
         {
             var isSuccess = job.LastExecutionStatus == JobStatus.Succeeded;
-            var badgeClass = isSuccess ? "badge-success" : "badge-error";
+            var lastDotClass = isSuccess ? "dot-succeeded" : "dot-failed";
             var statusText = job.LastExecutionStatus?.ToString() ?? (isSuccess ? "Succeeded" : "Failed");
+            var relative = Helpers.RelativeTime(job.LastExecutedAt, now);
 
-            lastRunHtml = $"<div style=\"display:flex;align-items:center;gap:8px;white-space:nowrap\">" +
-                          $"<span class=\"badge {badgeClass}\" style=\"font-size:10px;padding:2px 6px;line-height:1\">{statusText}</span>" +
-                          $"<span style=\"font-size:11px;color:var(--text-tertiary)\">{Helpers.RelativeTime(job.LastExecutedAt, now)}</span>" +
-                          $"</div>";
+            lastRunHtml =
+                $"<div style=\"display:flex;flex-direction:column;gap:1px\">" +
+                $"<div style=\"display:flex;align-items:center;gap:6px\">" +
+                $"<span class=\"dot {lastDotClass}\" style=\"width:6px;height:6px\"></span>" +
+                $"<span style=\"font-size:12px;font-weight:500;color:var(--text-primary)\">{statusText}</span>" +
+                $"</div>" +
+                $"<span style=\"font-size:10px;color:var(--text-tertiary)\">{relative}</span>" +
+                $"</div>";
         }
 
         var boltIcon = "<svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><path d=\"M13 2L3 14h9l-1 8 10-12h-9l1-8z\"/></svg>";
@@ -648,31 +722,38 @@ internal static class HtmlFragments
         else
         {
             var pauseResume = job.Enabled
-                ? $"<form method=\"post\" action=\"{pathPrefix}/recurring/{encodedIdUrl}/pause{clusterSuffix}\" style=\"display:inline\" onclick=\"event.stopPropagation()\"><button type=\"submit\" class=\"btn-icon-sm\" title=\"Pause\" style=\"color:var(--warning);background:transparent;border:none\">{pauseIcon}</button></form>"
-                : $"<form method=\"post\" action=\"{pathPrefix}/recurring/{encodedIdUrl}/resume{clusterSuffix}\" style=\"display:inline\" onclick=\"event.stopPropagation()\"><button type=\"submit\" class=\"btn-icon-sm\" title=\"Resume\" style=\"color:var(--success);background:transparent;border:none\">{playIcon}</button></form>";
+                ? $"<form method=\"post\" action=\"{pathPrefix}/recurring/{encodedIdUrl}/pause{clusterSuffix}\" style=\"display:inline\" onclick=\"event.stopPropagation()\"><button type=\"submit\" class=\"btn-icon-sm\" title=\"Pause Schedule\" style=\"color:var(--warning)\">{pauseIcon}</button></form>"
+                : $"<form method=\"post\" action=\"{pathPrefix}/recurring/{encodedIdUrl}/resume{clusterSuffix}\" style=\"display:inline\" onclick=\"event.stopPropagation()\"><button type=\"submit\" class=\"btn-icon-sm\" title=\"Resume Schedule\" style=\"color:var(--success)\">{playIcon}</button></form>";
 
             var queueOrphanWarning = activeWorkerQueues is { Count: > 0 } && !activeWorkerQueues.Contains(job.Queue, StringComparer.OrdinalIgnoreCase)
                 ? $"\\n\\n⚠ Warning: Queue '{job.Queue}' has no active workers. The job will remain queued until a worker starts."
                 : string.Empty;
             var triggerConfirmJs = System.Web.HttpUtility.JavaScriptStringEncode($"Trigger '{job.RecurringJobId}' now?{queueOrphanWarning}", addDoubleQuotes: true);
 
-            actionsHtml = $"<form method=\"post\" action=\"{pathPrefix}/recurring/{encodedIdUrl}/trigger{clusterSuffix}\" style=\"display:inline\" onclick=\"event.stopPropagation()\">" +
-                          $"<button type=\"submit\" class=\"btn-icon-sm\" title=\"Trigger Now\" style=\"color:var(--primary);background:transparent;border:none\" onclick=\"return confirm({triggerConfirmJs})\">{boltIcon}</button></form> {pauseResume}";
+            actionsHtml =
+                $"<form method=\"post\" action=\"{pathPrefix}/recurring/{encodedIdUrl}/trigger{clusterSuffix}\" style=\"display:inline\" onclick=\"event.stopPropagation()\">" +
+                $"<button type=\"submit\" class=\"btn-icon-sm\" title=\"Trigger Now\" style=\"color:var(--primary)\" onclick=\"return confirm({triggerConfirmJs})\">{boltIcon}</button></form> " +
+                pauseResume;
         }
 
         var actionsTd = !isReadOnly
-            ? $"<td style=\"padding:12px 24px;text-align:right\"><div style=\"display:flex;gap:4px;justify-content:flex-end\">{actionsHtml}</div></td>"
+            ? $"<td style=\"padding:12px 20px;text-align:right\"><div style=\"display:flex;gap:6px;justify-content:flex-end\">{actionsHtml}</div></td>"
             : string.Empty;
 
         return
             $"<tr class=\"table-recurring\" {rowStyle} onclick=\"window.location.href='{pathPrefix}/recurring/{encodedIdUrl}{clusterSuffix}'\" style=\"cursor:pointer\">" +
-            $"<td style=\"padding:12px 24px\"><div style=\"display:flex;align-items:center;gap:8px\">{statusDot}{statusLabel}</div></td>" +
-            $"<td style=\"padding:12px 24px\"><div style=\"font-weight:600;color:var(--primary)\">{HtmlEncode(job.RecurringJobId)}</div></td>" +
-            $"<td style=\"padding:12px 24px\"><span style=\"font-size:12px;color:var(--text-tertiary)\">{HtmlEncode(Helpers.ShortType(job.JobType))}</span></td>" +
-            $"<td style=\"padding:12px 24px\"><code style=\"background:var(--bg-tertiary);padding:2px 6px;border-radius:4px;font-size:12px\">{HtmlEncode(effectiveCron)}</code></td>" +
-            $"<td style=\"padding:12px 24px;font-size:13px\">{HtmlEncode(job.Queue)}</td>" +
-            $"<td style=\"padding:12px 24px\">{lastRunHtml}</td>" +
-            $"<td style=\"padding:12px 24px;font-size:13px\">{nextHtml}</td>" +
+            $"<td style=\"padding:12px 20px\"><div style=\"display:flex;align-items:center;gap:8px\">{statusDot}{statusBadge}</div></td>" +
+            $"<td style=\"padding:12px 20px\"><div style=\"display:flex;flex-direction:column;gap:2px\">" +
+            $"<div style=\"font-weight:600;font-size:13px;color:var(--text-primary)\">{HtmlEncode(job.RecurringJobId)}</div>" +
+            $"<div style=\"font-size:11px;color:var(--text-tertiary);font-family:monospace\">{HtmlEncode(Helpers.ShortType(job.JobType))}</div>" +
+            $"</div></td>" +
+            $"<td style=\"padding:12px 20px\"><div style=\"display:flex;flex-direction:column;gap:2px\">" +
+            $"<div><code style=\"background:var(--bg-tertiary);color:var(--text-secondary);padding:3px 7px;border-radius:4px;font-size:11px;border:1px solid var(--border)\">{HtmlEncode(effectiveCron)}</code>{cronOverrideTag}</div>" +
+            $"{cronDescHtml}" +
+            $"</div></td>" +
+            $"<td style=\"padding:12px 20px\"><span style=\"background:var(--bg-tertiary);color:var(--text-secondary);padding:3px 8px;border-radius:12px;font-size:11px;border:1px solid var(--border);font-family:monospace\">{HtmlEncode(job.Queue)}</span></td>" +
+            $"<td style=\"padding:12px 20px\">{lastRunHtml}</td>" +
+            $"<td style=\"padding:12px 20px\">{nextHtml}</td>" +
             actionsTd +
             $"</tr>";
     }
@@ -691,7 +772,7 @@ internal static class HtmlFragments
 
         return
             $"<tr>" +
-            $"<td style=\"font-family:monospace;font-size:11px;color:var(--text-tertiary)\">{server.Id}</td>" +
+            $"<td style=\"font-family:monospace;font-size:11px;color:var(--text-tertiary)\" title=\"{HtmlAttributeEncode(server.Id)}\">{Helpers.FormatServerIdHtml(server.Id)}</td>" +
             $"<td>{Helpers.RelativeTime(server.StartedAt, now)}</td>" +
             $"<td>{(int)uptime.TotalDays}d {uptime.Hours}h {uptime.Minutes}m</td>" +
             $"<td><span style=\"color:var(--primary);font-weight:700\">{server.WorkerCount}</span></td>" +
@@ -723,43 +804,335 @@ internal static class HtmlFragments
     /// <summary>Returns the read-only mode warning banner HTML.</summary>
     internal static string ReadOnlyBanner() => ReadOnlyBannerHtml;
 
-    /// <summary>Renders a visual execution flow timeline.</summary>
+    /// <summary>Renders a visual execution flow timeline and state transition pipeline.</summary>
     internal static string ExecutionTimeline(JobRecord job, DateTimeOffset now)
     {
-        var events = BuildTimelineEvents(job, now).ToList();
         var sb = new System.Text.StringBuilder();
-        sb.Append("<div class=\"timeline\" style=\"position:relative;padding-left:32px\">");
 
-        for (int i = 0; i < events.Count; i++)
+        // 1. Calculate timing metrics
+        var enqueuedAt = job.ScheduledAt ?? job.CreatedAt;
+        string waitTimeStr = "—";
+        if (job.ProcessingStartedAt.HasValue)
         {
-            var @event = events[i];
-            var isLast = i == events.Count - 1;
-            var color = GetTimelineColor(@event.CssClass);
-            var timeStr = @event.At.HasValue ? $"{@event.At.Value:HH:mm:ss}" : "—";
-
-            if (!isLast)
+            var waitSpan = job.ProcessingStartedAt.Value - enqueuedAt;
+            if (waitSpan < TimeSpan.Zero)
             {
-                sb.Append($"<div style=\"position:absolute;left:11px;top:{(i * 60) + 16}px;bottom:0;width:2px;background:var(--border);height:44px\"></div>");
+                waitSpan = TimeSpan.Zero;
             }
 
-            sb.Append($"<div class=\"timeline-item\" style=\"margin-bottom:24px;position:relative\">");
-            sb.Append($"<div style=\"position:absolute;left:-28px;top:4px;width:10px;height:10px;border-radius:50%;background:{color};box-shadow:0 0 0 4px var(--bg-primary)\"></div>");
-            sb.Append($"<div class=\"timeline-content\">");
-            sb.Append($"<div style=\"font-weight:700;font-size:13px;color:var(--text-primary)\">{HtmlEncode(@event.Label)} <span style=\"font-weight:400;color:var(--text-tertiary);float:right;font-size:11px\">{timeStr}</span></div>");
-            if (!string.IsNullOrEmpty(@event.Subtitle))
+            waitTimeStr = $"{Helpers.FormatSeconds(waitSpan)} wait";
+        }
+        else if (job.Status == JobStatus.Enqueued)
+        {
+            var waitSpan = now - enqueuedAt;
+            if (waitSpan < TimeSpan.Zero)
             {
-                sb.Append($"<div style=\"font-size:11px;color:var(--text-secondary)\">{HtmlEncode(@event.Subtitle)}</div>");
+                waitSpan = TimeSpan.Zero;
             }
 
-            if (!string.IsNullOrEmpty(@event.Error))
-            {
-                sb.Append($"<div style=\"font-size:11px;color:var(--error);margin-top:4px;padding:8px;background:var(--error-light);border-radius:4px\">{HtmlEncode(@event.Error)}</div>");
-            }
-
-            sb.Append($"</div></div>");
+            waitTimeStr = $"{Helpers.FormatSeconds(waitSpan)} wait";
         }
 
+        string durationStr = "—";
+        if (job.ProcessingStartedAt.HasValue)
+        {
+            if (job.CompletedAt.HasValue)
+            {
+                var durSpan = job.CompletedAt.Value - job.ProcessingStartedAt.Value;
+                if (durSpan < TimeSpan.Zero)
+                {
+                    durSpan = TimeSpan.Zero;
+                }
+
+                durationStr = $"{Helpers.FormatSeconds(durSpan)} run";
+            }
+            else
+            {
+                var durSpan = now - job.ProcessingStartedAt.Value;
+                if (durSpan < TimeSpan.Zero)
+                {
+                    durSpan = TimeSpan.Zero;
+                }
+
+                durationStr = $"running {Helpers.FormatSeconds(durSpan)}";
+            }
+        }
+
+        var totalAge = Helpers.CountdownFriendly(now - job.CreatedAt);
+
+        // 2. Card Header
+        sb.Append("<div class=\"lifecycle-card\">");
+        sb.Append("<div class=\"lifecycle-header\">");
+        sb.Append("<div>");
+        sb.Append("<h3 style=\"font-size:15px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-secondary);margin:0;display:flex;align-items:center;gap:8px\">");
+        sb.Append("<svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"var(--primary)\" stroke-width=\"2.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><polyline points=\"22 12 18 12 15 21 9 3 6 12 2 12\"></polyline></svg>");
+        sb.Append("<span>Lifecycle Execution Flow</span>");
+        sb.Append("</h3>");
+        sb.Append("<p style=\"font-size:12px;color:var(--text-tertiary);margin:4px 0 0 0\">Visual state transitions, queue wait latency, and worker execution metrics</p>");
         sb.Append("</div>");
+
+        sb.Append("<div style=\"display:flex;gap:8px;align-items:center;flex-wrap:wrap\">");
+        sb.Append($"<span class=\"badge\" style=\"background:var(--bg-tertiary);color:var(--text-secondary);border:1px solid var(--border)\">Age: {totalAge}</span>");
+        if (job.Attempts > 1)
+        {
+            sb.Append($"<span class=\"badge\" style=\"background:var(--warning-light);color:var(--warning);border:1px solid var(--warning)\">🔁 Attempt {job.Attempts}/{job.MaxAttempts}</span>");
+        }
+        else
+        {
+            sb.Append($"<span class=\"badge\" style=\"background:var(--bg-tertiary);color:var(--text-tertiary);border:1px solid var(--border)\">Attempt 1/{job.MaxAttempts}</span>");
+        }
+
+        if (job.ExpiresAt.HasValue)
+        {
+            var isExpired = job.Status == JobStatus.Expired || now >= job.ExpiresAt.Value;
+            var deadlineText = isExpired
+                ? "⚠️ Deadline Expired"
+                : $"⏳ Deadline: in {Helpers.CountdownFriendly(job.ExpiresAt.Value - now)}";
+            var deadlineStyle = isExpired
+                ? "background:rgba(234, 84, 85, 0.15);color:var(--error);border:1px solid var(--error)"
+                : "background:rgba(245, 158, 11, 0.15);color:var(--warning);border:1px solid var(--warning)";
+            sb.Append($"<span class=\"badge\" style=\"{deadlineStyle}\" title=\"Deadline: {job.ExpiresAt.Value:yyyy-MM-dd HH:mm:ss} UTC\">{deadlineText}</span>");
+        }
+
+        sb.Append("</div></div>");
+
+        // 3. Horizontal Stepper
+        sb.Append("<div class=\"lifecycle-stepper\">");
+
+        // Node: Scheduled (if applicable)
+        if (job.ScheduledAt.HasValue)
+        {
+            var isPassed = now >= job.ScheduledAt.Value;
+            var schedClass = isPassed ? "success" : "active";
+            sb.Append($"<div class=\"lifecycle-node {schedClass}\">");
+            sb.Append($"<div style=\"display:flex;justify-content:space-between;align-items:center;margin-bottom:4px\"><span style=\"font-size:11px;font-weight:700;color:var(--primary);text-transform:uppercase\">⏰ Scheduled</span><span style=\"font-size:11px;color:var(--text-tertiary);font-family:monospace\">{job.CreatedAt:HH:mm:ss}</span></div>");
+            sb.Append($"<div style=\"font-size:13px;font-weight:600;color:var(--text-primary)\">Run at {job.ScheduledAt.Value:HH:mm:ss}</div>");
+            sb.Append($"<div style=\"font-size:11px;color:var(--text-secondary)\">{(isPassed ? "Released to queue" : "Due in " + Helpers.CountdownFriendly(job.ScheduledAt.Value - now))}</div>");
+            sb.Append("</div>");
+
+            // Connector to Enqueued
+            sb.Append("<div class=\"lifecycle-connector\">");
+            sb.Append($"<span class=\"lifecycle-metric-badge\" style=\"background:var(--primary-light);color:var(--primary);border:1px solid var(--primary)\">delay</span>");
+            sb.Append("<div class=\"lifecycle-arrow\"><svg width=\"24\" height=\"16\" viewBox=\"0 0 24 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><line x1=\"2\" y1=\"8\" x2=\"20\" y2=\"8\"></line><polyline points=\"14 2 20 8 14 14\"></polyline></svg></div>");
+            sb.Append("</div>");
+        }
+
+        // Node: Enqueued
+        sb.Append("<div class=\"lifecycle-node success\">");
+        sb.Append($"<div style=\"display:flex;justify-content:space-between;align-items:center;margin-bottom:4px\"><span style=\"font-size:11px;font-weight:700;color:var(--info);text-transform:uppercase\">📥 Enqueued</span><span style=\"font-size:11px;color:var(--text-tertiary);font-family:monospace\">{enqueuedAt:HH:mm:ss}</span></div>");
+        sb.Append($"<div style=\"font-size:13px;font-weight:600;color:var(--text-primary)\">Queue: {HtmlEncode(job.Queue)}</div>");
+        sb.Append($"<div style=\"font-size:11px;color:var(--text-secondary)\">Priority: {job.Priority}</div>");
+        sb.Append("</div>");
+
+        // Connector: Enqueued -> Processing
+        sb.Append("<div class=\"lifecycle-connector\">");
+        sb.Append($"<span class=\"lifecycle-metric-badge\" style=\"background:var(--bg-tertiary);color:var(--text-secondary);border:1px solid var(--border)\">{waitTimeStr}</span>");
+        sb.Append("<div class=\"lifecycle-arrow\"><svg width=\"24\" height=\"16\" viewBox=\"0 0 24 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><line x1=\"2\" y1=\"8\" x2=\"20\" y2=\"8\"></line><polyline points=\"14 2 20 8 14 14\"></polyline></svg></div>");
+        sb.Append("</div>");
+
+        // Node: Processing
+        string procClass;
+        if (job.Status == JobStatus.Processing)
+        {
+            procClass = "active";
+        }
+        else if (job.Attempts > 1)
+        {
+            procClass = "warning";
+        }
+        else if (job.ProcessingStartedAt.HasValue)
+        {
+            procClass = "success";
+        }
+        else
+        {
+            procClass = string.Empty;
+        }
+
+        var procTime = job.ProcessingStartedAt.HasValue ? $"{job.ProcessingStartedAt.Value:HH:mm:ss}" : "—";
+        var procTitle = job.Status == JobStatus.Processing ? "⚙️ Processing (Live)" : "⚙️ Processing";
+        var procDetail = job.Attempts > 1
+            ? $"Attempt {job.Attempts} of {job.MaxAttempts} (retried)"
+            : $"Attempt {Math.Max(1, job.Attempts)} of {job.MaxAttempts}";
+
+        sb.Append($"<div class=\"lifecycle-node {procClass}\">");
+        sb.Append($"<div style=\"display:flex;justify-content:space-between;align-items:center;margin-bottom:4px\"><span style=\"font-size:11px;font-weight:700;color:var(--warning);text-transform:uppercase\">{procTitle}</span><span style=\"font-size:11px;color:var(--text-tertiary);font-family:monospace\">{procTime}</span></div>");
+        sb.Append($"<div style=\"font-size:13px;font-weight:600;color:var(--text-primary)\">{procDetail}</div>");
+        sb.Append($"<div style=\"font-size:11px;color:var(--text-secondary)\">{(job.ProcessingStartedAt.HasValue ? "Worker slot claimed" : "Waiting for worker")}</div>");
+        sb.Append("</div>");
+
+        // Connector: Processing -> Result
+        sb.Append("<div class=\"lifecycle-connector\">");
+        string resultBadge = !string.Equals(durationStr, "—", StringComparison.Ordinal)
+            ? durationStr
+            : "outcome";
+        sb.Append($"<span class=\"lifecycle-metric-badge\" style=\"background:var(--bg-tertiary);color:var(--text-secondary);border:1px solid var(--border)\">{resultBadge}</span>");
+        sb.Append("<div class=\"lifecycle-arrow\"><svg width=\"24\" height=\"16\" viewBox=\"0 0 24 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><line x1=\"2\" y1=\"8\" x2=\"20\" y2=\"8\"></line><polyline points=\"14 2 20 8 14 14\"></polyline></svg></div>");
+        sb.Append("</div>");
+
+        // Node: Outcome
+        if (job.Status == JobStatus.Succeeded)
+        {
+            var compTime = job.CompletedAt.HasValue ? $"{job.CompletedAt.Value:HH:mm:ss}" : "—";
+            sb.Append("<div class=\"lifecycle-node success\">");
+            sb.Append($"<div style=\"display:flex;justify-content:space-between;align-items:center;margin-bottom:4px\"><span style=\"font-size:11px;font-weight:700;color:var(--success);text-transform:uppercase\">✅ Succeeded</span><span style=\"font-size:11px;color:var(--text-tertiary);font-family:monospace\">{compTime}</span></div>");
+            sb.Append("<div style=\"font-size:13px;font-weight:600;color:var(--text-primary)\">Completed with success</div>");
+            sb.Append($"<div style=\"font-size:11px;color:var(--text-secondary)\">Execution duration: {durationStr}</div>");
+            sb.Append("</div>");
+        }
+        else if (job.Status == JobStatus.Failed)
+        {
+            var compTime = job.CompletedAt.HasValue ? $"{job.CompletedAt.Value:HH:mm:ss}" : "—";
+            sb.Append("<div class=\"lifecycle-node failed\">");
+            sb.Append($"<div style=\"display:flex;justify-content:space-between;align-items:center;margin-bottom:4px\"><span style=\"font-size:11px;font-weight:700;color:var(--error);text-transform:uppercase\">❌ Dead-Letter / Failed</span><span style=\"font-size:11px;color:var(--text-tertiary);font-family:monospace\">{compTime}</span></div>");
+            sb.Append("<div style=\"font-size:13px;font-weight:600;color:var(--text-primary)\">Attempts exhausted</div>");
+            sb.Append($"<div style=\"font-size:11px;color:var(--text-secondary)\">{job.Attempts}/{job.MaxAttempts} failed attempts</div>");
+            sb.Append("</div>");
+        }
+        else if (job.Status == JobStatus.Expired)
+        {
+            var expTime = job.ExpiresAt.HasValue ? $"{job.ExpiresAt.Value:HH:mm:ss}" : "—";
+            sb.Append("<div class=\"lifecycle-node warning\">");
+            sb.Append($"<div style=\"display:flex;justify-content:space-between;align-items:center;margin-bottom:4px\"><span style=\"font-size:11px;font-weight:700;color:var(--warning);text-transform:uppercase\">⚠️ Expired</span><span style=\"font-size:11px;color:var(--text-tertiary);font-family:monospace\">{expTime}</span></div>");
+            sb.Append("<div style=\"font-size:13px;font-weight:600;color:var(--text-primary)\">Deadline exceeded</div>");
+            sb.Append("<div style=\"font-size:11px;color:var(--text-secondary)\">Skipped before execution</div>");
+            sb.Append("</div>");
+        }
+        else if (job.Status == JobStatus.Enqueued && job.RetryAt.HasValue && job.RetryAt.Value > now)
+        {
+            var retryTime = $"{job.RetryAt.Value:HH:mm:ss}";
+            var waitCountdown = Helpers.CountdownFriendly(job.RetryAt.Value - now);
+            sb.Append("<div class=\"lifecycle-node warning\">");
+            sb.Append($"<div style=\"display:flex;justify-content:space-between;align-items:center;margin-bottom:4px\"><span style=\"font-size:11px;font-weight:700;color:var(--warning);text-transform:uppercase\">⏳ Awaiting Retry</span><span style=\"font-size:11px;color:var(--text-tertiary);font-family:monospace\">{retryTime}</span></div>");
+            sb.Append($"<div style=\"font-size:13px;font-weight:600;color:var(--text-primary)\">Backoff in progress</div>");
+            sb.Append($"<div style=\"font-size:11px;color:var(--text-secondary)\">Retrying in {waitCountdown}</div>");
+            sb.Append("</div>");
+        }
+        else if (job.Status == JobStatus.Processing)
+        {
+            sb.Append("<div class=\"lifecycle-node active\">");
+            sb.Append("<div style=\"display:flex;justify-content:space-between;align-items:center;margin-bottom:4px\"><span style=\"font-size:11px;font-weight:700;color:var(--primary);text-transform:uppercase\">🔄 In Progress</span><span class=\"pulse-live\"></span></div>");
+            sb.Append("<div style=\"font-size:13px;font-weight:600;color:var(--text-primary)\">Worker executing job</div>");
+            sb.Append($"<div style=\"font-size:11px;color:var(--text-secondary)\">{durationStr}</div>");
+            sb.Append("</div>");
+        }
+        else
+        {
+            sb.Append("<div class=\"lifecycle-node\">");
+            sb.Append("<div style=\"display:flex;justify-content:space-between;align-items:center;margin-bottom:4px\"><span style=\"font-size:11px;font-weight:700;color:var(--text-tertiary);text-transform:uppercase\">Outcome</span></div>");
+            sb.Append("<div style=\"font-size:13px;font-weight:600;color:var(--text-primary)\">Pending execution</div>");
+            sb.Append("<div style=\"font-size:11px;color:var(--text-secondary)\">Awaiting completion</div>");
+            sb.Append("</div>");
+        }
+
+        sb.Append("</div>"); // Close lifecycle-stepper
+
+        // 4. Retry Loop Diagram (If attempts > 1 or RetryAt active)
+        if (job.Attempts > 1 || job.RetryAt.HasValue)
+        {
+            sb.Append("<div class=\"retry-loop-banner\">");
+            sb.Append("<div style=\"font-size:26px;line-height:1;flex-shrink:0\">🔄</div>");
+            sb.Append("<div style=\"flex:1\">");
+            sb.Append("<div style=\"display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;flex-wrap:wrap;gap:8px\">");
+            sb.Append("<div style=\"display:flex;align-items:center;gap:8px\">");
+            sb.Append("<span style=\"font-size:14px;font-weight:700;color:var(--warning)\">Retry Loop &amp; Fault Recovery Active</span>");
+            sb.Append($"<span style=\"font-size:11px;background:var(--warning-light);color:var(--warning);border:1px solid var(--warning);padding:2px 8px;border-radius:12px;font-weight:600\">Attempt {job.Attempts} of {job.MaxAttempts}</span>");
+            sb.Append("</div>");
+
+            if (job.Status == JobStatus.Succeeded)
+            {
+                sb.Append($"<span style=\"font-size:11px;font-weight:700;color:var(--success);background:var(--success-light);border:1px solid var(--success);padding:2px 10px;border-radius:12px\">🎉 Recovered on attempt {job.Attempts}</span>");
+            }
+            else if (job.Status == JobStatus.Failed)
+            {
+                sb.Append("<span style=\"font-size:11px;font-weight:700;color:var(--error);background:var(--error-light);border:1px solid var(--error);padding:2px 10px;border-radius:12px\">💀 Dead-Letter Queue (Exhausted)</span>");
+            }
+            else if (job.RetryAt.HasValue && job.RetryAt.Value > now)
+            {
+                sb.Append($"<span style=\"font-size:11px;font-weight:700;color:var(--info);background:var(--info-light);border:1px solid var(--info);padding:2px 10px;border-radius:12px\">⏳ Next Retry in {Helpers.CountdownFriendly(job.RetryAt.Value - now)}</span>");
+            }
+
+            sb.Append("</div>");
+
+            // Visual linear diagram of the loop
+            sb.Append("<div style=\"background:var(--bg-tertiary);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin:8px 0;font-size:12px;font-family:monospace;display:flex;align-items:center;gap:8px;flex-wrap:wrap\">");
+            sb.Append("<span style=\"color:var(--error)\">Attempt 1 [Failed 💥]</span>");
+            sb.Append("<span style=\"color:var(--text-tertiary)\">──►</span>");
+            sb.Append("<span style=\"color:var(--warning);background:var(--warning-light);padding:1px 6px;border-radius:4px\">Backoff Delay</span>");
+            sb.Append("<span style=\"color:var(--text-tertiary)\">──►</span>");
+
+            string currentStatusText;
+            string currentStatusColor;
+            if (job.Status == JobStatus.Succeeded)
+            {
+                currentStatusText = "Succeeded ✅";
+                currentStatusColor = "var(--success)";
+            }
+            else if (job.Status == JobStatus.Failed)
+            {
+                currentStatusText = "Dead-Letter 💀";
+                currentStatusColor = "var(--error)";
+            }
+            else
+            {
+                currentStatusText = "In Progress ⚙️";
+                currentStatusColor = "var(--info)";
+            }
+
+            sb.Append($"<span style=\"color:{currentStatusColor}\">Attempt {job.Attempts} [{currentStatusText}]</span>");
+            sb.Append("</div>");
+
+            if (!string.IsNullOrEmpty(job.LastErrorMessage))
+            {
+                sb.Append($"<div style=\"font-size:12px;color:var(--error);margin-top:6px;font-family:monospace;background:rgba(234, 84, 85, 0.08);padding:8px 12px;border-radius:6px;border-left:3px solid var(--error)\"><strong>Last Error:</strong> {HtmlEncode(job.LastErrorMessage)}</div>");
+            }
+
+            sb.Append("</div></div>");
+        }
+
+        // 5. Collapsible Chronological Events Log
+        var events = BuildTimelineEvents(job, now).ToList();
+        if (events.Count > 0)
+        {
+            sb.Append("<details style=\"margin-top:18px;border-top:1px solid var(--border);padding-top:14px\">");
+            sb.Append("<summary style=\"font-size:12px;font-weight:600;color:var(--text-secondary);cursor:pointer;display:flex;align-items:center;gap:6px\">");
+            sb.Append($"<span>📜 Chronological Execution Events ({events.Count})</span>");
+            sb.Append("</summary>");
+
+            sb.Append("<div class=\"timeline\" style=\"position:relative;padding-left:32px;margin-top:16px\">");
+            for (int i = 0; i < events.Count; i++)
+            {
+                var @event = events[i];
+                var isLast = i == events.Count - 1;
+                var color = GetTimelineColor(@event.CssClass);
+                var timeStr = @event.At.HasValue ? $"{@event.At.Value:HH:mm:ss}" : "—";
+
+                if (!isLast)
+                {
+                    sb.Append($"<div style=\"position:absolute;left:11px;top:{(i * 54) + 16}px;bottom:0;width:2px;background:var(--border);height:38px\"></div>");
+                }
+
+                sb.Append("<div class=\"timeline-item\" style=\"margin-bottom:18px;position:relative\">");
+                sb.Append($"<div style=\"position:absolute;left:-28px;top:4px;width:10px;height:10px;border-radius:50%;background:{color};box-shadow:0 0 0 4px var(--bg-primary)\"></div>");
+                sb.Append("<div class=\"timeline-content\">");
+                sb.Append($"<div style=\"font-weight:700;font-size:13px;color:var(--text-primary)\">{HtmlEncode(@event.Label)} <span style=\"font-weight:400;color:var(--text-tertiary);float:right;font-size:11px\">{timeStr}</span></div>");
+                if (!string.IsNullOrEmpty(@event.Subtitle))
+                {
+                    sb.Append($"<div style=\"font-size:11px;color:var(--text-secondary)\">{HtmlEncode(@event.Subtitle)}</div>");
+                }
+
+                if (!string.IsNullOrEmpty(@event.Error))
+                {
+                    sb.Append($"<div style=\"font-size:11px;color:var(--error);margin-top:4px;padding:6px 10px;background:var(--error-light);border-radius:4px\">{HtmlEncode(@event.Error)}</div>");
+                }
+
+                sb.Append("</div></div>");
+            }
+
+            sb.Append("</div></details>");
+        }
+
+        sb.Append("</div>"); // Close lifecycle-card
         return sb.ToString();
     }
 
@@ -867,7 +1240,7 @@ internal static class HtmlFragments
             {
                 workersHtml.Append("<div class=\"topo-box\">")
                     .Append("<div class=\"topo-title\"><span>Worker Node</span><span class=\"pulse-live\"></span></div>")
-                    .Append("<div class=\"topo-val\">").Append(HtmlEncode(s.Id)).Append("</div>")
+                    .Append("<div class=\"topo-val\" title=\"").Append(HtmlAttributeEncode(s.Id)).Append("\">").Append(HtmlEncode(Helpers.FormatServerId(s.Id))).Append("</div>")
                     .Append("<div class=\"topo-sub\">").Append(s.WorkerCount).Append(" slots active</div>")
                     .Append("</div>");
             }
@@ -922,6 +1295,8 @@ internal static class HtmlFragments
     }
 
     private static string HtmlEncode(string? text) => HttpUtility.HtmlEncode(text ?? string.Empty);
+
+    private static string HtmlAttributeEncode(string? text) => HttpUtility.HtmlAttributeEncode(text ?? string.Empty);
 
     private sealed record TimelineEvent(DateTimeOffset? At, string Label, string CssClass, string? Subtitle, string? Error);
 }

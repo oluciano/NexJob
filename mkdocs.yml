@@ -15,51 +15,83 @@ theme:
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
+      primary: deep purple
+      accent: deep purple
       toggle:
         icon: material/weather-night
         name: Switch to dark mode
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
+      primary: deep purple
+      accent: deep purple
       toggle:
         icon: material/weather-sunny
         name: Switch to light mode
   features:
     - navigation.instant
     - navigation.top
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
     - search.highlight
     - content.code.copy
 
 markdown_extensions:
   - admonition
+  - pymdownx.details
   - tables
+  - attr_list
+  - md_in_html
   - toc:
       permalink: true
   - pymdownx.highlight
   - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
 
 nav:
   - Home: index.md
-  - Mental Model: 00-Mental-Model.md
-  - Getting Started: 01-Getting-Started.md
-  - Job Types: 02-Job-Types.md
-  - Scheduling: 03-Scheduling.md
-  - Recurring Jobs: 04-Recurring-Jobs.md
-  - Continuations: 05-Continuations.md
-  - Retry & Dead Letter: 06-Retry-And-Dead-Letter.md
-  - Throttling: 07-Throttling.md
-  - IJobContext: 08-IJobContext.md
-  - Storage Providers: 09-Storage-Providers.md
-  - Dashboard: 10-Dashboard.md
-  - Configuration Reference: 11-Configuration-Reference.md
-  - OpenTelemetry: 12-OpenTelemetry.md
-  - Best Practices: 13-Best-Practices.md
-  - Writing Tests: 14-Writing-Tests.md
-  - Common Scenarios: 15-Common-Scenarios.md
-  - Troubleshooting: 16-Troubleshooting.md
-  - Idempotency: 17-Idempotency.md
-  - Migration: 18-Migration.md
-  - External Triggers: 19-Triggers.md
-  - Kafka: 20-Kafka.md
-  - RabbitMQ: 21-RabbitMQ.md
-  - FAQ: 22-FAQ.md
-  - Changelog: CHANGELOG.md
+  - Get Started:
+      - Introduction: introduction.md
+      - Quickstart: quickstart.md
+      - Mental Model: mental-model.md
+  - Core Concepts:
+      - Job Types: concepts/job-types.md
+      - Scheduling: concepts/scheduling.md
+      - Recurring Jobs: concepts/recurring-jobs.md
+      - Retries & Dead Letter: concepts/retries-and-dead-letter.md
+      - Delivery Guarantees: concepts/delivery-guarantees.md
+      - Continuations: concepts/continuations.md
+      - Idempotency: concepts/idempotency.md
+      - Queues: concepts/queues.md
+  - Guides:
+      - Throttling: guides/throttling.md
+      - Circuit Breaker: guides/circuit-breaker.md
+      - Execution Windows: guides/execution-windows.md
+      - Runtime Control: guides/runtime-control.md
+      - Multi-Service: guides/multi-service.md
+      - Alerts: guides/alerts.md
+      - Job Filters: guides/job-filters.md
+      - Job Context: guides/job-context.md
+      - Writing Tests: guides/writing-tests.md
+      - Common Scenarios: guides/common-scenarios.md
+      - Best Practices: guides/best-practices.md
+  - Storage:
+      - Overview: storage/overview.md
+      - PostgreSQL: storage/postgresql.md
+      - SQL Server: storage/sql-server.md
+      - Redis: storage/redis.md
+      - MongoDB: storage/mongodb.md
+  - Integrations:
+      - Dashboard: integrations/dashboard.md
+      - OpenTelemetry: integrations/opentelemetry.md
+      - External Triggers: integrations/triggers.md
+      - Kafka: integrations/kafka.md
+      - RabbitMQ: integrations/rabbitmq.md
+  - Reference:
+      - Configuration: reference/configuration.md
+      - Troubleshooting: reference/troubleshooting.md
+      - FAQ: reference/faq.md
+      - Migration: reference/migration.md
+      - How We Test: reference/how-we-test.md
+      - Changelog: reference/changelog.md

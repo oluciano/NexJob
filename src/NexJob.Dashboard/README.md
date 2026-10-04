@@ -58,6 +58,7 @@ app.Run();
 - **Time-Window Filtering & Queue Controls:** Quick period filters (`1h`, `6h`, `24h`, `7d`, `All Time`) on `/jobs` and interactive `Pause` / `Resume` buttons on `/queues`.
 - **Job Catalog & Definitions (`/catalog`):** Aggregated job definitions table reporting run volume, error rates, average duration, last execution timestamps, deep links to `/jobs`, and ad-hoc trigger execution for parameterless jobs.
 - **Modernized Terminal & JSON Viewers:** Execution logs and payload viewers formatted into dark terminal-styled code windows with header dots, syntax color tokens, and 1-click clipboard copy buttons.
+- **24h Throughput Chart & Host Gauges:** The Overview shows a 24-bar hourly throughput chart (average line, drop warnings) and in-memory CPU and RAM gauges for the host process, also on the Servers view. Server node IDs display as `{Host}:{PID} #{shortGuid}` with the full ID in the tooltip. Nothing is persisted.
 - **Live Overview:** Real-time counters for `Enqueued`, `Processing`, `Succeeded`, `Failed`, `Expired`, `Retrying`, and `Dead-Letter` jobs via Server-Sent Events (SSE).
 - **Job Details & Inspection:** View serialized input arguments, execution history, exception stack traces, and captured console logs.
 - **Recurring Jobs:** Monitor cron schedules, last execution timestamp, next scheduled run, and manually trigger recurring jobs on demand.

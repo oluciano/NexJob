@@ -1,5 +1,7 @@
 #pragma warning disable MA0004
 using System.Data;
+using System.Globalization;
+using System.Text;
 using System.Text.Json;
 using Dapper;
 using Microsoft.Data.SqlClient;
@@ -12,9 +14,19 @@ namespace NexJob.SqlServer;
 /// Uses <c>WITH (UPDLOCK, READPAST)</c> for atomic job claiming, preventing
 /// double-processing across multiple workers or server instances.
 /// </summary>
-public sealed class SqlServerStorageProvider : IStorageProvider
+public sealed class SqlServerStorageProvider : IStorageProvider, IOrphanedJobReporter
 {
     private const int MaxEnqueueAttempts = 3;
+
+    private const string InsertJobSql =
+        """
+        INSERT INTO nexjob_jobs
+            (id, job_type, input_type, input_json, schema_version, queue, priority, status,
+             idempotency_key, attempts, max_attempts, created_at, scheduled_at, parent_job_id, recurring_job_id, tags, expires_at)
+        VALUES
+            (@Id, @JobType, @InputType, @InputJson, @SchemaVersion, @Queue, @Priority,
+             @Status, @IdempotencyKey, @Attempts, @MaxAttempts, @CreatedAt, @ScheduledAt, @ParentJobId, @RecurringJobId, @Tags, @ExpiresAt)
+        """;
 
     private readonly string _connectionString;
     private readonly SqlConnection? _connection;
@@ -37,10 +49,21 @@ public sealed class SqlServerStorageProvider : IStorageProvider
     /// Initialises the provider with an existing <see cref="SqlConnection"/>.
     /// Migrations are NOT applied when using this constructor.
     /// </summary>
+    /// <remarks>
+    /// The provider keeps the connection string of <paramref name="connection"/> and opens its own connections with it.
+    /// With SQL Server authentication, SqlClient removes the password from <see cref="SqlConnection.ConnectionString"/> as
+    /// soon as the connection is opened (unless <c>Persist Security Info=True</c>), so pass a connection that is not open.
+    /// </remarks>
     /// <param name="connection">The connection.</param>
     /// <param name="options">The nex job options.</param>
+    /// <exception cref="ArgumentException">
+    /// The connection is already open and uses SQL Server authentication, so its password is no longer known.
+    /// </exception>
     public SqlServerStorageProvider(SqlConnection connection, NexJobOptions options)
     {
+        ArgumentNullException.ThrowIfNull(connection);
+        EnsureCredentialsAreKnown(connection);
+
         _connection = connection;
         _connectionString = connection.ConnectionString;
     }
@@ -85,35 +108,7 @@ public sealed class SqlServerStorageProvider : IStorageProvider
 
                 try
                 {
-                    await conn.ExecuteAsync(
-                        """
-                        INSERT INTO nexjob_jobs
-                            (id, job_type, input_type, input_json, schema_version, queue, priority, status,
-                             idempotency_key, attempts, max_attempts, created_at, scheduled_at, parent_job_id, recurring_job_id, tags)
-                        VALUES
-                            (@Id, @JobType, @InputType, @InputJson, @SchemaVersion, @Queue, @Priority,
-                             @Status, @IdempotencyKey, @Attempts, @MaxAttempts, @CreatedAt, @ScheduledAt, @ParentJobId, @RecurringJobId, @Tags)
-                        """,
-                        new
-                        {
-                            Id = job.Id.Value,
-                            job.JobType,
-                            job.InputType,
-                            job.InputJson,
-                            job.SchemaVersion,
-                            job.Queue,
-                            Priority = (int)job.Priority,
-                            Status = job.Status.ToString(),
-                            job.IdempotencyKey,
-                            job.Attempts,
-                            job.MaxAttempts,
-                            job.CreatedAt,
-                            job.ScheduledAt,
-                            ParentJobId = job.ParentJobId?.Value,
-                            job.RecurringJobId,
-                            Tags = System.Text.Json.JsonSerializer.Serialize(job.Tags),
-                        },
-                        tx);
+                    await conn.ExecuteAsync(InsertJobSql, ToInsertParameters(job), tx);
 
                     await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
                     return new EnqueueResult(job.Id, WasRejected: false);
@@ -142,34 +137,7 @@ public sealed class SqlServerStorageProvider : IStorageProvider
                 $"Could not enqueue a job with idempotency key '{job.IdempotencyKey}' after {MaxEnqueueAttempts} attempts.");
         }
 
-        await conn.ExecuteAsync(
-            """
-            INSERT INTO nexjob_jobs
-                (id, job_type, input_type, input_json, schema_version, queue, priority, status,
-                 idempotency_key, attempts, max_attempts, created_at, scheduled_at, parent_job_id, recurring_job_id, tags)
-            VALUES
-                (@Id, @JobType, @InputType, @InputJson, @SchemaVersion, @Queue, @Priority,
-                 @Status, @IdempotencyKey, @Attempts, @MaxAttempts, @CreatedAt, @ScheduledAt, @ParentJobId, @RecurringJobId, @Tags)
-            """,
-            new
-            {
-                Id = job.Id.Value,
-                job.JobType,
-                job.InputType,
-                job.InputJson,
-                job.SchemaVersion,
-                job.Queue,
-                Priority = (int)job.Priority,
-                Status = job.Status.ToString(),
-                job.IdempotencyKey,
-                job.Attempts,
-                job.MaxAttempts,
-                job.CreatedAt,
-                job.ScheduledAt,
-                ParentJobId = job.ParentJobId?.Value,
-                job.RecurringJobId,
-                Tags = System.Text.Json.JsonSerializer.Serialize(job.Tags),
-            });
+        await conn.ExecuteAsync(InsertJobSql, ToInsertParameters(job));
 
         return new EnqueueResult(job.Id, WasRejected: false);
     }
@@ -207,8 +175,10 @@ public sealed class SqlServerStorageProvider : IStorageProvider
             """, transaction: tx).ConfigureAwait(false);
 
         // Build queue priority list for ordering
-        var queueList = string.Join(",", queues.Select((q, i) => $"('{q.Replace("'", "''")}',{i})"));
+        var parameters = new DynamicParameters();
+        var queueValues = BuildQueueValues(queues, parameters);
 
+#pragma warning disable S2077 // Only the generated @q0, @q1, ... names are interpolated; queue names travel as parameters.
         var row = await conn.QuerySingleOrDefaultAsync<JobRow>(
             $"""
             UPDATE nexjob_jobs
@@ -220,12 +190,14 @@ public sealed class SqlServerStorageProvider : IStorageProvider
             WHERE id = (
                 SELECT TOP 1 j.id
                 FROM nexjob_jobs j WITH (UPDLOCK, READPAST)
-                INNER JOIN (VALUES {queueList}) AS q(name, ord) ON j.queue = q.name
+                INNER JOIN (VALUES {queueValues}) AS q(name, ord) ON j.queue = q.name
                 WHERE j.status = 'Enqueued'
                 ORDER BY q.ord ASC, j.priority ASC, j.created_at ASC
             )
             """,
+            parameters,
             transaction: tx);
+#pragma warning restore S2077
 
         await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
         return row?.ToRecord();
@@ -264,8 +236,12 @@ public sealed class SqlServerStorageProvider : IStorageProvider
             """, transaction: tx).ConfigureAwait(false);
 
         // Build queue priority list for ordering
-        var queueList = string.Join(",", queues.Select((q, i) => $"('{q.Replace("'", "''")}',{i})"));
+        var parameters = new DynamicParameters();
+        var queueValues = BuildQueueValues(queues, parameters);
 
+        parameters.Add("maxBatchSize", maxBatchSize);
+
+#pragma warning disable S2077 // Only the generated @q0, @q1, ... names are interpolated; queue names travel as parameters.
         var rows = await conn.QueryAsync<JobRow>(
             $"""
             UPDATE nexjob_jobs
@@ -275,14 +251,16 @@ public sealed class SqlServerStorageProvider : IStorageProvider
                 attempts              = attempts + 1
             OUTPUT INSERTED.*
             WHERE id IN (
-                SELECT TOP ({maxBatchSize}) j.id
+                SELECT TOP (@maxBatchSize) j.id
                 FROM nexjob_jobs j WITH (UPDLOCK, READPAST)
-                INNER JOIN (VALUES {queueList}) AS q(name, ord) ON j.queue = q.name
+                INNER JOIN (VALUES {queueValues}) AS q(name, ord) ON j.queue = q.name
                 WHERE j.status = 'Enqueued'
                 ORDER BY q.ord ASC, j.priority ASC, j.created_at ASC
             )
             """,
+            parameters,
             transaction: tx);
+#pragma warning restore S2077
 
         await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
         return rows.Select(r => r.ToRecord()).ToList();
@@ -609,21 +587,36 @@ public sealed class SqlServerStorageProvider : IStorageProvider
     public async Task RequeueOrphanedJobsAsync(
         TimeSpan heartbeatTimeout, CancellationToken cancellationToken = default)
     {
+        await RequeueOrphanedJobsAndReportAsync(heartbeatTimeout, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<JobId>> RequeueOrphanedJobsAndReportAsync(
+        TimeSpan heartbeatTimeout, CancellationToken cancellationToken = default)
+    {
         var now = DateTimeOffset.UtcNow;
-        var cutoff = now - heartbeatTimeout;
         await using var conn = Open();
         await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await conn.ExecuteAsync(
+
+        // Only the jobs this statement moved to Failed come back, so another node scanning at the same time cannot report them too.
+        var failedIds = (await conn.QueryAsync<Guid>(
             """
+            DECLARE @moved TABLE (id UNIQUEIDENTIFIER, status NVARCHAR(32));
+
             UPDATE nexjob_jobs
             SET status = CASE WHEN attempts >= max_attempts THEN 'Failed' ELSE 'Enqueued' END,
                 completed_at = CASE WHEN attempts >= max_attempts THEN @now ELSE NULL END,
                 exception_message = CASE WHEN attempts >= max_attempts AND exception_message IS NULL THEN 'Orphaned execution exceeded maximum attempts.' ELSE exception_message END,
                 heartbeat_at = NULL,
                 processing_started_at = NULL
-            WHERE status = 'Processing' AND heartbeat_at < @cutoff
+            OUTPUT INSERTED.id, INSERTED.status INTO @moved
+            WHERE status = 'Processing' AND heartbeat_at < @cutoff;
+
+            SELECT id FROM @moved WHERE status = 'Failed';
             """,
-            new { cutoff, now }).ConfigureAwait(false);
+            new { cutoff = now - heartbeatTimeout, now }).ConfigureAwait(false)).ToList();
+
+        return failedIds.ConvertAll(id => new JobId(id));
     }
 
     // ── Continuations ─────────────────────────────────────────────────────────
@@ -798,6 +791,7 @@ public sealed class SqlServerStorageProvider : IStorageProvider
         }
 
         var clause = where.Count > 0 ? "WHERE " + string.Join(" AND ", where) : string.Empty;
+#pragma warning disable S2077 // `clause` holds only literal fragments such as "status = @status"; every value is a parameter.
         var total = await conn.ExecuteScalarAsync<int>($"SELECT COUNT(*) FROM nexjob_jobs {clause}", p).ConfigureAwait(false);
 
         var offset = (page - 1) * pageSize;
@@ -808,6 +802,7 @@ public sealed class SqlServerStorageProvider : IStorageProvider
             $"SELECT * FROM nexjob_jobs {clause} ORDER BY created_at DESC OFFSET @offset ROWS FETCH NEXT @pageSize ROWS ONLY", p))
             .Select(r => r.ToRecord())
             .ToList();
+#pragma warning restore S2077
 
         return new PagedResult<JobRecord> { Items = items, TotalCount = total, Page = page, PageSize = pageSize };
     }
@@ -1139,6 +1134,42 @@ public sealed class SqlServerStorageProvider : IStorageProvider
 
     // ── Schema ────────────────────────────────────────────────────────────────
 
+    // Builds "(@q0,0),(@q1,1),..." and binds each queue name as a parameter, so a name is never part of the SQL text.
+    private static string BuildQueueValues(IReadOnlyList<string> queues, DynamicParameters parameters)
+    {
+        var values = new StringBuilder();
+        for (var i = 0; i < queues.Count; i++)
+        {
+            parameters.Add($"q{i}", queues[i]);
+            values.Append(CultureInfo.InvariantCulture, $"{(i == 0 ? string.Empty : ",")}(@q{i},{i})");
+        }
+
+        return values.ToString();
+    }
+
+    // An open connection with SQL Server authentication has lost its password: the provider would fail to log in much later.
+    private static void EnsureCredentialsAreKnown(SqlConnection connection)
+    {
+        if (connection.State == ConnectionState.Closed)
+        {
+            return;
+        }
+
+        var builder = new SqlConnectionStringBuilder(connection.ConnectionString);
+        var usesSqlLogin = !builder.IntegratedSecurity
+            && builder.Authentication == SqlAuthenticationMethod.NotSpecified
+            && !string.IsNullOrEmpty(builder.UserID);
+
+        if (usesSqlLogin && string.IsNullOrEmpty(builder.Password))
+        {
+            throw new ArgumentException(
+                "The SqlConnection is already open, so SqlClient has removed the password from its ConnectionString, and the "
+                + "provider needs it to open its own connections. Pass a connection that is not open, or add "
+                + "'Persist Security Info=True' to the connection string.",
+                nameof(connection));
+        }
+    }
+
     private static bool IsTerminalStatus(string? status) =>
         status is "Succeeded" or "Failed" or "Expired" or null;
 
@@ -1168,6 +1199,28 @@ public sealed class SqlServerStorageProvider : IStorageProvider
         // Error 2601: cannot insert duplicate key row (index-specific, but same root cause)
         return ex.Number is 2627 or 2601;
     }
+
+    private static object ToInsertParameters(JobRecord job) =>
+        new
+        {
+            Id = job.Id.Value,
+            job.JobType,
+            job.InputType,
+            job.InputJson,
+            job.SchemaVersion,
+            job.Queue,
+            Priority = (int)job.Priority,
+            Status = job.Status.ToString(),
+            job.IdempotencyKey,
+            job.Attempts,
+            job.MaxAttempts,
+            job.CreatedAt,
+            job.ScheduledAt,
+            ParentJobId = job.ParentJobId?.Value,
+            job.RecurringJobId,
+            job.ExpiresAt,
+            Tags = System.Text.Json.JsonSerializer.Serialize(job.Tags),
+        };
 
     private SqlConnection Open() => _connection is not null ? new SqlConnection(_connection.ConnectionString) : new SqlConnection(_connectionString);
 
@@ -1234,12 +1287,14 @@ public sealed class SqlServerStorageProvider : IStorageProvider
             UPDATE nexjob_jobs
             SET status = 'Scheduled', retry_at = @retryAt,
                 exception_message = @msg, exception_stack_trace = @stack,
-                heartbeat_at = NULL, execution_logs = @Logs
+                heartbeat_at = NULL, execution_logs = @Logs,
+                attempts = CASE WHEN @refund = 1 AND attempts > 0 THEN attempts - 1 ELSE attempts END
             WHERE id = @id
             """,
             new
             {
                 id = jobId.Value,
+                refund = result.RefundAttempt,
                 retryAt = result.RetryAt!.Value,
                 msg = result.Exception?.Message,
                 stack = result.Exception?.StackTrace,

@@ -1,5 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 using Google.Cloud.PubSub.V1;
+using Grpc.Core;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
@@ -32,9 +33,15 @@ public static class GooglePubSubNexJobExtensions
             var subscriptionName = SubscriptionName.FromProjectSubscription(
                 options.ProjectId, options.SubscriptionId);
 
-            var client = SubscriberClient.Create(subscriptionName);
+            var builder = new SubscriberClientBuilder { SubscriptionName = subscriptionName };
+            if (!string.IsNullOrWhiteSpace(options.EmulatorHost))
+            {
+                // The emulator has no TLS and no credentials.
+                builder.Endpoint = options.EmulatorHost;
+                builder.ChannelCredentials = ChannelCredentials.Insecure;
+            }
 
-            return new GooglePubSubSubscriber(client);
+            return new GooglePubSubSubscriber(builder.Build());
         });
 
         services.AddHostedService<GooglePubSubTriggerHandler>();

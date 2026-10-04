@@ -56,3 +56,7 @@ Watch console logs:
 2. The Outbox producer publishes the message to RabbitMQ with publisher confirms.
 3. The RabbitMQ Trigger consumes the message from `orders.incoming`.
 4. `ProcessOrderJob` executes and logs the received payload!
+
+## Forwarding exhausted jobs
+
+The trigger sets `ExhaustedJobsRoutingKey` to `orders.exhausted` (on the default exchange, that is the queue name; the sample declares it at startup). An order whose job exhausts its retries stays `Failed` in the NexJob dashboard, and a copy of the original message body is published to that queue through the Outbox producer. Only the body is forwarded.

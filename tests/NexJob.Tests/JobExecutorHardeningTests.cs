@@ -232,12 +232,14 @@ public sealed class JobExecutorHardeningTests
         await _sut.ExecuteJobAsync(job);
 
         // Assert
-        job.Attempts.Should().Be(0, "foreign job attempt increment must be rolled back");
+        // Behavior changed in v5.8: the attempt is given back by the storage (RefundAttempt, issue #327). Editing the local
+        // JobRecord was never persisted by the database providers, so the executor no longer touches it.
+        job.Attempts.Should().Be(1, "the executor leaves the local copy alone; the storage refunds the attempt");
         _deadLetterDispatcher.Verify(x => x.DispatchAsync(It.IsAny<JobRecord>(), It.IsAny<Exception>(), It.IsAny<CancellationToken>()), Times.Never);
         _retryPolicy.Verify(x => x.ComputeRetryAt(It.IsAny<JobRecord>(), It.IsAny<Exception>()), Times.Never);
         _storage.Verify(x => x.CommitJobResultAsync(
             job.Id,
-            It.Is<JobExecutionResult>(r => !r.Succeeded && r.RetryAt != null && r.Exception == foreignException),
+            It.Is<JobExecutionResult>(r => !r.Succeeded && r.RetryAt != null && r.Exception == foreignException && r.RefundAttempt),
             It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -287,6 +289,79 @@ public sealed class JobExecutorHardeningTests
             job.Id,
             It.Is<JobExecutionResult>(r => !r.Succeeded && r.RetryAt != null),
             It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    // ─── Attempt refund through the storage (#327) ─────────────────────────
+
+    /// <summary>N1 (Positive): a foreign job is committed with RefundAttempt so database providers give the attempt back.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task ExecuteJobAsync_WhenForeignJobTypeExceptionThrown_CommitsWithRefundAttempt()
+    {
+        var job = new JobRecord { Id = JobId.New(), JobType = "ForeignService.Job", Attempts = 2, MaxAttempts = 3 };
+        _invokerFactory.Setup(x => x.PrepareAsync(job, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new ForeignJobTypeException(job.JobType, "Cannot load job type"));
+
+        await _sut.ExecuteJobAsync(job);
+
+        _storage.Verify(x => x.CommitJobResultAsync(
+            job.Id,
+            It.Is<JobExecutionResult>(r => !r.Succeeded && r.RetryAt != null && r.RefundAttempt),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    /// <summary>N1 (Positive): a job interrupted by shutdown is requeued with RefundAttempt, not dead-lettered.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task ExecuteJobAsync_WhenInterruptedByShutdown_CommitsWithRefundAttempt()
+    {
+        var job = new JobRecord { Id = JobId.New(), JobType = "TestJob", Attempts = 2, MaxAttempts = 3 };
+        using var shutdown = new CancellationTokenSource();
+        _invokerFactory.Setup(x => x.PrepareAsync(job, It.IsAny<CancellationToken>()))
+            .Callback(() => shutdown.Cancel())
+            .ThrowsAsync(new OperationCanceledException(shutdown.Token));
+
+        await _sut.ExecuteJobAsync(job, shutdown.Token);
+
+        _storage.Verify(x => x.CommitJobResultAsync(
+            job.Id,
+            It.Is<JobExecutionResult>(r => !r.Succeeded && r.RetryAt != null && r.RefundAttempt),
+            It.IsAny<CancellationToken>()), Times.Once);
+        _deadLetterDispatcher.Verify(x => x.DispatchAsync(It.IsAny<JobRecord>(), It.IsAny<Exception>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    /// <summary>N2 (Negative): a job that genuinely fails is not refunded; it keeps consuming attempts.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task ExecuteJobAsync_WhenJobFailsNormally_DoesNotRefundTheAttempt()
+    {
+        var job = new JobRecord { Id = JobId.New(), JobType = "TestJob", Attempts = 1, MaxAttempts = 3 };
+        var failure = new InvalidOperationException("real failure");
+        _invokerFactory.Setup(x => x.PrepareAsync(job, It.IsAny<CancellationToken>())).ThrowsAsync(failure);
+        _retryPolicy.Setup(x => x.ComputeRetryAt(job, failure)).Returns(DateTimeOffset.UtcNow.AddSeconds(1));
+
+        await _sut.ExecuteJobAsync(job);
+
+        _storage.Verify(x => x.CommitJobResultAsync(
+            job.Id,
+            It.Is<JobExecutionResult>(r => !r.Succeeded && r.RetryAt != null && !r.RefundAttempt),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    /// <summary>N3 (Boundary): the executor leaves the local attempt count alone at zero; the storage guards the floor.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task ExecuteJobAsync_WhenAttemptsZeroAndInterrupted_DoesNotGoNegative()
+    {
+        var job = new JobRecord { Id = JobId.New(), JobType = "TestJob", Attempts = 0, MaxAttempts = 3 };
+        using var shutdown = new CancellationTokenSource();
+        _invokerFactory.Setup(x => x.PrepareAsync(job, It.IsAny<CancellationToken>()))
+            .Callback(() => shutdown.Cancel())
+            .ThrowsAsync(new OperationCanceledException(shutdown.Token));
+
+        await _sut.ExecuteJobAsync(job, shutdown.Token);
+
+        job.Attempts.Should().BeGreaterOrEqualTo(0);
     }
 
     // ─── Helpers ───────────────────────────────────────────────────────────

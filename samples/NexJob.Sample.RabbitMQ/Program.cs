@@ -9,6 +9,7 @@ var builder = WebApplication.CreateBuilder(args);
 var rabbitHost = builder.Configuration.GetValue("RabbitMQ:HostName", "localhost")!;
 var rabbitPort = builder.Configuration.GetValue("RabbitMQ:Port", 5672);
 var queueName = "orders.incoming";
+var exhaustedQueueName = "orders.exhausted";
 
 // Setup RabbitMQ connection factory
 builder.Services.AddSingleton<IConnectionFactory>(_ => new ConnectionFactory
@@ -36,6 +37,10 @@ builder.Services.AddNexJob()
         opt.Port = rabbitPort;
         opt.QueueName = queueName;
         opt.TargetQueue = "orders";
+
+        // An order that exhausts its retries stays Failed in NexJob and a copy of the message body is published to
+        // this queue (default exchange) through the Outbox producer above.
+        opt.ExhaustedJobsRoutingKey = exhaustedQueueName;
     })
     .AddNexJobJobs(typeof(Program).Assembly);
 
@@ -50,6 +55,7 @@ using (var scope = app.Services.CreateScope())
         using var connection = factory.CreateConnection();
         using var channel = connection.CreateModel();
         channel.QueueDeclare(queue: queueName, durable: true, exclusive: false, autoDelete: false);
+        channel.QueueDeclare(queue: exhaustedQueueName, durable: true, exclusive: false, autoDelete: false);
     }
     catch (Exception ex)
     {

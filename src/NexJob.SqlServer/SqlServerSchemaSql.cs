@@ -176,6 +176,13 @@ internal static class SqlServerSchemaSql
             ALTER TABLE nexjob_jobs ADD checkpoint_json NVARCHAR(MAX) NULL;
         """;
 
+    /// <summary>V11: Add expires_at column to nexjob_jobs so the job deadline (deadlineAfter) is persisted (#321).</summary>
+    internal const string V11AddExpiresAtColumn =
+        """
+        IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('nexjob_jobs') AND name = 'expires_at')
+            ALTER TABLE nexjob_jobs ADD expires_at DATETIMEOFFSET NULL;
+        """;
+
     /// <summary>Full initial schema — kept for backward compatibility. Prefer the versioned consts.</summary>
     internal const string CreateTables = V1CreateTables;
 }

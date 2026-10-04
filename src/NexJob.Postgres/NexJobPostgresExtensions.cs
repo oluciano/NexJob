@@ -1,5 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using NexJob.Configuration;
 using NexJob.Storage;
@@ -56,6 +57,11 @@ public static class NexJobPostgresExtensions
         ArgumentNullException.ThrowIfNull(dataSource);
 
         services.AddSingleton(_ => new PostgresStorageProvider(dataSource));
+
+        // The connection-string overload migrates when its provider is built; this one migrates when the host starts, before
+        // any other hosted service. It is not done in the provider constructor, which the dashboard's read replica also uses
+        // and which must never run DDL.
+        services.AddSingleton<IHostedService>(_ => new PostgresSchemaInitializer(dataSource));
         services.AddSingleton<IStorageProvider>(sp => sp.GetRequiredService<PostgresStorageProvider>());
         services.AddSingleton<IJobStorage>(sp => sp.GetRequiredService<PostgresStorageProvider>());
         services.AddSingleton<IRecurringStorage>(sp => sp.GetRequiredService<PostgresStorageProvider>());

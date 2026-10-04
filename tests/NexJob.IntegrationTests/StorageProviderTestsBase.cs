@@ -289,6 +289,60 @@ public abstract class StorageProviderTestsBase
         updated.CompletedAt.Should().NotBeNull();
     }
 
+    // ── Orphan requeue reports the jobs it failed (issue #340) ─────────────────
+
+    private static IOrphanedJobReporter Reporter(IJobStorage storage) =>
+        storage.Should().BeAssignableTo<IOrphanedJobReporter>("every built-in provider reports the jobs the orphan scan failed").Subject;
+
+    [Fact]
+    public async Task RequeueOrphanedJobsAndReportAsync_ReportsTheJobItFailed()
+    {
+        // N1 (Positive)
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
+        await storage.EnqueueAsync(MakeJob(maxAttempts: 1));
+        var fetched = (await storage.FetchNextAsync(["default"]))!;
+
+        await Task.Delay(10);
+        var failed = await Reporter(storage).RequeueOrphanedJobsAndReportAsync(TimeSpan.Zero);
+
+        failed.Should().ContainSingle().Which.Should().Be(fetched.Id);
+        (await dashboard.GetJobByIdAsync(fetched.Id))!.Status.Should().Be(JobStatus.Failed);
+    }
+
+    [Fact]
+    public async Task RequeueOrphanedJobsAndReportAsync_DoesNotReportJobsThatWereRequeuedOrAreAlive()
+    {
+        // N2 (Negative): only jobs that became Failed are reported.
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
+        await storage.EnqueueAsync(MakeJob(maxAttempts: 3));
+        var retried = (await storage.FetchNextAsync(["default"]))!;
+        await Task.Delay(10);
+
+        var failed = await Reporter(storage).RequeueOrphanedJobsAndReportAsync(TimeSpan.Zero);
+
+        failed.Should().BeEmpty("a job with attempts left goes back to the queue, it is not dead-lettered");
+        (await dashboard.GetJobByIdAsync(retried.Id))!.Status.Should().Be(JobStatus.Enqueued);
+
+        await storage.EnqueueAsync(MakeJob(maxAttempts: 1));
+        await storage.FetchNextAsync(["default"]);
+        (await Reporter(storage).RequeueOrphanedJobsAndReportAsync(TimeSpan.FromMinutes(5))).Should().BeEmpty("a fresh heartbeat is not an orphan");
+    }
+
+    [Fact]
+    public async Task RequeueOrphanedJobsAndReportAsync_ReportsAJobOnlyOnce_AndNothingWhenThereIsNothing()
+    {
+        // N3 (Boundary): the second scan of the same job, and an empty store.
+        var (storage, _, _, _) = await CreateStorageAsync();
+        (await Reporter(storage).RequeueOrphanedJobsAndReportAsync(TimeSpan.Zero)).Should().BeEmpty();
+
+        await storage.EnqueueAsync(MakeJob(maxAttempts: 1));
+        var fetched = (await storage.FetchNextAsync(["default"]))!;
+        await Task.Delay(10);
+
+        (await Reporter(storage).RequeueOrphanedJobsAndReportAsync(TimeSpan.Zero)).Should().ContainSingle().Which.Should().Be(fetched.Id);
+        (await Reporter(storage).RequeueOrphanedJobsAndReportAsync(TimeSpan.Zero)).Should().BeEmpty("the job already failed, a second node must not report it again");
+    }
+
     [Fact]
     public async Task RequeueOrphanedJobsAsync_does_not_touch_fresh_heartbeat()
     {
@@ -1383,7 +1437,8 @@ public abstract class StorageProviderTestsBase
         JobId? parentJobId = null,
         int maxAttempts = 5,
         string jobType = "NexJob.IntegrationTests.FakeJob",
-        string? inputJson = null) =>
+        string? inputJson = null,
+        DateTimeOffset? expiresAt = null) =>
         new()
         {
             Id = new JobId(Guid.NewGuid()),
@@ -1397,6 +1452,7 @@ public abstract class StorageProviderTestsBase
             CreatedAt = DateTimeOffset.UtcNow,
             IdempotencyKey = idempotencyKey,
             ParentJobId = parentJobId,
+            ExpiresAt = expiresAt,
         };
 
     private static RecurringJobRecord MakeRecurring(
@@ -1911,5 +1967,355 @@ public abstract class StorageProviderTestsBase
         syncItem!.TotalRuns.Should().Be(1);
         syncItem.SucceededRuns.Should().Be(1);
         syncItem.FailedRuns.Should().Be(0);
+    }
+
+    // ── Job deadline persistence (#321) ────────────────────────────────────────
+
+    [Fact]
+    public async Task EnqueueAsync_persists_ExpiresAt_and_FetchNextAsync_returns_it()
+    {
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
+        var expiresAt = DateTimeOffset.UtcNow.AddHours(1);
+        var record = MakeJob(expiresAt: expiresAt);
+
+        await storage.EnqueueAsync(record);
+
+        var stored = await dashboard.GetJobByIdAsync(record.Id);
+        stored!.ExpiresAt.Should().NotBeNull("the deadline must be stored with the job");
+        stored.ExpiresAt!.Value.Should().BeCloseTo(expiresAt, TimeSpan.FromMilliseconds(5));
+
+        var fetched = await storage.FetchNextAsync(["default"]);
+        fetched!.ExpiresAt.Should().NotBeNull("the executor reads the deadline from the fetched job");
+        fetched.ExpiresAt!.Value.Should().BeCloseTo(expiresAt, TimeSpan.FromMilliseconds(5));
+    }
+
+    [Fact]
+    public async Task EnqueueAsync_with_duplicate_policy_persists_ExpiresAt()
+    {
+        var (storage, _, _, _) = await CreateStorageAsync();
+        var expiresAt = DateTimeOffset.UtcNow.AddHours(1);
+        var record = MakeJob(idempotencyKey: $"deadline-{Guid.NewGuid()}", expiresAt: expiresAt);
+
+        await storage.EnqueueAsync(record, DuplicatePolicy.AllowAfterFailed);
+
+        var fetched = await storage.FetchNextAsync(["default"]);
+        fetched!.ExpiresAt.Should().NotBeNull();
+        fetched.ExpiresAt!.Value.Should().BeCloseTo(expiresAt, TimeSpan.FromMilliseconds(5));
+    }
+
+    [Fact]
+    public async Task FetchNextAsync_returns_a_job_whose_deadline_already_passed_with_its_deadline()
+    {
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
+        var expiresAt = DateTimeOffset.UtcNow.AddMinutes(-5);
+        var record = MakeJob(expiresAt: expiresAt);
+
+        await storage.EnqueueAsync(record);
+        var fetched = await storage.FetchNextAsync(["default"]);
+
+        // The storage does not decide expiry: it hands the deadline to the executor, which expires the job.
+        fetched.Should().NotBeNull();
+        fetched!.ExpiresAt.Should().NotBeNull();
+        fetched.ExpiresAt!.Value.Should().BeBefore(DateTimeOffset.UtcNow);
+
+        await storage.SetExpiredAsync(fetched.Id);
+        (await dashboard.GetJobByIdAsync(record.Id))!.Status.Should().Be(JobStatus.Expired);
+    }
+
+    [Fact]
+    public async Task EnqueueAsync_without_deadline_returns_null_ExpiresAt()
+    {
+        var (storage, _, _, _) = await CreateStorageAsync();
+
+        await storage.EnqueueAsync(MakeJob());
+        var fetched = await storage.FetchNextAsync(["default"]);
+
+        fetched!.ExpiresAt.Should().BeNull("a job enqueued without a deadline never expires");
+    }
+
+    // ── Attempt refund on retry (#299) ─────────────────────────────────────────
+
+    [Fact]
+    public async Task CommitJobResultAsync_with_RefundAttempt_gives_the_attempt_back_on_retry()
+    {
+        var (storage, _, _, _) = await CreateStorageAsync();
+        await storage.EnqueueAsync(MakeJob());
+        var first = await storage.FetchNextAsync(["default"]);
+        first!.Attempts.Should().Be(1);
+
+        await storage.CommitJobResultAsync(first.Id, RetryResult(refundAttempt: true));
+
+        var second = await FetchWithinAsync(storage, TimeSpan.FromSeconds(5));
+        second.Should().NotBeNull();
+        second!.Attempts.Should().Be(1, "a refunded attempt must not count: the job did not really run");
+    }
+
+    [Fact]
+    public async Task CommitJobResultAsync_without_RefundAttempt_keeps_consuming_attempts_on_retry()
+    {
+        var (storage, _, _, _) = await CreateStorageAsync();
+        await storage.EnqueueAsync(MakeJob());
+        var first = await storage.FetchNextAsync(["default"]);
+
+        await storage.CommitJobResultAsync(first!.Id, RetryResult(refundAttempt: false));
+
+        var second = await FetchWithinAsync(storage, TimeSpan.FromSeconds(5));
+        second!.Attempts.Should().Be(2, "a genuine failure keeps consuming attempts");
+    }
+
+    [Fact]
+    public async Task CommitJobResultAsync_ignores_RefundAttempt_when_the_job_succeeded()
+    {
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
+        var record = MakeJob();
+        await storage.EnqueueAsync(record);
+        var first = await storage.FetchNextAsync(["default"]);
+
+        await storage.CommitJobResultAsync(first!.Id, new JobExecutionResult { Succeeded = true, Logs = [], RefundAttempt = true });
+
+        var stored = await dashboard.GetJobByIdAsync(record.Id);
+        stored!.Status.Should().Be(JobStatus.Succeeded);
+        stored.Attempts.Should().Be(1, "the refund only applies when the job is retried");
+    }
+
+    private static JobExecutionResult RetryResult(bool refundAttempt) => new()
+    {
+        Succeeded = false,
+        Exception = new InvalidOperationException("retry"),
+        RetryAt = DateTimeOffset.UtcNow.AddMilliseconds(-1),
+        Logs = [],
+        RefundAttempt = refundAttempt,
+    };
+
+    private static async Task<JobRecord?> FetchWithinAsync(IJobStorage storage, TimeSpan timeout)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        while (DateTime.UtcNow < deadline)
+        {
+            var job = await storage.FetchNextAsync(["default"]);
+            if (job is not null)
+            {
+                return job;
+            }
+
+            await Task.Delay(50);
+        }
+
+        return null;
+    }
+
+    // ── Deleting a job that was not fetched yet (#140) ─────────────────────────
+
+    [Fact]
+    public async Task DeleteJobAsync_of_an_enqueued_job_means_it_is_never_fetched_and_leaves_no_trace()
+    {
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
+        var record = MakeJob();
+        await storage.EnqueueAsync(record);
+
+        await dashboard.DeleteJobAsync(record.Id);
+
+        (await storage.FetchNextAsync(["default"])).Should().BeNull("a deleted job must not come back from the queue");
+        (await dashboard.GetJobByIdAsync(record.Id)).Should().BeNull("fetching must not recreate the deleted job");
+    }
+
+    [Fact]
+    public async Task DeleteJobAsync_of_one_enqueued_job_does_not_hide_the_next_one_in_the_queue()
+    {
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
+        var deleted = MakeJob();
+        await storage.EnqueueAsync(deleted);
+        await Task.Delay(5);
+        var kept = MakeJob();
+        await storage.EnqueueAsync(kept);
+
+        await dashboard.DeleteJobAsync(deleted.Id);
+        var fetched = await storage.FetchNextAsync(["default"]);
+
+        fetched.Should().NotBeNull();
+        fetched!.Id.Should().Be(kept.Id, "the surviving job is the one that comes out");
+        (await storage.FetchNextAsync(["default"])).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task DeleteJobAsync_of_an_unknown_or_already_deleted_id_does_not_throw()
+    {
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
+        var record = MakeJob();
+        await storage.EnqueueAsync(record);
+
+        Func<Task> act = async () =>
+        {
+            await dashboard.DeleteJobAsync(new JobId(Guid.NewGuid()));
+            await dashboard.DeleteJobAsync(record.Id);
+            await dashboard.DeleteJobAsync(record.Id);
+        };
+
+        await act.Should().NotThrowAsync();
+    }
+
+    // ── Late writes to a job that was deleted while it ran (#140) ───────────────
+
+    [Fact]
+    public async Task UpdateHeartbeatAsync_on_a_deleted_job_leaves_no_trace()
+    {
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
+        var record = await EnqueueFetchAndDeleteAsync(storage, dashboard);
+
+        await storage.UpdateHeartbeatAsync(record.Id);
+
+        (await dashboard.GetJobByIdAsync(record.Id)).Should().BeNull("a late heartbeat must not bring a deleted job back");
+    }
+
+    [Fact]
+    public async Task ReportProgressAsync_on_a_deleted_job_leaves_no_trace()
+    {
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
+        var record = await EnqueueFetchAndDeleteAsync(storage, dashboard);
+
+        await storage.ReportProgressAsync(record.Id, 50, "halfway");
+
+        (await dashboard.GetJobByIdAsync(record.Id)).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task SaveExecutionLogsAsync_on_a_deleted_job_leaves_no_trace()
+    {
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
+        var record = await EnqueueFetchAndDeleteAsync(storage, dashboard);
+
+        await dashboard.SaveExecutionLogsAsync(record.Id, []);
+
+        (await dashboard.GetJobByIdAsync(record.Id)).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task CommitJobResultAsync_on_a_deleted_job_leaves_no_trace_for_success_retry_and_failure()
+    {
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
+        var results = new[]
+        {
+            new JobExecutionResult { Succeeded = true, Logs = [] },
+            new JobExecutionResult { Succeeded = false, Exception = new InvalidOperationException("retry"), RetryAt = DateTimeOffset.UtcNow.AddMinutes(1), Logs = [] },
+            new JobExecutionResult { Succeeded = false, Exception = new InvalidOperationException("failed"), Logs = [] },
+        };
+
+        foreach (var result in results)
+        {
+            var record = await EnqueueFetchAndDeleteAsync(storage, dashboard);
+
+            await storage.CommitJobResultAsync(record.Id, result);
+
+            (await dashboard.GetJobByIdAsync(record.Id)).Should().BeNull($"a late result (succeeded={result.Succeeded}, retry={result.RetryAt is not null}) must not bring a deleted job back");
+        }
+    }
+
+    [Fact]
+    public async Task Late_writes_on_an_unknown_id_do_not_throw_and_leave_no_trace()
+    {
+        // N3 (Invalid input)
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
+        var unknown = new JobId(Guid.NewGuid());
+
+        Func<Task> act = async () =>
+        {
+            await storage.UpdateHeartbeatAsync(unknown);
+            await storage.ReportProgressAsync(unknown, 10, "x");
+            await dashboard.SaveExecutionLogsAsync(unknown, []);
+            await storage.CommitJobResultAsync(unknown, new JobExecutionResult { Succeeded = true, Logs = [] });
+        };
+
+        await act.Should().NotThrowAsync();
+        (await dashboard.GetJobByIdAsync(unknown)).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Heartbeat_progress_and_logs_still_update_a_job_that_exists()
+    {
+        // N2 (guard): the protection against deleted jobs must not stop live jobs from being updated.
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
+        var record = MakeJob();
+        await storage.EnqueueAsync(record);
+        var fetched = await storage.FetchNextAsync(["default"]);
+        var before = (await dashboard.GetJobByIdAsync(record.Id))!.HeartbeatAt;
+
+        await Task.Delay(20);
+        await storage.UpdateHeartbeatAsync(fetched!.Id);
+        await storage.ReportProgressAsync(fetched.Id, 40, "working");
+
+        var stored = await dashboard.GetJobByIdAsync(record.Id);
+        stored.Should().NotBeNull();
+        stored!.ProgressPercent.Should().Be(40);
+        stored.HeartbeatAt.Should().NotBeNull();
+        stored.HeartbeatAt.Should().BeOnOrAfter(before ?? DateTimeOffset.MinValue);
+    }
+
+    private static async Task<JobRecord> EnqueueFetchAndDeleteAsync(IJobStorage storage, IDashboardStorage dashboard)
+    {
+        var record = MakeJob();
+        await storage.EnqueueAsync(record);
+        var fetched = await storage.FetchNextAsync(["default"]);
+        fetched.Should().NotBeNull();
+        await dashboard.DeleteJobAsync(record.Id);
+        return record;
+    }
+
+    // ── Queue names are data, never SQL (#324) ───────────────────────────────
+
+    [Fact]
+    public async Task FetchNextAsync_finds_a_job_on_a_queue_whose_name_contains_quotes_and_sql()
+    {
+        var (storage, _, _, _) = await CreateStorageAsync();
+        const string queue = "o'brien'); DROP TABLE nexjob_jobs;--";
+        var record = MakeJob(queue: queue);
+        await storage.EnqueueAsync(record);
+
+        var fetched = await storage.FetchNextAsync([queue]);
+
+        fetched.Should().NotBeNull();
+        fetched!.Id.Should().Be(record.Id);
+    }
+
+    [Fact]
+    public async Task FetchBatchAsync_with_a_hostile_queue_name_returns_nothing_and_leaves_other_jobs_alone()
+    {
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
+        var kept = MakeJob();
+        await storage.EnqueueAsync(kept);
+
+        var fetched = await storage.FetchBatchAsync(["x'); DELETE FROM nexjob_jobs;--", "default"], 5);
+
+        fetched.Should().ContainSingle().Which.Id.Should().Be(kept.Id, "the real queue in the same list still works");
+        (await dashboard.GetJobByIdAsync(kept.Id)).Should().NotBeNull("the statement in the name must not run");
+    }
+
+    [Fact]
+    public async Task FetchBatchAsync_drains_queues_in_the_order_of_the_list_even_when_a_later_queue_is_older()
+    {
+        var (storage, _, _, _) = await CreateStorageAsync();
+        var older = MakeJob(queue: "low");
+        await storage.EnqueueAsync(older);
+        await Task.Delay(5);
+        var newer = MakeJob(queue: "high");
+        await storage.EnqueueAsync(newer);
+
+        // One at a time: the order that matters is which job is chosen first (the order of the rows returned by a batch
+        // is not part of the contract).
+        (await storage.FetchBatchAsync(["high", "low"], 1)).Should().ContainSingle().Which.Id.Should().Be(newer.Id);
+        (await storage.FetchBatchAsync(["high", "low"], 1)).Should().ContainSingle().Which.Id.Should().Be(older.Id);
+    }
+
+    [Fact]
+    public async Task FetchBatchAsync_never_returns_more_than_the_batch_size()
+    {
+        var (storage, _, _, _) = await CreateStorageAsync();
+        for (var i = 0; i < 4; i++)
+        {
+            await storage.EnqueueAsync(MakeJob());
+        }
+
+        (await storage.FetchBatchAsync(["default"], 3)).Should().HaveCount(3);
+        (await storage.FetchBatchAsync(["default"], 3)).Should().HaveCount(1);
+        (await storage.FetchBatchAsync(["default"], 0)).Should().BeEmpty();
     }
 }

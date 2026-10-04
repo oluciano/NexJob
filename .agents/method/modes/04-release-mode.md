@@ -1,250 +1,98 @@
 # AI Mode: Release
 
-**Role:** Validate and prepare code for production release.
+**Role:** Validate, synchronize documentation, and govern production releases.  
+**Execution Engine:** Run via the automated skill: `.agents/skills/nexjob-release/SKILL.md`.
 
 ---
 
-## Release Flow
+## 1. Release Flow & Branch Strategy
 
-### Branch strategy
-- All work goes to `develop` first (never directly to `main`)
-- `main` always mirrors NuGet — what is on `main` is what is published
-- Release = merge `develop → main` via PR
-
-### How to release
-1. **Auditing & SemVer Detection:** Determine version (Major/Minor/Patch) based on NuGet and git tags, and confirm with user.
-2. **Code vs Documentation Truth Gate:** Audit Wiki (`docs/wiki/`) and package READMEs (`src/*/README.md`). Auto-update any discrepancies and push directly to `develop`. (Never modify production code to match docs).
-3. **Quality & Packaging Gate:** Verify `dotnet build -c Release` (0 warnings), unit tests, and `dotnet pack`.
-4. **Metadata Sync:** Update `Directory.Build.props` (bump `VersionPrefix`) and `CHANGELOG.md` (`[Unreleased]` -> `[x.y.z] — YYYY-MM-DD`).
-5. **Open PR:** `develop → main`, title: `release: vX.Y.Z`.
-6. **Merge PR:** Automation handles: git tag → GitHub Release → NuGet publish.
-
-*Note: For the automated step-by-step workflow, use the `.agents/skills/nexjob-release/SKILL.md` skill.*
-
-### What you must NOT do
-- Push directly to `main`
-- Create tags manually (automation does this)
-- Merge to `main` outside of a release PR
-- Modify production code (`src/**/*.cs`) to match outdated documentation (always update the docs)
+- **`develop` branch:** All features, bug fixes, and documentation audits are committed to `develop`. Never push directly to `main`.
+- **`main` branch:** Mirrors the live published packages on NuGet and GitHub Releases.
+- **Release PR:** A Pull Request from `develop` into `main` using **"Create a merge commit"** (`--no-ff`). Never squash or rebase release PRs.
+- **Tagging & Publishing:** Automated via CI/CD (`publish.yml`) on merge to `main`. **NEVER manually create git tags or manually push to NuGet.**
 
 ---
 
-## Release Checklist
+## 2. The 7 Canonical Release Phases
 
-### Pre-Release Validation
-
-- [ ] Build passes with zero warnings? (`dotnet build --configuration Release`)
-- [ ] All tests pass? (unit, integration, reliability)
-- [ ] All packages pack correctly? (`dotnet pack`)
-- [ ] Version in `Directory.Build.props` matches latest CHANGELOG entry?
-- [ ] No `[Unreleased]` content left in CHANGELOG?
-- [ ] Git working tree clean? (all changes committed)
-
-### Code Quality
-
-- [ ] Zero compiler warnings (Release build)
-- [ ] Zero StyleCop violations
-- [ ] All public APIs have XML documentation
-- [ ] No `NotImplementedException` anywhere
-- [ ] No placeholder or incomplete implementations
-
-### Tests
-
-- [ ] Unit tests pass (`dotnet test tests/NexJob.Tests/`)
-- [ ] Integration tests pass (requires Docker)
-- [ ] Reliability tests pass (`dotnet test tests/NexJob.ReliabilityTests.Distributed -c Release`)
-- [ ] No flaky tests or timing-dependent assertions
-
-### Documentation
-
-- [ ] CHANGELOG.md updated with all changes
-- [ ] Release notes prepared (if external communication needed)
-- [ ] API changes documented (if public surface changed)
-- [ ] Breaking changes clearly marked (if applicable)
-
-### Versioning
-
-- [ ] Semantic versioning respected (MAJOR.MINOR.PATCH)
-- [ ] Version bump justifiable (breaking, feature, patch)
-- [ ] Version number consistent across:
-  - `Directory.Build.props`
-  - CHANGELOG.md
-  - Git tags (if pushing to GitHub)
-
-### Commits & History
-
-- [ ] Commit messages follow Conventional Commits
-- [ ] All PRs merged (if using PR workflow)
-- [ ] No merge conflicts left
-- [ ] Git history is clean (no force pushes)
+1. **Phase 1: Version Auditing, SemVer & Release Size Guard:**
+   - Determine version change (Major, Minor, or Patch) based on NuGet (`api.nuget.org`) and git history since last tag.
+   - Respect SemVer strictly (Major for breaking changes, Minor for backwards-compatible features/triggers, Patch for bug fixes only).
+   - Evaluate the **Release Size Guard** (Green ≤12 entries/≤40 commits/≤25 src files; Yellow 13-24 entries; Red ≥25 entries — stop and propose split).
+2. **Phase 2: User Confirmation of Version:**
+   - **Mandatory Stop:** Always present detected changes and proposed version, and require explicit user confirmation or override before modifying any file.
+3. **Phase 3: Code vs Documentation Truth Gate (Direct Sync on `develop`):**
+   - **Code is the ultimate source of truth:** If docs disagree with code, fix the docs. **Never alter production code (`src/**/*.cs`) to match docs.**
+   - Audit root `README.md`, package READMEs (`src/*/README.md`), and Wiki (`docs/wiki/*.md`).
+   - If Mintlify customer docs exist (`mintlify-docs`), synchronize via `python3 docs/site/sync-from-mintlify.py` and verify `mkdocs build --strict`.
+   - Commit documentation updates directly to `develop`.
+4. **Phase 4: Pre-Release Quality & Packaging Rehearsal:**
+   - Verify `dotnet build -c Release` (0 warnings, `TreatWarningsAsErrors = true`).
+   - Verify all unit tests pass (`dotnet test tests/NexJob.Tests/ -c Release --no-build`).
+   - Verify code formatting (`dotnet format --verify-no-changes`).
+   - Verify all 16 packages pack (`dotnet pack -c Release`).
+   - **Packaging Rehearsal:** Rehearse release candidate into a local temporary feed and test across all 5 providers (InMemory, PostgreSQL, SQL Server, Redis, MongoDB).
+5. **Phase 5: Version Bump, Changelog & Release PR to `main`:**
+   - Set `<VersionPrefix>X.Y.Z</VersionPrefix>` in `Directory.Build.props`.
+   - Move `[Unreleased]` entries to `[X.Y.Z] - YYYY-MM-DD` in `CHANGELOG.md`.
+   - Commit on `develop` and open Release PR to `main` (`gh pr create --base main --head develop --title "release: vX.Y.Z"`).
+6. **Phase 6: Post-Release Sync-Back (`main` ➔ `develop`):**
+   - Once merged to `main`, sync the release commit and tag back into `develop` using a merge commit (`git merge origin/main --no-ff`).
+7. **Phase 7: Post-Release Learning Snapshot (Async Retro):**
+   - Record any friction, flaky tests, or packaging hurdles into `GEMINI.md` or method references to permanently harden future releases.
 
 ---
 
-## Version Discipline
+## 3. Complete Package Catalog (16 Packages)
 
-### Semantic Versioning Rules
+Every release validates the full catalog of packages:
 
-**MAJOR** (breaking change):
-- Removing public APIs
-- Changing fundamental behavior
-- Incompatible with prior version
+### Core & Observability
+- `NexJob` (Core execution engine, scheduler, and In-Memory provider)
+- `NexJob.OpenTelemetry` (Tracing, metrics, and activity sources)
 
-**MINOR** (feature addition):
-- New public APIs
-- New features
-- Backward compatible
+### Dashboard
+- `NexJob.Dashboard` (Embedded middleware UI for ASP.NET Core)
+- `NexJob.Dashboard.Standalone` (Embedded HTTP server UI for Worker Services)
 
-**PATCH** (bug fix):
-- Bug fixes
-- Documentation updates
-- No new features, no breaking changes
+### Storage Providers
+- `NexJob.Postgres` (PostgreSQL storage with `SKIP LOCKED`)
+- `NexJob.SqlServer` (SQL Server storage with `UPDLOCK, READPAST`)
+- `NexJob.Redis` (Redis storage with distributed throttling)
+- `NexJob.MongoDB` (MongoDB storage)
 
-### Version Format
+### Triggers & Broker Integrations
+- `NexJob.Trigger.AzureServiceBus`
+- `NexJob.Trigger.AwsSqs`
+- `NexJob.Trigger.GooglePubSub`
+- `NexJob.Trigger.Salesforce` (gRPC Pub/Sub API)
+- `NexJob.Trigger.SalesforceStreaming` (CometD/Bayeux API)
+- `NexJob.RabbitMQ` (Trigger + Outbox Producer)
+- `NexJob.Kafka` (Trigger + Outbox Producer)
 
-```
-v{MAJOR}.{MINOR}.{PATCH}
-Example: v0.6.0
-```
-
----
-
-## Changelog Rules
-
-### Format
-
-```markdown
-## [Unreleased]
-### Added
-- description of new features
-
-### Fixed
-- description of bug fixes
-
-### Changed
-- description of changes
-
-## [0.6.0] - 2026-04-02
-### Added
-- specific feature description
-
-### Fixed
-- specific bug fix
-
-### Changed
-- specific change description
-```
-
-### Rules
-
-- [ ] `[Unreleased]` section exists at top?
-- [ ] Released version has date (YYYY-MM-DD)?
-- [ ] Categories: Added, Fixed, Changed (no others)
-- [ ] Each entry is a complete sentence
-- [ ] No placeholders or vague descriptions
+### Scaffolding & Templates
+- `NexJob.Templates` (CLI starter templates)
 
 ---
 
-## Package Validation
+## 4. Release Checklist
 
-### NuGet Packages to Create
+### Pre-Release Quality Gates
+- [ ] Build passes with zero warnings in Release mode (`dotnet build -c Release`)
+- [ ] All unit tests pass (`dotnet test tests/NexJob.Tests/ -c Release`)
+- [ ] Code formatting verified (`dotnet format --verify-no-changes`)
+- [ ] All 16 packages pack successfully (`dotnet pack -c Release`)
+- [ ] Dashboard regression suite passed (`node .agents/skills/nexjob-dashboard-chaos-gate/scripts/full-regression.js`)
 
-- `NexJob` (core library)
-- `NexJob.Postgres`
-- `NexJob.SqlServer`
-- `NexJob.MongoDB`
-- `NexJob.Redis`
-- `NexJob.Dashboard` (standalone)
-- `NexJob.Templates` (CLI scaffolding)
+### Documentation & Versioning Gates
+- [ ] Code vs Documentation Truth Gate passed (Wiki and Package READMEs match code)
+- [ ] `Directory.Build.props` has updated `VersionPrefix`
+- [ ] `CHANGELOG.md` moved `[Unreleased]` to `[X.Y.Z] - YYYY-MM-DD`
+- [ ] Clean working tree on `develop`
 
-### Per-Package Checks
-
-- [ ] Package ID correct?
-- [ ] Version number updated?
-- [ ] Dependencies specified correctly?
-- [ ] License specified (MIT)?
-- [ ] Description clear?
-- [ ] Icon/metadata present?
-- [ ] `dotnet pack` succeeds?
-
-### Command to Validate All
-
-```bash
-dotnet pack -c Release
-```
-
----
-
-## Release Readiness Decision Tree
-
-```
-Build passes with 0 warnings?
-  NO  → FIX BUILD → Return "NOT READY"
-  YES → Continue
-
-All tests pass?
-  NO  → FIX TESTS → Return "NOT READY"
-  YES → Continue
-
-Version matches CHANGELOG?
-  NO  → UPDATE VERSION → Return "NOT READY"
-  YES → Continue
-
-No [Unreleased] content?
-  NO  → MOVE TO RELEASED SECTION → Return "NOT READY"
-  YES → Continue
-
-All packages pack correctly?
-  NO  → DEBUG PACK ERROR → Return "NOT READY"
-  YES → Continue
-
-→ Return "READY FOR RELEASE"
-```
-
----
-
-## Release Output
-
-Report:
-
-**Status:** READY / NOT READY
-
-**Issues Found:** (list of blockers, if any)
-
-**Version:** (what will be released)
-
-**Components Packaged:**
-- NexJob v{version}
-- NexJob.Postgres v{version}
-- NexJob.SqlServer v{version}
-- NexJob.MongoDB v{version}
-- NexJob.Redis v{version}
-- NexJob.Dashboard v{version}
-- NexJob.Templates v{version}
-
-**Next Steps:** (if READY: publish to NuGet, tag in Git, announce)
-
----
-
-## Post-Release Steps (Manual)
-
-After validation passes:
-
-1. Push to NuGet (if using automated publish)
-2. Create git tag: `git tag v{VERSION}`
-3. Push tags: `git push origin v{VERSION}`
-4. Create GitHub release (if applicable)
-5. Update project announcements/blog (if applicable)
-
----
-
-## Blocking Issues
-
-Any of these prevent release:
-
-- Compiler warnings
-- Test failures
-- Version mismatch
-- `[Unreleased]` content in CHANGELOG
-- Pack errors
-- Missing public API documentation
-- Incomplete CHANGELOG entries
+### Prohibited Actions (Non-Negotiable)
+- ❌ **NEVER** push directly to `main`
+- ❌ **NEVER** create git tags manually (`publish.yml` creates tags on merge)
+- ❌ **NEVER** modify production code (`src/**/*.cs`) to match outdated documentation
+- ❌ **NEVER** squash merge or rebase release PRs into `main` (always use merge commit `--no-ff`)
