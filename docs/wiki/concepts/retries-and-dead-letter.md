@@ -181,36 +181,38 @@ public Task HandleAsync(JobRecord failedJob, Exception lastException, Cancellati
 A job created from a consumed Kafka or RabbitMQ message that exhausts its retries stays **only inside NexJob** (`Failed` in the dashboard), because the broker message was acknowledged when it became a job. To hand a copy of the original message to another topic or queue, use the built-in forwarding of the trigger.
 
 
-  === "Kafka"
+=== "Kafka"
+
     ```csharp
-        builder.Services.AddNexJob()
-            .AddKafkaProducer(opt => opt.BootstrapServers = "localhost:9092")   // the copy goes through the Outbox
-            .AddKafkaTrigger<ProcessOrderJob>(opt =>
-            {
-                opt.BootstrapServers = "localhost:9092";
-                opt.Topic = "orders";
-                opt.GroupId = "orders-worker";
-                opt.TargetQueue = "orders";
+    builder.Services.AddNexJob()
+        .AddKafkaProducer(opt => opt.BootstrapServers = "localhost:9092")   // the copy goes through the Outbox
+        .AddKafkaTrigger<ProcessOrderJob>(opt =>
+        {
+            opt.BootstrapServers = "localhost:9092";
+            opt.Topic = "orders";
+            opt.GroupId = "orders-worker";
+            opt.TargetQueue = "orders";
 
-                opt.ExhaustedJobsTopic = "orders.exhausted";          // turns forwarding on
-                opt.ExhaustedJobsIncludeErrorHeader = false;          // optional: add the last error as header `nexjob.error`
-            });
-        ```
+            opt.ExhaustedJobsTopic = "orders.exhausted";          // turns forwarding on
+            opt.ExhaustedJobsIncludeErrorHeader = false;          // optional: add the last error as header `nexjob.error`
+        });
+    ```
 
-  === "RabbitMQ"
+=== "RabbitMQ"
+
     ```csharp
-        builder.Services.AddNexJob()
-            .AddRabbitMqProducer(opt => opt.HostName = "localhost")             // the copy goes through the Outbox
-            .AddRabbitMqTrigger<ProcessOrderJob>(opt =>
-            {
-                opt.QueueName = "orders";
-                opt.TargetQueue = "orders";
+    builder.Services.AddNexJob()
+        .AddRabbitMqProducer(opt => opt.HostName = "localhost")             // the copy goes through the Outbox
+        .AddRabbitMqTrigger<ProcessOrderJob>(opt =>
+        {
+            opt.QueueName = "orders";
+            opt.TargetQueue = "orders";
 
-                opt.ExhaustedJobsExchange = string.Empty;             // default exchange
-                opt.ExhaustedJobsRoutingKey = "orders.exhausted";     // turns forwarding on (the queue name on the default exchange)
-                opt.ExhaustedJobsIncludeErrorHeader = false;          // optional: add the last error as header `nexjob.error`
-            });
-        ```
+            opt.ExhaustedJobsExchange = string.Empty;             // default exchange
+            opt.ExhaustedJobsRoutingKey = "orders.exhausted";     // turns forwarding on (the queue name on the default exchange)
+            opt.ExhaustedJobsIncludeErrorHeader = false;          // optional: add the last error as header `nexjob.error`
+        });
+    ```
 
 
 

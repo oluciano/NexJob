@@ -201,28 +201,32 @@ Log.Logger = new LoggerConfiguration()
 ### Querying structured logs
 
 
-  === "Splunk"
+=== "Splunk"
+
     ```spl
-        index=prod NexJob.JobId="8e3b1c77-4a11-4e92-91cd-32aa812f8112"
-        ```
+    index=prod NexJob.JobId="8e3b1c77-4a11-4e92-91cd-32aa812f8112"
+    ```
 
-        ```spl
-        index=prod NexJob.Queue="payments" NexJob.Attempt>1 | stats count by NexJob.JobType
-        ```
+    ```spl
+    index=prod NexJob.Queue="payments" NexJob.Attempt>1 | stats count by NexJob.JobType
+    ```
 
-  === "Grafana Loki"
+=== "Grafana Loki"
+
     ```logql
-        {app="my-worker"} | json | NexJob_Queue="payments" | line_format "{{.NexJob_JobId}} {{.Message}}"
-        ```
+    {app="my-worker"} | json | NexJob_Queue="payments" | line_format "{{.NexJob_JobId}} {{.Message}}"
+    ```
 
-        ```logql
-        {app="my-worker"} | json | NexJob_Attempt > 1 | count_over_time[5m]
-        ```
+    ```logql
+    {app="my-worker"} | json | NexJob_Attempt > 1 | count_over_time[5m]
+    ```
 
-  === "Datadog"
+=== "Datadog"
+
     ```text
-        @NexJob.Queue:payments @NexJob.Attempt:>1
-        ```
+    @NexJob.Queue:payments @NexJob.Attempt:>1
+    ```
+
 
 
 

@@ -77,23 +77,28 @@ public sealed class DataImportJob : IJob<ImportInput>
 NexJob ships convenience extensions that wire up progress reporting to collection iteration automatically.
 
 
-  === "IAsyncEnumerable"
+=== "IAsyncEnumerable"
+
     ```csharp
     await foreach (var item in source.WithProgress(_context, ct))
     {
         await ProcessAsync(item, ct);
     }
     ```
+
     Reports the percentage of items already yielded. The extension reads the whole source into memory first to determine the total count, so use it only for collections that fit comfortably in memory.
 
-  === "IEnumerable"
+=== "IEnumerable"
+
     ```csharp
     foreach (var item in items.WithProgress(_context))
     {
         await ProcessAsync(item, ct);
     }
     ```
+
     Fire-and-forget progress for synchronous collections. The sequence is materialised first to know its size, and the progress call is not awaited — storage errors while reporting are not surfaced to the job.
+
 
 
 

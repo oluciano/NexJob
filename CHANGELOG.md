@@ -6,7 +6,12 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Docs — code blocks and heading formatting on documentation site**: corrected legacy 4-space code block indentations, raw Mintlify MDX tags (`<CodeGroup>`, `<Note>`), step heading indentation (`  ####`), and pymdownx tab formatting across all wiki pages. Hardened `docs/site/sync-from-mintlify.py` with `textwrap.dedent` and automatic `<CodeGroup>` tab transformation to prevent regressions.
+
 ## [5.8.0] - 2026-10-04
+
 
 ### Added
 

@@ -125,46 +125,47 @@ Two queue-level controls used to live on this page and now have their own pages:
 
 ???+ "Stripe / payment gateway"
     ```csharp
-      [Throttle("stripe", maxConcurrent: 10)]
-      public sealed class ChargeCardJob : IJob<ChargeInput>
-      {
-          public async Task ExecuteAsync(ChargeInput input, CancellationToken ct)
-          {
-              await _stripe.ChargeAsync(input.CustomerId, input.Amount, ct);
-          }
-      }
-      ```
+    [Throttle("stripe", maxConcurrent: 10)]
+    public sealed class ChargeCardJob : IJob<ChargeInput>
+    {
+        public async Task ExecuteAsync(ChargeInput input, CancellationToken ct)
+        {
+            await _stripe.ChargeAsync(input.CustomerId, input.Amount, ct);
+        }
+    }
+    ```
 
-      Cap concurrent charges to stay within Stripe's API concurrency limits without rate-limiting errors.
+    Cap concurrent charges to stay within Stripe's API concurrency limits without rate-limiting errors.
 
 
 ???+ "Memory-intensive report generation"
     ```csharp
-      [Throttle("heavy-compute", maxConcurrent: 2)]
-      public sealed class GenerateReportJob : IJob<ReportInput>
-      {
-          public async Task ExecuteAsync(ReportInput input, CancellationToken ct)
-          {
-              // Each report uses ~500 MB RAM; cap at 2 to avoid OOM on a 1 GB pod
-              await _reports.BuildAsync(input.ReportId, ct);
-          }
-      }
-      ```
+    [Throttle("heavy-compute", maxConcurrent: 2)]
+    public sealed class GenerateReportJob : IJob<ReportInput>
+    {
+        public async Task ExecuteAsync(ReportInput input, CancellationToken ct)
+        {
+            // Each report uses ~500 MB RAM; cap at 2 to avoid OOM on a 1 GB pod
+            await _reports.BuildAsync(input.ReportId, ct);
+        }
+    }
+    ```
 
-      Deploy this job to a dedicated queue with `Workers = 2` to match the throttle limit and avoid any waiting overhead.
+    Deploy this job to a dedicated queue with `Workers = 2` to match the throttle limit and avoid any waiting overhead.
 
 
 ???+ "Shared database connection pool"
     ```csharp
-      [Throttle("legacy-db", maxConcurrent: 5)]
-      public sealed class LegacyDataSyncJob : IJob<SyncInput>
-      {
-          public async Task ExecuteAsync(SyncInput input, CancellationToken ct)
-          {
-              await _legacyDb.SyncRecordsAsync(input.TableName, ct);
-          }
-      }
-      ```
+    [Throttle("legacy-db", maxConcurrent: 5)]
+    public sealed class LegacyDataSyncJob : IJob<SyncInput>
+    {
+        public async Task ExecuteAsync(SyncInput input, CancellationToken ct)
+        {
+            await _legacyDb.SyncRecordsAsync(input.TableName, ct);
+        }
+    }
+    ```
 
-      Protect a legacy database whose connection pool is limited to a small number of connections.
+    Protect a legacy database whose connection pool is limited to a small number of connections.
+
 

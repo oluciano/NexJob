@@ -55,94 +55,96 @@ Choose the package that matches your application type:
 | **Worker Service / Console** | `NexJob.Dashboard.Standalone` | `services.AddNexJobStandaloneDashboard()` |
 
 
-  === "ASP.NET Core"
+=== "ASP.NET Core"
+
     #### Install the package
 
     ```bash
-            dotnet add package NexJob.Dashboard
-            ```
+    dotnet add package NexJob.Dashboard
+    ```
 
-          #### Register the middleware in Program.cs
+    #### Register the middleware in Program.cs
 
     `AddNexJob()` automatically registers `IMemoryCache` — no extra call required. Mount the dashboard middleware after building the app:
 
-            ```csharp
-            using NexJob;
-            using NexJob.Dashboard;
+    ```csharp
+    using NexJob;
+    using NexJob.Dashboard;
 
-            var builder = WebApplication.CreateBuilder(args);
+    var builder = WebApplication.CreateBuilder(args);
 
-            builder.Services.AddNexJob();
+    builder.Services.AddNexJob();
 
-            var app = builder.Build();
+    var app = builder.Build();
 
-            // Mount at the default path: /dashboard
-            app.UseNexJobDashboard();
+    // Mount at the default path: /dashboard
+    app.UseNexJobDashboard();
 
-            // Or supply a custom path and options:
-            // app.UseNexJobDashboard("/dashboard", options =>
-            // {
-            //     options.Title = "Enterprise NexJob Console";
-            //     options.MetricsCacheTtl = TimeSpan.FromSeconds(3);
-            //     options.Queues = ["billing", "invoices"]; // scope to specific queues
-            // });
+    // Or supply a custom path and options:
+    // app.UseNexJobDashboard("/dashboard", options =>
+    // {
+    //     options.Title = "Enterprise NexJob Console";
+    //     options.MetricsCacheTtl = TimeSpan.FromSeconds(3);
+    //     options.Queues = ["billing", "invoices"]; // scope to specific queues
+    // });
 
-            app.Run();
-            ```
+    app.Run();
+    ```
 
-  === "Worker Service / Standalone"
+=== "Worker Service / Standalone"
+
     #### Install the package
 
     ```bash
-            dotnet add package NexJob.Dashboard.Standalone
-            ```
+    dotnet add package NexJob.Dashboard.Standalone
+    ```
 
-          #### Register the embedded HTTP server in Program.cs
+    #### Register the embedded HTTP server in Program.cs
 
     The standalone dashboard runs its own embedded HTTP server, so no ASP.NET Core pipeline is required:
 
-            ```csharp
-            using NexJob;
-            using NexJob.Dashboard.Standalone;
+    ```csharp
+    using NexJob;
+    using NexJob.Dashboard.Standalone;
 
-            var builder = Host.CreateApplicationBuilder(args);
+    var builder = Host.CreateApplicationBuilder(args);
 
-            builder.Services.AddNexJob();
+    builder.Services.AddNexJob();
 
-            // Default: http://localhost:5005/dashboard
-            builder.Services.AddNexJobStandaloneDashboard();
+    // Default: http://localhost:5005/dashboard
+    builder.Services.AddNexJobStandaloneDashboard();
 
-            // Or customize host and port:
-            // builder.Services.AddNexJobStandaloneDashboard(options =>
-            // {
-            //     options.Port = 5005;
-            //     options.Path = "/dashboard";
-            //     options.Title = "Worker Dashboard";
-            //     options.LocalhostOnly = true;       // default: loopback only
-            //     options.PollIntervalSeconds = 3;    // default: 3
-            // });
+    // Or customize host and port:
+    // builder.Services.AddNexJobStandaloneDashboard(options =>
+    // {
+    //     options.Port = 5005;
+    //     options.Path = "/dashboard";
+    //     options.Title = "Worker Dashboard";
+    //     options.LocalhostOnly = true;       // default: loopback only
+    //     options.PollIntervalSeconds = 3;    // default: 3
+    // });
 
-            var host = builder.Build();
-            host.Run();
-            ```
+    var host = builder.Build();
+    host.Run();
+    ```
 
-            You can also bind from `appsettings.json` using the `NexJob:Dashboard` section:
+    You can also bind from `appsettings.json` using the `NexJob:Dashboard` section:
 
-            ```json
-            {
-              "NexJob": {
-                "Dashboard": {
-                  "Port": 5005,
-                  "Path": "/dashboard",
-                  "Title": "My Worker Jobs"
-                }
-              }
-            }
-            ```
+    ```json
+    {
+      "NexJob": {
+        "Dashboard": {
+          "Port": 5005,
+          "Path": "/dashboard",
+          "Title": "My Worker Jobs"
+        }
+      }
+    }
+    ```
 
-            ```csharp
-            builder.Services.AddNexJobStandaloneDashboard(builder.Configuration);
-            ```
+    ```csharp
+    builder.Services.AddNexJobStandaloneDashboard(builder.Configuration);
+    ```
 
 
 

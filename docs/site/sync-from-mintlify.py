@@ -13,6 +13,7 @@ import os
 import re
 import shutil
 import sys
+import textwrap
 from pathlib import Path
 
 
@@ -20,32 +21,41 @@ def convert_content(text: str, rel_depth: int, file_path_str: str) -> str:
     """Converts Mintlify MDX tags into MkDocs Material native Markdown syntax."""
     # Admonitions
     def repl_warning(m):
-        inner = m.group(1).strip()
+        title = m.group(1)
+        inner = textwrap.dedent(m.group(2)).strip()
         indented = "\n".join("    " + line if line.strip() else "" for line in inner.splitlines())
-        return f"!!! warning\n{indented}\n"
+        if title:
+            return f'!!! warning "{title}"\n\n{indented}\n'
+        return f"!!! warning\n\n{indented}\n"
 
-    text = re.sub(r"<Warning>\s*(.*?)\s*</Warning>", repl_warning, text, flags=re.DOTALL)
+    text = re.sub(r'<Warning(?: title="(.*?)")?>\s*(.*?)\s*</Warning>', repl_warning, text, flags=re.DOTALL)
 
     def repl_note(m):
-        inner = m.group(1).strip()
+        title = m.group(1)
+        inner = textwrap.dedent(m.group(2)).strip()
         indented = "\n".join("    " + line if line.strip() else "" for line in inner.splitlines())
-        return f"!!! note\n{indented}\n"
+        if title:
+            return f'!!! note "{title}"\n\n{indented}\n'
+        return f"!!! note\n\n{indented}\n"
 
-    text = re.sub(r"<Note>\s*(.*?)\s*</Note>", repl_note, text, flags=re.DOTALL)
+    text = re.sub(r'<Note(?: title="(.*?)")?>\s*(.*?)\s*</Note>', repl_note, text, flags=re.DOTALL)
 
     def repl_tip(m):
-        inner = m.group(1).strip()
+        title = m.group(1)
+        inner = textwrap.dedent(m.group(2)).strip()
         indented = "\n".join("    " + line if line.strip() else "" for line in inner.splitlines())
-        return f"!!! tip\n{indented}\n"
+        if title:
+            return f'!!! tip "{title}"\n\n{indented}\n'
+        return f"!!! tip\n\n{indented}\n"
 
-    text = re.sub(r"<Tip>\s*(.*?)\s*</Tip>", repl_tip, text, flags=re.DOTALL)
+    text = re.sub(r'<Tip(?: title="(.*?)")?>\s*(.*?)\s*</Tip>', repl_tip, text, flags=re.DOTALL)
 
     # Accordions
     def repl_accordion(m):
         title = m.group(1)
-        inner = m.group(2).strip()
+        inner = textwrap.dedent(m.group(2)).strip()
         indented = "\n".join("    " + line if line.strip() else "" for line in inner.splitlines())
-        return f'???+ "{title}"\n{indented}\n'
+        return f'???+ "{title}"\n\n{indented}\n'
 
     text = re.sub(r'<Accordion title="(.*?)">\s*(.*?)\s*</Accordion>', repl_accordion, text, flags=re.DOTALL)
 
@@ -53,7 +63,7 @@ def convert_content(text: str, rel_depth: int, file_path_str: str) -> str:
     def repl_card(m):
         title = m.group(1)
         href = m.group(2) if m.group(2) else ""
-        inner = m.group(3).strip()
+        inner = textwrap.dedent(m.group(3)).strip()
         if href:
             clean_href = href.lstrip("/")
             if not clean_href.endswith(".md"):
@@ -70,8 +80,8 @@ def convert_content(text: str, rel_depth: int, file_path_str: str) -> str:
     # Steps
     def repl_step(m):
         title = m.group(1)
-        inner = m.group(2).strip()
-        return f"#### {title}\n\n{inner}\n"
+        inner = textwrap.dedent(m.group(2)).strip()
+        return f"### {title}\n\n{inner}\n"
 
     text = re.sub(r'<Step title="(.*?)">\s*(.*?)\s*</Step>', repl_step, text, flags=re.DOTALL)
     text = re.sub(r"<Steps>", r"", text)
@@ -80,13 +90,27 @@ def convert_content(text: str, rel_depth: int, file_path_str: str) -> str:
     # Tabs
     def repl_tab(m):
         title = m.group(1)
-        inner = m.group(2).strip()
+        inner = textwrap.dedent(m.group(2)).strip()
         indented = "\n".join("    " + line if line.strip() else "" for line in inner.splitlines())
-        return f'=== "{title}"\n{indented}\n'
+        return f'=== "{title}"\n\n{indented}\n'
 
     text = re.sub(r'<Tab title="(.*?)">\s*(.*?)\s*</Tab>', repl_tab, text, flags=re.DOTALL)
     text = re.sub(r"<Tabs>", r"", text)
     text = re.sub(r"</Tabs>", r"", text)
+
+    # CodeGroup
+    def repl_codegroup(m):
+        inner = textwrap.dedent(m.group(1)).strip()
+        blocks = re.findall(r"```(\w+)\s+([^\n]+)\n(.*?)```", inner, flags=re.DOTALL)
+        if blocks:
+            out = []
+            for lang, tab_title, code in blocks:
+                indented_code = "\n".join("    " + line if line.strip() else "" for line in code.splitlines())
+                out.append(f'=== "{tab_title.strip()}"\n\n    ```{lang}\n{indented_code}\n    ```')
+            return "\n\n".join(out) + "\n"
+        return inner
+
+    text = re.sub(r"<CodeGroup>\s*(.*?)\s*</CodeGroup>", repl_codegroup, text, flags=re.DOTALL)
 
     # Relative Links: [Label](/path) -> [Label](relative/path.md)
     def repl_link(m):

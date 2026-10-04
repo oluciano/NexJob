@@ -160,33 +160,34 @@ services.AddTransient<IJobExecutionFilter, TimingFilter>();     // registered th
 The execution flow is:
 
 
-  #### LoggingFilter (before)
+### LoggingFilter (before)
 
 Logs job start.
 
-  #### TenantFilter (before)
+### TenantFilter (before)
 
 Sets tenant context.
 
-  #### TimingFilter (before)
+### TimingFilter (before)
 
 Starts stopwatch.
 
-  #### Job executes
+### Job executes
 
 Your job's `ExecuteAsync` runs.
 
-  #### TimingFilter (after)
+### TimingFilter (after)
 
 Stops stopwatch, records duration.
 
-  #### TenantFilter (after)
+### TenantFilter (after)
 
 No teardown needed.
 
-  #### LoggingFilter (after)
+### LoggingFilter (after)
 
 Logs success or failure.
+
 
 
 

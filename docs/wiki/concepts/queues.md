@@ -37,24 +37,25 @@ A queue does not need to be created first. It exists as soon as a job uses its n
 
 `NexJobOptions.Queues` lists the queues the workers on this host fetch from. A host never fetches a job from a queue that is not in its list.
 
-<CodeGroup>
+=== "Program.cs"
 
-```csharp Program.cs
-builder.Services.AddNexJob(options =>
-{
-    options.Queues = ["critical", "default", "reports"];
-});
-```
+    ```csharp
+    builder.Services.AddNexJob(options =>
+    {
+        options.Queues = ["critical", "default", "reports"];
+    });
+    ```
 
-```json appsettings.json
-{
-  "NexJob": {
-    "Queues": ["critical", "default", "reports"]
-  }
-}
-```
+=== "appsettings.json"
 
-</CodeGroup>
+    ```json
+    {
+      "NexJob": {
+        "Queues": ["critical", "default", "reports"]
+      }
+    }
+    ```
+
 
 !!! warning
     A job enqueued to a queue that no running host polls stays `Enqueued` forever. It is not an error and it is not retried. Check the dashboard **Queues** page when jobs pile up without being processed.

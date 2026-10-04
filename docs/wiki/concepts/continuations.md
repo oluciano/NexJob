@@ -69,34 +69,33 @@ If the parent job exhausts all its retries and transitions to `Failed`, the chil
 
 To handle this safely:
 
-
-  #### Give the parent sufficient retries
+### 1. Give the parent sufficient retries
 
 Use the `[Retry]` attribute or the global `MaxAttempts` setting to give the parent job enough attempts to overcome transient failures. See [Retries & Dead Letter](../concepts/retries-and-dead-letter.md).
 
-  #### Register a dead-letter handler on the parent
+### 2. Register a dead-letter handler on the parent
 
 If the parent ultimately fails, its dead-letter handler can manually enqueue the child or trigger an alternative workflow.
 
-    ```csharp
-    public sealed class PaymentDeadLetterHandler : IDeadLetterHandler<ProcessPaymentJob>
+```csharp
+public sealed class PaymentDeadLetterHandler : IDeadLetterHandler<ProcessPaymentJob>
+{
+    private readonly IScheduler _scheduler;
+
+    public PaymentDeadLetterHandler(IScheduler scheduler) => _scheduler = scheduler;
+
+    public async Task HandleAsync(
+        JobRecord failedJob,
+        Exception lastException,
+        CancellationToken ct)
     {
-        private readonly IScheduler _scheduler;
-
-        public PaymentDeadLetterHandler(IScheduler scheduler) => _scheduler = scheduler;
-
-        public async Task HandleAsync(
-            JobRecord failedJob,
-            Exception lastException,
-            CancellationToken ct)
-        {
-            // Enqueue a compensation job instead of the original continuation
-            await _scheduler.EnqueueAsync<RefundOrderJob, RefundInput>(
-                new RefundInput(failedJob.Id),
-                cancellationToken: ct);
-        }
+        // Enqueue a compensation job instead of the original continuation
+        await _scheduler.EnqueueAsync<RefundOrderJob, RefundInput>(
+            new RefundInput(failedJob.Id),
+            cancellationToken: ct);
     }
-    ```
+}
+```
 
 
 

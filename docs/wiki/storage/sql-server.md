@@ -124,20 +124,21 @@ GROUP BY program_name;
 ## Production tips
 
 
-  #### Set Application Name
+### Set Application Name
 
 Add `Application Name=nexjob-worker` to your connection string. This labels NexJob's connections in `sys.dm_exec_sessions`, making it easy to monitor pool usage separately from other application traffic.
 
-  #### Size the connection pool per node
+### Size the connection pool per node
 
 Use the formula `Workers + 10` per node as your pool ceiling. Multiply by the number of deployed nodes and verify the total fits within SQL Server's connection limit before scaling out.
 
-  #### Use read replica for dashboard
+### Use read replica for dashboard
 
 Always configure `UseDashboardReadReplica` on production deployments. Dashboard queries scan job history and can be expensive under load; routing them to a replica protects worker throughput.
 
-  #### Enable batch acknowledgment for high volume
+### Enable batch acknowledgment for high volume
 
 Set `EnableBatchAcknowledgment = true` when you process more than a few thousand jobs per minute. Batching acknowledgments removes the per-job write overhead that becomes the bottleneck at scale.
+
 
 
