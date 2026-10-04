@@ -6,6 +6,8 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [5.8.0] - 2026-10-04
+
 ### Added
 
 - **Docs — features surfaced and failure modes in one place**: new wiki pages for the circuit breaker and execution windows (moved out of the throttling page), runtime control (moved out of the storage overview, and it now says that a running job cannot be cancelled), several services on one database, delivery guarantees (what each failure costs a job) and how NexJob is tested, with the optional `IOrphanedJobReporter` capability documented for custom storage providers. The Key features list of the introduction is complete and every name links to its page, and the Home links to the new pages.
