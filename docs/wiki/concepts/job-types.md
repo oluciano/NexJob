@@ -125,25 +125,26 @@ public sealed class ProcessOrderJob : IJob<ProcessOrderInput>
 The execution lifecycle for a single job looks like this:
 
 
-  #### Dispatcher picks up the job
+### Dispatcher picks up the job
 
 The dispatcher dequeues the job record from storage and begins execution.
 
-  #### A new DI scope is created
+### A new DI scope is created
 
 NexJob calls `IServiceProvider.CreateScope()` to create an isolated scope specifically for this execution.
 
-  #### Job is resolved from the scope
+### Job is resolved from the scope
 
 The job class (e.g. `ProcessOrderJob`) and all its dependencies are resolved from the new scope.
 
-  #### ExecuteAsync is called
+### ExecuteAsync is called
 
 NexJob calls `ExecuteAsync`, passing the deserialized input and a `CancellationToken` that is triggered on host shutdown.
 
-  #### Scope is disposed
+### Scope is disposed
 
 Whether the job succeeds or fails, the scope is disposed. Database connections are closed and memory is released.
+
 
 
 

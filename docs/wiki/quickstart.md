@@ -7,158 +7,158 @@ description: "Install NexJob, define your first job, and enqueue it in a .NET 8 
 NexJob needs three things to run: a package reference, a service registration, and a job class. This guide walks you through each step, shows you both ASP.NET Core and Worker Service setups, and links you to runnable reference samples in the repository so you can inspect real, working projects immediately.
 
 
-  #### Install the package
+### 1. Install the package
 
 Add the core NexJob package to your .NET 8 project:
 
-    ```bash
-    dotnet add package NexJob
-    ```
+```bash
+dotnet add package NexJob
+```
 
-    The core package includes the dispatcher, scheduler, and an InMemory storage provider that is ready to use with no further configuration. For production workloads, add one of the persistent storage providers:
+The core package includes the dispatcher, scheduler, and an InMemory storage provider that is ready to use with no further configuration. For production workloads, add one of the persistent storage providers:
 
-    ```bash
-    # PostgreSQL
-    dotnet add package NexJob.Postgres
+```bash
+# PostgreSQL
+dotnet add package NexJob.Postgres
 
-    # SQL Server
-    dotnet add package NexJob.SqlServer
+# SQL Server
+dotnet add package NexJob.SqlServer
 
-    # Redis
-    dotnet add package NexJob.Redis
+# Redis
+dotnet add package NexJob.Redis
 
-    # MongoDB
-    dotnet add package NexJob.MongoDB
-    ```
+# MongoDB
+dotnet add package NexJob.MongoDB
+```
 
-  #### Register services in Program.cs
+### 2. Register services in Program.cs
 
 Call `AddNexJob()` and scan your assembly so NexJob can discover your job classes via dependency injection.
 
-    **InMemory (default — great for development and testing):**
+**InMemory (default — great for development and testing):**
 
-    ```csharp
-    using NexJob;
+```csharp
+using NexJob;
 
-    var builder = WebApplication.CreateBuilder(args);
+var builder = WebApplication.CreateBuilder(args);
 
-    builder.Services.AddNexJob()
-                   .AddNexJobJobs(typeof(Program).Assembly);
+builder.Services.AddNexJob()
+               .AddNexJobJobs(typeof(Program).Assembly);
 
-    var app = builder.Build();
-    app.Run();
-    ```
+var app = builder.Build();
+app.Run();
+```
 
-    **PostgreSQL (persistent storage for production):**
+**PostgreSQL (persistent storage for production):**
 
-    Register the storage provider **before** calling `AddNexJob()` so it replaces the InMemory default:
+Register the storage provider **before** calling `AddNexJob()` so it replaces the InMemory default:
 
-    ```csharp
-    using NexJob;
-    using NexJob.Postgres;
+```csharp
+using NexJob;
+using NexJob.Postgres;
 
-    var builder = WebApplication.CreateBuilder(args);
+var builder = WebApplication.CreateBuilder(args);
 
-    builder.Services.AddNexJobPostgres(
-        "Host=localhost;Database=nexjob;Username=postgres;Password=secret");
+builder.Services.AddNexJobPostgres(
+    "Host=localhost;Database=nexjob;Username=postgres;Password=secret");
 
-    builder.Services.AddNexJob(options =>
-    {
-        options.Workers = 20;
-        options.MaxAttempts = 5;
-    })
-    .AddNexJobJobs(typeof(Program).Assembly);
+builder.Services.AddNexJob(options =>
+{
+    options.Workers = 20;
+    options.MaxAttempts = 5;
+})
+.AddNexJobJobs(typeof(Program).Assembly);
 
-    var app = builder.Build();
-    app.Run();
-    ```
+var app = builder.Build();
+app.Run();
+```
 
-    !!! tip
+!!! tip
     Call `AddNexJob()` exactly once. Calling it multiple times registers duplicate background services and causes undefined behavior.
 
-  #### Define a job
+### 3. Define a job
 
 Implement `IJob` for parameterless work or `IJob<T>` when the job needs structured input. Both interfaces support constructor injection — NexJob resolves your dependencies from the DI container automatically.
 
-    **Parameterless job (`IJob`):**
+**Parameterless job (`IJob`):**
 
-    ```csharp
-    public sealed class SendWelcomeEmailJob : IJob
+```csharp
+public sealed class SendWelcomeEmailJob : IJob
+{
+    private readonly IEmailService _email;
+
+    public SendWelcomeEmailJob(IEmailService email) => _email = email;
+
+    public async Task ExecuteAsync(CancellationToken ct)
     {
-        private readonly IEmailService _email;
-
-        public SendWelcomeEmailJob(IEmailService email) => _email = email;
-
-        public async Task ExecuteAsync(CancellationToken ct)
-        {
-            await _email.SendAsync("user@example.com", "Welcome!", ct);
-        }
+        await _email.SendAsync("user@example.com", "Welcome!", ct);
     }
-    ```
+}
+```
 
-    **Job with typed input (`IJob<T>`):**
+**Job with typed input (`IJob<T>`):**
 
-    ```csharp
-    public sealed class SendWelcomeEmailJob : IJob<SendWelcomeEmailInput>
+```csharp
+public sealed class SendWelcomeEmailJob : IJob<SendWelcomeEmailInput>
+{
+    private readonly IEmailService _email;
+
+    public SendWelcomeEmailJob(IEmailService email) => _email = email;
+
+    public async Task ExecuteAsync(SendWelcomeEmailInput input, CancellationToken ct)
     {
-        private readonly IEmailService _email;
-
-        public SendWelcomeEmailJob(IEmailService email) => _email = email;
-
-        public async Task ExecuteAsync(SendWelcomeEmailInput input, CancellationToken ct)
-        {
-            await _email.SendAsync(input.Email, "Welcome!", ct);
-        }
+        await _email.SendAsync(input.Email, "Welcome!", ct);
     }
+}
 
-    public sealed record SendWelcomeEmailInput(string Email, string UserName);
-    ```
+public sealed record SendWelcomeEmailInput(string Email, string UserName);
+```
 
-    Use a `record` for the input type — it serializes cleanly and is immutable by default.
+Use a `record` for the input type — it serializes cleanly and is immutable by default.
 
-  #### Enqueue the job
+### 4. Enqueue the job
 
 Resolve `IScheduler` from DI and call `EnqueueAsync`. The dispatcher picks up the job immediately on the same process via the wake-up channel.
 
-    ```csharp
-    var scheduler = app.Services.GetRequiredService<IScheduler>();
+```csharp
+var scheduler = app.Services.GetRequiredService<IScheduler>();
 
-    // Parameterless job
-    await scheduler.EnqueueAsync<SendWelcomeEmailJob>(cancellationToken: ct);
+// Parameterless job
+await scheduler.EnqueueAsync<SendWelcomeEmailJob>(cancellationToken: ct);
 
-    // Job with input
-    await scheduler.EnqueueAsync<SendWelcomeEmailJob, SendWelcomeEmailInput>(
-        new SendWelcomeEmailInput("user@example.com", "Jane"),
-        cancellationToken: ct);
-    ```
+// Job with input
+await scheduler.EnqueueAsync<SendWelcomeEmailJob, SendWelcomeEmailInput>(
+    new SendWelcomeEmailInput("user@example.com", "Jane"),
+    cancellationToken: ct);
+```
 
-    You can also set a deadline so the job expires automatically if the worker is too busy to start it in time:
+You can also set a deadline so the job expires automatically if the worker is too busy to start it in time:
 
-    ```csharp
-    await scheduler.EnqueueAsync<SendWelcomeEmailJob, SendWelcomeEmailInput>(
-        new SendWelcomeEmailInput("user@example.com", "Jane"),
-        deadlineAfter: TimeSpan.FromMinutes(5),
-        cancellationToken: ct);
-    ```
+```csharp
+await scheduler.EnqueueAsync<SendWelcomeEmailJob, SendWelcomeEmailInput>(
+    new SendWelcomeEmailInput("user@example.com", "Jane"),
+    deadlineAfter: TimeSpan.FromMinutes(5),
+    cancellationToken: ct);
+```
 
-    !!! note
+!!! note
     The deadline is checked **before** execution begins, not during. A job enqueued with `deadlineAfter: TimeSpan.FromMinutes(5)` that has not started within 5 minutes is marked `Expired` and never executes.
 
-  #### Run the application
+### 5. Run the application
 
 Start your application as normal:
 
-    ```bash
-    dotnet run
-    ```
+```bash
+dotnet run
+```
 
-    NexJob starts the dispatcher as a hosted `BackgroundService`. Once the job is enqueued, you will see output like:
+NexJob starts the dispatcher as a hosted `BackgroundService`. Once the job is enqueued, you will see output like:
 
-    ```text
-    Hello at 2026-04-08T12:00:00Z
-    ```
+```text
+Hello at 2026-04-08T12:00:00Z
+```
 
-    The dispatcher runs on the same process — no separate worker process or sidecar required.
+The dispatcher runs on the same process — no separate worker process or sidecar required.
 
 
 

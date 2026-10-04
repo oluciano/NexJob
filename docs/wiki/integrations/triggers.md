@@ -71,201 +71,197 @@ Most triggers resolve which job to run using the same three-step precedence:
 ## Supported Triggers
 
 
-  === "Azure Service Bus"
+=== "Azure Service Bus"
+
     #### Install the package
 
     ```bash
-            dotnet add package NexJob.Trigger.AzureServiceBus
-            ```
+    dotnet add package NexJob.Trigger.AzureServiceBus
+    ```
 
-          #### Register the trigger
+    #### Register the trigger
 
     Use the generic overload to bind all messages on a queue or topic to a single job type:
 
-            ```csharp
-            using NexJob.Trigger.AzureServiceBus;
+    ```csharp
+    using NexJob.Trigger.AzureServiceBus;
 
-            builder.Services.AddNexJobAzureServiceBusTrigger<ProcessOrderJob>(options =>
-            {
-                options.ConnectionString = "Endpoint=sb://...";
-                options.QueueOrTopicName = "orders";
-            });
-            ```
+    builder.Services.AddNexJobAzureServiceBusTrigger<ProcessOrderJob>(options =>
+    {
+        options.ConnectionString = "Endpoint=sb://...";
+        options.QueueOrTopicName = "orders";
+    });
+    ```
 
-            To route messages to different job types based on the `nexjob.job_type` application property, omit the generic argument:
+    To route messages to different job types based on the `nexjob.job_type` application property, omit the generic argument:
 
-            ```csharp
-            builder.Services.AddNexJobAzureServiceBusTrigger(options =>
-            {
-                options.ConnectionString = "Endpoint=sb://...";
-                options.QueueOrTopicName = "my-topic";
-                options.SubscriptionName = "my-sub"; // required for topics
-            });
-            ```
+    ```csharp
+    builder.Services.AddNexJobAzureServiceBusTrigger(options =>
+    {
+        options.ConnectionString = "Endpoint=sb://...";
+        options.QueueOrTopicName = "my-topic";
+        options.SubscriptionName = "my-sub"; // required for topics
+    });
+    ```
 
+    The idempotency key is the Service Bus `MessageId`. Transient failures abandon the message so it is redelivered; `MaxDeliveryCount` on the entity controls when it is dead-lettered. Permanent failures (unresolvable job type) dead-letter the message immediately.
 
+=== "AWS SQS"
 
-        The idempotency key is the Service Bus `MessageId`. Transient failures abandon the message so it is redelivered; `MaxDeliveryCount` on the entity controls when it is dead-lettered. Permanent failures (unresolvable job type) dead-letter the message immediately.
-
-  === "AWS SQS"
     #### Install the package
 
     ```bash
-            dotnet add package NexJob.Trigger.AwsSqs
-            ```
+    dotnet add package NexJob.Trigger.AwsSqs
+    ```
 
-          #### Register the trigger
+    #### Register the trigger
 
     SQS message attributes are not read for the job type — you must configure it explicitly:
 
-            ```csharp
-            using NexJob.Trigger.AwsSqs;
+    ```csharp
+    using NexJob.Trigger.AwsSqs;
 
-            // Preferred: generic overload binds queue to one job type
-            builder.Services.AddNexJobAwsSqsTrigger<ProcessOrderJob>(options =>
-            {
-                options.QueueUrl = "https://sqs.us-east-1.amazonaws.com/123456789/my-queue";
-            });
+    // Preferred: generic overload binds queue to one job type
+    builder.Services.AddNexJobAwsSqsTrigger<ProcessOrderJob>(options =>
+    {
+        options.QueueUrl = "https://sqs.us-east-1.amazonaws.com/123456789/my-queue";
+    });
 
-            // Equivalent explicit form:
-            // builder.Services.AddNexJobAwsSqsTrigger(options =>
-            // {
-            //     options.QueueUrl = "https://sqs.us-east-1.amazonaws.com/123456789/my-queue";
-            //     options.JobName = typeof(ProcessOrderJob).AssemblyQualifiedName!;
-            // });
-            ```
+    // Equivalent explicit form:
+    // builder.Services.AddNexJobAwsSqsTrigger(options =>
+    // {
+    //     options.QueueUrl = "https://sqs.us-east-1.amazonaws.com/123456789/my-queue";
+    //     options.JobName = typeof(ProcessOrderJob).AssemblyQualifiedName!;
+    // });
+    ```
 
+    The idempotency key is the SQS message ID. Unacknowledged messages become visible again after the queue's visibility timeout, so transient failures are retried automatically by SQS.
 
+=== "Google Pub/Sub"
 
-        The idempotency key is the SQS message ID. Unacknowledged messages become visible again after the queue's visibility timeout, so transient failures are retried automatically by SQS.
-
-  === "Google Pub/Sub"
     #### Install the package
 
     ```bash
-            dotnet add package NexJob.Trigger.GooglePubSub
-            ```
+    dotnet add package NexJob.Trigger.GooglePubSub
+    ```
 
-          #### Register the trigger
+    #### Register the trigger
 
     ```csharp
-            using NexJob.Trigger.GooglePubSub;
+    using NexJob.Trigger.GooglePubSub;
 
-            // Preferred: generic overload
-            builder.Services.AddNexJobGooglePubSubTrigger<ProcessOrderJob>(options =>
-            {
-                options.ProjectId = "my-project";
-                options.SubscriptionId = "my-subscription";
-            });
+    // Preferred: generic overload
+    builder.Services.AddNexJobGooglePubSubTrigger<ProcessOrderJob>(options =>
+    {
+        options.ProjectId = "my-project";
+        options.SubscriptionId = "my-subscription";
+    });
 
-            // Dynamic routing via nexjob.job_type attribute:
-            // builder.Services.AddNexJobGooglePubSubTrigger(options =>
-            // {
-            //     options.ProjectId = "my-project";
-            //     options.SubscriptionId = "my-subscription";
-            //     options.JobType = typeof(DefaultEventJob).AssemblyQualifiedName;
-            // });
-            ```
+    // Dynamic routing via nexjob.job_type attribute:
+    // builder.Services.AddNexJobGooglePubSubTrigger(options =>
+    // {
+    //     options.ProjectId = "my-project";
+    //     options.SubscriptionId = "my-subscription";
+    //     options.JobType = typeof(DefaultEventJob).AssemblyQualifiedName;
+    // });
+    ```
 
+    The idempotency key is the Pub/Sub message ID assigned by the service. Messages remain unacknowledged on transient failures and are redelivered by Pub/Sub.
 
+=== "Salesforce Pub/Sub API"
 
-        The idempotency key is the Pub/Sub message ID assigned by the service. Messages remain unacknowledged on transient failures and are redelivered by Pub/Sub.
-
-  === "Salesforce Pub/Sub API"
     #### Install the package
 
     ```bash
-            dotnet add package NexJob.Trigger.Salesforce
-            ```
+    dotnet add package NexJob.Trigger.Salesforce
+    ```
 
-          #### Register the trigger
+    #### Register the trigger
 
     The Salesforce Pub/Sub trigger consumes Change Data Capture (CDC) events and custom Platform Events over bidirectional gRPC streams. It decodes Apache Avro binary payloads to JSON automatically:
 
-            ```csharp
-            using NexJob.Trigger.Salesforce;
+    ```csharp
+    using NexJob.Trigger.Salesforce;
 
-            // Use the built-in SalesforceEventJob handler
-            builder.Services.AddNexJob()
-                .AddSalesforceTrigger(options =>
-                {
-                    options.Topic = "/data/ChangeEvents";
-                    options.ClientId = "3MVG9...";
-                    options.ClientSecret = "secret...";
-                    options.TargetQueue = "salesforce-events";
-                    options.ReplayPreset = SalesforceReplayPreset.Latest;
-                    options.FallbackPolicy = ReplayFallbackPolicy.ResetToLatest;
-                });
+    // Use the built-in SalesforceEventJob handler
+    builder.Services.AddNexJob()
+        .AddSalesforceTrigger(options =>
+        {
+            options.Topic = "/data/ChangeEvents";
+            options.ClientId = "3MVG9...";
+            options.ClientSecret = "secret...";
+            options.TargetQueue = "salesforce-events";
+            options.ReplayPreset = SalesforceReplayPreset.Latest;
+            options.FallbackPolicy = ReplayFallbackPolicy.ResetToLatest;
+        });
 
-            // Or bind to a strongly typed custom job
-            builder.Services.AddNexJob()
-                .AddSalesforceTrigger<ProcessAccountChangeJob>(options =>
-                {
-                    options.Topic = "/data/AccountChangeEvent";
-                    options.ClientId = "3MVG9...";
-                    options.ClientSecret = "secret...";
-                });
-            ```
+    // Or bind to a strongly typed custom job
+    builder.Services.AddNexJob()
+        .AddSalesforceTrigger<ProcessAccountChangeJob>(options =>
+        {
+            options.Topic = "/data/AccountChangeEvent";
+            options.ClientId = "3MVG9...";
+            options.ClientSecret = "secret...";
+        });
+    ```
 
+    Key capabilities:
+    - **Bi-directional gRPC streaming** using the official Salesforce Pub/Sub API protobufs with flow control.
+    - **Apache Avro decoding** with in-memory schema caching via `ISalesforceSchemaService`.
+    - **Replay ID checkpointing** via `IReplayIdStore` (atomic file-based or in-memory).
+    - **Resilient fallback policies**: `FailFast`, `ResetToLatest`, and `ResetToEarliest` for expired offsets.
+    - **OAuth2 token caching** with automatic refresh ahead of expiration.
 
+=== "Salesforce Streaming API"
 
-        Key capabilities:
-        - **Bi-directional gRPC streaming** using the official Salesforce Pub/Sub API protobufs with flow control.
-        - **Apache Avro decoding** with in-memory schema caching via `ISalesforceSchemaService`.
-        - **Replay ID checkpointing** via `IReplayIdStore` (atomic file-based or in-memory).
-        - **Resilient fallback policies**: `FailFast`, `ResetToLatest`, and `ResetToEarliest` for expired offsets.
-        - **OAuth2 token caching** with automatic refresh ahead of expiration.
-
-  === "Salesforce Streaming API"
     #### Install the package
 
     ```bash
-            dotnet add package NexJob.Trigger.SalesforceStreaming
-            ```
+    dotnet add package NexJob.Trigger.SalesforceStreaming
+    ```
 
-          #### Register the trigger
+    #### Register the trigger
 
     The Salesforce Streaming trigger consumes PushTopic events, CDC, and Platform Events over HTTP long-polling using the CometD/Bayeux protocol. Use this for legacy environments without gRPC/HTTP2:
 
-            ```csharp
-            using NexJob.Trigger.SalesforceStreaming;
+    ```csharp
+    using NexJob.Trigger.SalesforceStreaming;
 
-            // Use the built-in SalesforceStreamingEventJob handler
-            builder.Services.AddNexJob()
-                .AddSalesforceStreamingTrigger(options =>
-                {
-                    options.Channel = "/data/Order__ChangeEvent";
-                    options.Authentication.AuthType = SalesforceStreamingAuthType.OAuth2ClientCredentials;
-                    options.Authentication.AuthEndpoint = "https://login.salesforce.com/services/oauth2/token";
-                    options.Authentication.ClientId = "3MVG9...";
-                    options.Authentication.ClientSecret = "secret...";
-                    options.TargetQueue = "salesforce-events";
-                    options.ReplayPreset = SalesforceStreamingReplayPreset.Latest;
-                });
+    // Use the built-in SalesforceStreamingEventJob handler
+    builder.Services.AddNexJob()
+        .AddSalesforceStreamingTrigger(options =>
+        {
+            options.Channel = "/data/Order__ChangeEvent";
+            options.Authentication.AuthType = SalesforceStreamingAuthType.OAuth2ClientCredentials;
+            options.Authentication.AuthEndpoint = "https://login.salesforce.com/services/oauth2/token";
+            options.Authentication.ClientId = "3MVG9...";
+            options.Authentication.ClientSecret = "secret...";
+            options.TargetQueue = "salesforce-events";
+            options.ReplayPreset = SalesforceStreamingReplayPreset.Latest;
+        });
 
-            // Bind to a custom job with username/password auth
-            builder.Services.AddNexJob()
-                .AddSalesforceStreamingTrigger<ProcessSalesforceOrderJob>(options =>
-                {
-                    options.Channel = "/topic/InvoiceUpdates";
-                    options.Authentication.AuthType = SalesforceStreamingAuthType.OAuth2UsernamePassword;
-                    options.Authentication.ClientId = "3MVG9...";
-                    options.Authentication.ClientSecret = "secret...";
-                    options.Authentication.Username = "integration@company.com";
-                    options.Authentication.Password = "Password123";
-                    options.Authentication.SecurityToken = "TokenXYZ";
-                    options.DeadLetterQueue = "salesforce-dlq";
-                });
-            ```
+    // Bind to a custom job with username/password auth
+    builder.Services.AddNexJob()
+        .AddSalesforceStreamingTrigger<ProcessSalesforceOrderJob>(options =>
+        {
+            options.Channel = "/topic/InvoiceUpdates";
+            options.Authentication.AuthType = SalesforceStreamingAuthType.OAuth2UsernamePassword;
+            options.Authentication.ClientId = "3MVG9...";
+            options.Authentication.ClientSecret = "secret...";
+            options.Authentication.Username = "integration@company.com";
+            options.Authentication.Password = "Password123";
+            options.Authentication.SecurityToken = "TokenXYZ";
+            options.DeadLetterQueue = "salesforce-dlq";
+        });
+    ```
 
+    Key capabilities:
+    - **CometD/Bayeux protocol** with replay extension and graceful disconnect.
+    - **Multi-auth**: OAuth 2.0 Username-Password, OAuth 2.0 Client Credentials, and direct Session ID / Bearer token.
+    - **Replay ID checkpointing** via `IStreamingReplayIdStore` (file-based or in-memory).
+    - **Session expiry resilience**: automatic token invalidation and re-handshake on `403::Unknown client`.
+    - **Exponential backoff** reconnection loop with configurable delays and multipliers.
 
-
-        Key capabilities:
-        - **CometD/Bayeux protocol** with replay extension and graceful disconnect.
-        - **Multi-auth**: OAuth 2.0 Username-Password, OAuth 2.0 Client Credentials, and direct Session ID / Bearer token.
-        - **Replay ID checkpointing** via `IStreamingReplayIdStore` (file-based or in-memory).
-        - **Session expiry resilience**: automatic token invalidation and re-handshake on `403::Unknown client`.
-        - **Exponential backoff** reconnection loop with configurable delays and multipliers.
 
 
 

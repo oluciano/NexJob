@@ -50,63 +50,62 @@ NexJob is a reliable background job processing library for .NET 8 that gives you
 
 ## Get up and running
 
-
-  #### Install NexJob
+### Install NexJob
 
 Add the core package to your .NET 8 project:
 
-    ```bash
-    dotnet add package NexJob
-    ```
+```bash
+dotnet add package NexJob
+```
 
-    Optionally add a persistent storage provider:
+Optionally add a persistent storage provider:
 
-    ```bash
-    dotnet add package NexJob.Postgres
-    ```
+```bash
+dotnet add package NexJob.Postgres
+```
 
-  #### Register services
+### Register services
 
 Call `AddNexJob()` in your `Program.cs` and scan your assembly for job types:
 
-    ```csharp
-    using NexJob;
-    
-    builder.Services.AddNexJob()
-                   .AddNexJobJobs(typeof(Program).Assembly);
-    ```
+```csharp
+using NexJob;
 
-  #### Define a job
+builder.Services.AddNexJob()
+               .AddNexJobJobs(typeof(Program).Assembly);
+```
+
+### Define a job
 
 Implement `IJob` for parameterless jobs or `IJob<T>` for jobs that carry input:
 
-    ```csharp
-    public sealed class SendWelcomeEmailJob : IJob<SendWelcomeEmailInput>
-    {
-        private readonly IEmailService _email;
-    
-        public SendWelcomeEmailJob(IEmailService email) => _email = email;
-    
-        public async Task ExecuteAsync(SendWelcomeEmailInput input, CancellationToken ct)
-            => await _email.SendAsync(input.Email, "Welcome!", ct);
-    }
-    
-    public sealed record SendWelcomeEmailInput(string Email, string UserName);
-    ```
+```csharp
+public sealed class SendWelcomeEmailJob : IJob<SendWelcomeEmailInput>
+{
+    private readonly IEmailService _email;
 
-  #### Enqueue and run
+    public SendWelcomeEmailJob(IEmailService email) => _email = email;
+
+    public async Task ExecuteAsync(SendWelcomeEmailInput input, CancellationToken ct)
+        => await _email.SendAsync(input.Email, "Welcome!", ct);
+}
+
+public sealed record SendWelcomeEmailInput(string Email, string UserName);
+```
+
+### Enqueue and run
 
 Resolve `IScheduler` and enqueue your job from any service, controller, or minimal API handler:
 
-    ```csharp
-    var scheduler = app.Services.GetRequiredService<IScheduler>();
-    
-    await scheduler.EnqueueAsync<SendWelcomeEmailJob, SendWelcomeEmailInput>(
-        new SendWelcomeEmailInput("user@example.com", "Jane"),
-        deadlineAfter: TimeSpan.FromMinutes(5));
-    ```
+```csharp
+var scheduler = app.Services.GetRequiredService<IScheduler>();
 
-    The dispatcher picks up the job immediately. If the job is not started within 5 minutes it is marked `Expired` — no silent failures, no zombie jobs.
+await scheduler.EnqueueAsync<SendWelcomeEmailJob, SendWelcomeEmailInput>(
+    new SendWelcomeEmailInput("user@example.com", "Jane"),
+    deadlineAfter: TimeSpan.FromMinutes(5));
+```
+
+The dispatcher picks up the job immediately. If the job is not started within 5 minutes it is marked `Expired` — no silent failures, no zombie jobs.
 
 
 

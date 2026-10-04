@@ -115,40 +115,43 @@ catch (DuplicateJobException ex)
 ## Real-World Examples
 
 
-  === "Payment Processing"
-    ```csharp
-        // Deduplicated while a payment job for this order is active.
-        // A new attempt is allowed once it finishes.
-        // The job must also pass the order ID to the payment provider
-        // as its own idempotency key to prevent double charges.
-        await scheduler.EnqueueAsync<ProcessPaymentJob, PaymentInput>(
-            new PaymentInput(orderId, amount),
-            idempotencyKey: $"payment-{orderId}",
-            duplicatePolicy: DuplicatePolicy.AllowAfterFailed,
-            cancellationToken: ct);
-        ```
+=== "Payment Processing"
 
-  === "Welcome Email"
     ```csharp
-        // Never send the same welcome email twice,
-        // even if the job previously failed.
-        await scheduler.EnqueueAsync<SendWelcomeEmailJob, EmailInput>(
-            new EmailInput(user.Email),
-            idempotencyKey: $"welcome-{user.Id}",
-            duplicatePolicy: DuplicatePolicy.RejectAlways,
-            cancellationToken: ct);
-        ```
+    // Deduplicated while a payment job for this order is active.
+    // A new attempt is allowed once it finishes.
+    // The job must also pass the order ID to the payment provider
+    // as its own idempotency key to prevent double charges.
+    await scheduler.EnqueueAsync<ProcessPaymentJob, PaymentInput>(
+        new PaymentInput(orderId, amount),
+        idempotencyKey: $"payment-{orderId}",
+        duplicatePolicy: DuplicatePolicy.AllowAfterFailed,
+        cancellationToken: ct);
+    ```
 
-  === "Webhook Delivery"
+=== "Welcome Email"
+
     ```csharp
-        // Allow retry if the previous delivery attempt failed,
-        // but deduplicate while a delivery is in progress.
-        await scheduler.EnqueueAsync<DeliverWebhookJob, WebhookInput>(
-            new WebhookInput(url, payload),
-            idempotencyKey: $"webhook-{webhookEvent.Id}",
-            duplicatePolicy: DuplicatePolicy.AllowAfterFailed,
-            cancellationToken: ct);
-        ```
+    // Never send the same welcome email twice,
+    // even if the job previously failed.
+    await scheduler.EnqueueAsync<SendWelcomeEmailJob, EmailInput>(
+        new EmailInput(user.Email),
+        idempotencyKey: $"welcome-{user.Id}",
+        duplicatePolicy: DuplicatePolicy.RejectAlways,
+        cancellationToken: ct);
+    ```
+
+=== "Webhook Delivery"
+
+    ```csharp
+    // Allow retry if the previous delivery attempt failed,
+    // but deduplicate while a delivery is in progress.
+    await scheduler.EnqueueAsync<DeliverWebhookJob, WebhookInput>(
+        new WebhookInput(url, payload),
+        idempotencyKey: $"webhook-{webhookEvent.Id}",
+        duplicatePolicy: DuplicatePolicy.AllowAfterFailed,
+        cancellationToken: ct);
+    ```
 
 
 

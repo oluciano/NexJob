@@ -174,25 +174,26 @@ Removing a schedule deletes the recurring definition only. Any `JobRecord` insta
 Understanding the firing mechanism helps you reason about timing and multi-node deployments:
 
 
-  #### Periodic poll
+### Periodic poll
 
 NexJob polls the recurring job table every `PollingInterval` (default: 15 seconds).
 
-  #### Find due schedules
+### Find due schedules
 
 It identifies any recurring jobs where `NextExecution <= UtcNow`.
 
-  #### Acquire distributed lock
+### Acquire distributed lock
 
 A distributed lock is acquired before firing to prevent duplicate `JobRecord` creation across multiple nodes or workers.
 
-  #### Create and enqueue
+### Create and enqueue
 
 A new `JobRecord` is created and placed in the configured queue with the `Enqueued` status.
 
-  #### Calculate next execution
+### Calculate next execution
 
 The `NextExecution` timestamp is recalculated from the cron expression and time zone, ready for the next poll.
+
 
 
 

@@ -218,52 +218,53 @@ Check the dashboard regularly for queue depth trends, failed job error patterns,
 ## Production Checklist
 
 
-  #### Persistent storage
+### Persistent storage
 
 Use Postgres, SQL Server, MongoDB, or Redis — not InMemory.
 
-  #### Retry policies
+### Retry policies
 
 Set `MaxAttempts` appropriate to each failure mode. Register dead-letter handlers for critical jobs.
 
-  #### Throttling
+### Throttling
 
 Add `[Throttle]` to every job that calls an external service or shared resource.
 
-  #### Queue isolation
+### Queue isolation
 
 Separate heavy, slow, or external-facing workloads into dedicated queues with independent worker pools.
 
-  #### Circuit breakers
+### Circuit breakers
 
 Enable `EnableCircuitBreaker` on queues that communicate with external partners.
 
-  #### Idempotency
+### Idempotency
 
 Design every job to be safe to run more than once with the same input.
 
-  #### Graceful shutdown
+### Graceful shutdown
 
 Set `HostOptions.ShutdownTimeout` greater than `NexJobOptions.ShutdownTimeout` and honour `CancellationToken` in all jobs.
 
-  #### Connection pool sizing
+### Connection pool sizing
 
 Set `Maximum Pool Size` to `Workers + 10` per node.
 
-  #### Retention policies
+### Retention policies
 
 Add `[Retention]` to high-frequency job classes to control storage growth.
 
-  #### Deadlines
+### Deadlines
 
 Set `deadlineAfter` on time-sensitive jobs so stale work is discarded rather than delivered late.
 
-  #### Observability
+### Observability
 
 Configure OpenTelemetry, enable the dashboard with authorization, and set up alerts on failure and expiry metrics.
 
-  #### Health check
+### Health check
 
 Register `NexJobHealthCheck` and include it in your `/healthz` endpoint.
+
 
 
