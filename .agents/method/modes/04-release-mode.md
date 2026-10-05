@@ -91,6 +91,11 @@ Every release validates the full catalog of packages:
 - [ ] `CHANGELOG.md` moved `[Unreleased]` to `[X.Y.Z] - YYYY-MM-DD`
 - [ ] Clean working tree on `develop`
 
+### Post-Release & Deployment Gates
+- [ ] Release PR merged into `main` using **Merge Commit** (`--no-ff`)
+- [ ] Tag synced back to `develop` (`git merge origin/main --no-ff`)
+- [ ] Live Demo deployed to Fly.io if Dashboard or samples were updated (`fly deploy`)
+
 ### Prohibited Actions (Non-Negotiable)
 - ❌ **NEVER** push directly to `main`
 - ❌ **NEVER** create git tags manually (`publish.yml` creates tags on merge)
