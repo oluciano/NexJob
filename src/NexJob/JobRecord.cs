@@ -25,7 +25,7 @@ public sealed class JobRecord
     /// <remarks>
     /// Deserialized to <see cref="InputType"/> at execution time.
     /// Do not write to this field directly — it is managed by the storage layer.
-    /// Use <see cref="IScheduler.EnqueueAsync{TJob,TInput}"/> to supply input at enqueue time.
+    /// Use <c>IScheduler.EnqueueAsync&lt;TJob, TInput&gt;</c> to supply input at enqueue time.
     /// </remarks>
     public string InputJson { get; set; } = string.Empty;
 
