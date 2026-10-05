@@ -6,8 +6,31 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [5.9.0] - 2026-10-05
+
+### Added
+
+- **Core — Execution window days** (issue #350): `ExecutionWindowSettings.DaysOfWeek` limits a queue's window to certain days. The default (`null` or empty) is every day, so existing windows are unchanged. The day is read from the local time in the configured time zone, and an overnight window belongs to the day it starts. `StartTime` equal to `EndTime` stays a 24-hour window, now documented. The dashboard shows each queue's window next to its name.
+- **Core — Visible non-cooperative jobs** (issue #367): when a job is still running 10 seconds after its execution timeout cancelled its token, one warning is logged and `nexjob.jobs.cancellation_ignored` is incremented. The job's outcome is unchanged and nothing runs for jobs without a timeout.
+- **Retry — Non-retriable exceptions** (issue #353): `NexJobOptions.IgnoreRetryAttemptExceptions` and `[Retry(IgnoreRetryAttemptExceptions = ...)]` list exception types that must not be retried. A match (derived types included, a single wrapped cause unwrapped) sends the job straight to `Failed` and calls the dead-letter handler; the attempt counts and an information log says why. Types that do not derive from `Exception` are rejected.
+- **Core — Per-job attempt limit** (issue #352): `EnqueueAsync` and `ScheduleAsync` overloads that take `maxAttempts` (at least `1`, otherwise `ArgumentOutOfRangeException`). Precedence is the call-site value, then `[Retry(n)]`, then `NexJobOptions.MaxAttempts`. The resolved limit is stored on the job, so the dashboard shows it. New interface members, so custom `IScheduler` implementations must add the four overloads. No migration.
+- **Core — Execution timeout** (issue #354): `[ExecutionTimeout("00:05:00")]` and opt-in `NexJobOptions.DefaultExecutionTimeout` (`null` by default). At the limit the job token is cancelled and the run fails with a `TimeoutException` through the normal retry/dead-letter path. Cancellation is cooperative: a job that ignores its token keeps its worker slot.
+
+- **Dashboard — Interactive Playground Scenarios & Configurable Default Theme**:
+  - Added configurable `DefaultTheme` (`blue-theme`, `semi-dark`, `dark`, `light`, `bordered-theme`) in `DashboardOptions` and `StandaloneDashboardOptions`.
+  - Added `EnablePlayground` opt-in flag in `DashboardOptions` and `StandaloneDashboardOptions` (defaults to `false` for production safety).
+  - Added interactive offcanvas Playground Scenarios drawer in `HtmlShell` with one-click triggers for standard workloads (`ProcessOrderJob` batch), resilience & retries (`FlakyApiJob`), terminal dead-letter quarantine (`DeadLetterSampleJob`), concurrency bursts (20 jobs), and cron sweep (only rendered when `EnablePlayground` is enabled).
+  - Enhanced resilience scenario to trigger transient HTTP 504 Gateway Timeout on attempt 1, automatically navigating to the job detail view to inspect the live exception message, stack trace terminal, and exponential backoff retry countdown before auto-recovering on attempt 2.
+  - Implemented `POST {pathPrefix}/api/scenarios/{scenario}` API endpoint in `DashboardMiddleware` for real-time workload simulation with automatic job redirect support without external infrastructure dependencies.
+  - Added Live Playground guide (`docs/wiki/playground.md`), direct Fly.io deployment instructions, live demo badges, and navigation links in `README.md` and documentation site.
+
 ### Fixed
 
+- **Dashboard — Execution Timeline UX & Effective Retry Budget Alignment**:
+  - Aligned attempt counters across the Job Detail page and Lifecycle Stepper with the job's effective retry policy (`[Retry(N)]` attribute or global `NexJobOptions.MaxAttempts`), fixing misleading discrepancies where jobs with custom retry limits displayed default budget ceilings (e.g. showing `3 of 3` instead of `3 of 10`).
+  - Resolved status contradiction in the Retry Loop banner when a job exhausts all attempts: displays `"Retry Budget Exhausted — Moved to Dead-Letter"` with distinct dead-letter styling instead of showing active loop recovery text.
+  - Revamped the retry loop diagram into a clean, dynamic linear stepper showing all intermediate failed attempts, backoff intervals, and terminal states without skipped steps or raw bracketed emojis.
+  - Fixed timestamp grammar bug in lifecycle card where past job age was formatted as a future countdown (`Age: in 4m` -> `Age: 4m ago`).
 - **Docs — code blocks and heading formatting on documentation site**: corrected legacy 4-space code block indentations, raw Mintlify MDX tags (`<CodeGroup>`, `<Note>`), step heading indentation (`  ####`), and pymdownx tab formatting across all wiki pages. Hardened `docs/site/sync-from-mintlify.py` with `textwrap.dedent` and automatic `<CodeGroup>` tab transformation to prevent regressions.
 
 ## [5.8.0] - 2026-10-04

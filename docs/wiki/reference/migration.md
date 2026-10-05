@@ -6,6 +6,25 @@ description: "Step-by-step migration guides for NexJob major version upgrades, i
 
 This page covers every breaking change between NexJob releases and tells you exactly what to update in your code. Schema migrations for PostgreSQL and SQL Server apply automatically at startup. Follow the steps in order for each version jump you're crossing.
 
+## v5.8.0 → v5.9.0
+
+Nothing in the public API is removed and there is no schema migration. Two things need your attention.
+
+#### If you implement `IScheduler`
+
+!!! warning
+    `IScheduler` has four new members: `EnqueueAsync<TJob>(int maxAttempts, ...)`, `EnqueueAsync<TJob, TInput>(TInput input, int maxAttempts, ...)`, `ScheduleAsync<TJob>(TimeSpan delay, int maxAttempts, ...)` and `ScheduleAsync<TJob, TInput>(TInput input, TimeSpan delay, int maxAttempts, ...)`. They are new overloads, so every existing call still compiles and behaves as before. A class that implements `IScheduler` itself (a test double, a decorator) must add them, or it no longer compiles.
+
+#### `MaxAttempts` is now the real limit
+
+For a class with `[Retry(n)]`, the `MaxAttempts` stored on a new job, and `IJobContext.MaxAttempts`, now report `n`. Before, they reported the global default while the attribute decided the outcome. `[Retry(0)]` is stored as `1`. Jobs already stored keep working: the attribute still applies to a row stored with the global default.
+
+#### Rolling upgrade
+
+There is no new stored format. While old and new nodes run together, an old node ignores a per-job `maxAttempts` and applies the class's `[Retry]`, and it does not know `IgnoreRetryAttemptExceptions`, `[ExecutionTimeout]` or `DaysOfWeek`. Everything else is compatible. Upgrade one node first, watch the failed and dead-letter counts, then the rest. To roll back, return to v5.8.0: nothing stored needs to be undone.
+
+New and opt-in, with no action needed: `[ExecutionTimeout]`, `IgnoreRetryAttemptExceptions`, per-job `maxAttempts`, and `DaysOfWeek` (the default is every day).
+
 ## v5.7.0 → v5.8.0
 
 Nothing in the public API is removed. This release changes **behaviour** that you may depend on, and it adds a stored field. Read both parts before a rolling upgrade.

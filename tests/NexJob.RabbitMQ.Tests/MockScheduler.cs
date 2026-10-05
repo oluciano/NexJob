@@ -110,6 +110,33 @@ internal sealed class MockScheduler : IScheduler
         throw new NotSupportedException();
 
     /// <inheritdoc/>
+    public Task<JobId> EnqueueAsync<TJob>(
+        int maxAttempts,
+        string? queue = null,
+        JobPriority priority = JobPriority.Normal,
+        string? idempotencyKey = null,
+        DuplicatePolicy duplicatePolicy = DuplicatePolicy.AllowAfterFailed,
+        IReadOnlyList<string>? tags = null,
+        TimeSpan? deadlineAfter = null,
+        CancellationToken cancellationToken = default)
+        where TJob : IJob =>
+        throw new NotSupportedException();
+
+    /// <inheritdoc/>
+    public Task<JobId> EnqueueAsync<TJob, TInput>(
+        TInput input,
+        int maxAttempts,
+        string? queue = null,
+        JobPriority priority = JobPriority.Normal,
+        string? idempotencyKey = null,
+        DuplicatePolicy duplicatePolicy = DuplicatePolicy.AllowAfterFailed,
+        IReadOnlyList<string>? tags = null,
+        TimeSpan? deadlineAfter = null,
+        CancellationToken cancellationToken = default)
+        where TJob : IJob<TInput> =>
+        throw new NotSupportedException();
+
+    /// <inheritdoc/>
     public Task<JobId> ScheduleAsync<TJob>(
         TimeSpan delay,
         string? queue = null,
@@ -122,6 +149,27 @@ internal sealed class MockScheduler : IScheduler
     public Task<JobId> ScheduleAsync<TJob, TInput>(
         TInput input,
         TimeSpan delay,
+        string? queue = null,
+        string? idempotencyKey = null,
+        CancellationToken cancellationToken = default)
+        where TJob : IJob<TInput> =>
+        throw new NotSupportedException();
+
+    /// <inheritdoc/>
+    public Task<JobId> ScheduleAsync<TJob>(
+        TimeSpan delay,
+        int maxAttempts,
+        string? queue = null,
+        string? idempotencyKey = null,
+        CancellationToken cancellationToken = default)
+        where TJob : IJob =>
+        throw new NotSupportedException();
+
+    /// <inheritdoc/>
+    public Task<JobId> ScheduleAsync<TJob, TInput>(
+        TInput input,
+        TimeSpan delay,
+        int maxAttempts,
         string? queue = null,
         string? idempotencyKey = null,
         CancellationToken cancellationToken = default)

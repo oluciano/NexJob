@@ -28,6 +28,8 @@ if (args.Contains("--multi-cluster"))
         options.Path = "/dashboard";
         options.Title = "NexJob Federation Hub (Multi-Cluster Demo)";
         options.LocalhostOnly = true;
+        options.DefaultTheme = "semi-dark";
+        options.EnablePlayground = true;
 
         // Register clusters using custom or shared storage
         builder.Services.AddSingleton<IHostedService>(sp => new ClusterSetupHostedService(
@@ -42,10 +44,13 @@ else
 {
     builder.Services.AddNexJobStandaloneDashboard(options =>
     {
-        options.Port = 5005;
+        options.Port = builder.Configuration.GetValue<int>("PORT", 5005);
         options.Path = "/dashboard";
         options.Title = "NexJob Monocluster (Single Cluster Demo)";
-        options.LocalhostOnly = true;
+        options.LocalhostOnly = builder.Configuration.GetValue<bool>("NexJob:Dashboard:LocalhostOnly",
+            Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER") != "true");
+        options.DefaultTheme = "semi-dark";
+        options.EnablePlayground = true;
     });
 }
 

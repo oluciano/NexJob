@@ -59,6 +59,7 @@ app.Run();
 - **Job Catalog & Definitions (`/catalog`):** Aggregated job definitions table reporting run volume, error rates, average duration, last execution timestamps, deep links to `/jobs`, and ad-hoc trigger execution for parameterless jobs.
 - **Modernized Terminal & JSON Viewers:** Execution logs and payload viewers formatted into dark terminal-styled code windows with header dots, syntax color tokens, and 1-click clipboard copy buttons.
 - **24h Throughput Chart & Host Gauges:** The Overview shows a 24-bar hourly throughput chart (average line, drop warnings) and in-memory CPU and RAM gauges for the host process, also on the Servers view. Server node IDs display as `{Host}:{PID} #{shortGuid}` with the full ID in the tooltip. Nothing is persisted.
+- **Queue Windows at a Glance:** the Settings page shows each queue's execution window (hours, time zone and days of the week) next to its status.
 - **Live Overview:** Real-time counters for `Enqueued`, `Processing`, `Succeeded`, `Failed`, `Expired`, `Retrying`, and `Dead-Letter` jobs via Server-Sent Events (SSE).
 - **Job Details & Inspection:** View serialized input arguments, execution history, exception stack traces, and captured console logs.
 - **Recurring Jobs:** Monitor cron schedules, last execution timestamp, next scheduled run, and manually trigger recurring jobs on demand.
@@ -122,5 +123,7 @@ When authorization fails, the dashboard returns `401 Unauthorized`.
 |---|---|---|---|
 | `Title` | `string` | `"NexJob"` | Title shown in the browser tab and sidebar header |
 | `MetricsCacheTtl` | `TimeSpan` | `3s` | Cache duration for dashboard metrics to prevent DB overload during SSE polling |
+| `DefaultTheme` | `string` | `"blue-theme"` | Color theme used when the browser has no stored preference: `blue-theme`, `semi-dark`, `dark`, `light` or `bordered-theme` |
+| `EnablePlayground` | `bool` | `false` | Enables the interactive playground drawer with demo scenarios. Off by default for production safety |
 | `Queues` | `IReadOnlyList<string>?` | `null` | Optional list of queues to scope the dashboard view, nav counters, and default job listings |
 | `Clusters` | `IReadOnlyList<DashboardCluster>` | `[]` | Registered federated clusters for multi-cluster operations |

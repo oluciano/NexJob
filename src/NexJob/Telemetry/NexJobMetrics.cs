@@ -44,6 +44,10 @@ public static class NexJobMetrics
     internal static readonly Counter<long> JobsThrottleDeferred =
         Meter.CreateCounter<long>("nexjob.jobs.throttle_deferred", "jobs", "Number of jobs returned to the queue because a throttle slot was not available.");
 
+    /// <summary>Counts jobs that kept running after their execution timeout cancelled their token and a grace period passed.</summary>
+    internal static readonly Counter<long> JobsCancellationIgnored =
+        Meter.CreateCounter<long>("nexjob.jobs.cancellation_ignored", "jobs", "Number of jobs that ignored the cancellation of their execution timeout and still hold a worker slot.");
+
     /// <summary>Records job execution duration in milliseconds.</summary>
     internal static readonly Histogram<double> JobDuration =
         Meter.CreateHistogram<double>("nexjob.job.duration", "ms", "Job execution duration in milliseconds.");

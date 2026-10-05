@@ -1132,6 +1132,160 @@ public sealed class StandaloneDashboardTests
         }
     }
 
+    [Fact]
+    public async Task StandaloneDashboard_WhenPlaygroundEnabled_RendersScenariosAndHandlesApi()
+    {
+        var port = GetFreeTcpPort();
+        using var host = Host.CreateDefaultBuilder()
+            .ConfigureServices(services =>
+            {
+                services.AddNexJob();
+                services.AddNexJobStandaloneDashboard(options =>
+                {
+                    options.Port = port;
+                    options.Path = "/dashboard";
+                    options.Title = "Playground Enabled";
+                    options.LocalhostOnly = true;
+                    options.DefaultTheme = "semi-dark";
+                    options.EnablePlayground = true;
+                });
+            })
+            .Build();
+
+        try
+        {
+            await host.StartAsync();
+
+            using var client = new HttpClient
+            {
+                BaseAddress = new Uri($"http://localhost:{port}"),
+                Timeout = TimeSpan.FromSeconds(5),
+            };
+
+            var res = await client.GetAsync("/dashboard");
+            res.StatusCode.Should().Be(HttpStatusCode.OK);
+            var html = await res.Content.ReadAsStringAsync();
+            html.Should().Contain("🎮");
+            html.Should().Contain("Scenarios");
+            html.Should().Contain("scenarios-drawer");
+            html.Should().Contain("data-theme=\"semi-dark\"");
+
+            var apiRes = await client.PostAsync("/dashboard/api/scenarios/order", null);
+            apiRes.StatusCode.Should().Be(HttpStatusCode.OK);
+            var apiJson = await apiRes.Content.ReadAsStringAsync();
+            apiJson.Should().Contain("\"success\":true");
+        }
+        finally
+        {
+            await host.StopAsync();
+        }
+    }
+
+    [Fact]
+    public async Task StandaloneDashboard_WhenPlaygroundDisabled_DoesNotRenderScenariosAndRejectsApi()
+    {
+        var port = GetFreeTcpPort();
+        using var host = Host.CreateDefaultBuilder()
+            .ConfigureServices(services =>
+            {
+                services.AddNexJob();
+                services.AddNexJobStandaloneDashboard(options =>
+                {
+                    options.Port = port;
+                    options.Path = "/dashboard";
+                    options.Title = "Production Safe";
+                    options.LocalhostOnly = true;
+                    options.EnablePlayground = false;
+                });
+            })
+            .Build();
+
+        try
+        {
+            await host.StartAsync();
+
+            using var client = new HttpClient
+            {
+                BaseAddress = new Uri($"http://localhost:{port}"),
+                Timeout = TimeSpan.FromSeconds(5),
+            };
+
+            var res = await client.GetAsync("/dashboard");
+            res.StatusCode.Should().Be(HttpStatusCode.OK);
+            var html = await res.Content.ReadAsStringAsync();
+            html.Should().NotContain("scenarios-drawer");
+            html.Should().NotContain("nexJobTriggerScenario");
+
+            var apiRes = await client.PostAsync("/dashboard/api/scenarios/order", null);
+            apiRes.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        }
+        finally
+        {
+            await host.StopAsync();
+        }
+    }
+
+    [Fact]
+    public async Task StandaloneDashboard_DefaultThemeAndInvalidScenario_HandledGracefully()
+    {
+        var port = GetFreeTcpPort();
+        using var host = Host.CreateDefaultBuilder()
+            .ConfigureServices(services =>
+            {
+                services.AddNexJob();
+                services.AddNexJobStandaloneDashboard(options =>
+                {
+                    options.Port = port;
+                    options.Path = "/dashboard";
+                    options.Title = "Theme Test";
+                    options.LocalhostOnly = true;
+                    options.DefaultTheme = "bordered-theme";
+                    options.EnablePlayground = true;
+                });
+            })
+            .Build();
+
+        try
+        {
+            await host.StartAsync();
+
+            using var client = new HttpClient
+            {
+                BaseAddress = new Uri($"http://localhost:{port}"),
+                Timeout = TimeSpan.FromSeconds(5),
+            };
+
+            var res = await client.GetAsync("/dashboard");
+            res.StatusCode.Should().Be(HttpStatusCode.OK);
+            var html = await res.Content.ReadAsStringAsync();
+            html.Should().Contain("data-theme=\"bordered-theme\"");
+
+            // Unknown scenario gracefully defaults
+            var apiRes = await client.PostAsync("/dashboard/api/scenarios/unknown-scenario-xyz", null);
+            apiRes.StatusCode.Should().Be(HttpStatusCode.OK);
+            var json = await apiRes.Content.ReadAsStringAsync();
+            json.Should().Contain("\"success\":true");
+
+            // Flaky / resilience scenario returns jobId and redirectUrl
+            var flakyRes = await client.PostAsync("/dashboard/api/scenarios/flaky", null);
+            flakyRes.StatusCode.Should().Be(HttpStatusCode.OK);
+            var flakyJson = await flakyRes.Content.ReadAsStringAsync();
+            flakyJson.Should().Contain("\"success\":true");
+            flakyJson.Should().Contain("\"redirectUrl\":\"/dashboard/jobs/");
+
+            // Deadletter scenario returns jobId and redirectUrl
+            var dlqRes = await client.PostAsync("/dashboard/api/scenarios/deadletter", null);
+            dlqRes.StatusCode.Should().Be(HttpStatusCode.OK);
+            var dlqJson = await dlqRes.Content.ReadAsStringAsync();
+            dlqJson.Should().Contain("\"success\":true");
+            dlqJson.Should().Contain("\"redirectUrl\":\"/dashboard/jobs/");
+        }
+        finally
+        {
+            await host.StopAsync();
+        }
+    }
+
     private static int GetFreeTcpPort()
     {
         var listener = new TcpListener(IPAddress.Loopback, 0);

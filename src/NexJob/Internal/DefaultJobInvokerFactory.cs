@@ -56,7 +56,9 @@ internal sealed class DefaultJobInvokerFactory : IJobInvokerFactory
             var throttleAttrs = jobType.GetCustomAttributes<ThrottleAttribute>(inherit: true);
             var retentionAttr = jobType.GetCustomAttribute<RetentionAttribute>(inherit: true);
 
-            return Task.FromResult(new JobInvocationContext(scope, jobInstance, input, invoker, throttleAttrs, retentionAttr));
+            var timeoutAttr = jobType.GetCustomAttribute<ExecutionTimeoutAttribute>(inherit: true);
+
+            return Task.FromResult(new JobInvocationContext(scope, jobInstance, input, invoker, throttleAttrs, retentionAttr, timeoutAttr));
         }
         catch
         {

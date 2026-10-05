@@ -22,6 +22,8 @@ NexJob does **not** promise exactly-once execution, and it does not promise orde
 | --- | --- | --- | --- |
 | The job throws and has attempts left | Rescheduled at `RetryAt`, per the [retry policy](../concepts/retries-and-dead-letter.md) | Used | No |
 | The job throws on its last attempt | `Failed` | Used | **Called** with the exception |
+| The job throws an exception listed in [`IgnoreRetryAttemptExceptions`](../concepts/retries-and-dead-letter.md#failures-that-should-not-be-retried) (v5.9.0) | `Failed` at once, even with attempts left | Used | **Called** with the exception |
+| It runs longer than its [`[ExecutionTimeout]`](../concepts/retries-and-dead-letter.md#execution-timeout) (v5.9.0) | Its token is cancelled and the run fails with a `TimeoutException`; then rescheduled like any failure. A job that ignores its token keeps its worker slot | Used | **Called** on the last attempt |
 | The node running it dies (crash, kill, lost machine) | Stays `Processing` until its heartbeat is older than `HeartbeatTimeout` (default 5 minutes; the check runs every `HeartbeatTimeout`, so recovery takes between 5 and about 10 minutes), then goes back to `Enqueued` | **Used**: the attempt that was running may have partly run | No |
 | The node dies on the job's last attempt | `Failed` | Used | **Called** with an `OrphanedJobException` (v5.8.0) |
 | The job succeeds but its result cannot be saved | The save is retried a few times. If it still fails the job stays `Processing` and is treated like a crashed node: run again by the orphan watcher, or `Failed` (and dead-lettered) if it had no attempts left | Used | Only if no attempts were left |
@@ -49,6 +51,7 @@ NexJob does **not** promise exactly-once execution, and it does not promise orde
 | A job was recovered after a crash | Dashboard Job Detail: `Attempts` higher than expected, and a `Warning` log from the orphan watcher when it was the last attempt |
 | A job expired | Dashboard **Failed / DLQ**, _Expired_ tab; counter `nexjob.jobs.expired` |
 | A job is waiting | Dashboard **Queues**: paused badge, `NO WORKERS` badge, circuit state |
+| A job ignores its execution timeout | A warning log, `ignored cancellation ... still holds its worker slot`; counter `nexjob.jobs.cancellation_ignored` |
 | A throttled job went back to the queue | An information log: `got no slot for throttled resource ... Returning it to the queue`; counter `nexjob.jobs.throttle_deferred` |
 
 ## What you should do about it

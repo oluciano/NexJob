@@ -18,6 +18,8 @@ namespace NexJob;
 [AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = true)]
 public sealed class RetryAttribute : Attribute
 {
+    private readonly Type[]? _ignoreRetryAttemptExceptions;
+
     /// <summary>
     /// Initializes a new <see cref="RetryAttribute"/>.
     /// </summary>
@@ -52,6 +54,19 @@ public sealed class RetryAttribute : Attribute
     /// When <see langword="null"/>, no cap is applied.
     /// </summary>
     public string? MaxDelay { get; init; }
+
+    /// <summary>
+    /// Exception types that must not be retried for this job type. When a run fails with one of them (or a type
+    /// derived from it), the job goes straight to <c>Failed</c> and the dead-letter handler runs, without waiting
+    /// for the remaining attempts. The failure is still a failure: this does not make the job succeed.
+    /// Combined with <see cref="NexJobOptions.IgnoreRetryAttemptExceptions"/>. Every type must derive from
+    /// <see cref="Exception"/>.
+    /// </summary>
+    public Type[]? IgnoreRetryAttemptExceptions
+    {
+        get => _ignoreRetryAttemptExceptions;
+        init => _ignoreRetryAttemptExceptions = Internal.ExceptionTypeList.Validate(value, nameof(value));
+    }
 
     /// <summary>
     /// Computes the retry delay for a given attempt number using this attribute's configuration.

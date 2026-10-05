@@ -1,11 +1,38 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Reflection;
 using System.Text.RegularExpressions;
+using Microsoft.Extensions.Caching.Memory;
+using NexJob.Storage;
 
 namespace NexJob.Dashboard.Pages;
 
 [ExcludeFromCodeCoverage]
 internal static class Helpers
 {
+    internal static async Task<JobMetrics> GetCachedMetricsAsync(
+        IMemoryCache cache, IDashboardStorage storage, DashboardOptions options, DashboardCluster? activeCluster, CancellationToken ct)
+    {
+        var cacheKey = activeCluster is not null
+            ? $"nexjob:dashboard:metrics:{activeCluster.Id}"
+            : "nexjob:dashboard:metrics";
+
+        // If cache TTL is zero, disable caching
+        if (options.MetricsCacheTtl == TimeSpan.Zero)
+        {
+            return await storage.GetMetricsAsync(ct).ConfigureAwait(false);
+        }
+
+        if (cache.TryGetValue(cacheKey, out JobMetrics? cached) && cached is not null)
+        {
+            return cached;
+        }
+
+        var metrics = await storage.GetMetricsAsync(ct).ConfigureAwait(false);
+        cache.Set(cacheKey, metrics, options.MetricsCacheTtl);
+
+        return metrics;
+    }
+
     internal static string ShortType(string fullType)
     {
         var name = fullType.Split(',')[0]; // remove assembly part
@@ -13,8 +40,13 @@ internal static class Helpers
         return parts[^1];
     }
 
-    internal static Type? ResolveType(string typeName)
+    internal static Type? ResolveType(string? typeName)
     {
+        if (string.IsNullOrWhiteSpace(typeName))
+        {
+            return null;
+        }
+
         var type = Type.GetType(typeName, throwOnError: false);
         if (type is not null)
         {
@@ -33,6 +65,50 @@ internal static class Helpers
         }
 
         return null;
+    }
+
+    private static readonly int FrameworkDefaultMaxAttempts = new NexJobOptions().MaxAttempts;
+
+    internal static int GetEffectiveMaxAttempts(JobRecord job)
+    {
+        if (job is null)
+        {
+            return 1;
+        }
+
+        // Same rule as the retry policy. The dashboard does not see the host's NexJobOptions, so the framework default
+        // stands in for the global default: a stored limit different from it is a per-job choice and wins.
+        if (job.MaxAttempts != FrameworkDefaultMaxAttempts)
+        {
+            return job.MaxAttempts;
+        }
+
+        var jobType = ResolveType(job.JobType);
+        var retryAttr = jobType?.GetCustomAttribute<RetryAttribute>(inherit: true);
+        return retryAttr?.Attempts ?? job.MaxAttempts;
+    }
+
+    internal static string DescribeExecutionWindow(NexJob.Configuration.ExecutionWindowSettings window)
+    {
+        var start = window.StartTime.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture);
+        var end = window.EndTime.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture);
+        return $"{start}–{end} {window.TimeZone} · {DescribeDays(window.DaysOfWeek)}";
+    }
+
+    private static string DescribeDays(DayOfWeek[]? days)
+    {
+        DayOfWeek[] mondayFirst =
+            [DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday, DayOfWeek.Thursday, DayOfWeek.Friday, DayOfWeek.Saturday, DayOfWeek.Sunday];
+        var selected = mondayFirst.Where(d => days is not null && Array.IndexOf(days, d) >= 0).ToArray();
+
+        if (selected.Length is 0 or 7)
+        {
+            return "every day";
+        }
+
+        return selected.Length == 5 && !selected.Contains(DayOfWeek.Saturday) && !selected.Contains(DayOfWeek.Sunday)
+            ? "Mon–Fri"
+            : string.Join(", ", selected.Select(d => d.ToString()[..3]));
     }
 
     internal static bool IsParameterlessJob(string typeName)

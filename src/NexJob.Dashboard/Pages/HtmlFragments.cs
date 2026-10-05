@@ -116,8 +116,9 @@ internal static class HtmlFragments
             _ => string.Empty,
         };
 
+        var effectiveMax = Helpers.GetEffectiveMaxAttempts(job);
         var attemptInfo = job.Attempts > 1
-            ? $" <span style=\"color:var(--text-secondary);font-size:11px\">({job.Attempts}/{job.MaxAttempts})</span>"
+            ? $" <span style=\"color:var(--text-secondary);font-size:11px\">({job.Attempts}/{effectiveMax})</span>"
             : string.Empty;
 
         return
@@ -858,7 +859,8 @@ internal static class HtmlFragments
             }
         }
 
-        var totalAge = Helpers.CountdownFriendly(now - job.CreatedAt);
+        var totalAge = Helpers.RelativeTime(job.CreatedAt, now);
+        var effectiveMax = Helpers.GetEffectiveMaxAttempts(job);
 
         // 2. Card Header
         sb.Append("<div class=\"lifecycle-card\">");
@@ -875,11 +877,11 @@ internal static class HtmlFragments
         sb.Append($"<span class=\"badge\" style=\"background:var(--bg-tertiary);color:var(--text-secondary);border:1px solid var(--border)\">Age: {totalAge}</span>");
         if (job.Attempts > 1)
         {
-            sb.Append($"<span class=\"badge\" style=\"background:var(--warning-light);color:var(--warning);border:1px solid var(--warning)\">🔁 Attempt {job.Attempts}/{job.MaxAttempts}</span>");
+            sb.Append($"<span class=\"badge\" style=\"background:var(--warning-light);color:var(--warning);border:1px solid var(--warning)\">🔁 Attempt {job.Attempts}/{effectiveMax}</span>");
         }
         else
         {
-            sb.Append($"<span class=\"badge\" style=\"background:var(--bg-tertiary);color:var(--text-tertiary);border:1px solid var(--border)\">Attempt 1/{job.MaxAttempts}</span>");
+            sb.Append($"<span class=\"badge\" style=\"background:var(--bg-tertiary);color:var(--text-tertiary);border:1px solid var(--border)\">Attempt 1/{effectiveMax}</span>");
         }
 
         if (job.ExpiresAt.HasValue)
@@ -952,8 +954,8 @@ internal static class HtmlFragments
         var procTime = job.ProcessingStartedAt.HasValue ? $"{job.ProcessingStartedAt.Value:HH:mm:ss}" : "—";
         var procTitle = job.Status == JobStatus.Processing ? "⚙️ Processing (Live)" : "⚙️ Processing";
         var procDetail = job.Attempts > 1
-            ? $"Attempt {job.Attempts} of {job.MaxAttempts} (retried)"
-            : $"Attempt {Math.Max(1, job.Attempts)} of {job.MaxAttempts}";
+            ? $"Attempt {job.Attempts} of {effectiveMax} (retried)"
+            : $"Attempt {Math.Max(1, job.Attempts)} of {effectiveMax}";
 
         sb.Append($"<div class=\"lifecycle-node {procClass}\">");
         sb.Append($"<div style=\"display:flex;justify-content:space-between;align-items:center;margin-bottom:4px\"><span style=\"font-size:11px;font-weight:700;color:var(--warning);text-transform:uppercase\">{procTitle}</span><span style=\"font-size:11px;color:var(--text-tertiary);font-family:monospace\">{procTime}</span></div>");
@@ -986,7 +988,7 @@ internal static class HtmlFragments
             sb.Append("<div class=\"lifecycle-node failed\">");
             sb.Append($"<div style=\"display:flex;justify-content:space-between;align-items:center;margin-bottom:4px\"><span style=\"font-size:11px;font-weight:700;color:var(--error);text-transform:uppercase\">❌ Dead-Letter / Failed</span><span style=\"font-size:11px;color:var(--text-tertiary);font-family:monospace\">{compTime}</span></div>");
             sb.Append("<div style=\"font-size:13px;font-weight:600;color:var(--text-primary)\">Attempts exhausted</div>");
-            sb.Append($"<div style=\"font-size:11px;color:var(--text-secondary)\">{job.Attempts}/{job.MaxAttempts} failed attempts</div>");
+            sb.Append($"<div style=\"font-size:11px;color:var(--text-secondary)\">{job.Attempts}/{effectiveMax} failed attempts</div>");
             sb.Append("</div>");
         }
         else if (job.Status == JobStatus.Expired)
@@ -1030,20 +1032,53 @@ internal static class HtmlFragments
         // 4. Retry Loop Diagram (If attempts > 1 or RetryAt active)
         if (job.Attempts > 1 || job.RetryAt.HasValue)
         {
-            sb.Append("<div class=\"retry-loop-banner\">");
-            sb.Append("<div style=\"font-size:26px;line-height:1;flex-shrink:0\">🔄</div>");
+            var isFailed = job.Status == JobStatus.Failed;
+            var isSucceeded = job.Status == JobStatus.Succeeded;
+            string bannerClass;
+            string headerIcon;
+            string headerTitle;
+            string titleColor;
+            string attemptBadgeStyle;
+
+            if (isFailed)
+            {
+                bannerClass = "retry-loop-banner exhausted";
+                headerIcon = "💀";
+                headerTitle = "Retry Budget Exhausted — Moved to Dead-Letter";
+                titleColor = "var(--error)";
+                attemptBadgeStyle = "font-size:11px;background:var(--error-light);color:var(--error);border:1px solid var(--error);padding:2px 8px;border-radius:12px;font-weight:600";
+            }
+            else if (isSucceeded)
+            {
+                bannerClass = "retry-loop-banner recovered";
+                headerIcon = "🎉";
+                headerTitle = "Fault Recovered via Retry Loop";
+                titleColor = "var(--success)";
+                attemptBadgeStyle = "font-size:11px;background:var(--success-light);color:var(--success);border:1px solid var(--success);padding:2px 8px;border-radius:12px;font-weight:600";
+            }
+            else
+            {
+                bannerClass = "retry-loop-banner";
+                headerIcon = "🔄";
+                headerTitle = "Retry Loop Active &amp; Backoff in Progress";
+                titleColor = "var(--warning)";
+                attemptBadgeStyle = "font-size:11px;background:var(--warning-light);color:var(--warning);border:1px solid var(--warning);padding:2px 8px;border-radius:12px;font-weight:600";
+            }
+
+            sb.Append($"<div class=\"{bannerClass}\">");
+            sb.Append($"<div style=\"font-size:24px;line-height:1;flex-shrink:0\">{headerIcon}</div>");
             sb.Append("<div style=\"flex:1\">");
-            sb.Append("<div style=\"display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;flex-wrap:wrap;gap:8px\">");
+            sb.Append("<div style=\"display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:8px\">");
             sb.Append("<div style=\"display:flex;align-items:center;gap:8px\">");
-            sb.Append("<span style=\"font-size:14px;font-weight:700;color:var(--warning)\">Retry Loop &amp; Fault Recovery Active</span>");
-            sb.Append($"<span style=\"font-size:11px;background:var(--warning-light);color:var(--warning);border:1px solid var(--warning);padding:2px 8px;border-radius:12px;font-weight:600\">Attempt {job.Attempts} of {job.MaxAttempts}</span>");
+            sb.Append($"<span style=\"font-size:14px;font-weight:700;color:{titleColor}\">{headerTitle}</span>");
+            sb.Append($"<span style=\"{attemptBadgeStyle}\">Attempt {job.Attempts} of {effectiveMax}</span>");
             sb.Append("</div>");
 
-            if (job.Status == JobStatus.Succeeded)
+            if (isSucceeded)
             {
-                sb.Append($"<span style=\"font-size:11px;font-weight:700;color:var(--success);background:var(--success-light);border:1px solid var(--success);padding:2px 10px;border-radius:12px\">🎉 Recovered on attempt {job.Attempts}</span>");
+                sb.Append($"<span style=\"font-size:11px;font-weight:700;color:var(--success);background:var(--success-light);border:1px solid var(--success);padding:2px 10px;border-radius:12px\">🎉 Recovered on Attempt {job.Attempts}</span>");
             }
-            else if (job.Status == JobStatus.Failed)
+            else if (isFailed)
             {
                 sb.Append("<span style=\"font-size:11px;font-weight:700;color:var(--error);background:var(--error-light);border:1px solid var(--error);padding:2px 10px;border-radius:12px\">💀 Dead-Letter Queue (Exhausted)</span>");
             }
@@ -1055,31 +1090,45 @@ internal static class HtmlFragments
             sb.Append("</div>");
 
             // Visual linear diagram of the loop
-            sb.Append("<div style=\"background:var(--bg-tertiary);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin:8px 0;font-size:12px;font-family:monospace;display:flex;align-items:center;gap:8px;flex-wrap:wrap\">");
-            sb.Append("<span style=\"color:var(--error)\">Attempt 1 [Failed 💥]</span>");
-            sb.Append("<span style=\"color:var(--text-tertiary)\">──►</span>");
-            sb.Append("<span style=\"color:var(--warning);background:var(--warning-light);padding:1px 6px;border-radius:4px\">Backoff Delay</span>");
-            sb.Append("<span style=\"color:var(--text-tertiary)\">──►</span>");
+            sb.Append("<div style=\"background:var(--bg-tertiary);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin:8px 0;font-size:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap\">");
 
-            string currentStatusText;
-            string currentStatusColor;
-            if (job.Status == JobStatus.Succeeded)
+            var arrowHtml = "<span style=\"color:var(--text-tertiary);font-size:11px;font-family:monospace\">──►</span>";
+            var backoffBadgeHtml = "<span style=\"font-size:11px;padding:2px 8px;border-radius:10px;background:var(--warning-light);color:var(--warning);border:1px solid rgba(245,158,11,0.3);font-weight:600\">Backoff Delay</span>";
+
+            int maxStep = Math.Min(job.Attempts, effectiveMax);
+            for (int i = 1; i < maxStep; i++)
             {
-                currentStatusText = "Succeeded ✅";
-                currentStatusColor = "var(--success)";
+                sb.Append($"<span style=\"padding:3px 8px;border-radius:6px;background:rgba(234,84,85,0.12);color:var(--error);border:1px solid rgba(234,84,85,0.3);font-weight:600\">Attempt {i}: Failed</span>");
+                sb.Append(arrowHtml);
+                sb.Append(backoffBadgeHtml);
+                sb.Append(arrowHtml);
             }
-            else if (job.Status == JobStatus.Failed)
+
+            if (isFailed)
             {
-                currentStatusText = "Dead-Letter 💀";
-                currentStatusColor = "var(--error)";
+                sb.Append($"<span style=\"padding:3px 8px;border-radius:6px;background:rgba(234,84,85,0.18);color:var(--error);border:1px solid var(--error);font-weight:700\">Attempt {maxStep}: Dead-Letter</span>");
+            }
+            else if (isSucceeded)
+            {
+                sb.Append($"<span style=\"padding:3px 8px;border-radius:6px;background:rgba(40,199,111,0.15);color:var(--success);border:1px solid var(--success);font-weight:700\">Attempt {maxStep}: Succeeded</span>");
+            }
+            else if (job.Status == JobStatus.Processing)
+            {
+                sb.Append($"<span style=\"padding:3px 8px;border-radius:6px;background:rgba(0,207,213,0.15);color:var(--primary);border:1px solid var(--primary);font-weight:700\">Attempt {maxStep}: Running</span>");
+            }
+            else if (job.RetryAt.HasValue && job.RetryAt.Value > now)
+            {
+                sb.Append($"<span style=\"padding:3px 8px;border-radius:6px;background:rgba(234,84,85,0.12);color:var(--error);border:1px solid rgba(234,84,85,0.3);font-weight:600\">Attempt {maxStep}: Failed</span>");
+                sb.Append(arrowHtml);
+                sb.Append(backoffBadgeHtml);
+                sb.Append(arrowHtml);
+                sb.Append($"<span style=\"padding:3px 8px;border-radius:6px;background:rgba(245,158,11,0.15);color:var(--warning);border:1px solid var(--warning);font-weight:700\">Attempt {maxStep + 1}: Scheduled</span>");
             }
             else
             {
-                currentStatusText = "In Progress ⚙️";
-                currentStatusColor = "var(--info)";
+                sb.Append($"<span style=\"padding:3px 8px;border-radius:6px;background:var(--bg-secondary);color:var(--text-secondary);border:1px solid var(--border);font-weight:600\">Attempt {maxStep}</span>");
             }
 
-            sb.Append($"<span style=\"color:{currentStatusColor}\">Attempt {job.Attempts} [{currentStatusText}]</span>");
             sb.Append("</div>");
 
             if (!string.IsNullOrEmpty(job.LastErrorMessage))
@@ -1148,10 +1197,11 @@ internal static class HtmlFragments
 
     private static IEnumerable<TimelineEvent> BuildTimelineEvents(JobRecord job, DateTimeOffset now)
     {
+        var effectiveMax = Helpers.GetEffectiveMaxAttempts(job);
         yield return new TimelineEvent(job.CreatedAt, "Enqueued", "enqueued", $"queue: {HtmlEncode(job.Queue)} · priority: {job.Priority}", null);
         if (job.ProcessingStartedAt.HasValue)
         {
-            yield return new TimelineEvent(job.ProcessingStartedAt.Value, "Processing", "processing", $"attempt 1/{job.MaxAttempts}", null);
+            yield return new TimelineEvent(job.ProcessingStartedAt.Value, "Processing", "processing", $"attempt 1/{effectiveMax}", null);
             if (job.Attempts > 1)
             {
                 for (int i = 2; i <= job.Attempts; i++)
@@ -1162,7 +1212,7 @@ internal static class HtmlFragments
                         yield return new TimelineEvent(job.RetryAt.Value, "Retry scheduled", "scheduled", Helpers.CountdownFriendly(job.RetryAt.Value - now), null);
                         if (job.RetryAt.Value <= now)
                         {
-                            yield return new TimelineEvent(job.RetryAt.Value, "Processing", "processing", $"attempt {i}/{job.MaxAttempts}", null);
+                            yield return new TimelineEvent(job.RetryAt.Value, "Processing", "processing", $"attempt {i}/{effectiveMax}", null);
                         }
                     }
                 }

@@ -500,9 +500,19 @@ internal static class HtmlShell
         }
         .retry-loop-banner { margin-top: 18px; padding: 14px 18px; background: var(--bg-secondary); border: 1px solid var(--warning); border-radius: 10px; display: flex; align-items: flex-start; gap: 14px; position: relative; overflow: hidden; }
         .retry-loop-banner::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--warning); }
+        .retry-loop-banner.exhausted { border-color: rgba(234, 84, 85, 0.4); }
+        .retry-loop-banner.exhausted::before { background: var(--error); }
+        .retry-loop-banner.recovered { border-color: rgba(40, 199, 111, 0.4); }
+        .retry-loop-banner.recovered::before { background: var(--success); }
         """;
 
     private static readonly string CoreVersion = GetAssemblyVersion(typeof(JobRecord).Assembly);
+
+    /// <summary>Gets or sets the default theme applied when no stored theme preference is found.</summary>
+    internal static string DefaultTheme { get; set; } = "blue-theme";
+
+    /// <summary>Gets or sets a value indicating whether playground scenario triggers are rendered.</summary>
+    internal static bool EnablePlayground { get; set; }
 
     /// <summary>Wraps the content in the standard HTML shell.</summary>
     internal static string Wrap(
@@ -520,7 +530,7 @@ internal static class HtmlShell
 
         return $$"""
         <!DOCTYPE html>
-        <html lang="en" data-theme="blue-theme">
+        <html lang="en" data-theme="{{DefaultTheme}}">
         <head>
             <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>{{title}}</title>
             <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&display=swap">
@@ -546,6 +556,7 @@ internal static class HtmlShell
             <div class="header-right">
                 {{ClusterSwitcher(clusters, activeCluster)}}
                 {{HealthBadge(metrics)}}
+                {{ScenariosButton()}}
                 <button type="button" class="header-btn theme-customizer-btn" onclick="nexJobToggleDrawer(true)" title="Theme Customizer">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.563-2.512 5.563-5.563C22 6.5 17.5 2 12 2z"/></svg>
                     <span>Themes</span>
@@ -686,6 +697,8 @@ internal static class HtmlShell
             </div>
         </aside>
 
+        {{ScenariosDrawer()}}
+
         <script>
         (function(){
             var h = document.documentElement;
@@ -714,8 +727,11 @@ internal static class HtmlShell
                 else { d.classList.remove('active'); b.classList.remove('active'); }
             };
 
-            var storedTheme=localStorage.getItem('nexjob-theme')||'blue-theme';
-            nexJobSetTheme(storedTheme, false);
+            {{ScenariosScript(pathPrefix, clusterQuery)}}
+
+            var urlTheme = new URLSearchParams(window.location.search).get('theme');
+            var storedTheme = urlTheme || localStorage.getItem('nexjob-theme') || '{{DefaultTheme}}';
+            nexJobSetTheme(storedTheme, urlTheme ? true : false);
 
             var storedSidebar=localStorage.getItem('nexjob-sidebar');
             if(storedSidebar==='collapsed'){
@@ -909,5 +925,166 @@ internal static class HtmlShell
 
         sb.Append("</select></div>");
         return sb.ToString();
+    }
+
+    private static string ScenariosButton() => EnablePlayground
+        ? """
+          <button type="button" class="header-btn" onclick="nexJobToggleScenarios(true)" title="Playground Scenarios" style="border: 1px solid var(--primary); color: var(--primary); font-weight: 600;">
+              <span style="font-size: 15px;">🎮</span>
+              <span>Scenarios</span>
+          </button>
+          """
+        : string.Empty;
+
+    private static string ScenariosDrawer()
+    {
+        if (!EnablePlayground)
+        {
+            return string.Empty;
+        }
+
+        return $$"""
+        <!-- Scenarios Playground Drawer (Offcanvas) -->
+        <div class="theme-drawer-backdrop" id="scenarios-drawer-backdrop" onclick="nexJobToggleScenarios(false)"></div>
+        <aside class="theme-drawer" id="scenarios-drawer" style="width:360px;">
+            <div class="theme-drawer-header">
+                <div style="display:flex;align-items:center;gap:8px;">
+                    <span style="font-size:20px;">🎮</span>
+                    <div>
+                        <h3 style="margin:0;font-size:15px;font-weight:700;">Live Playground</h3>
+                        <span style="font-size:11px;color:var(--text-tertiary);">Simulate cluster workloads</span>
+                    </div>
+                </div>
+                <button class="theme-drawer-close" onclick="nexJobToggleScenarios(false)">&times;</button>
+            </div>
+            <div class="theme-drawer-body">
+                <div style="padding:10px 14px;background:var(--bg-secondary);border-radius:8px;border:1px solid var(--border);font-size:12px;color:var(--text-secondary);line-height:1.5;">
+                    ⚡ <strong>Interactive Workloads:</strong> Dispatch workloads into the scheduler with one click to observe real-time topology, radial gauges, and throughput bars.
+                </div>
+
+                <div class="scenario-card" style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:8px;">
+                    <div style="display:flex;align-items:center;justify-content:space-between;">
+                        <div style="font-weight:600;font-size:13px;color:var(--text-primary);display:flex;align-items:center;gap:6px;">
+                            <span>🛒</span> Normal Orders (Batch of 5)
+                        </div>
+                        <span class="badge" style="background:var(--success-light);color:var(--success);font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;">Healthy</span>
+                    </div>
+                    <div style="font-size:12px;color:var(--text-secondary);line-height:1.4;">
+                        Enqueues 5 standard order jobs with varying payloads. Demonstrates normal queue throughput and slot utilization.
+                    </div>
+                    <button type="button" class="btn btn-primary" onclick="nexJobTriggerScenario('order_batch', this)" style="padding:7px 12px;font-size:12px;margin-top:4px;">
+                        Trigger 5 Orders
+                    </button>
+                </div>
+
+                <div class="scenario-card" style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:8px;">
+                    <div style="display:flex;align-items:center;justify-content:space-between;">
+                        <div style="font-weight:600;font-size:13px;color:var(--text-primary);display:flex;align-items:center;gap:6px;">
+                            <span>⚡</span> Resilience &amp; Retries
+                        </div>
+                        <span class="badge" style="background:var(--warning-light);color:var(--warning);font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;">Auto-Retry</span>
+                    </div>
+                    <div style="font-size:12px;color:var(--text-secondary);line-height:1.4;">
+                        Enqueues an external API job that fails attempt 1 with HTTP 504 and navigates to the job detail page to inspect the exception and retry backoff.
+                    </div>
+                    <button type="button" class="btn btn-secondary" onclick="nexJobTriggerScenario('flaky', this)" style="padding:7px 12px;font-size:12px;margin-top:4px;border:1px solid var(--warning);color:var(--warning);">
+                        Trigger Resilience Scenario (Inspect Error)
+                    </button>
+                </div>
+
+                <div class="scenario-card" style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:8px;">
+                    <div style="display:flex;align-items:center;justify-content:space-between;">
+                        <div style="font-weight:600;font-size:13px;color:var(--text-primary);display:flex;align-items:center;gap:6px;">
+                            <span>💀</span> Dead-Letter Quarantine
+                        </div>
+                        <span class="badge" style="background:var(--error-light);color:var(--error);font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;">Terminal</span>
+                    </div>
+                    <div style="font-size:12px;color:var(--text-secondary);line-height:1.4;">
+                        Dispatches a job with fraudulent payload that fails immediately and moves to DLQ. Navigates to inspect the terminal stack trace.
+                    </div>
+                    <button type="button" class="btn btn-secondary" onclick="nexJobTriggerScenario('deadletter', this)" style="padding:7px 12px;font-size:12px;margin-top:4px;border:1px solid var(--error);color:var(--error);">
+                        Trigger DLQ Job (Inspect Error)
+                    </button>
+                </div>
+
+                <div class="scenario-card" style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:8px;">
+                    <div style="display:flex;align-items:center;justify-content:space-between;">
+                        <div style="font-weight:600;font-size:13px;color:var(--text-primary);display:flex;align-items:center;gap:6px;">
+                            <span>🚀</span> Traffic Spike (Burst 20)
+                        </div>
+                        <span class="badge" style="background:var(--info-light);color:var(--info);font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;">Concurrency</span>
+                    </div>
+                    <div style="font-size:12px;color:var(--text-secondary);line-height:1.4;">
+                        Enqueues 20 jobs simultaneously to stress worker slot concurrency and trigger visual throughput spikes.
+                    </div>
+                    <button type="button" class="btn btn-secondary" onclick="nexJobTriggerScenario('burst', this)" style="padding:7px 12px;font-size:12px;margin-top:4px;border:1px solid var(--primary);color:var(--primary);">
+                        Trigger 20-Job Spike
+                    </button>
+                </div>
+
+                <div class="scenario-card" style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:8px;">
+                    <div style="display:flex;align-items:center;justify-content:space-between;">
+                        <div style="font-weight:600;font-size:13px;color:var(--text-primary);display:flex;align-items:center;gap:6px;">
+                            <span>⏰</span> Recurring Job Sweep
+                        </div>
+                        <span class="badge" style="background:rgba(115,103,240,0.15);color:var(--secondary);font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;">Cron</span>
+                    </div>
+                    <div style="font-size:12px;color:var(--text-secondary);line-height:1.4;">
+                        Advances scheduled and recurring jobs immediately to execute without waiting for cron schedule.
+                    </div>
+                    <button type="button" class="btn btn-secondary" onclick="nexJobTriggerScenario('sweep', this)" style="padding:7px 12px;font-size:12px;margin-top:4px;border:1px solid var(--secondary);color:var(--secondary);">
+                        Run Recurring Now
+                    </button>
+                </div>
+            </div>
+        </aside>
+        """;
+    }
+
+    private static string ScenariosScript(string pathPrefix, string clusterQuery)
+    {
+        if (!EnablePlayground)
+        {
+            return string.Empty;
+        }
+
+        var separator = string.IsNullOrEmpty(clusterQuery) ? string.Empty : clusterQuery;
+
+        return $$"""
+            window.nexJobToggleScenarios = function(open) {
+                var d=document.getElementById('scenarios-drawer');
+                var b=document.getElementById('scenarios-drawer-backdrop');
+                if(!d||!b) return;
+                if(open){ d.classList.add('active'); b.classList.add('active'); }
+                else { d.classList.remove('active'); b.classList.remove('active'); }
+            };
+
+            window.nexJobTriggerScenario = function(scenario, btn) {
+                var originalText = btn.innerHTML;
+                btn.disabled = true;
+                btn.innerHTML = 'Enqueuing...';
+                fetch('{{pathPrefix}}/api/scenarios/' + encodeURIComponent(scenario) + '{{separator}}', { method: 'POST' })
+                    .then(function(res){ return res.json(); })
+                    .then(function(data){
+                        btn.innerHTML = '✓ ' + (data.message || 'Done!');
+                        setTimeout(function(){
+                            btn.innerHTML = originalText;
+                            btn.disabled = false;
+                            if (data.redirectUrl) {
+                                window.location.href = data.redirectUrl;
+                            } else {
+                                setTimeout(function(){ window.location.reload(); }, 600);
+                            }
+                        }, 800);
+                    })
+                    .catch(function(err){
+                        btn.innerHTML = '⚠ Failed';
+                        setTimeout(function(){
+                            btn.innerHTML = originalText;
+                            btn.disabled = false;
+                        }, 2000);
+                    });
+            };
+        """;
     }
 }

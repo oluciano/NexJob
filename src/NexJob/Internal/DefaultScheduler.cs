@@ -54,7 +54,7 @@ internal sealed class DefaultScheduler : IScheduler
     }
 
     /// <inheritdoc/>
-    public async Task<JobId> EnqueueAsync<TJob, TInput>(
+    public Task<JobId> EnqueueAsync<TJob, TInput>(
         TInput input,
         string? queue = null,
         JobPriority priority = JobPriority.Normal,
@@ -63,19 +63,13 @@ internal sealed class DefaultScheduler : IScheduler
         IReadOnlyList<string>? tags = null,
         TimeSpan? deadlineAfter = null,
         CancellationToken cancellationToken = default)
-        where TJob : IJob<TInput>
-    {
-        var job = JobRecordFactory.Build<TJob, TInput>(input, _options, queue, priority, idempotencyKey,
-            status: JobStatus.Enqueued, scheduledAt: null, tags: tags,
-            expiresAt: deadlineAfter.HasValue ? DateTimeOffset.UtcNow + deadlineAfter.Value : null);
-
-        using var activity = NexJobActivitySource.StartEnqueue(typeof(TJob).FullName ?? typeof(TJob).Name, job.Queue);
-        return await CommitEnqueueAsync(job, duplicatePolicy, typeof(TJob).Name, null, null, cancellationToken)
-            .ConfigureAwait(false);
-    }
+        where TJob : IJob<TInput> =>
+        EnqueueCoreAsync<TJob, TInput>(input, null, queue, priority, idempotencyKey, duplicatePolicy, tags, deadlineAfter, cancellationToken);
 
     /// <inheritdoc/>
-    public async Task<JobId> EnqueueAsync<TJob>(
+    public Task<JobId> EnqueueAsync<TJob, TInput>(
+        TInput input,
+        int maxAttempts,
         string? queue = null,
         JobPriority priority = JobPriority.Normal,
         string? idempotencyKey = null,
@@ -83,61 +77,73 @@ internal sealed class DefaultScheduler : IScheduler
         IReadOnlyList<string>? tags = null,
         TimeSpan? deadlineAfter = null,
         CancellationToken cancellationToken = default)
-        where TJob : IJob
-    {
-        var job = JobRecordFactory.Build<TJob>(_options, queue, priority, idempotencyKey,
-            status: JobStatus.Enqueued, scheduledAt: null, tags: tags,
-            expiresAt: deadlineAfter.HasValue ? DateTimeOffset.UtcNow + deadlineAfter.Value : null);
-
-        using var activity = NexJobActivitySource.StartEnqueue(typeof(TJob).FullName ?? typeof(TJob).Name, job.Queue);
-        return await CommitEnqueueAsync(job, duplicatePolicy, typeof(TJob).Name, null, null, cancellationToken)
-            .ConfigureAwait(false);
-    }
+        where TJob : IJob<TInput> =>
+        EnqueueCoreAsync<TJob, TInput>(input, maxAttempts, queue, priority, idempotencyKey, duplicatePolicy, tags, deadlineAfter, cancellationToken);
 
     /// <inheritdoc/>
-    public async Task<JobId> ScheduleAsync<TJob, TInput>(
+    public Task<JobId> EnqueueAsync<TJob>(
+        string? queue = null,
+        JobPriority priority = JobPriority.Normal,
+        string? idempotencyKey = null,
+        DuplicatePolicy duplicatePolicy = DuplicatePolicy.AllowAfterFailed,
+        IReadOnlyList<string>? tags = null,
+        TimeSpan? deadlineAfter = null,
+        CancellationToken cancellationToken = default)
+        where TJob : IJob =>
+        EnqueueCoreAsync<TJob>(null, queue, priority, idempotencyKey, duplicatePolicy, tags, deadlineAfter, cancellationToken);
+
+    /// <inheritdoc/>
+    public Task<JobId> EnqueueAsync<TJob>(
+        int maxAttempts,
+        string? queue = null,
+        JobPriority priority = JobPriority.Normal,
+        string? idempotencyKey = null,
+        DuplicatePolicy duplicatePolicy = DuplicatePolicy.AllowAfterFailed,
+        IReadOnlyList<string>? tags = null,
+        TimeSpan? deadlineAfter = null,
+        CancellationToken cancellationToken = default)
+        where TJob : IJob =>
+        EnqueueCoreAsync<TJob>(maxAttempts, queue, priority, idempotencyKey, duplicatePolicy, tags, deadlineAfter, cancellationToken);
+
+    /// <inheritdoc/>
+    public Task<JobId> ScheduleAsync<TJob, TInput>(
         TInput input,
         TimeSpan delay,
         string? queue = null,
         string? idempotencyKey = null,
         CancellationToken cancellationToken = default)
-        where TJob : IJob<TInput>
-    {
-        var scheduledAt = DateTimeOffset.UtcNow + delay;
-        var job = JobRecordFactory.Build<TJob, TInput>(input, _options, queue, JobPriority.Normal, idempotencyKey,
-            status: JobStatus.Scheduled, scheduledAt: scheduledAt);
-
-        using var activity = NexJobActivitySource.StartEnqueue(typeof(TJob).FullName ?? typeof(TJob).Name, job.Queue);
-        return await CommitEnqueueAsync(
-            job,
-            DuplicatePolicy.AllowAfterFailed,
-            typeof(TJob).Name,
-            a => a?.SetTag("nexjob.delay_seconds", delay.TotalSeconds),
-            new[] { new KeyValuePair<string, object?>("nexjob.scheduled", "true") },
-            cancellationToken).ConfigureAwait(false);
-    }
+        where TJob : IJob<TInput> =>
+        ScheduleCoreAsync<TJob, TInput>(input, delay, null, queue, idempotencyKey, cancellationToken);
 
     /// <inheritdoc/>
-    public async Task<JobId> ScheduleAsync<TJob>(
+    public Task<JobId> ScheduleAsync<TJob, TInput>(
+        TInput input,
+        TimeSpan delay,
+        int maxAttempts,
+        string? queue = null,
+        string? idempotencyKey = null,
+        CancellationToken cancellationToken = default)
+        where TJob : IJob<TInput> =>
+        ScheduleCoreAsync<TJob, TInput>(input, delay, maxAttempts, queue, idempotencyKey, cancellationToken);
+
+    /// <inheritdoc/>
+    public Task<JobId> ScheduleAsync<TJob>(
         TimeSpan delay,
         string? queue = null,
         string? idempotencyKey = null,
         CancellationToken cancellationToken = default)
-        where TJob : IJob
-    {
-        var scheduledAt = DateTimeOffset.UtcNow + delay;
-        var job = JobRecordFactory.Build<TJob>(_options, queue, JobPriority.Normal, idempotencyKey,
-            status: JobStatus.Scheduled, scheduledAt: scheduledAt);
+        where TJob : IJob =>
+        ScheduleCoreAsync<TJob>(delay, null, queue, idempotencyKey, cancellationToken);
 
-        using var activity = NexJobActivitySource.StartEnqueue(typeof(TJob).FullName ?? typeof(TJob).Name, job.Queue);
-        return await CommitEnqueueAsync(
-            job,
-            DuplicatePolicy.AllowAfterFailed,
-            typeof(TJob).Name,
-            a => a?.SetTag("nexjob.delay_seconds", delay.TotalSeconds),
-            new[] { new KeyValuePair<string, object?>("nexjob.scheduled", "true") },
-            cancellationToken).ConfigureAwait(false);
-    }
+    /// <inheritdoc/>
+    public Task<JobId> ScheduleAsync<TJob>(
+        TimeSpan delay,
+        int maxAttempts,
+        string? queue = null,
+        string? idempotencyKey = null,
+        CancellationToken cancellationToken = default)
+        where TJob : IJob =>
+        ScheduleCoreAsync<TJob>(delay, maxAttempts, queue, idempotencyKey, cancellationToken);
 
     /// <inheritdoc/>
     public async Task<JobId> ScheduleAtAsync<TJob, TInput>(
@@ -326,6 +332,106 @@ internal sealed class DefaultScheduler : IScheduler
         {
             return CronExpression.Parse(cron, CronFormat.Standard);
         }
+    }
+
+    private static void ValidateMaxAttempts(int? maxAttempts)
+    {
+        if (maxAttempts is < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maxAttempts), maxAttempts, "maxAttempts must be at least 1.");
+        }
+    }
+
+    private async Task<JobId> EnqueueCoreAsync<TJob, TInput>(
+        TInput input,
+        int? maxAttempts,
+        string? queue,
+        JobPriority priority,
+        string? idempotencyKey,
+        DuplicatePolicy duplicatePolicy,
+        IReadOnlyList<string>? tags,
+        TimeSpan? deadlineAfter,
+        CancellationToken cancellationToken)
+        where TJob : IJob<TInput>
+    {
+        ValidateMaxAttempts(maxAttempts);
+        var job = JobRecordFactory.Build<TJob, TInput>(input, _options, queue, priority, idempotencyKey,
+            status: JobStatus.Enqueued, scheduledAt: null, tags: tags,
+            expiresAt: deadlineAfter.HasValue ? DateTimeOffset.UtcNow + deadlineAfter.Value : null,
+            maxAttempts: maxAttempts);
+
+        using var activity = NexJobActivitySource.StartEnqueue(typeof(TJob).FullName ?? typeof(TJob).Name, job.Queue);
+        return await CommitEnqueueAsync(job, duplicatePolicy, typeof(TJob).Name, null, null, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private async Task<JobId> EnqueueCoreAsync<TJob>(
+        int? maxAttempts,
+        string? queue,
+        JobPriority priority,
+        string? idempotencyKey,
+        DuplicatePolicy duplicatePolicy,
+        IReadOnlyList<string>? tags,
+        TimeSpan? deadlineAfter,
+        CancellationToken cancellationToken)
+        where TJob : IJob
+    {
+        ValidateMaxAttempts(maxAttempts);
+        var job = JobRecordFactory.Build<TJob>(_options, queue, priority, idempotencyKey,
+            status: JobStatus.Enqueued, scheduledAt: null, tags: tags,
+            expiresAt: deadlineAfter.HasValue ? DateTimeOffset.UtcNow + deadlineAfter.Value : null,
+            maxAttempts: maxAttempts);
+
+        using var activity = NexJobActivitySource.StartEnqueue(typeof(TJob).FullName ?? typeof(TJob).Name, job.Queue);
+        return await CommitEnqueueAsync(job, duplicatePolicy, typeof(TJob).Name, null, null, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private async Task<JobId> ScheduleCoreAsync<TJob, TInput>(
+        TInput input,
+        TimeSpan delay,
+        int? maxAttempts,
+        string? queue,
+        string? idempotencyKey,
+        CancellationToken cancellationToken)
+        where TJob : IJob<TInput>
+    {
+        ValidateMaxAttempts(maxAttempts);
+        var scheduledAt = DateTimeOffset.UtcNow + delay;
+        var job = JobRecordFactory.Build<TJob, TInput>(input, _options, queue, JobPriority.Normal, idempotencyKey,
+            status: JobStatus.Scheduled, scheduledAt: scheduledAt, maxAttempts: maxAttempts);
+
+        using var activity = NexJobActivitySource.StartEnqueue(typeof(TJob).FullName ?? typeof(TJob).Name, job.Queue);
+        return await CommitEnqueueAsync(
+            job,
+            DuplicatePolicy.AllowAfterFailed,
+            typeof(TJob).Name,
+            a => a?.SetTag("nexjob.delay_seconds", delay.TotalSeconds),
+            new[] { new KeyValuePair<string, object?>("nexjob.scheduled", "true") },
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<JobId> ScheduleCoreAsync<TJob>(
+        TimeSpan delay,
+        int? maxAttempts,
+        string? queue,
+        string? idempotencyKey,
+        CancellationToken cancellationToken)
+        where TJob : IJob
+    {
+        ValidateMaxAttempts(maxAttempts);
+        var scheduledAt = DateTimeOffset.UtcNow + delay;
+        var job = JobRecordFactory.Build<TJob>(_options, queue, JobPriority.Normal, idempotencyKey,
+            status: JobStatus.Scheduled, scheduledAt: scheduledAt, maxAttempts: maxAttempts);
+
+        using var activity = NexJobActivitySource.StartEnqueue(typeof(TJob).FullName ?? typeof(TJob).Name, job.Queue);
+        return await CommitEnqueueAsync(
+            job,
+            DuplicatePolicy.AllowAfterFailed,
+            typeof(TJob).Name,
+            a => a?.SetTag("nexjob.delay_seconds", delay.TotalSeconds),
+            new[] { new KeyValuePair<string, object?>("nexjob.scheduled", "true") },
+            cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<JobId> CommitEnqueueAsync(

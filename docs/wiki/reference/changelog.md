@@ -6,14 +6,44 @@ description: "A history of NexJob releases with key features, bug fixes, and bre
 
 NexJob follows [Semantic Versioning](https://semver.org/). Breaking changes increment the major version. This page summarizes every public release from newest to oldest.
 
-## Unreleased
+## v5.9.0
 
 **Added**
+- `[ExecutionTimeout("00:05:00")]` per job type and an opt-in `NexJobOptions.DefaultExecutionTimeout`. At the limit the job's `CancellationToken` is cancelled and the run fails with a `TimeoutException` through the normal retry and dead-letter path. Cancellation is cooperative.
+- A warning and the `nexjob.jobs.cancellation_ignored` counter for a job still running 10 seconds after its timeout cancelled its token.
+- `EnqueueAsync` and `ScheduleAsync` overloads that take `maxAttempts`: call site, then `[Retry]`, then `NexJobOptions.MaxAttempts`.
+- `NexJobOptions.IgnoreRetryAttemptExceptions` and `[Retry(IgnoreRetryAttemptExceptions = ...)]`: a listed exception sends the job straight to dead-letter.
+- `ExecutionWindowSettings.DaysOfWeek`, and each queue's window shown on the dashboard Settings page.
+- Dashboard playground scenarios (`EnablePlayground`, off by default) and a configurable `DefaultTheme`.
+
+**Changed**
+- For a class with `[Retry(n)]`, the stored `MaxAttempts` and `IJobContext.MaxAttempts` now report `n` instead of the global default. `[Retry(0)]` is stored as `1`.
+- `IScheduler` has four new overloads. Code that only calls it is unaffected; a custom implementation must add them. See the [migration guide](migration.md).
+
+**Fixed**
+- Dashboard job detail shows the real retry budget, and the execution timeline reads correctly when attempts are exhausted.
+
+---
+
+## v5.8.0
+
+**Added**
+- `IDeadLetterForwarder`, called for every registered forwarder after the typed `IDeadLetterHandler<TJob>`, with built-in forwarding of exhausted jobs for Kafka (`ExhaustedJobsTopic`) and RabbitMQ (`ExhaustedJobsRoutingKey`).
+- An alerts guide, and new pages for the circuit breaker, execution windows, runtime control and delivery guarantees. The documentation is organised in categories.
 - Dashboard 24-hour hourly throughput chart with 24 evenly spaced bars, dynamic average threshold line, and anomaly drop warnings.
 - Clean server node ID formatting: composite IDs (`{Host}:{PID}:{Guid}`) now display as `{Host}:{PID} #{shortGuid}` in the dashboard, with the full ID in tooltips.
 - In-memory host CPU and RAM radial gauges on the Overview and Servers views (no database persistence).
 
+**Changed**
+- `deadlineAfter` is stored and enforced on every database provider: a job fetched after its deadline is marked `Expired` and does not run.
+- A throttled job that cannot get its slot within about 5 seconds goes back to the queue without using an attempt.
+- A job interrupted by shutdown, or deferred because its type is not available in the process, no longer consumes an attempt on database providers.
+- A job whose attempts are used up because the node running it died now calls its dead-letter handler and forwarders with an `OrphanedJobException`.
+
 **Fixed**
+- Pub/Sub trigger: `EmulatorHost` works, and a message without a job type is no longer redelivered in a tight loop.
+- PostgreSQL: `AddNexJobPostgres(NpgsqlDataSource)` now creates the schema.
+- SQL Server: an already open `SqlConnection` is refused with a clear message.
 - Throughput chart no longer renders a single full-width bar when only one hour has activity.
 - Clipboard copy now writes plain text in all terminal windows and log modals, preventing HTML tag leakage on paste.
 

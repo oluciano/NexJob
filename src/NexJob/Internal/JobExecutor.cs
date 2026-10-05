@@ -372,31 +372,73 @@ internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
                 acquired.Add(attr);
             }
 
-            // Terminal delegate: invokes the actual job
-            JobExecutionDelegate jobInvoker = ct =>
-                ctx.Invoker(ctx.JobInstance, ctx.Input, ct);
+            // The limit starts here, after the throttle slots are held, so waiting for a throttled resource
+            // never counts. It uses its own CTS: the heartbeat token and the shutdown token stay untouched.
+            var timeout = ctx.ExecutionTimeoutAttribute?.Timeout ?? _options.DefaultExecutionTimeout;
+            using var timeoutCts = timeout is null ? null : CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeoutCts?.CancelAfter(timeout!.Value);
+            var jobToken = timeoutCts?.Token ?? cancellationToken;
 
-            if (_filters.Count == 0)
+            // A job that ignores the token keeps its worker slot. Make that visible once per run: the watchdog is armed by
+            // the timeout and stood down as soon as the job returns.
+            using var watchdogCts = timeoutCts is null ? null : new CancellationTokenSource();
+            using var watchdog = timeoutCts is null
+                ? default
+                : timeoutCts.Token.Register(() => _ = WarnIfCancellationIgnoredAsync(job, timeout!.Value, watchdogCts!.Token, cancellationToken));
+
+            // Only the limit fired (shutdown has priority and is handled by the caller): a normal failure, not an interruption.
+            bool TimedOut() => timeoutCts is { IsCancellationRequested: true } && !cancellationToken.IsCancellationRequested;
+            TimeoutException TimeoutFailure(OperationCanceledException ex) => new($"Job execution timed out after {timeout!.Value}.", ex);
+
+            // Terminal delegate: invokes the actual job. Converting here lets filters see the TimeoutException.
+            JobExecutionDelegate jobInvoker = async ct =>
             {
-                // Fast path: no filters registered
-                await jobInvoker(cancellationToken).ConfigureAwait(false);
-            }
-            else
-            {
-                var context = new JobExecutingContext(job, ctx.Scope.ServiceProvider);
-
-                var pipeline = JobFilterPipeline.Build(_filters, context, jobInvoker);
-
                 try
                 {
-                    await pipeline(cancellationToken).ConfigureAwait(false);
-                    context.Succeeded = true;
+                    await ctx.Invoker(ctx.JobInstance, ctx.Input, ct).ConfigureAwait(false);
                 }
-                catch (Exception ex)
+                catch (OperationCanceledException ex) when (TimedOut())
                 {
-                    context.Exception = ex;
-                    context.Succeeded = false;
-                    throw; // re-throw so dispatcher handles retry/dead-letter normally
+                    throw TimeoutFailure(ex);
+                }
+            };
+
+            try
+            {
+                if (_filters.Count == 0)
+                {
+                    // Fast path: no filters registered
+                    await jobInvoker(jobToken).ConfigureAwait(false);
+                }
+                else
+                {
+                    var context = new JobExecutingContext(job, ctx.Scope.ServiceProvider);
+
+                    var pipeline = JobFilterPipeline.Build(_filters, context, jobInvoker);
+
+                    try
+                    {
+                        await pipeline(jobToken).ConfigureAwait(false);
+                        context.Succeeded = true;
+                    }
+                    catch (Exception ex)
+                    {
+                        context.Exception = ex;
+                        context.Succeeded = false;
+                        throw; // re-throw so dispatcher handles retry/dead-letter normally
+                    }
+                }
+            }
+            catch (OperationCanceledException ex) when (TimedOut())
+            {
+                // A filter that observed the token itself, before the job ran.
+                throw TimeoutFailure(ex);
+            }
+            finally
+            {
+                if (watchdogCts is not null)
+                {
+                    await watchdogCts.CancelAsync().ConfigureAwait(false);
                 }
             }
         }
@@ -438,6 +480,37 @@ internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
         }
 
         return retryAt;
+    }
+
+    private async Task WarnIfCancellationIgnoredAsync(JobRecord job, TimeSpan timeout, CancellationToken jobReturned, CancellationToken shutdown)
+    {
+        // The linked timeout token is also cancelled by a shutdown, which is not this job's problem.
+        if (shutdown.IsCancellationRequested)
+        {
+            return;
+        }
+
+        try
+        {
+            await Task.Delay(_options.CancellationGracePeriod, jobReturned).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            return; // the job returned inside the grace period
+        }
+
+        if (shutdown.IsCancellationRequested)
+        {
+            return;
+        }
+
+        _logger.LogWarning(
+            "Job {JobId} ({JobType}) ignored cancellation {Grace}s after its execution timeout of {Timeout} and still holds its worker slot.",
+            job.Id,
+            job.JobType,
+            _options.CancellationGracePeriod.TotalSeconds,
+            timeout);
+        NexJobMetrics.JobsCancellationIgnored.Add(1, new TagList { { "nexjob.job_type", job.JobType } });
     }
 
     private async Task RunHeartbeatAsync(JobId jobId, CancellationToken cancellationToken)

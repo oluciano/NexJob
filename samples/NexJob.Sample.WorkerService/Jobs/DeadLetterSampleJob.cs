@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using NexJob;
 
 namespace NexJob.Sample.WorkerService.Jobs;
 
@@ -10,6 +11,7 @@ public record DeadLetterInput(string TransactionId, string Reason);
 /// <summary>
 /// A job that always fails to demonstrate exhaustion of attempts and dead-lettering.
 /// </summary>
+[Retry(0)]
 public sealed class DeadLetterSampleJob : IJob<DeadLetterInput>
 {
     private readonly ILogger<DeadLetterSampleJob> _logger;

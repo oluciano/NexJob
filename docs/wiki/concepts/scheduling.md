@@ -156,6 +156,8 @@ The table below lists every method on `IScheduler` and its key parameters:
 | `EnqueueAsync<TJob, TInput>(input, ...)` | Run immediately with typed input | `input`, `queue`, `priority`, `idempotencyKey`, `duplicatePolicy`, `tags`, `deadlineAfter`, `ct` |
 | `ScheduleAsync<TJob>(delay, ...)` | Run after a relative delay | `delay` (`TimeSpan`), `queue`, `idempotencyKey`, `ct` |
 | `ScheduleAsync<TJob, TInput>(input, delay, ...)` | Run with input after a delay | `input`, `delay` (`TimeSpan`), `queue`, `idempotencyKey`, `ct` |
+| `EnqueueAsync<TJob>(maxAttempts, ...)` / `EnqueueAsync<TJob, TInput>(input, maxAttempts, ...)` | Run immediately with its own [attempt limit](retries-and-dead-letter.md#per-job-attempt-limit) | `maxAttempts` (at least `1`), then the same options as above |
+| `ScheduleAsync<TJob>(delay, maxAttempts, ...)` / `ScheduleAsync<TJob, TInput>(input, delay, maxAttempts, ...)` | Run after a delay with its own attempt limit | `maxAttempts` (at least `1`), `delay`, `queue`, `idempotencyKey`, `ct` |
 | `ScheduleAtAsync<TJob>(runAt, ...)` | Run at a fixed UTC time | `runAt` (`DateTimeOffset`), `queue`, `idempotencyKey`, `ct` |
 | `ScheduleAtAsync<TJob, TInput>(input, runAt, ...)` | Run with input at a fixed UTC time | `input`, `runAt` (`DateTimeOffset`), `queue`, `idempotencyKey`, `ct` |
 | `RecurringAsync<TJob>(id, cron, ...)` | Create or update a cron schedule | `recurringJobId`, `cron`, `timeZone`, `queue`, `concurrencyPolicy`, `ct` |

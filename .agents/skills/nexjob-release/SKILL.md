@@ -246,6 +246,17 @@ Since release PRs are merged into `main` using **Merge Commit (`--no-ff`)** (the
    git log --oneline develop..origin/main   # must be empty (0 commits)
    git log --oneline origin/main..develop   # shows only new work since release
    ```
+3. **Live Demo Deployment (Fly.io Playground):**
+   When the release includes changes to `NexJob.Dashboard`, `NexJob.Dashboard.Standalone`, `NexJob.Sample.WorkerService`, or for any official minor/major release:
+   - Deploy the released code from `main` to Fly.io:
+     ```bash
+     fly deploy
+     ```
+   - Verify that the live playground is healthy and reflects the newly released version:
+     ```bash
+     curl -sI https://nexjob-playground.fly.dev/dashboard | head -n 1
+     ```
+     Confirm HTTP 200 OK.
 
 
 ---

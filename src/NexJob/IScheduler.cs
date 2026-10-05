@@ -117,6 +117,67 @@ public interface IScheduler
         where TJob : IJob<TInput>;
 
     /// <summary>
+    /// Immediately enqueues a no-input job with its own attempt limit.
+    /// </summary>
+    /// <typeparam name="TJob">The <see cref="IJob"/> implementation to execute.</typeparam>
+    /// <param name="maxAttempts">
+    /// Maximum number of executions for this job instance, including the first run. Takes precedence over the
+    /// <see cref="RetryAttribute"/> on the job class and over <see cref="NexJobOptions.MaxAttempts"/>.
+    /// Must be at least <c>1</c>; <c>1</c> dead-letters on the first failure.
+    /// </param>
+    /// <param name="queue">Target queue name. Uses the default queue when <see langword="null"/>.</param>
+    /// <param name="priority">Execution priority within the queue.</param>
+    /// <param name="idempotencyKey">Optional deduplication key.</param>
+    /// <param name="duplicatePolicy">Behaviour when a job with the same idempotency key already exists.</param>
+    /// <param name="tags">Optional tags attached to the job.</param>
+    /// <param name="deadlineAfter">Optional time after which the job expires if it has not started.</param>
+    /// <param name="cancellationToken">Token to cancel the operation.</param>
+    /// <returns>The identifier of the enqueued (or existing, if idempotent) job.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="maxAttempts"/> is less than <c>1</c>.</exception>
+    Task<JobId> EnqueueAsync<TJob>(
+        int maxAttempts,
+        string? queue = null,
+        JobPriority priority = JobPriority.Normal,
+        string? idempotencyKey = null,
+        DuplicatePolicy duplicatePolicy = DuplicatePolicy.AllowAfterFailed,
+        IReadOnlyList<string>? tags = null,
+        TimeSpan? deadlineAfter = null,
+        CancellationToken cancellationToken = default)
+        where TJob : IJob;
+
+    /// <summary>
+    /// Immediately enqueues a job with its own attempt limit.
+    /// </summary>
+    /// <typeparam name="TJob">The <see cref="IJob{TInput}"/> implementation to execute.</typeparam>
+    /// <typeparam name="TInput">The input type accepted by <typeparamref name="TJob"/>.</typeparam>
+    /// <param name="input">The input value to pass to the job.</param>
+    /// <param name="maxAttempts">
+    /// Maximum number of executions for this job instance, including the first run. Takes precedence over the
+    /// <see cref="RetryAttribute"/> on the job class and over <see cref="NexJobOptions.MaxAttempts"/>.
+    /// Must be at least <c>1</c>; <c>1</c> dead-letters on the first failure.
+    /// </param>
+    /// <param name="queue">Target queue name. Uses the default queue when <see langword="null"/>.</param>
+    /// <param name="priority">Execution priority within the queue.</param>
+    /// <param name="idempotencyKey">Optional deduplication key.</param>
+    /// <param name="duplicatePolicy">Behaviour when a job with the same idempotency key already exists.</param>
+    /// <param name="tags">Optional tags attached to the job.</param>
+    /// <param name="deadlineAfter">Optional time after which the job expires if it has not started.</param>
+    /// <param name="cancellationToken">Token to cancel the operation.</param>
+    /// <returns>The identifier of the enqueued (or existing, if idempotent) job.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="maxAttempts"/> is less than <c>1</c>.</exception>
+    Task<JobId> EnqueueAsync<TJob, TInput>(
+        TInput input,
+        int maxAttempts,
+        string? queue = null,
+        JobPriority priority = JobPriority.Normal,
+        string? idempotencyKey = null,
+        DuplicatePolicy duplicatePolicy = DuplicatePolicy.AllowAfterFailed,
+        IReadOnlyList<string>? tags = null,
+        TimeSpan? deadlineAfter = null,
+        CancellationToken cancellationToken = default)
+        where TJob : IJob<TInput>;
+
+    /// <summary>
     /// Schedules a no-input job to execute after the specified delay.
     /// </summary>
     /// <typeparam name="TJob">The <see cref="IJob"/> implementation to execute.</typeparam>
@@ -146,6 +207,55 @@ public interface IScheduler
     Task<JobId> ScheduleAsync<TJob, TInput>(
         TInput input,
         TimeSpan delay,
+        string? queue = null,
+        string? idempotencyKey = null,
+        CancellationToken cancellationToken = default)
+        where TJob : IJob<TInput>;
+
+    /// <summary>
+    /// Schedules a no-input job to execute after the specified delay, with its own attempt limit.
+    /// </summary>
+    /// <typeparam name="TJob">The <see cref="IJob"/> implementation to execute.</typeparam>
+    /// <param name="delay">How long to wait before the job becomes eligible for execution.</param>
+    /// <param name="maxAttempts">
+    /// Maximum number of executions for this job instance, including the first run. Takes precedence over the
+    /// <see cref="RetryAttribute"/> on the job class and over <see cref="NexJobOptions.MaxAttempts"/>.
+    /// Must be at least <c>1</c>; <c>1</c> dead-letters on the first failure.
+    /// </param>
+    /// <param name="queue">Target queue name. Uses the default queue when <see langword="null"/>.</param>
+    /// <param name="idempotencyKey">Optional deduplication key.</param>
+    /// <param name="cancellationToken">Token to cancel the operation.</param>
+    /// <returns>The identifier of the scheduled job.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="maxAttempts"/> is less than <c>1</c>.</exception>
+    Task<JobId> ScheduleAsync<TJob>(
+        TimeSpan delay,
+        int maxAttempts,
+        string? queue = null,
+        string? idempotencyKey = null,
+        CancellationToken cancellationToken = default)
+        where TJob : IJob;
+
+    /// <summary>
+    /// Schedules a job to execute after the specified delay, with its own attempt limit.
+    /// </summary>
+    /// <typeparam name="TJob">The <see cref="IJob{TInput}"/> implementation to execute.</typeparam>
+    /// <typeparam name="TInput">The input type accepted by <typeparamref name="TJob"/>.</typeparam>
+    /// <param name="input">The input value to pass to the job.</param>
+    /// <param name="delay">How long to wait before the job becomes eligible for execution.</param>
+    /// <param name="maxAttempts">
+    /// Maximum number of executions for this job instance, including the first run. Takes precedence over the
+    /// <see cref="RetryAttribute"/> on the job class and over <see cref="NexJobOptions.MaxAttempts"/>.
+    /// Must be at least <c>1</c>; <c>1</c> dead-letters on the first failure.
+    /// </param>
+    /// <param name="queue">Target queue name. Uses the default queue when <see langword="null"/>.</param>
+    /// <param name="idempotencyKey">Optional deduplication key.</param>
+    /// <param name="cancellationToken">Token to cancel the operation.</param>
+    /// <returns>The identifier of the scheduled job.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="maxAttempts"/> is less than <c>1</c>.</exception>
+    Task<JobId> ScheduleAsync<TJob, TInput>(
+        TInput input,
+        TimeSpan delay,
+        int maxAttempts,
         string? queue = null,
         string? idempotencyKey = null,
         CancellationToken cancellationToken = default)

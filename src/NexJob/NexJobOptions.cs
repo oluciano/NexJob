@@ -8,6 +8,9 @@ namespace NexJob;
 /// </summary>
 public sealed class NexJobOptions
 {
+    private TimeSpan? _defaultExecutionTimeout;
+    private IReadOnlyList<Type> _ignoreRetryAttemptExceptions = [];
+
     /// <summary>
     /// Maximum number of jobs that can execute concurrently on this host.
     /// Defaults to <c>10</c>.
@@ -88,6 +91,41 @@ public sealed class NexJobOptions
     /// Defaults to 30 seconds.
     /// </summary>
     public TimeSpan ShutdownTimeout { get; set; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// Maximum time a job may run when its type has no <see cref="ExecutionTimeoutAttribute"/>.
+    /// <see langword="null"/> (the default) means unbounded. Cancellation is cooperative: a job that ignores its
+    /// <see cref="CancellationToken"/> keeps its worker slot. Must be greater than zero when set.
+    /// </summary>
+    public TimeSpan? DefaultExecutionTimeout
+    {
+        get => _defaultExecutionTimeout;
+        set
+        {
+            if (value is { } timeout)
+            {
+                ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(timeout, TimeSpan.Zero);
+            }
+
+            _defaultExecutionTimeout = value;
+        }
+    }
+
+    /// <summary>
+    /// Exception types that no job should retry, for example <see cref="ArgumentException"/>: the input will not
+    /// change, so another attempt only wastes a worker. A run that fails with one of them (or a derived type) goes
+    /// straight to <c>Failed</c> and the dead-letter handler runs. Combined with
+    /// <see cref="RetryAttribute.IgnoreRetryAttemptExceptions"/> per job type. Empty by default.
+    /// </summary>
+    public IReadOnlyList<Type> IgnoreRetryAttemptExceptions
+    {
+        get => _ignoreRetryAttemptExceptions;
+        set
+        {
+            ArgumentNullException.ThrowIfNull(value);
+            _ignoreRetryAttemptExceptions = Internal.ExceptionTypeList.Validate(value, nameof(value))!;
+        }
+    }
 
     /// <summary>
     /// Maximum time allowed for storage health check probes to respond before reporting
@@ -198,6 +236,12 @@ public sealed class NexJobOptions
     /// cannot occupy every worker. Internal on purpose; tests shorten it.
     /// </summary>
     internal TimeSpan ThrottleMaxWait { get; set; } = TimeSpan.FromSeconds(5);
+
+    /// <summary>
+    /// How long a job may keep running after its execution timeout cancelled its token before a warning is logged
+    /// and counted. Internal on purpose; tests shorten it.
+    /// </summary>
+    internal TimeSpan CancellationGracePeriod { get; set; } = TimeSpan.FromSeconds(10);
 
     /// <summary>
     /// Set by <see cref="ApplySettings"/> when <c>appsettings.json</c> carries a <c>DefaultQueue</c> other than

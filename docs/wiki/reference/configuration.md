@@ -61,6 +61,16 @@ builder.Services.AddNexJob(options =>
     // Keep HostOptions.ShutdownTimeout above this value.
     options.ShutdownTimeout = TimeSpan.FromSeconds(30); // Default: 30s
 
+    // ── Execution timeout ────────────────────────────────────────────────────
+    // Longest a job may run when its type has no [ExecutionTimeout]. null = unbounded.
+    // Cancellation is cooperative: a job that ignores its CancellationToken keeps its worker slot.
+    options.DefaultExecutionTimeout = TimeSpan.FromMinutes(30); // Default: null (code only, not read from appsettings)
+
+    // ── Retry ────────────────────────────────────────────────────────────────
+    // Exception types no job should retry; the job goes straight to Failed. Combined with
+    // [Retry(IgnoreRetryAttemptExceptions = ...)] per job type. Code only, not read from appsettings.
+    options.IgnoreRetryAttemptExceptions = [typeof(ArgumentException), typeof(JsonException)]; // Default: empty
+
     // ── Queues ───────────────────────────────────────────────────────────────
     // Ordered list of queues this host polls. Queues drain in this order.
     options.Queues = new[] { "default", "emails", "reports" }; // Default: ["default"]
@@ -269,8 +279,9 @@ builder.Services.AddNexJob(options =>
 | `StartTime` | `TimeOnly` | Start of the processing window |
 | `EndTime` | `TimeOnly` | End of the processing window |
 | `TimeZone` | `string` | IANA time zone ID. Defaults to `"UTC"` |
+| `DaysOfWeek` | `DayOfWeek[]?` | Days on which the window opens, read from the local time in `TimeZone`. `null` or empty (the default) means every day |
 
-Windows can cross midnight: set `StartTime` later than `EndTime` (for example `22:00` to `06:00`).
+Windows can cross midnight: set `StartTime` later than `EndTime` (for example `22:00` to `06:00`). An overnight window belongs to the day it starts. See [Execution Windows](../guides/execution-windows.md#only-on-some-days).
 
 ## Runtime Settings
 
