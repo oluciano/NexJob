@@ -111,6 +111,14 @@ public sealed class NexJobOptions
     }
 
     /// <summary>
+    /// Exception types that no job should retry, for example <see cref="ArgumentException"/>: the input will not
+    /// change, so another attempt only wastes a worker. A run that fails with one of them (or a derived type) goes
+    /// straight to <c>Failed</c> and the dead-letter handler runs. Combined with
+    /// <see cref="RetryAttribute.IgnoreRetryAttemptExceptions"/> per job type. Empty by default.
+    /// </summary>
+    public IReadOnlyList<Type> IgnoreRetryAttemptExceptions { get; set; } = [];
+
+    /// <summary>
     /// Maximum time allowed for storage health check probes to respond before reporting
     /// <see cref="Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Unhealthy"/>.
     /// Defaults to <c>5 seconds</c>.

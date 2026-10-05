@@ -1,4 +1,5 @@
 using System.Reflection;
+using Microsoft.Extensions.Logging;
 
 namespace NexJob.Internal;
 
@@ -13,9 +14,11 @@ internal sealed class DefaultJobRetryPolicy : IJobRetryPolicy
     /// Initializes a new instance of the <see cref="DefaultJobRetryPolicy"/> class.
     /// </summary>
     /// <param name="options">The NexJob options.</param>
-    public DefaultJobRetryPolicy(NexJobOptions options)
+    /// <param name="logger">Optional logger.</param>
+    public DefaultJobRetryPolicy(NexJobOptions options, ILogger<DefaultJobRetryPolicy>? logger = null)
     {
         _options = options;
+        _ = logger;
     }
 
     /// <inheritdoc/>
