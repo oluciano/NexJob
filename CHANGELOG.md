@@ -6,6 +6,8 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [5.9.0] - 2026-10-05
+
 ### Added
 
 - **Core — Execution window days** (issue #350): `ExecutionWindowSettings.DaysOfWeek` limits a queue's window to certain days. The default (`null` or empty) is every day, so existing windows are unchanged. The day is read from the local time in the configured time zone, and an overnight window belongs to the day it starts. `StartTime` equal to `EndTime` stays a 24-hour window, now documented. The dashboard shows each queue's window next to its name.
