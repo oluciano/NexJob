@@ -152,7 +152,7 @@ internal sealed class RecurringJobSchedulerService : BackgroundService
                     Priority = JobPriority.Normal,
                     Status = JobStatus.Enqueued,
                     CreatedAt = DateTimeOffset.UtcNow,
-                    MaxAttempts = _options.MaxAttempts,
+                    MaxAttempts = JobRecordFactory.ResolveMaxAttempts(JobTypeResolver.ResolveJobType(current.JobType), null, _options),
                     RecurringJobId = current.RecurringJobId,
                     // SkipIfRunning: idempotency key blocks a second instance while
                     // the first is Enqueued or Processing.

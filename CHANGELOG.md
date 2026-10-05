@@ -8,6 +8,8 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Retry — Non-retriable exceptions** (issue #353): `NexJobOptions.IgnoreRetryAttemptExceptions` and `[Retry(IgnoreRetryAttemptExceptions = ...)]` list exception types that must not be retried. A match (derived types included, a single wrapped cause unwrapped) sends the job straight to `Failed` and calls the dead-letter handler; the attempt counts and an information log says why. Types that do not derive from `Exception` are rejected.
+- **Core — Per-job attempt limit** (issue #352): `EnqueueAsync` and `ScheduleAsync` overloads that take `maxAttempts` (at least `1`, otherwise `ArgumentOutOfRangeException`). Precedence is the call-site value, then `[Retry(n)]`, then `NexJobOptions.MaxAttempts`. The resolved limit is stored on the job, so the dashboard shows it. New interface members, so custom `IScheduler` implementations must add the four overloads. No migration.
 - **Core — Execution timeout** (issue #354): `[ExecutionTimeout("00:05:00")]` and opt-in `NexJobOptions.DefaultExecutionTimeout` (`null` by default). At the limit the job token is cancelled and the run fails with a `TimeoutException` through the normal retry/dead-letter path. Cancellation is cooperative: a job that ignores its token keeps its worker slot.
 
 - **Dashboard — Interactive Playground Scenarios & Configurable Default Theme**:

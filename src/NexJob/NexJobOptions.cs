@@ -9,6 +9,7 @@ namespace NexJob;
 public sealed class NexJobOptions
 {
     private TimeSpan? _defaultExecutionTimeout;
+    private IReadOnlyList<Type> _ignoreRetryAttemptExceptions = [];
 
     /// <summary>
     /// Maximum number of jobs that can execute concurrently on this host.
@@ -107,6 +108,22 @@ public sealed class NexJobOptions
             }
 
             _defaultExecutionTimeout = value;
+        }
+    }
+
+    /// <summary>
+    /// Exception types that no job should retry, for example <see cref="ArgumentException"/>: the input will not
+    /// change, so another attempt only wastes a worker. A run that fails with one of them (or a derived type) goes
+    /// straight to <c>Failed</c> and the dead-letter handler runs. Combined with
+    /// <see cref="RetryAttribute.IgnoreRetryAttemptExceptions"/> per job type. Empty by default.
+    /// </summary>
+    public IReadOnlyList<Type> IgnoreRetryAttemptExceptions
+    {
+        get => _ignoreRetryAttemptExceptions;
+        set
+        {
+            ArgumentNullException.ThrowIfNull(value);
+            _ignoreRetryAttemptExceptions = Internal.ExceptionTypeList.Validate(value, nameof(value))!;
         }
     }
 
