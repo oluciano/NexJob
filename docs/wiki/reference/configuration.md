@@ -279,8 +279,9 @@ builder.Services.AddNexJob(options =>
 | `StartTime` | `TimeOnly` | Start of the processing window |
 | `EndTime` | `TimeOnly` | End of the processing window |
 | `TimeZone` | `string` | IANA time zone ID. Defaults to `"UTC"` |
+| `DaysOfWeek` | `DayOfWeek[]?` | Days on which the window opens, read from the local time in `TimeZone`. `null` or empty (the default) means every day |
 
-Windows can cross midnight: set `StartTime` later than `EndTime` (for example `22:00` to `06:00`).
+Windows can cross midnight: set `StartTime` later than `EndTime` (for example `22:00` to `06:00`). An overnight window belongs to the day it starts. See [Execution Windows](../guides/execution-windows.md#only-on-some-days).
 
 ## Runtime Settings
 

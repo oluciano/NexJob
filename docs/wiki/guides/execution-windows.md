@@ -27,6 +27,29 @@ builder.Services.AddNexJob(options =>
     `ExecutionWindow` only controls when a queue's workers fetch jobs. Throttling with `[Throttle]` and circuit breakers apply independently within those windows.
 
 
+## Only on Some Days
+
+Add `DaysOfWeek` to limit the window to certain days, for example partner syncs and reports on business days:
+
+```csharp
+queue.ExecutionWindow = new ExecutionWindowSettings
+{
+    StartTime  = new TimeOnly(8, 0),
+    EndTime    = new TimeOnly(18, 0),
+    TimeZone   = "America/Sao_Paulo",
+    DaysOfWeek = [DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday, DayOfWeek.Thursday, DayOfWeek.Friday],
+};
+```
+
+It is also available in `appsettings.json`, by day name: `"DaysOfWeek": ["Monday", "Friday"]`.
+
+- **The default is every day.** `null` or an empty array means no day restriction, so existing windows behave as before. Duplicates are ignored.
+- **The day is the local day** in `TimeZone`, not the UTC day. Sunday 23:30 UTC is still Sunday evening in New York.
+- **An overnight window belongs to the day it starts.** With `22:00`–`06:00` and only Friday selected, Saturday 03:00 is inside the window and Saturday 23:00 is not.
+- **`StartTime` equal to `EndTime` is a 24-hour window.** With `DaysOfWeek` it means "any hour, only on these days", for example `00:00`–`00:00` on Monday to Friday.
+
+The dashboard shows the window under the queue name (`08:00–18:00 America/Sao_Paulo · Mon–Fri`), so an `Outside Window` badge on a weekend is easy to explain. Calendar exceptions such as holidays are not supported.
+
 ## When to use it
 
 - Batch imports, reports or clean-ups that should not compete with daytime traffic.
