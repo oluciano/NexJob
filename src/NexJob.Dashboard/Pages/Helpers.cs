@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Reflection;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Caching.Memory;
 using NexJob.Storage;
@@ -39,8 +40,13 @@ internal static class Helpers
         return parts[^1];
     }
 
-    internal static Type? ResolveType(string typeName)
+    internal static Type? ResolveType(string? typeName)
     {
+        if (string.IsNullOrWhiteSpace(typeName))
+        {
+            return null;
+        }
+
         var type = Type.GetType(typeName, throwOnError: false);
         if (type is not null)
         {
@@ -59,6 +65,18 @@ internal static class Helpers
         }
 
         return null;
+    }
+
+    internal static int GetEffectiveMaxAttempts(JobRecord job)
+    {
+        if (job is null)
+        {
+            return 1;
+        }
+
+        var jobType = ResolveType(job.JobType);
+        var retryAttr = jobType?.GetCustomAttribute<RetryAttribute>(inherit: true);
+        return retryAttr?.Attempts ?? job.MaxAttempts;
     }
 
     internal static bool IsParameterlessJob(string typeName)

@@ -124,8 +124,9 @@ internal sealed class JobDetailPage : IComponent
         };
 
         // Retry Budget Segment Visualizer
+        var effectiveMax = Helpers.GetEffectiveMaxAttempts(job);
         var budgetSegments = new System.Text.StringBuilder();
-        var maxDots = Math.Min(job.MaxAttempts, 12);
+        var maxDots = Math.Min(effectiveMax, 12);
         for (int i = 1; i <= maxDots; i++)
         {
             string segColor;
@@ -150,10 +151,10 @@ internal sealed class JobDetailPage : IComponent
             budgetSegments.Append($"<span style=\"flex:1;height:6px;background:{segColor};border-radius:3px;transition:var(--transition)\" title=\"Attempt {i}\"></span>");
         }
 
-        var remainingAttempts = Math.Max(0, job.MaxAttempts - job.Attempts);
+        var remainingAttempts = Math.Max(0, effectiveMax - job.Attempts);
         var attemptSuffix = remainingAttempts == 1 ? string.Empty : "s";
         string budgetLabel;
-        if (job.Status == JobStatus.Failed && job.Attempts >= job.MaxAttempts)
+        if (job.Status == JobStatus.Failed && job.Attempts >= effectiveMax)
         {
             budgetLabel = "<span style=\"color:var(--error);font-weight:600\">Exhausted (Moved to dead-letter)</span>";
         }
@@ -303,7 +304,7 @@ internal sealed class JobDetailPage : IComponent
             $"</div>" +
             $"<div style=\"display:flex;gap:4px;align-items:center;margin-bottom:6px\">{budgetSegments}</div>" +
             $"<div style=\"display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--text-secondary)\">" +
-            $"<span>Attempt <strong style=\"color:var(--text-primary)\">{job.Attempts}</strong> of {job.MaxAttempts}</span>" +
+            $"<span>Attempt <strong style=\"color:var(--text-primary)\">{job.Attempts}</strong> of {effectiveMax}</span>" +
             $"{budgetLabel}" +
             $"</div>" +
             $"</div>" +
