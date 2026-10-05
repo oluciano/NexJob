@@ -26,7 +26,13 @@ internal sealed class DefaultJobRetryPolicy : IJobRetryPolicy
         var retryAttr = job.JobType is not null
             ? Type.GetType(job.JobType)?.GetCustomAttribute<RetryAttribute>(inherit: true)
             : null;
-        var effectiveMaxAttempts = retryAttr?.Attempts ?? job.MaxAttempts;
+
+        // A stored limit that differs from the global default is an explicit per-job choice and wins. A stored value
+        // equal to the default may be the default itself (legacy, recurring, dashboard or trigger created jobs), so
+        // the class attribute applies; an explicit value equal to the default cannot be told apart from it.
+        var effectiveMaxAttempts = job.MaxAttempts != _options.MaxAttempts
+            ? job.MaxAttempts
+            : retryAttr?.Attempts ?? job.MaxAttempts;
 
         if (job.Attempts < effectiveMaxAttempts)
         {

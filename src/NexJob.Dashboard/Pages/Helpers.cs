@@ -67,11 +67,20 @@ internal static class Helpers
         return null;
     }
 
+    private static readonly int FrameworkDefaultMaxAttempts = new NexJobOptions().MaxAttempts;
+
     internal static int GetEffectiveMaxAttempts(JobRecord job)
     {
         if (job is null)
         {
             return 1;
+        }
+
+        // Same rule as the retry policy. The dashboard does not see the host's NexJobOptions, so the framework default
+        // stands in for the global default: a stored limit different from it is a per-job choice and wins.
+        if (job.MaxAttempts != FrameworkDefaultMaxAttempts)
+        {
+            return job.MaxAttempts;
         }
 
         var jobType = ResolveType(job.JobType);
