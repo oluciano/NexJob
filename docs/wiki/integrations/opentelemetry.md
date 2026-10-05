@@ -108,6 +108,7 @@ NexJob exposes the following metrics under the `"NexJob"` meter:
 | `nexjob.jobs.succeeded` | Counter | Total jobs that completed successfully. Tagged with `nexjob.job_type`. |
 | `nexjob.jobs.failed` | Counter | Failed execution attempts — one increment per failed attempt, including attempts that will be retried. Tagged with `nexjob.job_type`. |
 | `nexjob.jobs.expired` | Counter | Total jobs that exceeded their deadline and were expired. Tagged with `nexjob.job_type`. |
+| `nexjob.jobs.cancellation_ignored` | Counter | Jobs still running 10 seconds after their execution timeout cancelled their token, so they still hold a worker slot. Tagged with `nexjob.job_type`. |
 | `nexjob.job.duration` | Histogram | Job execution time in milliseconds. Tagged with `nexjob.job_type` and `nexjob.status`. |
 | `nexjob.queue.depth` | ObservableGauge | Current number of enqueued jobs waiting per queue. Tagged with `nexjob.queue`. |
 | `nexjob.workers.active` | ObservableGauge | Number of workers currently executing jobs on this node. |

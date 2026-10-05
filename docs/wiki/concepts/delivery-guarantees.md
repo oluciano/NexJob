@@ -51,6 +51,7 @@ NexJob does **not** promise exactly-once execution, and it does not promise orde
 | A job was recovered after a crash | Dashboard Job Detail: `Attempts` higher than expected, and a `Warning` log from the orphan watcher when it was the last attempt |
 | A job expired | Dashboard **Failed / DLQ**, _Expired_ tab; counter `nexjob.jobs.expired` |
 | A job is waiting | Dashboard **Queues**: paused badge, `NO WORKERS` badge, circuit state |
+| A job ignores its execution timeout | A warning log, `ignored cancellation ... still holds its worker slot`; counter `nexjob.jobs.cancellation_ignored` |
 | A throttled job went back to the queue | An information log: `got no slot for throttled resource ... Returning it to the queue`; counter `nexjob.jobs.throttle_deferred` |
 
 ## What you should do about it
