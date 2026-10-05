@@ -22,6 +22,7 @@ NexJob does **not** promise exactly-once execution, and it does not promise orde
 | --- | --- | --- | --- |
 | The job throws and has attempts left | Rescheduled at `RetryAt`, per the [retry policy](../concepts/retries-and-dead-letter.md) | Used | No |
 | The job throws on its last attempt | `Failed` | Used | **Called** with the exception |
+| The job throws an exception listed in [`IgnoreRetryAttemptExceptions`](../concepts/retries-and-dead-letter.md#failures-that-should-not-be-retried) (v5.9.0) | `Failed` at once, even with attempts left | Used | **Called** with the exception |
 | It runs longer than its [`[ExecutionTimeout]`](../concepts/retries-and-dead-letter.md#execution-timeout) (v5.9.0) | Its token is cancelled and the run fails with a `TimeoutException`; then rescheduled like any failure. A job that ignores its token keeps its worker slot | Used | **Called** on the last attempt |
 | The node running it dies (crash, kill, lost machine) | Stays `Processing` until its heartbeat is older than `HeartbeatTimeout` (default 5 minutes; the check runs every `HeartbeatTimeout`, so recovery takes between 5 and about 10 minutes), then goes back to `Enqueued` | **Used**: the attempt that was running may have partly run | No |
 | The node dies on the job's last attempt | `Failed` | Used | **Called** with an `OrphanedJobException` (v5.8.0) |

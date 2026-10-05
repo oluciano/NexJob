@@ -66,6 +66,11 @@ builder.Services.AddNexJob(options =>
     // Cancellation is cooperative: a job that ignores its CancellationToken keeps its worker slot.
     options.DefaultExecutionTimeout = TimeSpan.FromMinutes(30); // Default: null (code only, not read from appsettings)
 
+    // ── Retry ────────────────────────────────────────────────────────────────
+    // Exception types no job should retry; the job goes straight to Failed. Combined with
+    // [Retry(IgnoreRetryAttemptExceptions = ...)] per job type. Code only, not read from appsettings.
+    options.IgnoreRetryAttemptExceptions = [typeof(ArgumentException), typeof(JsonException)]; // Default: empty
+
     // ── Queues ───────────────────────────────────────────────────────────────
     // Ordered list of queues this host polls. Queues drain in this order.
     options.Queues = new[] { "default", "emails", "reports" }; // Default: ["default"]

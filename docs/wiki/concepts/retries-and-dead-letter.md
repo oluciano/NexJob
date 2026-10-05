@@ -47,6 +47,7 @@ public sealed class ProcessPaymentJob : IJob<PaymentInput>
 | `InitialDelay` | `null` | Delay before the first retry as a `TimeSpan` string, e.g. `"00:00:30"`. When omitted, the global `RetryDelayFactory` is used and `Multiplier`/`MaxDelay` are ignored. |
 | `Multiplier` | `2.0` | Exponential backoff multiplier. Delay = `InitialDelay × Multiplier^(retry − 1)`. |
 | `MaxDelay` | No cap | Upper bound on any single delay as a `TimeSpan` string, e.g. `"01:00:00"`. |
+| `IgnoreRetryAttemptExceptions` | `null` | Exception types that must not be retried for this job. See [Failures that should not be retried](#failures-that-should-not-be-retried). |
 
 A random ±10% jitter is applied to every delay computed from `InitialDelay` to spread retry spikes across workers.
 
@@ -95,6 +96,28 @@ The limit for a job is, in order: the `maxAttempts` you passed, then `[Retry(n)]
 
 !!! note "One edge to know"
     A stored limit equal to the global `options.MaxAttempts` is indistinguishable from "not set", so on a class with `[Retry(n)]` the attribute applies. Passing exactly the global default as `maxAttempts` to such a job gives you `n`, not the default.
+
+## Failures that should not be retried
+
+Some failures cannot be fixed by trying again: invalid input, a business rule violation, a payload that does not deserialize. Retrying them only occupies workers and delays the alert. List them and the job goes straight to `Failed`, with the dead-letter handler and forwarders called, without waiting for the remaining attempts:
+
+```csharp
+builder.Services.AddNexJob(options =>
+{
+    // for every job
+    options.IgnoreRetryAttemptExceptions = [typeof(ArgumentException), typeof(JsonException)];
+});
+
+// for one job type; combined with the global list
+[Retry(5, IgnoreRetryAttemptExceptions = [typeof(InvalidPixKeyException)])]
+public sealed class ProcessPixJob : IJob<PixInput> { ... }
+```
+
+- A listed type also matches the types derived from it, so `ArgumentException` covers `ArgumentNullException`. A base type of a listed type does not match.
+- A listed exception wrapped by reflection (`TargetInvocationException`) or by a single-element `AggregateException` is unwrapped. An aggregate with several exceptions is not.
+- This is not "ignore the error": the job still ends as `Failed`, and the attempt counts. An information log, `must not be retried`, says why it did not wait.
+- It also works for the [execution timeout](#execution-timeout): list `typeof(TimeoutException)` to dead-letter a job that hit its limit instead of retrying it.
+- Every entry must derive from `Exception`, or the attribute or the option throws `ArgumentException`.
 
 ## Custom Retry Delay Factory
 
