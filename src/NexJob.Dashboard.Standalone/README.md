@@ -82,6 +82,8 @@ builder.Services.AddNexJobStandaloneDashboard(builder.Configuration);
 | `LocalhostOnly` | `bool` | `true` | When `true` (default), binds strictly to `localhost`. Set `false` to listen on all interfaces (needed in a container) and register an `IDashboardAuthorizationHandler` |
 | `PollIntervalSeconds` | `int` | `3` | SSE live stream update interval in seconds |
 | `DisableWorkers` | `bool` | `false` | When `true`, sets `NexJobOptions.Workers = 0` to run as a dedicated ops/monitoring container |
+| `DefaultTheme` | `string` | `"blue-theme"` | Color theme used when the browser has no stored preference: `blue-theme`, `semi-dark`, `dark`, `light` or `bordered-theme` |
+| `EnablePlayground` | `bool` | `false` | Enables the interactive playground drawer with demo scenarios. Off by default for production safety |
 | `Queues` | `IReadOnlyList<string>?` | `null` | Optional list of queues to scope the dashboard view, nav counters, and default job listings |
 | `Clusters` | `IReadOnlyList<DashboardCluster>` | `[]` | Registered federated clusters for multi-cluster operations |
 
