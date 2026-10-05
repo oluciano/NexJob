@@ -96,12 +96,16 @@ internal sealed class StandaloneDashboardHostedService : IHostedService
         _app.UseNexJobDashboard(_options.Path, opt =>
         {
             opt.Title = _options.Title;
+            opt.DefaultTheme = _options.DefaultTheme;
+            opt.EnablePlayground = _options.EnablePlayground;
             opt.Queues = _options.Queues;
             foreach (var cluster in _options.Clusters)
             {
                 opt.AddCluster(cluster);
             }
         });
+
+        _app.MapGet("/", (Microsoft.AspNetCore.Http.HttpContext ctx) => ctx.Response.Redirect(_options.Path));
 
         await _app.StartAsync(cancellationToken);
 

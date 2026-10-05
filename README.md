@@ -13,11 +13,12 @@
 
 **Background jobs for .NET. Predictable. Observable. No magic.**
 
-📖 **Documentation: [oluciano.github.io/NexJob](https://oluciano.github.io/NexJob/)**
+📖 **Documentation: [oluciano.github.io/NexJob](https://oluciano.github.io/NexJob/)** &nbsp;|&nbsp; 🎮 **Live Demo: [nexjob-playground.fly.dev](https://nexjob-playground.fly.dev/)**
 
 [![NuGet](https://img.shields.io/nuget/v/NexJob.svg?style=flat-square&color=512bd4&label=nuget)](https://www.nuget.org/packages/NexJob)
 [![NuGet Downloads](https://img.shields.io/nuget/dt/NexJob?style=flat-square&color=512bd4)](https://www.nuget.org/packages/NexJob)
 [![Build](https://img.shields.io/github/actions/workflow/status/oluciano/NexJob/ci.yml?style=flat-square)](https://github.com/oluciano/NexJob/actions)
+[![Live Demo](https://img.shields.io/badge/live%20demo-fly.io-00cfd5?style=flat-square)](https://nexjob-playground.fly.dev/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg?style=flat-square)](LICENSE)
 
 <br/>
@@ -180,6 +181,8 @@ All providers implement `IRuntimeSettingsStore` — runtime configuration persis
 
 The dashboard provides real-time operational visibility into your background jobs, worker nodes, and message broker listeners — with zero external dependencies.
 
+🎮 **Try it live:** [nexjob-playground.fly.dev](https://nexjob-playground.fly.dev/) (interactive scenario simulator: burst jobs, outages, retries, and dead-letters).
+
 [![NexJob Live Broker Listeners & Event Triggers](docs/assets/dashboard-listeners.png)](docs/assets/dashboard-listeners.png)
 
 - **Maxton Design System:** Modern 64px header, live cluster status indicator, and `Ctrl + K` instant job search.
@@ -187,6 +190,8 @@ The dashboard provides real-time operational visibility into your background job
 - **Live Event Listeners:** Dedicated `/listeners` page monitoring connected message brokers (RabbitMQ, Kafka, AWS SQS, Azure Service Bus, Salesforce).
 - **Job Catalog & Definitions (`/catalog`):** Aggregated job types, queue distribution, run counts, error rates, deep links to history, and on-demand ad-hoc triggering for parameterless jobs.
 - **Server-Sent Events (SSE):** Streaming logs and real-time execution progress bars without page reloads.
+- **Interactive Scenarios Drawer:** Opt-in simulator (`EnablePlayground = true`, disabled by default) to test burst loads and failure scenarios without writing custom scripts.
+- **5 Built-In Themes:** Configurable default theme (`DefaultTheme = "semi-dark"`, `"blue-theme"`, `"dark"`, `"light"`, `"bordered"`).
 
 ### ASP.NET Core Web App
 
@@ -230,6 +235,8 @@ builder.Services.AddNexJob();
 builder.Services.AddNexJobStandaloneDashboard(options =>
 {
     options.Port = 5005;
+    // options.DefaultTheme = "semi-dark";
+    // options.EnablePlayground = true; // enable scenario drawer in dev/staging
 });
 ```
 

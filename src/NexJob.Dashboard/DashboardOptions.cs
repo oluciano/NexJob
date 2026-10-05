@@ -9,6 +9,18 @@ public sealed class DashboardOptions
     public string Title { get; set; } = "NexJob";
 
     /// <summary>
+    /// Default color theme when no user preference is stored in the browser.
+    /// Defaults to <c>blue-theme</c>. Supported options: <c>blue-theme</c>, <c>semi-dark</c>, <c>dark</c>, <c>light</c>, <c>bordered-theme</c>.
+    /// </summary>
+    public string DefaultTheme { get; set; } = "blue-theme";
+
+    /// <summary>
+    /// Gets or sets a value indicating whether the interactive playground drawer and demo scenarios are enabled.
+    /// Defaults to <see langword="false"/> for production safety.
+    /// </summary>
+    public bool EnablePlayground { get; set; }
+
+    /// <summary>
     /// Time-to-live for cached metrics. Set to <see cref="TimeSpan.Zero"/> to disable caching.
     /// Defaults to 3 seconds to prevent excessive database load during SSE polling.
     /// </summary>
