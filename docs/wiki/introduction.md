@@ -82,7 +82,7 @@ Install only what you need. The core package ships with InMemory storage and the
 - [**Idempotency**](concepts/idempotency.md) — `DuplicatePolicy` controls re-enqueue behavior for jobs with the same idempotency key
 - [**Queue circuit breaker**](guides/circuit-breaker.md) — pauses a queue automatically when a dependency is down, probes it with one job, and ramps back up gradually
 - [**Concurrency throttling**](guides/throttling.md) — `[Throttle]` caps per-resource concurrency locally; `AddNexJobDistributedThrottle()` enforces cluster-wide limits via [Redis](guides/throttling.md#distributed-throttling-with-redis)
-- [**Execution windows**](guides/execution-windows.md) — restrict a queue to certain hours, such as nights only
+- [**Execution windows**](guides/execution-windows.md) — restrict a queue to certain hours and days, such as nights only or business days
 - [**Graceful shutdown**](guides/best-practices.md#graceful-shutdown) — running jobs are given time to finish, and the ones interrupted go back to the queue without using an attempt
 - [**Delivery guarantees**](concepts/delivery-guarantees.md) — one table of what each failure costs a job
 

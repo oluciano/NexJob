@@ -110,7 +110,7 @@ The job expires if not started within 5 minutes — no silent failures, no zombi
 - **[Idempotency](https://oluciano.github.io/NexJob/concepts/idempotency/)** — `DuplicatePolicy` controls re-enqueue behavior
 - **[Queue circuit breaker](https://oluciano.github.io/NexJob/guides/circuit-breaker/)** — pauses a queue when a dependency is down, probes it with one job and ramps back up gradually
 - **[Concurrency throttling](https://oluciano.github.io/NexJob/guides/throttling/)** — `[Throttle]` for per-resource limits, and `AddNexJobDistributedThrottle()` for global cluster-wide limits via Redis
-- **[Execution windows](https://oluciano.github.io/NexJob/guides/execution-windows/)** — restrict a queue to certain hours, such as nights only
+- **[Execution windows](https://oluciano.github.io/NexJob/guides/execution-windows/)** — restrict a queue to certain hours and days, such as nights only or business days
 - **[Delivery guarantees](https://oluciano.github.io/NexJob/concepts/delivery-guarantees/)** — one table of what each failure costs a job
 
 **Schedule**
