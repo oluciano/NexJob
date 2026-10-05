@@ -379,6 +379,13 @@ internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
             timeoutCts?.CancelAfter(timeout!.Value);
             var jobToken = timeoutCts?.Token ?? cancellationToken;
 
+            // A job that ignores the token keeps its worker slot. Make that visible once per run: the watchdog is armed by
+            // the timeout and stood down as soon as the job returns.
+            using var watchdogCts = timeoutCts is null ? null : new CancellationTokenSource();
+            using var watchdog = timeoutCts is null
+                ? default
+                : timeoutCts.Token.Register(() => _ = WarnIfCancellationIgnoredAsync(job, timeout!.Value, watchdogCts!.Token, cancellationToken));
+
             // Only the limit fired (shutdown has priority and is handled by the caller): a normal failure, not an interruption.
             bool TimedOut() => timeoutCts is { IsCancellationRequested: true } && !cancellationToken.IsCancellationRequested;
             TimeoutException TimeoutFailure(OperationCanceledException ex) => new($"Job execution timed out after {timeout!.Value}.", ex);
@@ -427,6 +434,13 @@ internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
                 // A filter that observed the token itself, before the job ran.
                 throw TimeoutFailure(ex);
             }
+            finally
+            {
+                if (watchdogCts is not null)
+                {
+                    await watchdogCts.CancelAsync().ConfigureAwait(false);
+                }
+            }
         }
         finally
         {
@@ -466,6 +480,37 @@ internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
         }
 
         return retryAt;
+    }
+
+    private async Task WarnIfCancellationIgnoredAsync(JobRecord job, TimeSpan timeout, CancellationToken jobReturned, CancellationToken shutdown)
+    {
+        // The linked timeout token is also cancelled by a shutdown, which is not this job's problem.
+        if (shutdown.IsCancellationRequested)
+        {
+            return;
+        }
+
+        try
+        {
+            await Task.Delay(_options.CancellationGracePeriod, jobReturned).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            return; // the job returned inside the grace period
+        }
+
+        if (shutdown.IsCancellationRequested)
+        {
+            return;
+        }
+
+        _logger.LogWarning(
+            "Job {JobId} ({JobType}) ignored cancellation {Grace}s after its execution timeout of {Timeout} and still holds its worker slot.",
+            job.Id,
+            job.JobType,
+            _options.CancellationGracePeriod.TotalSeconds,
+            timeout);
+        NexJobMetrics.JobsCancellationIgnored.Add(1, new TagList { { "nexjob.job_type", job.JobType } });
     }
 
     private async Task RunHeartbeatAsync(JobId jobId, CancellationToken cancellationToken)
