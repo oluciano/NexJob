@@ -11,8 +11,9 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Dashboard — Interactive Playground Scenarios & Configurable Default Theme**:
   - Added configurable `DefaultTheme` (`blue-theme`, `semi-dark`, `dark`, `light`, `bordered-theme`) in `DashboardOptions` and `StandaloneDashboardOptions`.
   - Added `EnablePlayground` opt-in flag in `DashboardOptions` and `StandaloneDashboardOptions` (defaults to `false` for production safety).
-  - Added interactive offcanvas Playground Scenarios drawer in `HtmlShell` with one-click triggers for standard workloads (`ProcessOrderJob` batch), retry loops (`FlakyApiJob`), terminal dead-letter quarantine (`DeadLetterSampleJob`), concurrency bursts (20 jobs), and cron sweep (only rendered when `EnablePlayground` is enabled).
-  - Implemented `POST {pathPrefix}/api/scenarios/{scenario}` API endpoint in `DashboardMiddleware` for real-time workload simulation without external infrastructure dependencies.
+  - Added interactive offcanvas Playground Scenarios drawer in `HtmlShell` with one-click triggers for standard workloads (`ProcessOrderJob` batch), resilience & retries (`FlakyApiJob`), terminal dead-letter quarantine (`DeadLetterSampleJob`), concurrency bursts (20 jobs), and cron sweep (only rendered when `EnablePlayground` is enabled).
+  - Enhanced resilience scenario to trigger transient HTTP 504 Gateway Timeout on attempt 1, automatically navigating to the job detail view to inspect the live exception message, stack trace terminal, and exponential backoff retry countdown before auto-recovering on attempt 2.
+  - Implemented `POST {pathPrefix}/api/scenarios/{scenario}` API endpoint in `DashboardMiddleware` for real-time workload simulation with automatic job redirect support without external infrastructure dependencies.
   - Added Live Playground guide (`docs/wiki/playground.md`), direct Fly.io deployment instructions, live demo badges, and navigation links in `README.md` and documentation site.
 
 ### Fixed
