@@ -238,6 +238,12 @@ public sealed class NexJobOptions
     internal TimeSpan ThrottleMaxWait { get; set; } = TimeSpan.FromSeconds(5);
 
     /// <summary>
+    /// How long a job may keep running after its execution timeout cancelled its token before a warning is logged
+    /// and counted. Internal on purpose; tests shorten it.
+    /// </summary>
+    internal TimeSpan CancellationGracePeriod { get; set; } = TimeSpan.FromSeconds(10);
+
+    /// <summary>
     /// Set by <see cref="ApplySettings"/> when <c>appsettings.json</c> carries a <c>DefaultQueue</c> other than
     /// <c>default</c>: the value is accepted but never applied.
     /// </summary>
