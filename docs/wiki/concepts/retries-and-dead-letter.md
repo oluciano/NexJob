@@ -65,6 +65,29 @@ public sealed class WebhookNotificationJob : IJob<WebhookInput>
 }
 ```
 
+## Execution Timeout
+
+By default a job may run for as long as it likes. To put a ceiling on it, apply `[ExecutionTimeout]` to the job class, or set a global default with `options.DefaultExecutionTimeout` (`null` by default, so nothing changes unless you opt in). The attribute wins over the global default.
+
+```csharp
+[ExecutionTimeout("00:05:00")]
+public sealed class ReportJob : IJob<ReportInput>
+{
+    public async Task ExecuteAsync(ReportInput input, CancellationToken ct)
+    {
+        // `ct` is cancelled after 5 minutes
+        await _http.GetAsync(input.Url, ct);
+    }
+}
+```
+
+When the limit is reached, the `CancellationToken` your job received is cancelled and the run is recorded as a failure with a `TimeoutException` (`Job execution timed out after 00:05:00.`). It then follows the normal failure path: the attempt is used, the job is retried per the policy above, and on the last attempt it is dead-lettered and the `IDeadLetterHandler<TJob>` is called.
+
+- **Cancellation is cooperative.** A job that ignores its `CancellationToken` (a blocking call that never returns) keeps its worker slot until it returns. The timeout cannot free a slot by abandoning the task. Always pass `ct` to HTTP, database and delay calls.
+- **The timer starts when the job starts running**, after any `[Throttle]` slots are held. Waiting for a throttled resource never counts towards the limit.
+- **Shutdown is not a timeout.** A job interrupted by a host shutdown is put back in the queue without using the attempt, as before.
+- The value must be greater than zero. Zero, negative and malformed values throw when the attribute is applied or the option is set.
+
 ## Custom Retry Delay Factory
 
 Replace the built-in delay curve entirely by assigning a delegate to `options.RetryDelayFactory`. The delegate receives the number of attempts already made (1 after the first failure) and returns the `TimeSpan` to wait before the next attempt. This affects all jobs that do not set their own `InitialDelay`.

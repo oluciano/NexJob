@@ -73,6 +73,7 @@ Install only what you need. The core package ships with InMemory storage and the
 ### Stay reliable
 
 - [**Predictable retries**](concepts/retries-and-dead-letter.md) — configurable global delay policy plus per-job `[Retry]` attribute with exponential backoff
+- [**Execution timeout**](concepts/retries-and-dead-letter.md#execution-timeout) — `[ExecutionTimeout]` cancels a job's token after a limit and treats it as a normal failure (opt-in, cooperative)
 - [**Dead-letter handlers and forwarders**](concepts/retries-and-dead-letter.md) — an `IDeadLetterHandler<T>` runs when all retries are exhausted, and an `IDeadLetterForwarder` sees every such job, which is the hook for [alerts](guides/alerts.md)
 - [**Crash recovery**](concepts/delivery-guarantees.md) — a job left behind by a node that died is found by its stale heartbeat and run again, or dead-lettered if it had no attempts left
 - [**Deadline enforcement**](concepts/scheduling.md#deadlines) — jobs expire before execution if `deadlineAfter` has elapsed; no zombie jobs
