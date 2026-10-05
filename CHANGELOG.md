@@ -8,7 +8,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
-- **Core — Execution timeout** (issue #354): `[ExecutionTimeout("00:05:00")]` per job type and `NexJobOptions.DefaultExecutionTimeout` (`null` by default, opt-in). When the limit is reached the job's `CancellationToken` is cancelled and the run fails with a `TimeoutException`, then follows the normal failure path (attempt used, retry, dead-letter handler on the last attempt). Cancellation is cooperative: a job that ignores its token keeps its worker slot. The timer starts after `[Throttle]` slots are held, and a host shutdown is still not a timeout (the attempt is refunded).
+- **Core — Execution timeout** (issue #354): `[ExecutionTimeout("00:05:00")]` and opt-in `NexJobOptions.DefaultExecutionTimeout` (`null` by default). At the limit the job token is cancelled and the run fails with a `TimeoutException` through the normal retry/dead-letter path. Cancellation is cooperative: a job that ignores its token keeps its worker slot.
 
 - **Dashboard — Interactive Playground Scenarios & Configurable Default Theme**:
   - Added configurable `DefaultTheme` (`blue-theme`, `semi-dark`, `dark`, `light`, `bordered-theme`) in `DashboardOptions` and `StandaloneDashboardOptions`.
