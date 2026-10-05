@@ -198,6 +198,79 @@ public sealed class DashboardMiddleware
         return metrics;
     }
 
+    private static JobRecord CreateJobRecord(
+        Type jobType,
+        string rawJobType,
+        string inputTypeName,
+        string inputJson,
+        string? queue,
+        int maxAttempts,
+        string[]? tags = null)
+    {
+        return new JobRecord
+        {
+            Id = JobId.New(),
+            JobType = jobType.AssemblyQualifiedName ?? rawJobType,
+            InputType = inputTypeName,
+            InputJson = inputJson,
+            Queue = string.IsNullOrWhiteSpace(queue) ? "default" : queue,
+            Priority = JobPriority.Normal,
+            Status = JobStatus.Enqueued,
+            CreatedAt = DateTimeOffset.UtcNow,
+            MaxAttempts = maxAttempts,
+            Tags = tags ?? [],
+        };
+    }
+
+    private static async Task<int> EnqueueJobBatchAsync(
+        IScheduler scheduler,
+        NexJobOptions options,
+        JobCatalogItem? entry,
+        int count,
+        CancellationToken ct,
+        string[]? tags = null)
+    {
+        if (entry is null)
+        {
+            return 0;
+        }
+
+        var jobType = Pages.Helpers.ResolveType(entry.JobType);
+        if (jobType is null)
+        {
+            return 0;
+        }
+
+        var inputType = Pages.Helpers.ResolveJobInputType(entry.JobType);
+        string inputJson = "{}";
+        string inputTypeName = typeof(NoInput).AssemblyQualifiedName!;
+
+        if (inputType is not null)
+        {
+            inputTypeName = inputType.AssemblyQualifiedName!;
+            inputJson = Pages.Helpers.GenerateDefaultJsonSchema(inputType);
+        }
+
+        for (int i = 0; i < count; i++)
+        {
+            var jobRecord = CreateJobRecord(
+                jobType, entry.JobType, inputTypeName, inputJson, entry.Queue, options.MaxAttempts, tags);
+
+            await scheduler.EnqueueAsync(jobRecord, DuplicatePolicy.AllowAfterFailed, ct).ConfigureAwait(false);
+        }
+
+        return count;
+    }
+
+    private void RedirectAfterQueueAction(HttpContext context, DashboardCluster? activeCluster)
+    {
+        var referer = context.Request.Headers.Referer.ToString();
+        var target = !string.IsNullOrEmpty(referer) && referer.Contains("/queues", StringComparison.Ordinal)
+            ? $"{_pathPrefix}/queues"
+            : $"{_pathPrefix}/settings";
+        LocalRedirect(context, target, activeCluster);
+    }
+
     private async Task<bool> HandleActionsAsync(HttpContext context, string subPath, DashboardCluster? activeCluster)
     {
         if (activeCluster?.IsReadOnly == true)
@@ -588,11 +661,7 @@ public sealed class DashboardMiddleware
         {
             var queueName = Uri.UnescapeDataString(subPath.Split('/')[1]);
             await controlService.PauseQueueAsync(queueName, context.RequestAborted).ConfigureAwait(false);
-            var referer = context.Request.Headers.Referer.ToString();
-            var target = !string.IsNullOrEmpty(referer) && referer.Contains("/queues", StringComparison.Ordinal)
-                ? $"{_pathPrefix}/queues"
-                : $"{_pathPrefix}/settings";
-            LocalRedirect(context, target, activeCluster);
+            RedirectAfterQueueAction(context, activeCluster);
             return true;
         }
 
@@ -600,11 +669,7 @@ public sealed class DashboardMiddleware
         {
             var queueName = Uri.UnescapeDataString(subPath.Split('/')[1]);
             await controlService.ResumeQueueAsync(queueName, context.RequestAborted).ConfigureAwait(false);
-            var referer = context.Request.Headers.Referer.ToString();
-            var target = !string.IsNullOrEmpty(referer) && referer.Contains("/queues", StringComparison.Ordinal)
-                ? $"{_pathPrefix}/queues"
-                : $"{_pathPrefix}/settings";
-            LocalRedirect(context, target, activeCluster);
+            RedirectAfterQueueAction(context, activeCluster);
             return true;
         }
 
@@ -612,11 +677,7 @@ public sealed class DashboardMiddleware
         {
             var queueName = Uri.UnescapeDataString(subPath.Split('/')[1]);
             await controlService.ResetQueueCircuitAsync(queueName, context.RequestAborted).ConfigureAwait(false);
-            var referer = context.Request.Headers.Referer.ToString();
-            var target = !string.IsNullOrEmpty(referer) && referer.Contains("/queues", StringComparison.Ordinal)
-                ? $"{_pathPrefix}/queues"
-                : $"{_pathPrefix}/settings";
-            LocalRedirect(context, target, activeCluster);
+            RedirectAfterQueueAction(context, activeCluster);
             return true;
         }
 
@@ -668,18 +729,8 @@ public sealed class DashboardMiddleware
 
                 if (typeof(IJob).IsAssignableFrom(jobType))
                 {
-                    var jobRecord = new JobRecord
-                    {
-                        Id = JobId.New(),
-                        JobType = jobType.AssemblyQualifiedName ?? rawType,
-                        InputType = typeof(NoInput).AssemblyQualifiedName!,
-                        InputJson = "{}",
-                        Queue = queue ?? "default",
-                        Priority = JobPriority.Normal,
-                        Status = JobStatus.Enqueued,
-                        CreatedAt = DateTimeOffset.UtcNow,
-                        MaxAttempts = options.MaxAttempts,
-                    };
+                    var jobRecord = CreateJobRecord(
+                        jobType, rawType, typeof(NoInput).AssemblyQualifiedName!, "{}", queue, options.MaxAttempts);
 
                     await scheduler.EnqueueAsync(jobRecord, DuplicatePolicy.AllowAfterFailed, context.RequestAborted).ConfigureAwait(false);
                     LocalRedirect(context, $"{_pathPrefix}/catalog?triggered={Uri.EscapeDataString(jobRecord.Id.Value.ToString())}", activeCluster);
@@ -694,18 +745,8 @@ public sealed class DashboardMiddleware
                         if (deserialized is not null)
                         {
                             var normalizedJson = System.Text.Json.JsonSerializer.Serialize(deserialized);
-                            var jobRecord = new JobRecord
-                            {
-                                Id = JobId.New(),
-                                JobType = jobType.AssemblyQualifiedName ?? rawType,
-                                InputType = inputType.AssemblyQualifiedName!,
-                                InputJson = normalizedJson,
-                                Queue = queue ?? "default",
-                                Priority = JobPriority.Normal,
-                                Status = JobStatus.Enqueued,
-                                CreatedAt = DateTimeOffset.UtcNow,
-                                MaxAttempts = options.MaxAttempts,
-                            };
+                            var jobRecord = CreateJobRecord(
+                                jobType, rawType, inputType.AssemblyQualifiedName!, normalizedJson, queue, options.MaxAttempts);
 
                             await scheduler.EnqueueAsync(jobRecord, DuplicatePolicy.AllowAfterFailed, context.RequestAborted).ConfigureAwait(false);
                             LocalRedirect(context, $"{_pathPrefix}/catalog?triggered={Uri.EscapeDataString(jobRecord.Id.Value.ToString())}", activeCluster);
@@ -794,57 +835,6 @@ public sealed class DashboardMiddleware
         context.Response.ContentType = "application/json";
         await context.Response.WriteAsJsonAsync(new { success = true, count, message }, context.RequestAborted).ConfigureAwait(false);
         return true;
-    }
-
-    private async Task<int> EnqueueJobBatchAsync(
-        IScheduler scheduler,
-        NexJobOptions options,
-        JobCatalogItem? entry,
-        int count,
-        CancellationToken ct,
-        string[]? tags = null)
-    {
-        if (entry is null)
-        {
-            return 0;
-        }
-
-        var jobType = Pages.Helpers.ResolveType(entry.JobType);
-        if (jobType is null)
-        {
-            return 0;
-        }
-
-        var inputType = Pages.Helpers.ResolveJobInputType(entry.JobType);
-        string inputJson = "{}";
-        string inputTypeName = typeof(NoInput).AssemblyQualifiedName!;
-
-        if (inputType is not null)
-        {
-            inputTypeName = inputType.AssemblyQualifiedName!;
-            inputJson = Pages.Helpers.GenerateDefaultJsonSchema(inputType);
-        }
-
-        for (int i = 0; i < count; i++)
-        {
-            var jobRecord = new JobRecord
-            {
-                Id = JobId.New(),
-                JobType = jobType.AssemblyQualifiedName ?? entry.JobType,
-                InputType = inputTypeName,
-                InputJson = inputJson,
-                Queue = string.IsNullOrWhiteSpace(entry.Queue) ? "default" : entry.Queue,
-                Priority = JobPriority.Normal,
-                Status = JobStatus.Enqueued,
-                CreatedAt = DateTimeOffset.UtcNow,
-                MaxAttempts = options.MaxAttempts,
-                Tags = tags ?? [],
-            };
-
-            await scheduler.EnqueueAsync(jobRecord, DuplicatePolicy.AllowAfterFailed, ct).ConfigureAwait(false);
-        }
-
-        return count;
     }
 
     private async Task<string> RenderPageAsync(HttpContext context, string subPath, DashboardCluster? activeCluster)
