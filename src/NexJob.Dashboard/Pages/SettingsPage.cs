@@ -222,6 +222,9 @@ internal sealed class SettingsPage : ComponentBase
             var isPaused = Runtime.PausedQueues.Contains(q);
             var windowSetting = Options.QueueSettings.Find(qs => string.Equals(qs.Name, q, StringComparison.Ordinal));
             var inWindow = windowSetting?.ExecutionWindow?.IsWithinWindow(now) ?? true;
+            var windowSummary = windowSetting?.ExecutionWindow is { } window
+                ? $"<div style=\"font-size:12px;color:var(--text-secondary)\">{System.Web.HttpUtility.HtmlEncode(Helpers.DescribeExecutionWindow(window))}</div>"
+                : string.Empty;
 
             string statusBadge;
             if (isPaused)
@@ -263,7 +266,7 @@ internal sealed class SettingsPage : ComponentBase
 
             sb.Append(
                 $"<div style=\"display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border)\">" +
-                $"<div><div style=\"font-weight:600\">{System.Web.HttpUtility.HtmlEncode(q)}</div></div>" +
+                $"<div><div style=\"font-weight:600\">{System.Web.HttpUtility.HtmlEncode(q)}</div>{windowSummary}</div>" +
                 $"<div style=\"display:flex;align-items:center;gap:12px\">" +
                 $"{statusBadge}" +
                 buttonHtml +

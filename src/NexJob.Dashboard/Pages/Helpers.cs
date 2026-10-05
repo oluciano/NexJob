@@ -88,7 +88,28 @@ internal static class Helpers
         return retryAttr?.Attempts ?? job.MaxAttempts;
     }
 
-    internal static string DescribeExecutionWindow(NexJob.Configuration.ExecutionWindowSettings window) => string.Empty;
+    internal static string DescribeExecutionWindow(NexJob.Configuration.ExecutionWindowSettings window)
+    {
+        var start = window.StartTime.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture);
+        var end = window.EndTime.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture);
+        return $"{start}–{end} {window.TimeZone} · {DescribeDays(window.DaysOfWeek)}";
+    }
+
+    private static string DescribeDays(DayOfWeek[]? days)
+    {
+        DayOfWeek[] mondayFirst =
+            [DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday, DayOfWeek.Thursday, DayOfWeek.Friday, DayOfWeek.Saturday, DayOfWeek.Sunday];
+        var selected = mondayFirst.Where(d => days is not null && Array.IndexOf(days, d) >= 0).ToArray();
+
+        if (selected.Length is 0 or 7)
+        {
+            return "every day";
+        }
+
+        return selected.Length == 5 && !selected.Contains(DayOfWeek.Saturday) && !selected.Contains(DayOfWeek.Sunday)
+            ? "Mon–Fri"
+            : string.Join(", ", selected.Select(d => d.ToString()[..3]));
+    }
 
     internal static bool IsParameterlessJob(string typeName)
     {
