@@ -102,6 +102,30 @@ public sealed class ExecutionTimeoutTests
         _storage.Verify(x => x.CommitJobResultAsync(job.Id, It.Is<JobExecutionResult>(r => r.Succeeded), It.IsAny<CancellationToken>()), Times.Once);
     }
 
+    /// <summary>N1: a filter that wraps the job sees the TimeoutException, not a bare cancellation.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task ExecuteJobAsync_WhenTimeoutElapses_FilterSeesTimeoutException()
+    {
+        var job = NewJob();
+        var filter = new CapturingFilter();
+        var sut = new JobExecutor(
+            _storage.Object,
+            _invokerFactory.Object,
+            _retryPolicy.Object,
+            _deadLetterDispatcher.Object,
+            _throttleRegistry,
+            _options,
+            new IJobExecutionFilter[] { filter },
+            NullLogger<JobExecutor>.Instance);
+        _retryPolicy.Setup(x => x.ComputeRetryAt(job, It.IsAny<Exception>())).Returns(DateTimeOffset.UtcNow.AddMinutes(1));
+        SetupInvoker(job, (_, ct) => Task.Delay(TimeSpan.FromSeconds(3), ct), new ExecutionTimeoutAttribute("00:00:00.150"));
+
+        await sut.ExecuteJobAsync(job).WaitAsync(TimeSpan.FromSeconds(10));
+
+        filter.Seen.Should().BeOfType<TimeoutException>();
+    }
+
     // ─── N2: negative ──────────────────────────────────────────────────────
 
     /// <summary>N2: shutdown is not a timeout. The attempt is refunded and nothing is dead-lettered, even with a timeout set.</summary>
@@ -217,6 +241,24 @@ public sealed class ExecutionTimeoutTests
         options.DefaultExecutionTimeout = TimeSpan.FromMinutes(1);
         options.DefaultExecutionTimeout = null;
         options.DefaultExecutionTimeout.Should().BeNull();
+    }
+
+    private sealed class CapturingFilter : IJobExecutionFilter
+    {
+        public Exception? Seen { get; private set; }
+
+        public async Task OnExecutingAsync(JobExecutingContext context, JobExecutionDelegate next, CancellationToken ct)
+        {
+            try
+            {
+                await next(ct);
+            }
+            catch (Exception ex)
+            {
+                Seen = ex;
+                throw;
+            }
+        }
     }
 
     private static JobRecord NewJob() => new() { Id = JobId.New(), JobType = "TestJob", Attempts = 1, MaxAttempts = 3 };
