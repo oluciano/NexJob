@@ -174,30 +174,6 @@ public sealed class DashboardMiddleware
     }
 #pragma warning restore SCS0027
 
-    private static async Task<JobMetrics> GetCachedMetricsAsync(
-        IMemoryCache cache, IDashboardStorage storage, DashboardOptions options, DashboardCluster? activeCluster, CancellationToken ct)
-    {
-        var cacheKey = activeCluster is not null
-            ? $"nexjob:dashboard:metrics:{activeCluster.Id}"
-            : "nexjob:dashboard:metrics";
-
-        // If cache TTL is zero, disable caching
-        if (options.MetricsCacheTtl == TimeSpan.Zero)
-        {
-            return await storage.GetMetricsAsync(ct).ConfigureAwait(false);
-        }
-
-        if (cache.TryGetValue(cacheKey, out JobMetrics? cached) && cached is not null)
-        {
-            return cached;
-        }
-
-        var metrics = await storage.GetMetricsAsync(ct).ConfigureAwait(false);
-        cache.Set(cacheKey, metrics, options.MetricsCacheTtl);
-
-        return metrics;
-    }
-
     private static JobRecord CreateJobRecord(
         Type jobType,
         string rawJobType,
@@ -849,7 +825,7 @@ public sealed class DashboardMiddleware
 #pragma warning restore MA0004
 
         // Compute shared counters once for all pages
-        var metrics = await GetCachedMetricsAsync(cache, dashboardStorage, _options, activeCluster, context.RequestAborted).ConfigureAwait(false);
+        var metrics = await Pages.Helpers.GetCachedMetricsAsync(cache, dashboardStorage, _options, activeCluster, context.RequestAborted).ConfigureAwait(false);
         var servers = await jobStorage.GetActiveServersAsync(TimeSpan.FromMinutes(1), context.RequestAborted).ConfigureAwait(false);
         var queues = await dashboardStorage.GetQueueMetricsAsync(context.RequestAborted).ConfigureAwait(false);
         var nexJobOptions = context.RequestServices.GetRequiredService<NexJobOptions>();
