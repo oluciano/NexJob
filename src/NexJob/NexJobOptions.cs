@@ -9,6 +9,7 @@ namespace NexJob;
 public sealed class NexJobOptions
 {
     private TimeSpan? _defaultExecutionTimeout;
+    private IReadOnlyList<Type> _ignoreRetryAttemptExceptions = [];
 
     /// <summary>
     /// Maximum number of jobs that can execute concurrently on this host.
@@ -116,7 +117,15 @@ public sealed class NexJobOptions
     /// straight to <c>Failed</c> and the dead-letter handler runs. Combined with
     /// <see cref="RetryAttribute.IgnoreRetryAttemptExceptions"/> per job type. Empty by default.
     /// </summary>
-    public IReadOnlyList<Type> IgnoreRetryAttemptExceptions { get; set; } = [];
+    public IReadOnlyList<Type> IgnoreRetryAttemptExceptions
+    {
+        get => _ignoreRetryAttemptExceptions;
+        set
+        {
+            ArgumentNullException.ThrowIfNull(value);
+            _ignoreRetryAttemptExceptions = Internal.ExceptionTypeList.Validate(value, nameof(value))!;
+        }
+    }
 
     /// <summary>
     /// Maximum time allowed for storage health check probes to respond before reporting
