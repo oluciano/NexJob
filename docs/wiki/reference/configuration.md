@@ -61,6 +61,11 @@ builder.Services.AddNexJob(options =>
     // Keep HostOptions.ShutdownTimeout above this value.
     options.ShutdownTimeout = TimeSpan.FromSeconds(30); // Default: 30s
 
+    // ── Execution timeout ────────────────────────────────────────────────────
+    // Longest a job may run when its type has no [ExecutionTimeout]. null = unbounded.
+    // Cancellation is cooperative: a job that ignores its CancellationToken keeps its worker slot.
+    options.DefaultExecutionTimeout = TimeSpan.FromMinutes(30); // Default: null (code only, not read from appsettings)
+
     // ── Queues ───────────────────────────────────────────────────────────────
     // Ordered list of queues this host polls. Queues drain in this order.
     options.Queues = new[] { "default", "emails", "reports" }; // Default: ["default"]

@@ -8,6 +8,8 @@ namespace NexJob;
 /// </summary>
 public sealed class NexJobOptions
 {
+    private TimeSpan? _defaultExecutionTimeout;
+
     /// <summary>
     /// Maximum number of jobs that can execute concurrently on this host.
     /// Defaults to <c>10</c>.
@@ -88,6 +90,25 @@ public sealed class NexJobOptions
     /// Defaults to 30 seconds.
     /// </summary>
     public TimeSpan ShutdownTimeout { get; set; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// Maximum time a job may run when its type has no <see cref="ExecutionTimeoutAttribute"/>.
+    /// <see langword="null"/> (the default) means unbounded. Cancellation is cooperative: a job that ignores its
+    /// <see cref="CancellationToken"/> keeps its worker slot. Must be greater than zero when set.
+    /// </summary>
+    public TimeSpan? DefaultExecutionTimeout
+    {
+        get => _defaultExecutionTimeout;
+        set
+        {
+            if (value is { } timeout)
+            {
+                ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(timeout, TimeSpan.Zero);
+            }
+
+            _defaultExecutionTimeout = value;
+        }
+    }
 
     /// <summary>
     /// Maximum time allowed for storage health check probes to respond before reporting

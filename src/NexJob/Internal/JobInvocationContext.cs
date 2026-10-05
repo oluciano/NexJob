@@ -11,7 +11,8 @@ internal sealed record JobInvocationContext(
     object Input,
     Func<object, object, CancellationToken, Task> Invoker,
     IEnumerable<ThrottleAttribute> ThrottleAttributes,
-    RetentionAttribute? RetentionAttribute = null) : IDisposable
+    RetentionAttribute? RetentionAttribute = null,
+    ExecutionTimeoutAttribute? ExecutionTimeoutAttribute = null) : IDisposable
 {
     /// <inheritdoc/>
     public void Dispose() => Scope.Dispose();

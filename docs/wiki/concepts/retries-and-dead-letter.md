@@ -65,6 +65,23 @@ public sealed class WebhookNotificationJob : IJob<WebhookInput>
 }
 ```
 
+## Execution Timeout
+
+Apply `[ExecutionTimeout]` to a job class to cap how long it may run, or set `options.DefaultExecutionTimeout` for all jobs (`null` by default, so it is opt-in; the attribute wins).
+
+```csharp
+[ExecutionTimeout("00:05:00")]
+public sealed class ReportJob : IJob<ReportInput>
+{
+    public Task ExecuteAsync(ReportInput input, CancellationToken ct) => _http.GetAsync(input.Url, ct);
+}
+```
+
+At the limit the job's `CancellationToken` is cancelled and the run fails with a `TimeoutException`, then follows the normal failure path: the attempt is used, it is retried, and on the last attempt it is dead-lettered.
+
+- **Cancellation is cooperative.** A job that ignores its token keeps its worker slot until it returns, so pass `ct` to every HTTP, database and delay call.
+- The timer starts after any `[Throttle]` slots are held. A shutdown is not a timeout: the job goes back to the queue without using the attempt.
+
 ## Custom Retry Delay Factory
 
 Replace the built-in delay curve entirely by assigning a delegate to `options.RetryDelayFactory`. The delegate receives the number of attempts already made (1 after the first failure) and returns the `TimeSpan` to wait before the next attempt. This affects all jobs that do not set their own `InitialDelay`.

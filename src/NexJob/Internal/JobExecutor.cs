@@ -372,32 +372,60 @@ internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
                 acquired.Add(attr);
             }
 
-            // Terminal delegate: invokes the actual job
-            JobExecutionDelegate jobInvoker = ct =>
-                ctx.Invoker(ctx.JobInstance, ctx.Input, ct);
+            // The limit starts here, after the throttle slots are held, so waiting for a throttled resource
+            // never counts. It uses its own CTS: the heartbeat token and the shutdown token stay untouched.
+            var timeout = ctx.ExecutionTimeoutAttribute?.Timeout ?? _options.DefaultExecutionTimeout;
+            using var timeoutCts = timeout is null ? null : CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeoutCts?.CancelAfter(timeout!.Value);
+            var jobToken = timeoutCts?.Token ?? cancellationToken;
 
-            if (_filters.Count == 0)
+            // Only the limit fired (shutdown has priority and is handled by the caller): a normal failure, not an interruption.
+            bool TimedOut() => timeoutCts is { IsCancellationRequested: true } && !cancellationToken.IsCancellationRequested;
+            TimeoutException TimeoutFailure(OperationCanceledException ex) => new($"Job execution timed out after {timeout!.Value}.", ex);
+
+            // Terminal delegate: invokes the actual job. Converting here lets filters see the TimeoutException.
+            JobExecutionDelegate jobInvoker = async ct =>
             {
-                // Fast path: no filters registered
-                await jobInvoker(cancellationToken).ConfigureAwait(false);
-            }
-            else
-            {
-                var context = new JobExecutingContext(job, ctx.Scope.ServiceProvider);
-
-                var pipeline = JobFilterPipeline.Build(_filters, context, jobInvoker);
-
                 try
                 {
-                    await pipeline(cancellationToken).ConfigureAwait(false);
-                    context.Succeeded = true;
+                    await ctx.Invoker(ctx.JobInstance, ctx.Input, ct).ConfigureAwait(false);
                 }
-                catch (Exception ex)
+                catch (OperationCanceledException ex) when (TimedOut())
                 {
-                    context.Exception = ex;
-                    context.Succeeded = false;
-                    throw; // re-throw so dispatcher handles retry/dead-letter normally
+                    throw TimeoutFailure(ex);
                 }
+            };
+
+            try
+            {
+                if (_filters.Count == 0)
+                {
+                    // Fast path: no filters registered
+                    await jobInvoker(jobToken).ConfigureAwait(false);
+                }
+                else
+                {
+                    var context = new JobExecutingContext(job, ctx.Scope.ServiceProvider);
+
+                    var pipeline = JobFilterPipeline.Build(_filters, context, jobInvoker);
+
+                    try
+                    {
+                        await pipeline(jobToken).ConfigureAwait(false);
+                        context.Succeeded = true;
+                    }
+                    catch (Exception ex)
+                    {
+                        context.Exception = ex;
+                        context.Succeeded = false;
+                        throw; // re-throw so dispatcher handles retry/dead-letter normally
+                    }
+                }
+            }
+            catch (OperationCanceledException ex) when (TimedOut())
+            {
+                // A filter that observed the token itself, before the job ran.
+                throw TimeoutFailure(ex);
             }
         }
         finally

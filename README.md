@@ -102,6 +102,7 @@ The job expires if not started within 5 minutes — no silent failures, no zombi
 
 - **[Predictable retries](https://oluciano.github.io/NexJob/concepts/retries-and-dead-letter/)** — a configurable global delay policy plus per-job `[Retry]` with exponential backoff
 - **[Dead-letter handlers and forwarders](https://oluciano.github.io/NexJob/concepts/retries-and-dead-letter/)** — a fallback when all retries are exhausted, and a hook for [alerts](https://oluciano.github.io/NexJob/guides/alerts/)
+- **[Execution timeout](https://oluciano.github.io/NexJob/concepts/retries-and-dead-letter/#execution-timeout)** — `[ExecutionTimeout]` cancels a job's token after a limit and treats it as a normal failure (opt-in, cooperative)
 - **[Crash recovery](https://oluciano.github.io/NexJob/concepts/delivery-guarantees/)** — a job left behind by a node that died is found by its stale heartbeat and run again, or dead-lettered if it had no attempts left
 - **[Deadline enforcement](https://oluciano.github.io/NexJob/concepts/scheduling/#deadlines)** — jobs expire if not executed in time (`deadlineAfter`)
 - **[Idempotency](https://oluciano.github.io/NexJob/concepts/idempotency/)** — `DuplicatePolicy` controls re-enqueue behavior
