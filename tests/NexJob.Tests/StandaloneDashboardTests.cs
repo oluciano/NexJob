@@ -1265,6 +1265,20 @@ public sealed class StandaloneDashboardTests
             apiRes.StatusCode.Should().Be(HttpStatusCode.OK);
             var json = await apiRes.Content.ReadAsStringAsync();
             json.Should().Contain("\"success\":true");
+
+            // Flaky / resilience scenario returns jobId and redirectUrl
+            var flakyRes = await client.PostAsync("/dashboard/api/scenarios/flaky", null);
+            flakyRes.StatusCode.Should().Be(HttpStatusCode.OK);
+            var flakyJson = await flakyRes.Content.ReadAsStringAsync();
+            flakyJson.Should().Contain("\"success\":true");
+            flakyJson.Should().Contain("\"redirectUrl\":\"/dashboard/jobs/");
+
+            // Deadletter scenario returns jobId and redirectUrl
+            var dlqRes = await client.PostAsync("/dashboard/api/scenarios/deadletter", null);
+            dlqRes.StatusCode.Should().Be(HttpStatusCode.OK);
+            var dlqJson = await dlqRes.Content.ReadAsStringAsync();
+            dlqJson.Should().Contain("\"success\":true");
+            dlqJson.Should().Contain("\"redirectUrl\":\"/dashboard/jobs/");
         }
         finally
         {

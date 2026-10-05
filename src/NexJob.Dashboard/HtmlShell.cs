@@ -976,15 +976,15 @@ internal static class HtmlShell
                 <div class="scenario-card" style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:8px;">
                     <div style="display:flex;align-items:center;justify-content:space-between;">
                         <div style="font-weight:600;font-size:13px;color:var(--text-primary);display:flex;align-items:center;gap:6px;">
-                            <span>⚡</span> Flaky API & Retries
+                            <span>⚡</span> Resilience &amp; Retries
                         </div>
-                        <span class="badge" style="background:var(--warning-light);color:var(--warning);font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;">Retry Loop</span>
+                        <span class="badge" style="background:var(--warning-light);color:var(--warning);font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;">Auto-Retry</span>
                     </div>
                     <div style="font-size:12px;color:var(--text-secondary);line-height:1.4;">
-                        Triggers jobs that fail on the first attempt and recover on retry with exponential backoff.
+                        Enqueues an external API job that fails attempt 1 with HTTP 504 and navigates to the job detail page to inspect the exception and retry backoff.
                     </div>
                     <button type="button" class="btn btn-secondary" onclick="nexJobTriggerScenario('flaky', this)" style="padding:7px 12px;font-size:12px;margin-top:4px;border:1px solid var(--warning);color:var(--warning);">
-                        Trigger Flaky Job
+                        Trigger Resilience Scenario (Inspect Error)
                     </button>
                 </div>
 
@@ -996,10 +996,10 @@ internal static class HtmlShell
                         <span class="badge" style="background:var(--error-light);color:var(--error);font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;">Terminal</span>
                     </div>
                     <div style="font-size:12px;color:var(--text-secondary);line-height:1.4;">
-                        Dispatches jobs that exhaust all retry attempts and move directly to the Dead Letter Queue.
+                        Dispatches a job with fraudulent payload that fails immediately and moves to DLQ. Navigates to inspect the terminal stack trace.
                     </div>
                     <button type="button" class="btn btn-secondary" onclick="nexJobTriggerScenario('deadletter', this)" style="padding:7px 12px;font-size:12px;margin-top:4px;border:1px solid var(--error);color:var(--error);">
-                        Trigger DLQ Job
+                        Trigger DLQ Job (Inspect Error)
                     </button>
                 </div>
 
@@ -1066,8 +1066,12 @@ internal static class HtmlShell
                         setTimeout(function(){
                             btn.innerHTML = originalText;
                             btn.disabled = false;
-                            setTimeout(function(){ window.location.reload(); }, 600);
-                        }, 1000);
+                            if (data.redirectUrl) {
+                                window.location.href = data.redirectUrl;
+                            } else {
+                                setTimeout(function(){ window.location.reload(); }, 600);
+                            }
+                        }, 800);
                     })
                     .catch(function(err){
                         btn.innerHTML = '⚠ Failed';

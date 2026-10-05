@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
+using NexJob;
 
 namespace NexJob.Sample.WorkerService.Jobs;
 
@@ -12,6 +13,7 @@ public record FlakyApiInput(string ActionName, int FailUntilAttempt);
 /// A job that intentionally fails during its first attempts to demonstrate the retry loop,
 /// backoff, and eventual recovery or dead-letter in the dashboard.
 /// </summary>
+[Retry(3, InitialDelay = "00:00:08", Multiplier = 2.0)]
 public sealed class FlakyApiJob : IJob<FlakyApiInput>
 {
     private static readonly ConcurrentDictionary<string, int> _attemptsPerAction = new(StringComparer.Ordinal);
