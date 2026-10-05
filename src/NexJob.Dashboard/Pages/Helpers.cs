@@ -88,6 +88,8 @@ internal static class Helpers
         return retryAttr?.Attempts ?? job.MaxAttempts;
     }
 
+    internal static string DescribeExecutionWindow(NexJob.Configuration.ExecutionWindowSettings window) => string.Empty;
+
     internal static bool IsParameterlessJob(string typeName)
     {
         var type = ResolveType(typeName);

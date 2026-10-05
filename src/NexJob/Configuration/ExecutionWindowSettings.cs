@@ -16,6 +16,14 @@ public sealed class ExecutionWindowSettings
     public string TimeZone { get; set; } = "UTC";
 
     /// <summary>
+    /// Days of the week on which the window opens. <see langword="null"/> or empty (the default) means every day.
+    /// The day is read from the local time in <see cref="TimeZone"/>, never from UTC. A window that crosses midnight
+    /// belongs to the day it starts: with <c>22:00</c>–<c>06:00</c> and Friday selected, Saturday <c>03:00</c> is
+    /// inside the window and Saturday <c>23:00</c> is not. Duplicates are ignored.
+    /// </summary>
+    public DayOfWeek[]? DaysOfWeek { get; set; }
+
+    /// <summary>
     /// Returns <see langword="true"/> if <paramref name="utcNow"/> falls within this window.
     /// Correctly handles windows that cross midnight (e.g. <c>22:00</c>–<c>06:00</c>).
     /// </summary>
