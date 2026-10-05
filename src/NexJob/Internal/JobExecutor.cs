@@ -379,9 +379,22 @@ internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
             timeoutCts?.CancelAfter(timeout!.Value);
             var jobToken = timeoutCts?.Token ?? cancellationToken;
 
-            // Terminal delegate: invokes the actual job
-            JobExecutionDelegate jobInvoker = ct =>
-                ctx.Invoker(ctx.JobInstance, ctx.Input, ct);
+            // Only the limit fired (shutdown has priority and is handled by the caller): a normal failure, not an interruption.
+            bool TimedOut() => timeoutCts is { IsCancellationRequested: true } && !cancellationToken.IsCancellationRequested;
+            TimeoutException TimeoutFailure(OperationCanceledException ex) => new($"Job execution timed out after {timeout!.Value}.", ex);
+
+            // Terminal delegate: invokes the actual job. Converting here lets filters see the TimeoutException.
+            JobExecutionDelegate jobInvoker = async ct =>
+            {
+                try
+                {
+                    await ctx.Invoker(ctx.JobInstance, ctx.Input, ct).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException ex) when (TimedOut())
+                {
+                    throw TimeoutFailure(ex);
+                }
+            };
 
             try
             {
@@ -409,10 +422,10 @@ internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
                     }
                 }
             }
-            catch (OperationCanceledException ex) when (timeoutCts is { IsCancellationRequested: true } && !cancellationToken.IsCancellationRequested)
+            catch (OperationCanceledException ex) when (TimedOut())
             {
-                // Only the limit fired (shutdown has priority and is handled by the caller): a normal failure, not an interruption.
-                throw new TimeoutException($"Job execution timed out after {timeout!.Value}.", ex);
+                // A filter that observed the token itself, before the job ran.
+                throw TimeoutFailure(ex);
             }
         }
         finally
