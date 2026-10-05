@@ -82,6 +82,20 @@ At the limit the job's `CancellationToken` is cancelled and the run fails with a
 - **Cancellation is cooperative.** A job that ignores its token keeps its worker slot until it returns, so pass `ct` to every HTTP, database and delay call.
 - The timer starts after any `[Throttle]` slots are held. A shutdown is not a timeout: the job goes back to the queue without using the attempt.
 
+## Per-Job Attempt Limit
+
+The same job type can need different limits depending on who enqueues it: a 2FA e-mail is useless after one failed try, a monthly invoice is worth ten. Pass `maxAttempts` when you enqueue or schedule:
+
+```csharp
+await scheduler.EnqueueAsync<SendEmailJob, EmailInput>(otpEmail, maxAttempts: 1);       // dead-letter on the first failure
+await scheduler.EnqueueAsync<SendEmailJob, EmailInput>(invoiceEmail, maxAttempts: 8);
+```
+
+The limit for a job is, in order: the `maxAttempts` you passed, then `[Retry(n)]` on the class, then `options.MaxAttempts`. It is stored on the job, so the dashboard and `IJobContext.MaxAttempts` show the real value. Values below `1` throw `ArgumentOutOfRangeException` and nothing is stored. Recurring jobs do not take a per-job limit.
+
+!!! note "One edge to know"
+    A stored limit equal to the global `options.MaxAttempts` is indistinguishable from "not set", so on a class with `[Retry(n)]` the attribute applies. Passing exactly the global default as `maxAttempts` to such a job gives you `n`, not the default.
+
 ## Custom Retry Delay Factory
 
 Replace the built-in delay curve entirely by assigning a delegate to `options.RetryDelayFactory`. The delegate receives the number of attempts already made (1 after the first failure) and returns the `TimeSpan` to wait before the next attempt. This affects all jobs that do not set their own `InitialDelay`.
