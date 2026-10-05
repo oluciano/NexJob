@@ -7,6 +7,11 @@ description: "NexJob is a lightweight .NET background job scheduler with built-i
 NexJob is a reliable background job processing library for .NET 8 that gives you predictable execution, built-in retries, deadline enforcement, and real-time operational visibility — all without paid storage providers or hidden complexity. Unlike Hangfire, every storage provider (PostgreSQL, SQL Server, Redis, MongoDB, and InMemory) is free, deadlines are first-class, OpenTelemetry is built in, and enqueue performance runs **2.7× faster** with **81% less memory** allocated per operation.
 
 <div class="grid cards" markdown>
+  -   [**Live Playground**](playground.md)
+
+    Try the interactive live dashboard, trigger burst jobs, outages, and retries in real time.
+
+
   -   [**Quick Start**](quickstart.md)
 
     Install NexJob and run your first job in under 5 minutes.

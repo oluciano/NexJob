@@ -6,6 +6,15 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Dashboard — Interactive Playground Scenarios & Configurable Default Theme**:
+  - Added configurable `DefaultTheme` (`blue-theme`, `semi-dark`, `dark`, `light`, `bordered-theme`) in `DashboardOptions` and `StandaloneDashboardOptions`.
+  - Added `EnablePlayground` opt-in flag in `DashboardOptions` and `StandaloneDashboardOptions` (defaults to `false` for production safety).
+  - Added interactive offcanvas Playground Scenarios drawer in `HtmlShell` with one-click triggers for standard workloads (`ProcessOrderJob` batch), retry loops (`FlakyApiJob`), terminal dead-letter quarantine (`DeadLetterSampleJob`), concurrency bursts (20 jobs), and cron sweep (only rendered when `EnablePlayground` is enabled).
+  - Implemented `POST {pathPrefix}/api/scenarios/{scenario}` API endpoint in `DashboardMiddleware` for real-time workload simulation without external infrastructure dependencies.
+  - Added Live Playground guide (`docs/wiki/playground.md`), direct Fly.io deployment instructions, live demo badges, and navigation links in `README.md` and documentation site.
+
 ### Fixed
 
 - **Docs — code blocks and heading formatting on documentation site**: corrected legacy 4-space code block indentations, raw Mintlify MDX tags (`<CodeGroup>`, `<Note>`), step heading indentation (`  ####`), and pymdownx tab formatting across all wiki pages. Hardened `docs/site/sync-from-mintlify.py` with `textwrap.dedent` and automatic `<CodeGroup>` tab transformation to prevent regressions.

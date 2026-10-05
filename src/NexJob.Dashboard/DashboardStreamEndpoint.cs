@@ -39,7 +39,7 @@ internal static class DashboardStreamEndpoint
         {
             while (!ct.IsCancellationRequested)
             {
-                var metrics = await GetCachedMetricsAsync(cache, storage, options, activeCluster, ct).ConfigureAwait(false);
+                var metrics = await Pages.Helpers.GetCachedMetricsAsync(cache, storage, options, activeCluster, ct).ConfigureAwait(false);
 
                 var activeResult = await storage.GetJobsAsync(
                     new JobFilter { Status = JobStatus.Processing }, 1, 20, ct).ConfigureAwait(false);
@@ -71,29 +71,5 @@ internal static class DashboardStreamEndpoint
         {
             // Client disconnected or host shutting down — normal exit
         }
-    }
-
-    private static async Task<JobMetrics> GetCachedMetricsAsync(
-        IMemoryCache cache, IDashboardStorage storage, DashboardOptions options, DashboardCluster? activeCluster, CancellationToken ct)
-    {
-        var cacheKey = activeCluster is not null
-            ? $"nexjob:dashboard:metrics:{activeCluster.Id}"
-            : "nexjob:dashboard:metrics";
-
-        // If cache TTL is zero, disable caching
-        if (options.MetricsCacheTtl == TimeSpan.Zero)
-        {
-            return await storage.GetMetricsAsync(ct).ConfigureAwait(false);
-        }
-
-        if (cache.TryGetValue(cacheKey, out JobMetrics? cached) && cached is not null)
-        {
-            return cached;
-        }
-
-        var metrics = await storage.GetMetricsAsync(ct).ConfigureAwait(false);
-        cache.Set(cacheKey, metrics, options.MetricsCacheTtl);
-
-        return metrics;
     }
 }

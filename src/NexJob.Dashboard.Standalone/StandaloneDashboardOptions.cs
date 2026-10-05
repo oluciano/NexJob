@@ -27,6 +27,18 @@ public sealed class StandaloneDashboardOptions
     public string Title { get; set; } = "NexJob";
 
     /// <summary>
+    /// Default color theme when no user preference is stored in the browser.
+    /// Defaults to <c>blue-theme</c>. Supported options: <c>blue-theme</c>, <c>semi-dark</c>, <c>dark</c>, <c>light</c>, <c>bordered-theme</c>.
+    /// </summary>
+    public string DefaultTheme { get; set; } = "blue-theme";
+
+    /// <summary>
+    /// Gets or sets a value indicating whether the interactive playground drawer and demo scenarios are enabled.
+    /// Defaults to <see langword="false"/> for production safety.
+    /// </summary>
+    public bool EnablePlayground { get; set; }
+
+    /// <summary>
     /// When <see langword="true"/>, the dashboard only accepts connections from localhost.
     /// Defaults to <see langword="true"/>. Set it to <see langword="false"/> to listen on all interfaces
     /// (needed inside a container), and then register an <see cref="IDashboardAuthorizationHandler"/>:
