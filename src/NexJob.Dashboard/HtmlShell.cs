@@ -500,6 +500,10 @@ internal static class HtmlShell
         }
         .retry-loop-banner { margin-top: 18px; padding: 14px 18px; background: var(--bg-secondary); border: 1px solid var(--warning); border-radius: 10px; display: flex; align-items: flex-start; gap: 14px; position: relative; overflow: hidden; }
         .retry-loop-banner::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--warning); }
+        .retry-loop-banner.exhausted { border-color: rgba(234, 84, 85, 0.4); }
+        .retry-loop-banner.exhausted::before { background: var(--error); }
+        .retry-loop-banner.recovered { border-color: rgba(40, 199, 111, 0.4); }
+        .retry-loop-banner.recovered::before { background: var(--success); }
         """;
 
     private static readonly string CoreVersion = GetAssemblyVersion(typeof(JobRecord).Assembly);

@@ -18,6 +18,11 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Dashboard — Execution Timeline UX & Effective Retry Budget Alignment**:
+  - Aligned attempt counters across the Job Detail page and Lifecycle Stepper with the job's effective retry policy (`[Retry(N)]` attribute or global `NexJobOptions.MaxAttempts`), fixing misleading discrepancies where jobs with custom retry limits displayed default budget ceilings (e.g. showing `3 of 3` instead of `3 of 10`).
+  - Resolved status contradiction in the Retry Loop banner when a job exhausts all attempts: displays `"Retry Budget Exhausted — Moved to Dead-Letter"` with distinct dead-letter styling instead of showing active loop recovery text.
+  - Revamped the retry loop diagram into a clean, dynamic linear stepper showing all intermediate failed attempts, backoff intervals, and terminal states without skipped steps or raw bracketed emojis.
+  - Fixed timestamp grammar bug in lifecycle card where past job age was formatted as a future countdown (`Age: in 4m` -> `Age: 4m ago`).
 - **Docs — code blocks and heading formatting on documentation site**: corrected legacy 4-space code block indentations, raw Mintlify MDX tags (`<CodeGroup>`, `<Note>`), step heading indentation (`  ####`), and pymdownx tab formatting across all wiki pages. Hardened `docs/site/sync-from-mintlify.py` with `textwrap.dedent` and automatic `<CodeGroup>` tab transformation to prevent regressions.
 
 ## [5.8.0] - 2026-10-04
