@@ -3,7 +3,7 @@ WORKDIR /src
 COPY . .
 RUN dotnet publish samples/NexJob.Sample.WorkerService -c Release -o /app/publish
 
-FROM mcr.microsoft.com/dotnet/runtime:8.0-alpine
+FROM mcr.microsoft.com/dotnet/aspnet:8.0-alpine
 WORKDIR /app
 RUN apk add --no-cache tzdata icu-libs
 COPY --chown=$APP_UID:$APP_UID --from=build /app/publish .
