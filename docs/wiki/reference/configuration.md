@@ -117,7 +117,7 @@ builder.Services.AddNexJob(options =>
 Not every option can be set from `appsettings.json`. The table below lists everything that the configuration binder reads from the `NexJob` section. Options not listed here are silently ignored — a typo in the key has no effect.
 
 !!! note
-    Retention periods (`RetentionSucceeded`, `RetentionFailed`, `RetentionExpired`, `RetentionDeadLetter`), `RetentionInterval`, `RetentionBatchSize`, `EnableBatchAcknowledgment`, `ForeignJobRetryDelay`, `DistributedThrottleTtl`, and `RetryDelayFactory` are **code-only**. Set them in `AddNexJob(options => ...)`, or adjust retention at runtime from the dashboard Settings page.
+    Retention periods (`RetentionSucceeded`, `RetentionFailed`, `RetentionExpired`, `RetentionDeadLetter`), `RetentionInterval`, `RetentionBatchSize`, `EnableBatchAcknowledgment`, `ForeignJobRetryDelay`, `DistributedThrottleTtl`, `RetryDelayFactory`, `DefaultExecutionTimeout`, and `IgnoreRetryAttemptExceptions` are **code-only**. Set them in `AddNexJob(options => ...)`, or adjust retention at runtime from the dashboard Settings page.
 
 
 | Option | Key in `appsettings.json` | Notes |
@@ -141,7 +141,7 @@ Not every option can be set from `appsettings.json`. The table below lists every
 | Dashboard `PollIntervalSeconds` | `Dashboard.PollIntervalSeconds` | Integer |
 | Dashboard `Port` | `Dashboard.Port` | Integer |
 | Dashboard `LocalhostOnly` | `Dashboard.LocalhostOnly` | Boolean |
-| `ForeignJobRetryDelay`, all retention options, `RetentionInterval`, `RetentionBatchSize`, `EnableBatchAcknowledgment`, `RetryDelayFactory`, `DistributedThrottleTtl` | — | **Code only** |
+| `ForeignJobRetryDelay`, all retention options, `RetentionInterval`, `RetentionBatchSize`, `EnableBatchAcknowledgment`, `RetryDelayFactory`, `DistributedThrottleTtl`, `DefaultExecutionTimeout`, `IgnoreRetryAttemptExceptions` | — | **Code only** |
 
 !!! note
     Keys that do not appear in the table above are silently ignored by the binder. A typo such as `"Wokers"` instead of `"Workers"` produces no error and applies the default value instead. Always double-check key names when configuration changes have no visible effect.

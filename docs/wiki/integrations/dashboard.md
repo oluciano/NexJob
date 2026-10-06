@@ -41,9 +41,9 @@ The NexJob Dashboard gives you a real-time window into every aspect of your back
 
     Keyboard-shortcut search across job types, queues, and IDs — accessible from any page in the dashboard.
 
-  -   **Interactive Scenario Simulator**
+  -   [**Interactive Scenario Simulator**](../playground.md)
 
-    Opt-in **Scenarios** drawer to trigger burst loads, simulated outages, retry storms, and dead-letter spikes in staging or development environments. Try it on the [Live Playground](../playground.md).
+    Opt-in **Scenarios** drawer to enqueue order batches, a retry-recovery job, a dead-letter job or a burst, and to trigger recurring jobs, in development or staging. Try it on the Live Playground.
 
 </div>
 
@@ -166,8 +166,8 @@ Choose the package that matches your application type:
 | Option | Type | Default | Description |
 |---|---|---|---|
 | `Title` | `string` | `"NexJob"` | Browser tab title and header label displayed in the UI. |
-| `DefaultTheme` | `string` | `"blue-theme"` | Default UI theme applied when no user preference is cached in `localStorage` (`"blue-theme"`, `"semi-dark"`, `"dark"`, `"light"`, `"bordered"`). |
-| `EnablePlayground` | `bool` | `false` | Enables the interactive Scenarios drawer and simulator API (`/api/scenarios/*`). Keep `false` in production. |
+| `DefaultTheme` | `string` | `"blue-theme"` | Default UI theme applied when no user preference is cached in `localStorage` (`"blue-theme"`, `"semi-dark"`, `"dark"`, `"light"`, `"bordered-theme"`). |
+| `EnablePlayground` | `bool` | `false` | Enables the interactive Scenarios drawer and simulator API (`/api/scenarios/*`). Keep `false` in production. See [Live Playground](../playground.md). |
 | `MetricsCacheTtl` | `TimeSpan` | `TimeSpan.FromSeconds(3)` | How long the dashboard caches aggregated metric results before re-querying storage. Set to `TimeSpan.Zero` to disable caching. |
 | `Queues` | `IReadOnlyList<string>?` | `null` (all queues) | Scope the dashboard to a subset of queues. Navigation counters, queue cards, and default job queries are filtered to these queues only. |
 
