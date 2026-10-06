@@ -30,7 +30,6 @@ theme:
   features:
     - navigation.instant
     - navigation.top
-    - navigation.tabs
     - navigation.sections
     - navigation.expand
     - search.highlight
