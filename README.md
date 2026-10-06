@@ -351,4 +351,6 @@ v5.9.0  ✅ `[ExecutionTimeout]` and `DefaultExecutionTimeout` (cooperative canc
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE) &nbsp;&nbsp; © 2025 [Luciano Azevedo](https://github.com/oluciano)
 
+<img referrerpolicy="no-referrer-when-downgrade" src="https://static.scarf.sh/a.png?x-pxid=088bbff5-783b-4a01-aab6-c4f00637fe56" />
+
 </div>
