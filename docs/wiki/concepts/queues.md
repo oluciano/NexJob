@@ -16,6 +16,23 @@ await scheduler.EnqueueAsync<SendEmailJob, SendEmailInput>(input, cancellationTo
 await scheduler.ScheduleAsync<CleanupJob>(TimeSpan.FromHours(1), cancellationToken: ct);
 ```
 
+!!! tip "Sharing a database with other applications?"
+    `default` is global to the database. If other applications use the same database and also rely on `default`, you see each other's jobs in the dashboard and your workers keep bouncing the jobs they cannot run. Give your application its own queue name, for example `myproject.default`, and use it everywhere:
+
+    ```csharp
+    builder.Services.AddNexJob(options =>
+    {
+        options.Queues = ["myproject.default"];
+    });
+
+    await scheduler.EnqueueAsync<SendEmailJob, SendEmailInput>(
+        input,
+        queue: "myproject.default",
+        cancellationToken: ct);
+    ```
+
+    Pass the same `queue` to recurring jobs and set `TargetQueue` on broker triggers. A job enqueued **without** `queue` still goes to `default`, which your host no longer polls, so it stays `Enqueued` forever. See [Multi-Service](../guides/multi-service.md).
+
 ## Route a job to a queue
 
 Pass `queue` on `EnqueueAsync`, `ScheduleAsync` or `ScheduleAtAsync`:
