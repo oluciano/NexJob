@@ -23,7 +23,7 @@ For a class with `[Retry(n)]`, the `MaxAttempts` stored on a new job, and `IJobC
 
 There is no new stored format. While old and new nodes run together, an old node ignores a per-job `maxAttempts` and applies the class's `[Retry]`, and it does not know `IgnoreRetryAttemptExceptions`, `[ExecutionTimeout]` or `DaysOfWeek`. Everything else is compatible. Upgrade one node first, watch the failed and dead-letter counts, then the rest. To roll back, return to v5.8.0: nothing stored needs to be undone.
 
-New and opt-in, with no action needed: `[ExecutionTimeout]`, `IgnoreRetryAttemptExceptions`, per-job `maxAttempts`, and `DaysOfWeek` (the default is every day).
+New and opt-in, with no action needed: [`[ExecutionTimeout]`](../concepts/retries-and-dead-letter.md#execution-timeout), [`IgnoreRetryAttemptExceptions`](../concepts/retries-and-dead-letter.md#failures-that-should-not-be-retried), [per-job `maxAttempts`](../concepts/retries-and-dead-letter.md#per-job-attempt-limit), and [`DaysOfWeek`](../guides/execution-windows.md#only-on-some-days) (the default is every day).
 
 ## v5.7.0 → v5.8.0
 

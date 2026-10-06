@@ -1,7 +1,7 @@
 ---
-title: "NexJob Live Playground: Interactive Background Job Schedulers"
+title: "NexJob Live Playground: Try the Dashboard in Your Browser"
 sidebarTitle: "Live Playground"
-description: "Try NexJob in your browser with our live interactive playground on Fly.io. Simulate load bursts, outages, dead-letter exhausts, and queue stalls."
+description: "Try NexJob in your browser on the live playground: trigger order batches, retries, dead-letter jobs, bursts and recurring sweeps, or run your own copy."
 ---
 
 # Live Playground
@@ -14,45 +14,47 @@ Experience NexJob directly in your browser without spinning up local databases o
   </a>
 </div>
 
-The playground is a live deployment of the **NexJob Standalone Dashboard** running in an in-memory cluster on [Fly.io](https://nexjob-playground.fly.dev/).
+The playground is a live deployment of the **NexJob Standalone Dashboard** running on [Fly.io](https://nexjob-playground.fly.dev/), with a Scenarios drawer that enqueues real jobs so you can watch them move through the dashboard.
 
 ---
 
 ## Interactive Scenario Simulator
 
-The playground features a dedicated **Scenarios** drawer (accessible from the top header) that lets you trigger real runtime events with a single click:
+The playground features a dedicated **Scenarios** drawer (accessible from the top header) that triggers real runtime events with a single click:
 
 <div class="grid cards" markdown>
 
--   **⚡ Simulate Burst Load**
+-   **Order Batch**
 
-    Enqueues 100 fast background jobs into the `orders` queue. Watch the dispatcher spin up concurrent workers, process jobs in sub-millisecond cycles, and update metrics live.
+    Enqueues order jobs (one, or a batch of five) and lets you follow them from `Enqueued` to `Succeeded` on the Overview and Jobs pages.
 
--   **⚠️ Simulate Outage (Retries)**
+-   **Retry Recovery**
 
-    Enqueues 5 jobs that throw transient simulated HTTP 500 errors. Watch NexJob catch the failures, schedule exponential backoff retries, and resume execution.
+    Enqueues a flaky API job that fails on its first attempt and succeeds on a retry. The dashboard opens the job detail so you can inspect the failed attempt and the recovery.
 
--   **💀 Spike Dead-Letter**
+-   **Dead-Letter**
 
-    Enqueues 3 unhandled fatal exceptions. Observe the jobs exhaust all retry attempts and move automatically to the dead-letter queue with full stack traces and payload inspection.
+    Enqueues a job that fails for good. The dashboard opens its detail page, where the execution timeline shows the retry budget exhausted and the move to dead-letter.
 
--   **⏸️ Simulate Queue Stall**
+-   **Concurrency Burst**
 
-    Pauses the `reports` queue with `IJobControlService` and enqueues 15 heavy report jobs. Inspect the queue buffer accumulation and unpause on demand to watch workers catch up.
+    Enqueues 20 order jobs at once, tagged `traffic-spike`, so you can watch the workers take them concurrently and the metrics update live.
 
--   **⏰ Expire Deadlines**
+-   **Recurring Sweep**
 
-    Enqueues a job with a 5-second deadline into an unserviced queue. Watch NexJob enforce deadline limits, prevent execution, and flag the job as expired without zombie processes.
+    Makes every recurring job due immediately, so the scheduler fires them on its next cycle.
 
 </div>
+
+Each scenario is a `POST` to `{pathPrefix}/api/scenarios/{scenario}` on the dashboard.
 
 ---
 
 ## Enabling Playground in Local Development
 
-For security and operational integrity, the scenario simulator is **disabled by default** (`EnablePlayground = false`). Any scenario trigger requests sent when disabled receive a `403 Forbidden` response.
+For security and operational integrity, the scenario simulator is **disabled by default** (`EnablePlayground = false`). When it is disabled, the Scenarios button is hidden and the scenario endpoint is not served.
 
-You can safely opt in to the playground during local development or staging:
+You can opt in during local development or staging:
 
 === "ASP.NET Core Web App"
 
@@ -97,11 +99,13 @@ You can safely opt in to the playground during local development or staging:
     host.Run();
     ```
 
+`DefaultTheme` sets the theme used when the browser has no stored preference: `blue-theme` (default), `semi-dark`, `dark`, `light` or `bordered-theme`. See [Dashboard configuration options](integrations/dashboard.md#configuration-options).
+
 ---
 
 ## Deploying Your Own Playground
 
-You can containerize and deploy your own playground instance using Docker and cloud platforms like Fly.io:
+You can containerize and deploy your own playground instance using Docker and cloud platforms like Fly.io. This Dockerfile publishes the `NexJob.Sample.WorkerService` sample from the NexJob repository:
 
 ```dockerfile
 FROM mcr.microsoft.com/dotnet/sdk:8.0-alpine AS build
@@ -119,3 +123,7 @@ ENV NexJob__Dashboard__LocalhostOnly=false
 EXPOSE 8080
 ENTRYPOINT ["dotnet", "NexJob.Sample.WorkerService.dll"]
 ```
+
+!!! warning
+
+    `LocalhostOnly=false` exposes the dashboard on every interface. Anyone who can reach the port can read job payloads and run actions, including the scenarios. Use it only for a demo with no real data, or register an `IDashboardAuthorizationHandler` (see [Dashboard Authorization](integrations/dashboard.md#dashboard-authorization)).
