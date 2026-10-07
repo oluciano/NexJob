@@ -169,4 +169,38 @@ public sealed class ServerHeartbeatServiceTests
         await task.Awaiting(t => t).Should().NotThrowAsync();
         _storage.Verify(x => x.HeartbeatServerAsync("test-server", It.IsAny<CancellationToken>()), Times.Once);
     }
+
+    /// <summary>Tests ServerHeartbeatService registration and deregistration lifecycle.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task ServerHeartbeatService_HandlesFullLifecycle()
+    {
+        var storage = new Mock<IJobStorage>();
+        var options = new NexJobOptions { ServerId = "h-server", Workers = 5, Queues = new[] { "q1" } };
+
+        var sut = new ServerHeartbeatService(storage.Object, Options.Create(options), NullLogger<ServerHeartbeatService>.Instance);
+
+        // Start
+        await sut.StartAsync(CancellationToken.None);
+        storage.Verify(x => x.RegisterServerAsync(It.Is<ServerRecord>(s => s.Id == "h-server" && s.WorkerCount == 5), It.IsAny<CancellationToken>()), Times.Once);
+
+        // Stop
+        await sut.StopAsync(CancellationToken.None);
+        storage.Verify(x => x.DeregisterServerAsync("h-server", It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    /// <summary>Tests that ServerHeartbeatService survives registration failure at startup.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task ServerHeartbeatService_SurvivesRegistrationFailure()
+    {
+        var storage = new Mock<IJobStorage>();
+        storage.Setup(x => x.RegisterServerAsync(It.IsAny<ServerRecord>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new Exception("DB Down"));
+
+        var sut = new ServerHeartbeatService(storage.Object, Options.Create(new NexJobOptions()), NullLogger<ServerHeartbeatService>.Instance);
+
+        Func<Task> act = () => sut.StartAsync(CancellationToken.None);
+        await act.Should().NotThrowAsync("Service must survive startup registration errors.");
+    }
 }
