@@ -1,8 +1,10 @@
 using FluentAssertions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
 using NexJob;
 using NexJob.Internal;
+using NexJob.Storage;
 using Xunit;
 
 namespace NexJob.Tests;
@@ -125,5 +127,29 @@ public sealed class OrphanedJobWatcherServiceTests
         var second = await storage.FetchNextAsync(["default"]);
         first.Should().NotBeNull();
         second.Should().BeNull("Enqueued job must not be duplicated by the orphan watcher");
+    }
+
+    /// <summary>Tests that background service executes recovery and survives storage errors.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task ExecuteAsync_RunsRecoveryAndSurvivesErrors()
+    {
+        // Arrange: 1. Throws, 2. Succeeds
+        var storage = new Mock<IJobStorage>();
+        var options = new NexJobOptions { HeartbeatTimeout = TimeSpan.FromMilliseconds(10) };
+        storage.SetupSequence(x => x.RequeueOrphanedJobsAsync(It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new Exception("Storage failure"))
+            .Returns(Task.CompletedTask);
+
+        var sut = new OrphanedJobWatcherService(storage.Object, options, NullLogger<OrphanedJobWatcherService>.Instance);
+        using var cts = new CancellationTokenSource();
+
+        // Act
+        _ = sut.StartAsync(cts.Token);
+        await Task.Delay(100, CancellationToken.None);
+        await sut.StopAsync(CancellationToken.None);
+
+        // Assert
+        storage.Verify(x => x.RequeueOrphanedJobsAsync(options.HeartbeatTimeout, It.IsAny<CancellationToken>()), Times.AtLeast(2));
     }
 }
