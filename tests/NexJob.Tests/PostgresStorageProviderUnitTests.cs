@@ -13,7 +13,7 @@ namespace NexJob.Tests;
 /// Hardening unit tests for <see cref="PostgresStorageProvider"/>.
 /// Targets 100% coverage for mapping, decision logic, and NpgsqlDataSource lifecycle.
 /// </summary>
-public sealed class PostgresHardeningTests
+public sealed class PostgresStorageProviderUnitTests
 {
     private static readonly MethodInfo ParseStatusMethod = typeof(PostgresStorageProvider)
         .GetMethod("ParseStatus", BindingFlags.NonPublic | BindingFlags.Static)!;
