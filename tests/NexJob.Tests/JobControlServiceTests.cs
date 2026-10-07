@@ -183,4 +183,42 @@ public sealed class JobControlServiceTests
 
         _hardenedRuntimestore.Verify(x => x.SaveAsync(It.IsAny<RuntimeSettings>(), It.IsAny<CancellationToken>()), Times.Never);
     }
+
+    /// <summary>Tests DefaultJobControlService delegation and state checks.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task DefaultJobControlService_HandlesAllBranches()
+    {
+        var storage = new Mock<IDashboardStorage>();
+        var runtimeStore = new Mock<IRuntimeSettingsStore>();
+        var sut = new DefaultJobControlService(storage.Object, runtimeStore.Object);
+        var jobId = JobId.New();
+        var rt = new RuntimeSettings();
+
+        runtimeStore.Setup(x => x.GetAsync(It.IsAny<CancellationToken>())).ReturnsAsync(rt);
+
+        // Requeue
+        await sut.RequeueJobAsync(jobId);
+        storage.Verify(x => x.RequeueJobAsync(jobId, It.IsAny<CancellationToken>()), Times.Once);
+
+        // Delete
+        await sut.DeleteJobAsync(jobId);
+        storage.Verify(x => x.DeleteJobAsync(jobId, It.IsAny<CancellationToken>()), Times.Once);
+
+        // Pause (Not paused -> Saves)
+        await sut.PauseQueueAsync("q1");
+        runtimeStore.Verify(x => x.SaveAsync(rt, It.IsAny<CancellationToken>()), Times.Once);
+
+        // Pause (Already paused -> Does not save)
+        await sut.PauseQueueAsync("q1");
+        runtimeStore.Verify(x => x.SaveAsync(rt, It.IsAny<CancellationToken>()), Times.Exactly(1));
+
+        // Resume (Paused -> Saves)
+        await sut.ResumeQueueAsync("q1");
+        runtimeStore.Verify(x => x.SaveAsync(rt, It.IsAny<CancellationToken>()), Times.Exactly(2));
+
+        // Resume (Not paused -> Does not save)
+        await sut.ResumeQueueAsync("q1");
+        runtimeStore.Verify(x => x.SaveAsync(rt, It.IsAny<CancellationToken>()), Times.Exactly(2));
+    }
 }

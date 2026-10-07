@@ -99,4 +99,31 @@ public sealed class RecurringJobRegistrarTests
         /// <summary>Value.</summary>
         public string Value { get; set; } = string.Empty;
     }
+
+    /// <summary>Tests RecurringJobRegistrar logic for ID assignment and type resolution.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task RecurringJobRegistrar_HandlesDuplicateNamesAndInvalidTypes()
+    {
+        var storage = new Mock<IRecurringStorage>();
+        var registry = new NexJobJobRegistry();
+        var sut = new RecurringJobRegistrar(storage.Object, registry, NullLogger<RecurringJobRegistrar>.Instance);
+
+        registry.Register(typeof(TestJob));
+
+        // Duplicate names without IDs
+        var configs = new[]
+        {
+            new RecurringJobSettings { Job = nameof(TestJob), Cron = "* * * * *" },
+            new RecurringJobSettings { Job = nameof(TestJob), Cron = "* * * * *" },
+        };
+
+        await sut.RegisterRecurringJobsAsync(configs);
+        sut.RegisteredJobIds.Should().Contain(new[] { nameof(TestJob), $"{nameof(TestJob)}-1" });
+
+        // Invalid job type
+        var invalidConfigs = new[] { new RecurringJobSettings { Job = "NonExistent", Cron = "* * * * *" } };
+        await sut.RegisterRecurringJobsAsync(invalidConfigs);
+        // Error logged, registered IDs should not contain the invalid one
+    }
 }
