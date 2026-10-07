@@ -26,9 +26,10 @@ public sealed class MongoDeadlineTests
     [Fact]
     public async Task JobNotExecutedAfterDeadline_NoInput()
     {
+        var pauseSignal = new PauseObservedSignal();
         using var host = BuildHost(
             Storage(),
-            s => s.AddTransient<SuccessJob>(sp => new SuccessJob(() => { }, sp.GetRequiredService<ILogger<SuccessJob>>())),
+            s => s.AddTransient<SuccessJob>(sp => new SuccessJob(() => { }, sp.GetRequiredService<ILogger<SuccessJob>>())).AddSingleton<ILoggerProvider>(pauseSignal),
             workers: 1,
             pollingInterval: TimeSpan.FromMilliseconds(100));
 
@@ -37,6 +38,9 @@ public sealed class MongoDeadlineTests
         // The queue is paused so the job is still waiting when its deadline passes.
         var control = host.Services.GetRequiredService<IJobControlService>();
         await control.PauseQueueAsync("default");
+
+        // Pausing takes effect on the next polling cycle: wait until the dispatcher has seen it.
+        await pauseSignal.WaitAsync(TimeSpan.FromSeconds(10));
 
         var scheduler = host.Services.GetRequiredService<IScheduler>();
         var jobId = await scheduler.EnqueueAsync<SuccessJob>(deadlineAfter: TimeSpan.FromMilliseconds(100));
@@ -54,9 +58,10 @@ public sealed class MongoDeadlineTests
     [Fact]
     public async Task JobNotExecutedAfterDeadline_WithInput()
     {
+        var pauseSignal = new PauseObservedSignal();
         using var host = BuildHost(
             Storage(),
-            s => s.AddTransient<SuccessJobWithInput>(sp => new SuccessJobWithInput(() => { }, sp.GetRequiredService<ILogger<SuccessJobWithInput>>())),
+            s => s.AddTransient<SuccessJobWithInput>(sp => new SuccessJobWithInput(() => { }, sp.GetRequiredService<ILogger<SuccessJobWithInput>>())).AddSingleton<ILoggerProvider>(pauseSignal),
             workers: 1,
             pollingInterval: TimeSpan.FromMilliseconds(100));
 
@@ -65,6 +70,9 @@ public sealed class MongoDeadlineTests
         // The queue is paused so the job is still waiting when its deadline passes.
         var control = host.Services.GetRequiredService<IJobControlService>();
         await control.PauseQueueAsync("default");
+
+        // Pausing takes effect on the next polling cycle: wait until the dispatcher has seen it.
+        await pauseSignal.WaitAsync(TimeSpan.FromSeconds(10));
 
         var scheduler = host.Services.GetRequiredService<IScheduler>();
         var jobId = await scheduler.EnqueueAsync<SuccessJobWithInput, SuccessInput>(

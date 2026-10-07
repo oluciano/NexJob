@@ -6,6 +6,10 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Tests — Deadline reliability tests** (issue #371): `JobNotExecutedAfterDeadline_*` enqueued the job right after pausing the queue, so a polling cycle already under way could fetch and run it before its deadline passed. The tests now wait until the dispatcher logs that every queue is paused. Test-only change; production code and assertions are untouched.
+
 ## [5.9.0] - 2026-10-05
 
 ### Added
