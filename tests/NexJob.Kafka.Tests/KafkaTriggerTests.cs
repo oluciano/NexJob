@@ -3,6 +3,7 @@ using Confluent.Kafka;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Moq;
 using NexJob.Internal;
@@ -882,6 +883,125 @@ public sealed class KafkaTriggerTests
         _scheduler.EnqueueCalls.Count.Should().BeInRange(1, 3, "the default backoff is 1 s, 2 s, 5 s: a hot loop would make thousands of attempts");
         _consumerMock.Verify(m => m.Commit(It.IsAny<ConsumeResult<string, string>>()), Times.Never);
         _consumerMock.Verify(m => m.Consume(It.IsAny<TimeSpan>()), Times.Once, "the failing record blocks the partition instead of being skipped");
+    }
+
+    private readonly Mock<IScheduler> _schedulerMock = new();
+    private readonly KafkaTriggerOptions _options = new()
+    {
+        Topic = "test-topic",
+        ConsumeTimeout = TimeSpan.FromMilliseconds(10),
+    };
+    private readonly NexJobOptions _defaultNexJobOptions = new();
+
+    private KafkaTriggerHandler CreateSut()
+    {
+        return new KafkaTriggerHandler(
+            Options.Create(_options),
+            _consumerMock.Object,
+            _schedulerMock.Object,
+            _defaultNexJobOptions,
+            NullLogger<KafkaTriggerHandler>.Instance);
+    }
+
+    private ConsumeResult<string, string> CreateResult(string key, string? jobType = "MyJob", string? trace = null)
+    {
+        var headers = new Headers();
+        if (jobType != null)
+        {
+            headers.Add("nexjob.job_type", Encoding.UTF8.GetBytes(jobType));
+        }
+
+        if (trace != null)
+        {
+            headers.Add("traceparent", Encoding.UTF8.GetBytes(trace));
+        }
+
+        return new ConsumeResult<string, string>
+        {
+            Message = new Message<string, string> { Key = key, Value = "{}", Headers = headers },
+            Topic = "test-topic",
+            Partition = 0,
+            Offset = 1,
+        };
+    }
+
+    // ─── Polling Loop Branches ─────────────────────────────────────────────
+
+    /// <summary>Tests that loop handles null results and EOF correctly.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task ExecuteAsync_HandlesNullAndEOF_ContinuesLoop()
+    {
+        _consumerMock.SetupSequence(x => x.Consume(It.IsAny<TimeSpan>()))
+            .Returns((ConsumeResult<string, string>?)null)
+            .Returns(new ConsumeResult<string, string> { IsPartitionEOF = true })
+            .Throws(new OperationCanceledException());
+
+        var sut = CreateSut();
+        await sut.StartAsync(CancellationToken.None);
+        await Task.Delay(50);
+        await sut.StopAsync(CancellationToken.None);
+
+        _consumerMock.Verify(x => x.Consume(It.IsAny<TimeSpan>()), Times.AtLeast(2));
+    }
+
+    // ─── Message Processing Branches ───────────────────────────────────────
+
+    /// <summary>Tests success path.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task ProcessMessageAsync_Success_EnqueuesAndCommits()
+    {
+        var sut = CreateSut();
+        var result = CreateResult("k1", trace: "00-trace");
+
+        var method = typeof(KafkaTriggerHandler).GetMethod("ProcessMessageAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        await (Task)method!.Invoke(sut, new object[] { result, CancellationToken.None })!;
+
+        _schedulerMock.Verify(x => x.EnqueueAsync(It.Is<JobRecord>(j => j.TraceParent == "00-trace"), It.IsAny<DuplicatePolicy>(), It.IsAny<CancellationToken>()), Times.Once);
+        _consumerMock.Verify(x => x.Commit(result), Times.Once);
+    }
+
+    /// <summary>Tests that enqueue failure with DLT configured moves to DLT.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task ProcessMessageAsync_EnqueueFails_WithDLT_MovesToDLT()
+    {
+        _options.DeadLetterTopic = "test-dlt";
+        var sut = CreateSut();
+        var result = CreateResult("k1");
+
+        // Behavior changed in v5.6: only permanent failures are dead-lettered; a transient one is retried (#265)
+        _schedulerMock.Setup(x => x.EnqueueAsync(It.IsAny<JobRecord>(), It.IsAny<DuplicatePolicy>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new FormatException("Fail"));
+
+        var method = typeof(KafkaTriggerHandler).GetMethod("ProcessMessageAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        await (Task)method!.Invoke(sut, new object[] { result, CancellationToken.None })!;
+
+        _consumerMock.Verify(x => x.ProduceToDeadLetterAsync("test-dlt", result, It.IsAny<Exception>(), It.IsAny<CancellationToken>()), Times.Once);
+        _consumerMock.Verify(x => x.Commit(result), Times.Once);
+    }
+
+    /// <summary>Tests that enqueue failure without DLT does not commit.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task ProcessMessageAsync_EnqueueFails_NoDLT_DoesNotCommit()
+    {
+        _options.DeadLetterTopic = null;
+        var sut = CreateSut();
+        var result = CreateResult("k1");
+
+        _schedulerMock.Setup(x => x.EnqueueAsync(It.IsAny<JobRecord>(), It.IsAny<DuplicatePolicy>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new Exception("Fail"));
+
+        // Behavior changed in v5.6: a transient failure is retried in place until the host stops, so the call only
+        // ends when the token is cancelled, and nothing is committed meanwhile (#265)
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(300));
+        var method = typeof(KafkaTriggerHandler).GetMethod("ProcessMessageAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        var act = async () => await (Task)method!.Invoke(sut, new object[] { result, cts.Token })!;
+        await act.Should().ThrowAsync<OperationCanceledException>();
+
+        _consumerMock.Verify(x => x.Commit(It.IsAny<ConsumeResult<string, string>>()), Times.Never);
     }
 }
 
