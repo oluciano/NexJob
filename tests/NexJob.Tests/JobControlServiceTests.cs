@@ -1,6 +1,7 @@
 using FluentAssertions;
 using Moq;
 using NexJob.Configuration;
+using NexJob.Internal;
 using NexJob.Storage;
 using Xunit;
 
@@ -15,6 +16,8 @@ public sealed class JobControlServiceTests
     public JobControlServiceTests()
     {
         _sut = new DefaultJobControlService(_dashboardStorage.Object, _runtimeStore.Object);
+
+        _hardenedSut = new DefaultJobControlService(_hardenedStorage.Object, _hardenedRuntimestore.Object);
     }
 
     [Fact]
@@ -101,5 +104,83 @@ public sealed class JobControlServiceTests
 
         // Assert
         _runtimeStore.Verify(x => x.SaveAsync(It.IsAny<RuntimeSettings>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    private readonly Mock<IDashboardStorage> _hardenedStorage = new();
+    private readonly Mock<IRuntimeSettingsStore> _hardenedRuntimestore = new();
+    private readonly DefaultJobControlService _hardenedSut;
+
+    /// <summary>Tests that RequeueJobAsync delegates to storage.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task RequeueJobAsync_DelegatesToStorage()
+    {
+        var id = JobId.New();
+        await _hardenedSut.RequeueJobAsync(id);
+        _hardenedStorage.Verify(x => x.RequeueJobAsync(id, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    /// <summary>Tests that DeleteJobAsync delegates to storage.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task DeleteJobAsync_DelegatesToStorage()
+    {
+        var id = JobId.New();
+        await _hardenedSut.DeleteJobAsync(id);
+        _hardenedStorage.Verify(x => x.DeleteJobAsync(id, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    /// <summary>Tests that PauseQueueAsync saves settings when queue is not already paused.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task PauseQueueAsync_WhenQueueNotPaused_SavesSettings()
+    {
+        var rt = new RuntimeSettings();
+        _hardenedRuntimestore.Setup(x => x.GetAsync(It.IsAny<CancellationToken>())).ReturnsAsync(rt);
+
+        await _hardenedSut.PauseQueueAsync("q1");
+
+        rt.PausedQueues.Should().Contain("q1");
+        _hardenedRuntimestore.Verify(x => x.SaveAsync(rt, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    /// <summary>Tests that PauseQueueAsync does not save settings when queue is already paused.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task PauseQueueAsync_WhenQueueAlreadyPaused_DoesNotSave()
+    {
+        var rt = new RuntimeSettings { PausedQueues = { "q1" } };
+        _hardenedRuntimestore.Setup(x => x.GetAsync(It.IsAny<CancellationToken>())).ReturnsAsync(rt);
+
+        await _hardenedSut.PauseQueueAsync("q1");
+
+        _hardenedRuntimestore.Verify(x => x.SaveAsync(It.IsAny<RuntimeSettings>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    /// <summary>Tests that ResumeQueueAsync saves settings when queue is currently paused.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task ResumeQueueAsync_WhenQueuePaused_RemovesAndSaves()
+    {
+        var rt = new RuntimeSettings { PausedQueues = { "q1" } };
+        _hardenedRuntimestore.Setup(x => x.GetAsync(It.IsAny<CancellationToken>())).ReturnsAsync(rt);
+
+        await _hardenedSut.ResumeQueueAsync("q1");
+
+        rt.PausedQueues.Should().NotContain("q1");
+        _hardenedRuntimestore.Verify(x => x.SaveAsync(rt, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    /// <summary>Tests that ResumeQueueAsync does not save settings when queue is not paused.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task ResumeQueueAsync_WhenQueueNotPaused_DoesNotSave()
+    {
+        var rt = new RuntimeSettings();
+        _hardenedRuntimestore.Setup(x => x.GetAsync(It.IsAny<CancellationToken>())).ReturnsAsync(rt);
+
+        await _hardenedSut.ResumeQueueAsync("q1");
+
+        _hardenedRuntimestore.Verify(x => x.SaveAsync(It.IsAny<RuntimeSettings>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 }

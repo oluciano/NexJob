@@ -1,7 +1,9 @@
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
+using NexJob.Internal;
 using Xunit;
 
 namespace NexJob.Internal.Tests;
@@ -153,5 +155,100 @@ public sealed class DeadLetterDispatcherTests
 
         public Task HandleAsync(JobRecord failedJob, Exception lastException, CancellationToken cancellationToken) =>
             Task.FromException(_exception);
+    }
+
+    public DeadLetterDispatcherTests()
+    {
+        _hardenedScopefactory.Setup(x => x.CreateScope()).Returns(_hardenedScope.Object);
+    }
+
+    private readonly Mock<IServiceScopeFactory> _hardenedScopefactory = new();
+    private readonly Mock<IServiceScope> _hardenedScope = new();
+    private readonly ServiceCollection _hardenedServices = new();
+
+    private DefaultDeadLetterDispatcher CreateSut()
+    {
+        var sp = _hardenedServices.BuildServiceProvider();
+        _hardenedScope.Setup(x => x.ServiceProvider).Returns(sp);
+        return new DefaultDeadLetterDispatcher(_hardenedScopefactory.Object, NullLogger<DefaultDeadLetterDispatcher>.Instance);
+    }
+
+    /// <summary>Tests that dispatcher correctly resolves and invokes the registered handler.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task DispatchAsync_WithRegisteredHandler_InvokesIt()
+    {
+        // Arrange
+        var handlerMock = new Mock<IDeadLetterHandler<HardenedTestJob>>();
+        _hardenedServices.AddSingleton(handlerMock.Object);
+        var sut = CreateSut();
+        var job = new JobRecord { Id = JobId.New(), JobType = typeof(HardenedTestJob).AssemblyQualifiedName! };
+        var ex = new Exception("failure");
+
+        // Act
+        await sut.DispatchAsync(job, ex, CancellationToken.None);
+
+        // Assert
+        handlerMock.Verify(x => x.HandleAsync(job, ex, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    /// <summary>Tests that dispatcher does not throw when no handler is registered.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task DispatchAsync_NoHandler_DoesNotThrow()
+    {
+        // Arrange
+        var sut = CreateSut();
+        var job = new JobRecord { Id = JobId.New(), JobType = typeof(HardenedTestJob).AssemblyQualifiedName! };
+
+        // Act
+        Func<Task> act = () => sut.DispatchAsync(job, new Exception(), CancellationToken.None);
+
+        // Assert
+        await act.Should().NotThrowAsync();
+    }
+
+    /// <summary>Tests that dispatcher protects itself from user handler exceptions.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task DispatchAsync_HandlerThrows_SwallowsException()
+    {
+        // Arrange
+        var handlerMock = new Mock<IDeadLetterHandler<HardenedTestJob>>();
+        handlerMock.Setup(x => x.HandleAsync(It.IsAny<JobRecord>(), It.IsAny<Exception>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new Exception("Handler exploded"));
+
+        _hardenedServices.AddSingleton(handlerMock.Object);
+        var sut = CreateSut();
+        var job = new JobRecord { Id = JobId.New(), JobType = typeof(HardenedTestJob).AssemblyQualifiedName! };
+
+        // Act
+        Func<Task> act = () => sut.DispatchAsync(job, new Exception(), CancellationToken.None);
+
+        // Assert
+        await act.Should().NotThrowAsync("DLT failure must never crash the dispatcher.");
+    }
+
+    /// <summary>Tests that dispatcher handles cases where job type cannot be resolved.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task DispatchAsync_InvalidJobType_DoesNotThrow()
+    {
+        // Arrange
+        var sut = CreateSut();
+        var job = new JobRecord { Id = JobId.New(), JobType = "InvalidType" };
+
+        // Act
+        Func<Task> act = () => sut.DispatchAsync(job, new Exception(), CancellationToken.None);
+
+        // Assert
+        await act.Should().NotThrowAsync();
+    }
+
+    /// <summary>Support job.</summary>
+    public sealed class HardenedTestJob : IJob
+    {
+        /// <inheritdoc/>
+        public Task ExecuteAsync(CancellationToken cancellationToken) => Task.CompletedTask;
     }
 }

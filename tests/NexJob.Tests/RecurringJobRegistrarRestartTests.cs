@@ -16,7 +16,7 @@ public sealed class RecurringJobRegistrarRestartTests
 
     public RecurringJobRegistrarRestartTests()
     {
-        _jobRegistry.Register(typeof(RecurringJobRegistrarHardeningTests.TestJob));
+        _jobRegistry.Register(typeof(RecurringJobRegistrarTests.TestJob));
     }
 
     /// <summary>N1 (Positive): a cron changed in configuration is applied when the application restarts.</summary>
@@ -79,7 +79,7 @@ public sealed class RecurringJobRegistrarRestartTests
         (await _storage.GetRecurringJobByIdAsync(JobName)).Should().BeNull();
     }
 
-    private static string JobName => nameof(RecurringJobRegistrarHardeningTests.TestJob);
+    private static string JobName => nameof(RecurringJobRegistrarTests.TestJob);
 
     private static RecurringJobSettings Config(string cron) => new() { Job = JobName, Cron = cron };
 

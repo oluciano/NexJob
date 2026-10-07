@@ -11,16 +11,16 @@ namespace NexJob.Internal.Tests;
 /// Hardening unit tests for <see cref="RecurringJobRegistrar"/>.
 /// Targets 100% branch coverage for ID assignment and type resolution.
 /// </summary>
-public sealed class RecurringJobRegistrarHardeningTests
+public sealed class RecurringJobRegistrarTests
 {
     private readonly Mock<IRecurringStorage> _storage = new();
     private readonly NexJobJobRegistry _jobRegistry = new();
     private readonly RecurringJobRegistrar _sut;
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="RecurringJobRegistrarHardeningTests"/> class.
+    /// Initializes a new instance of the <see cref="RecurringJobRegistrarTests"/> class.
     /// </summary>
-    public RecurringJobRegistrarHardeningTests()
+    public RecurringJobRegistrarTests()
     {
         _sut = new RecurringJobRegistrar(_storage.Object, _jobRegistry, NullLogger<RecurringJobRegistrar>.Instance);
     }
