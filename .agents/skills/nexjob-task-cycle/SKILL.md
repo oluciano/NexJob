@@ -72,9 +72,11 @@ When a task is new, non-trivial, or ambiguous (or when explicitly requested via 
    - **The SRE Question:** If this triggers at 3 AM during an outage, how does the on-call SRE discover, diagnose, and remediate it? Is a Dashboard representation required (`/queues`, `/servers`, `/jobs`, `/catalog`)?
    - **The Developer Question:** Does the developer enqueuing or inspecting jobs have clear visibility into whether their job is waiting, deferred, throttled, or paused?
    - Explicitly decide in grooming: **Is UI representation part of the current DoD**, or should a dedicated UI issue be logged?
-5. **Interactive Alignment:**
-   - Present 2 to 4 concise, targeted trade-off questions to the developer.
-   - Once aligned, formalize the **Definition of Done (DoD)** and the **3N Testing Plan**.
+5. **Interactive Alignment (`/grill-me` Protocol):**
+   - **Zero Raw Text in Chat:** Never ask trade-offs via long chat paragraphs. Trigger the native interactive modal (`ask_question` tool).
+   - Present 2 to 4 concise trade-off questions along the core axes (Scope, Contracts, Failure Modes, UI Visibility, Testing).
+   - Format each option in first-person voice, with the recommended architectural choice first prefixed by `(Recommended)`.
+   - Once the user submits their choices via the modal, immediately formalize the **Definition of Done (DoD)** and the **3N Testing Plan**.
 6. **Backlog Health & Threshold Alert (Anti-Accumulation Guard):**
    - Before or upon creating new issues, monitor open issue volume (`gh issue list --state open --limit 50 | wc -l`).
    - If open issues exceed **15 items**, provide a gentle, non-bureaucratic prompt:

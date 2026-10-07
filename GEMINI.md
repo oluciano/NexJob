@@ -130,8 +130,27 @@ Every trigger you implement must satisfy all 5 guarantees — read `.agents/meth
 - Respect StyleCop rules (SA1202, SA1204, SA1413, SA1508)
 - Always run `dotnet format` before committing
 - Always record changes in `CHANGELOG.md` under `## [Unreleased]` before creating a PR
-- **Testing Standard (Must-Have):** 100% unit test coverage per logic class is the mandate (80% global floor) for Core, Providers, and Triggers.\n  - Integration and Reliability tests are excluded from the coverage metric and must stay out of the `ci.yml`.\n  - Every method or feature MUST have a Testing Matrix (Positive/Negative/Inputs).
-- **Disciplined Engineering Cycle (Must-Have):**\n    1. **Hardening:** Create unit tests targeting 100% branch coverage without modifying production code.\n    2. **Build:** Verify 0 warnings/errors (TreatWarningsAsErrors).\n    3. **Test:** Run all unit tests for the current project.\n    4. **Integrate:** Run integration tests for the project (if applicable) using local infra (Docker/In-Memory).\n    5. **Changelog:** Record all changes in `CHANGELOG.md` under `## [Unreleased]`.\n    6. **Finalize:** Only move to the next project in the solution after the current one is 100% verified.
+- **Testing Standard (Must-Have):** 100% unit test coverage per logic class is the mandate (80% global floor) for Core, Providers, and Triggers.
+  - Integration and Reliability tests are excluded from the coverage metric and must stay out of the `ci.yml`.
+  - Every method or feature MUST have a Testing Matrix (Positive/Negative/Inputs).
+- **Disciplined Engineering Cycle (Must-Have):**
+    1. **Hardening:** Create unit tests targeting 100% branch coverage without modifying production code.
+    2. **Build:** Verify 0 warnings/errors (TreatWarningsAsErrors).
+    3. **Test:** Run all unit tests for the current project.
+    4. **Integrate:** Run integration tests for the project (if applicable) using local infra (Docker/In-Memory).
+    5. **Changelog:** Record all changes in `CHANGELOG.md` under `## [Unreleased]`.
+    6. **Finalize:** Only move to the next project in the solution after the current one is 100% verified.
+
+---
+
+## Token & Context Governance (Universal Economy Rules)
+
+- **Zero Preamble & Direct Responses:** Never repeat user prompts or provide conversational filler. Go straight to the diff, error, or solution.
+- **Surgical File Reading:** Grep/locate symbol line ranges first; read with targeted line slicing (`StartLine`/`EndLine`). Never load 500+ lines into context unnecessarily.
+- **Never Re-read:** Trust existing context; never re-read files that were not modified.
+- **Surgical Logs & Truncation:** When running `dotnet test` or `dotnet build`, truncate output to the failure message and stack trace. Never flood the context with hundreds of lines of passing logs.
+- **Browser Automation (Text > Screenshots):** In dashboard/UI tests, inspect DOM text and accessibility tree first. Restrict screenshots to visual/layout regressions only.
+- **Anti-Loop Safety:** If a command or test fails twice with the identical error, stop immediately and diagnose root cause rather than blindly retrying.
 
 ---
 

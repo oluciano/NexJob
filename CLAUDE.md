@@ -138,3 +138,13 @@ Only valid reason to change a test: behavior was explicitly changed by the archi
 If changed: add comment `// Behavior changed in vX.Y: <reason>`.
 
 800 tests that can be rewritten on demand are worth less than 10 that cannot.
+
+---
+
+## Token & Context Governance (Universal Economy Rules)
+
+- **Zero Preamble & Direct Responses:** Never repeat user prompts or provide conversational filler. Go straight to the diff, error, or solution.
+- **Surgical File Reading:** Grep/locate symbol line ranges first; read with targeted line slicing (`StartLine`/`EndLine`). Never load 500+ lines into context unnecessarily.
+- **Never Re-read:** Trust existing context; never re-read files that were not modified.
+- **Surgical Logs & Truncation:** When running `dotnet test` or `dotnet build`, truncate output to the failure message and stack trace. Never flood the context with hundreds of lines of passing logs.
+- **Anti-Loop Safety:** If a command or test fails twice with the identical error, stop immediately and diagnose root cause rather than blindly retrying.
