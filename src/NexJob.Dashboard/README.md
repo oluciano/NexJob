@@ -122,6 +122,7 @@ When authorization fails, the dashboard returns `401 Unauthorized`.
 | Option | Type | Default | Description |
 |---|---|---|---|
 | `Title` | `string` | `"NexJob"` | Title shown in the browser tab and sidebar header |
+| `EnvironmentName` | `string?` | `null` | Names the deployment environment (for example `"Production"`, `"Staging"`, `"Development"`). When set, the top bar shows a coloured badge and the browser tab title is prefixed (`[PROD] NexJob`, `[STAGING] NexJob`), so nobody mistakes one environment for another. `Production`/`Prod` is red, `Staging`/`Stage`/`QA` amber, `Development`/`Dev`/`Local` green (case-insensitive); any other name gets a neutral badge. On screens up to 768 px the name appears in a ribbon above the header. Names longer than 32 characters are truncated. |
 | `MetricsCacheTtl` | `TimeSpan` | `3s` | Cache duration for dashboard metrics to prevent DB overload during SSE polling |
 | `DefaultTheme` | `string` | `"blue-theme"` | Color theme used when the browser has no stored preference: `blue-theme`, `semi-dark`, `dark`, `light` or `bordered-theme` |
 | `EnablePlayground` | `bool` | `false` | Enables the interactive playground drawer with demo scenarios. Off by default for production safety |
