@@ -182,38 +182,6 @@ internal static class HtmlFragments
             $"</div>";
     }
 
-    /// <summary>Renders a job row for the Overview page recent failures section.</summary>
-    internal static string JobRowOverview(JobRecord job, string pathPrefix, DateTimeOffset now) =>
-        $"<a href=\"{pathPrefix}/jobs/{job.Id.Value}\" style=\"text-decoration:none\">" +
-        $"<div class=\"job-row\" style=\"grid-template-columns: 32px 1fr 100px; padding: 12px 20px; border:none; border-bottom:1px solid var(--border)\">" +
-        $"<div class=\"job-row-dot\">{Helpers.StatusDot(JobStatus.Failed)}</div>" +
-        $"<div class=\"job-row-main\">" +
-        $"<div class=\"job-row-title\" style=\"font-weight:600\">{HtmlEncode(Helpers.ShortType(job.JobType))}</div>" +
-        $"<div class=\"job-row-sub\" style=\"font-size:11px;color:var(--error);white-space:nowrap;overflow:hidden;text-overflow:ellipsis\">{HtmlEncode(Helpers.Truncate(job.LastErrorMessage, 60))}</div>" +
-        $"</div>" +
-        $"<div class=\"job-row-meta\" style=\"text-align:right;font-size:11px;color:var(--text-secondary)\">{Helpers.RelativeTime(job.CompletedAt, now)}</div>" +
-        $"</div></a>";
-
-    /// <summary>Renders status filter pills for the Jobs page.</summary>
-    internal static string StatusPills(string currentStatus, string baseUrl)
-    {
-        var pills = string.Join(string.Empty, new[]
-        {
-            (string.Empty, "All"),
-            ("Enqueued", "Enqueued"),
-            ("Processing", "Processing"),
-            ("Succeeded", "Succeeded"),
-            ("Failed", "Failed"),
-            ("Scheduled", "Scheduled"),
-        }.Select(o =>
-        {
-            var active = string.Equals(currentStatus, o.Item1, StringComparison.Ordinal) ? " active" : string.Empty;
-            var qs = $"?status={Uri.EscapeDataString(o.Item1)}";
-            return $"<a href=\"{baseUrl}{qs}\" class=\"nav-item{active}\" style=\"padding:6px 12px;font-size:12px\">{o.Item2}</a>";
-        }));
-        return $"<div style=\"display:flex;gap:4px;margin-bottom:16px\">{pills}</div>";
-    }
-
     /// <summary>Renders status filter pills for the Failed page (Failed vs Expired).</summary>
     internal static string FailedStatusPills(string currentStatus, string baseUrl)
     {
@@ -360,21 +328,6 @@ internal static class HtmlFragments
         return $"<div class=\"pagination\" style=\"display:flex;align-items:center;gap:12px;margin-top:16px\">{prev}{next}<span class=\"page-info\" style=\"font-size:12px;color:var(--text-tertiary)\">Page {result.Page} of {result.TotalPages} ({result.TotalCount} jobs)</span></div>";
     }
 
-    /// <summary>Renders a detail section with header and key-value grid.</summary>
-    internal static string DetailSection(string sectionTitle, params (string Label, string Value)[] rows) =>
-        $"<div class=\"card\" style=\"margin-bottom:24px\">" +
-        $"<div class=\"card-header\"><h3>{HtmlEncode(sectionTitle)}</h3></div>" +
-        $"<div style=\"padding:20px;display:grid;grid-template-columns:repeat(auto-fit, minmax(300px, 1fr));gap:16px\">" +
-        string.Join(string.Empty, rows.Select(r => DetailRow(r.Label, r.Value))) +
-        $"</div></div>";
-
-    /// <summary>Renders a single key-value pair in a detail grid.</summary>
-    internal static string DetailRow(string label, string value) =>
-        $"<div style=\"display:flex;flex-direction:column;gap:4px\">" +
-        $"<div style=\"font-size:11px;font-weight:700;color:var(--text-secondary);text-transform:uppercase\">{HtmlEncode(label)}</div>" +
-        $"<div style=\"font-size:14px;color:var(--text-primary)\">{value}</div>" +
-        $"</div>";
-
     /// <summary>Renders a progress bar section with percentage and optional message.</summary>
     internal static string ProgressBar(int? percentage, string? message = null)
     {
@@ -421,44 +374,6 @@ internal static class HtmlFragments
             $"<div class=\"terminal-body\"><pre style=\"margin:0;font-size:12px;color:var(--error);overflow-x:auto;font-family:monospace;white-space:pre-wrap\">{HtmlEncode(errorMessage)}</pre></div>" +
             $"</div>" +
             stackTraceHtml +
-            $"</div>";
-    }
-
-    /// <summary>Renders the execution logs section in terminal style.</summary>
-    internal static string LogsSection(IReadOnlyList<JobExecutionLog> logs)
-    {
-        if (logs.Count == 0)
-        {
-            return
-                $"<div style=\"margin-bottom:24px\">" +
-                $"<h3 style=\"margin-bottom:8px;font-size:14px;font-weight:600\">Execution Logs</h3>" +
-                $"<p style=\"color:var(--text-tertiary);font-size:13px\">No logs captured for this execution.</p>" +
-                $"</div>";
-        }
-
-        var logLines = string.Join(string.Empty, logs.Select(entry =>
-        {
-            var color = entry.Level switch
-            {
-                "Warning" => "var(--warning)",
-                "Error" or "Critical" => "var(--error)",
-                "Debug" or "Trace" => "var(--text-tertiary)",
-                _ => "var(--text-secondary)",
-            };
-            var ts = entry.Timestamp.ToString("HH:mm:ss.fff");
-            var msg = HtmlEncode(entry.Message).Replace("\n", "&#10;");
-            return $"<div style=\"display:flex;gap:10px;line-height:1.6\"><span style=\"color:#94a3b8;flex-shrink:0\">[{ts}]</span><span style=\"color:{color};font-weight:600;min-width:70px;flex-shrink:0\">[{entry.Level}]</span><span style=\"color:#e2e8f0;word-break:break-all\">{msg}</span></div>";
-        }));
-
-        return
-            $"<div style=\"margin-bottom:24px\">" +
-            $"<div style=\"display:flex;justify-content:space-between;align-items:center;margin-bottom:8px\">" +
-            $"<h3 style=\"font-size:14px;font-weight:600;margin:0\">Execution Logs <span style=\"font-weight:400;color:var(--text-tertiary)\">({logs.Count} entries)</span></h3>" +
-            $"</div>" +
-            $"<div class=\"terminal-window\">" +
-            $"<div class=\"terminal-header\"><div class=\"terminal-dots\"><span></span><span></span><span></span></div><span class=\"terminal-title\">console.log</span><button class=\"copy-btn\" onclick=\"navigator.clipboard.writeText(this.parentElement.nextElementSibling.innerText);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)\">Copy</button></div>" +
-            $"<div class=\"terminal-body\" style=\"max-height:360px;overflow-y:auto;padding:12px 16px;font-family:monospace;font-size:12px\">{logLines}</div>" +
-            $"</div>" +
             $"</div>";
     }
 
@@ -757,49 +672,6 @@ internal static class HtmlFragments
             $"<td style=\"padding:12px 20px\">{nextHtml}</td>" +
             actionsTd +
             $"</tr>";
-    }
-
-    /// <summary>Renders a server table row.</summary>
-    internal static string ServerRow(ServerRecord server, DateTimeOffset now)
-    {
-        var uptime = server.HeartbeatAt - server.StartedAt;
-        var heartbeatAge = now - server.HeartbeatAt;
-        var heartbeatStatus = heartbeatAge switch
-        {
-            var d when d.TotalSeconds < 60 => $"<span class=\"dot dot-succeeded\"></span> Active",
-            var d when d.TotalMinutes < 5 => $"<span class=\"dot dot-processing\"></span> Recent",
-            _ => $"<span class=\"dot dot-failed\"></span> Offline",
-        };
-
-        return
-            $"<tr>" +
-            $"<td style=\"font-family:monospace;font-size:11px;color:var(--text-tertiary)\" title=\"{HtmlAttributeEncode(server.Id)}\">{Helpers.FormatServerIdHtml(server.Id)}</td>" +
-            $"<td>{Helpers.RelativeTime(server.StartedAt, now)}</td>" +
-            $"<td>{(int)uptime.TotalDays}d {uptime.Hours}h {uptime.Minutes}m</td>" +
-            $"<td><span style=\"color:var(--primary);font-weight:700\">{server.WorkerCount}</span></td>" +
-            $"<td>{HtmlEncode(string.Join(", ", server.Queues))}</td>" +
-            $"<td>{heartbeatStatus}</td>" +
-            $"</tr>";
-    }
-
-    /// <summary>Renders pagination controls for recurring job executions.</summary>
-    internal static string RecurringJobPagination(PagedResult<JobRecord> result, string pathPrefix, string encodedJobId, int pageSize)
-    {
-        var totalPages = (int)Math.Ceiling((double)result.TotalCount / result.PageSize);
-        if (totalPages <= 1)
-        {
-            return string.Empty;
-        }
-
-        var prev = result.Page > 1
-            ? $"<a href=\"{pathPrefix}/recurring/{encodedJobId}?page={result.Page - 1}&pageSize={pageSize}\" class=\"btn btn-secondary btn-sm\">← Prev</a>"
-            : string.Empty;
-
-        var next = result.Page < totalPages
-            ? $"<a href=\"{pathPrefix}/recurring/{encodedJobId}?page={result.Page + 1}&pageSize={pageSize}\" class=\"btn btn-secondary btn-sm\">Next →</a>"
-            : string.Empty;
-
-        return $"<div class=\"pagination\" style=\"display:flex;align-items:center;gap:12px;margin-top:16px\">{prev}{next}<span class=\"page-info\" style=\"font-size:12px;color:var(--text-tertiary)\">Page {result.Page} of {totalPages} ({result.TotalCount} total)</span></div>";
     }
 
     /// <summary>Returns the read-only mode warning banner HTML.</summary>

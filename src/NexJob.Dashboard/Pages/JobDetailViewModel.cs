@@ -18,7 +18,4 @@ internal sealed class JobDetailViewModel
 
     /// <summary>Short type name (class name only, no namespace).</summary>
     internal string ShortType => Helpers.ShortType(Job.JobType);
-
-    /// <summary>Formatted job ID (first 8 chars with ellipsis).</summary>
-    internal string FormattedId => Job.Id.Value.ToString()[..8] + "…";
 }
