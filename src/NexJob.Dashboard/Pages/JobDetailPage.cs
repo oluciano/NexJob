@@ -273,7 +273,7 @@ internal sealed class JobDetailPage : IComponent
         var inputTypeShort = string.IsNullOrEmpty(job.InputType) ? "None (Void / Parameterless)" : Helpers.ShortType(job.InputType);
 
         var overviewCards =
-            $"<div style=\"display:grid;grid-template-columns:repeat(auto-fit, minmax(360px, 1fr));gap:20px;margin-bottom:28px\">" +
+            $"<div style=\"display:grid;grid-template-columns:repeat(auto-fit, minmax(min(360px, 100%), 1fr));gap:20px;margin-bottom:28px\">" +
 
             // Card 1: Configuration & Execution Policies
             $"<div class=\"card\" style=\"margin-bottom:0\">" +

@@ -202,7 +202,7 @@ internal sealed class RecurringJobDetailPage : IComponent
         var lastExactUtc = job.LastExecutedAt.HasValue ? $"{job.LastExecutedAt.Value:yyyy-MM-dd HH:mm:ss} UTC" : string.Empty;
 
         var overviewCards =
-            $"<div style=\"display:grid;grid-template-columns:repeat(auto-fit, minmax(280px, 1fr));gap:20px;margin-bottom:28px\">" +
+            $"<div style=\"display:grid;grid-template-columns:repeat(auto-fit, minmax(min(280px, 100%), 1fr));gap:20px;margin-bottom:28px\">" +
             // Card 1: Schedule
             $"<div class=\"card\" style=\"margin-bottom:0\">" +
             $"<div class=\"card-header\"><h3 style=\"margin:0;font-size:14px;font-weight:600\">Schedule & Frequency</h3></div>" +

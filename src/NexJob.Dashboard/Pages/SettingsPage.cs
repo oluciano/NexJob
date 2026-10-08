@@ -121,7 +121,7 @@ internal sealed class SettingsPage : ComponentBase
             HtmlFragments.Breadcrumbs(PathPrefix, ("Settings", null)) +
             HtmlFragments.PageHeader("Settings", "Live runtime configuration — changes apply immediately") +
 
-            "<div style=\"display:grid;grid-template-columns:repeat(auto-fit, minmax(400px, 1fr));gap:24px\">" +
+            "<div style=\"display:grid;grid-template-columns:repeat(auto-fit, minmax(min(400px, 100%), 1fr));gap:24px\">" +
 
             // Polling card
             "<div class=\"card\">" +
