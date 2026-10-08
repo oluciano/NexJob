@@ -13,7 +13,7 @@ namespace NexJob.Internal.Tests;
 /// Hardening unit tests for <see cref="DefaultJobInvokerFactory"/>.
 /// Targets 100% branch coverage for type resolution and invoker compilation.
 /// </summary>
-public sealed class DefaultJobInvokerFactoryHardeningTests
+public sealed class DefaultJobInvokerFactoryTests
 {
     private readonly Mock<IJobStorage> _storage = new();
     private readonly Mock<IServiceScopeFactory> _scopeFactory = new();
@@ -23,9 +23,9 @@ public sealed class DefaultJobInvokerFactoryHardeningTests
     private readonly ServiceCollection _services = new();
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="DefaultJobInvokerFactoryHardeningTests"/> class.
+    /// Initializes a new instance of the <see cref="DefaultJobInvokerFactoryTests"/> class.
     /// </summary>
-    public DefaultJobInvokerFactoryHardeningTests()
+    public DefaultJobInvokerFactoryTests()
     {
         _scopeFactory.Setup(x => x.CreateScope()).Returns(_scope.Object);
         _migrationPipeline

@@ -238,13 +238,24 @@ Every feature or bug fix must produce minimum 3 tests:
 - **N2 — Negative:** failure path fails as expected
 - **N3 — Invalid Input:** null, empty, boundary — handled gracefully
 
-### Existing Tests Are Immutable Contracts
-NEVER rewrite, rename, or delete a passing test to make new code pass.
+### Existing Tests Are Contracts, Not Files
+NEVER weaken, invert, loosen, skip or delete an assertion to make new code pass.
 When a test breaks after a change: fix the production code, not the test.
-Only valid reason to change a test: behavior was explicitly changed by the architect.
+Only valid reason to change a test's expectation: behavior was explicitly changed by the architect.
 If changed: add comment `// Behavior changed in vX.Y: <reason>`.
 
-800 tests that can be rewritten on demand are worth less than 10 that cannot.
+Allowed, as long as every scenario and assertion survives:
+- Moving a test into its canonical file.
+- Merging near-identical tests into a `[Theory]` / `[InlineData]`.
+- Deleting a proven duplicate (same arrange, same assert, or a strict subset of another test). The PR must name the surviving test.
+
+800 tests that can be rewritten on demand are worth less than 10 that cannot. Moving or merging is not rewriting.
+
+### One Canonical Test File per Class
+Production class `Foo` has one test file, `FooTests.cs`. Parallel or twin files (`FooHardeningTests.cs`, `FooExtraTests.cs`) are banned: edge cases and branch-coverage hardening go inside `FooTests.cs`. `TestSuiteConventionTests` fails the build of the test project when a `*HardeningTests.cs` file appears. Copy-pasting a test verbatim fails the build too (Sonar S4144).
+
+### Prefer Simplification Over Accumulation
+Internal code (`Internal/`, non-public types) is not a contract. When adding behavior, change the existing internal method instead of adding a `*WithX` / `*V2` sibling. Public API (`IScheduler`, `IJobStorage`, public models) stays protected by SemVer. Leave the code with fewer lines than you found it when you touch it.
 
 ---
 

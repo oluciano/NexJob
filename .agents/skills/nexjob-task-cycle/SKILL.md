@@ -176,10 +176,11 @@ Writing the tests first is not enough: show that they test something.
 4. **If the red run shows the premise was wrong** (the bug lives elsewhere, or the behaviour is already correct), stop and go back to Phase 0. Do not bend the test until it fails.
 5. **Storage fixes go one commit per provider**, each turning the shared contract test green for that provider.
 
-### The Immutable Test Contract Rule:
-- **NEVER** rewrite, rename, or delete an existing passing test to make new code pass.
+### The Test Contract Rule:
+- **NEVER** weaken, invert, skip or delete an assertion to make new code pass.
 - When an existing test breaks: fix the production code, not the test.
-- The only exception is if the architect explicitly changed the specification (marked with `// Behavior changed in vX.Y: <reason>`).
+- Moving a test into its canonical `<Class>Tests.cs`, merging into a `[Theory]`, or deleting a proven duplicate is allowed; name the surviving test in the PR. Twin files such as `*HardeningTests.cs` are banned.
+- The only exception to changing an expectation is an explicit architect decision (marked with `// Behavior changed in vX.Y: <reason>`).
 
 ---
 

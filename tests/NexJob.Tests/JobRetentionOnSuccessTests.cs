@@ -15,7 +15,7 @@ namespace NexJob.Internal.Tests;
 /// - N2 (Negative): PurgeOnSuccess job failure retains record and error details for dead-lettering.
 /// - N3 (Boundary/Inputs): Batch acknowledgment respects PurgeOnSuccess/TrimPayload, edge cases with empty payloads.
 /// </summary>
-public sealed class RetentionHardeningTests
+public sealed class JobRetentionOnSuccessTests
 {
     private readonly Mock<IJobStorage> _storage = new();
     private readonly Mock<IJobInvokerFactory> _invokerFactory = new();
@@ -25,7 +25,7 @@ public sealed class RetentionHardeningTests
     private readonly NexJobOptions _options = new() { HeartbeatInterval = TimeSpan.FromMilliseconds(10) };
     private readonly JobExecutor _sut;
 
-    public RetentionHardeningTests()
+    public JobRetentionOnSuccessTests()
     {
         _sut = new JobExecutor(
             _storage.Object,

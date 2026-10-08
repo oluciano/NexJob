@@ -2,6 +2,7 @@ using System.Text;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Moq;
 using NexJob.Internal;
@@ -37,6 +38,9 @@ public sealed class RabbitMqTriggerTests
         _connectionFactoryMock.Setup(f => f.CreateConnection()).Returns(_connectionMock.Object);
         _connectionMock.Setup(c => c.CreateModel()).Returns(_channelMock.Object);
         _channelMock.Setup(m => m.IsOpen).Returns(true);
+
+        _hardenedFactorymock.Setup(x => x.CreateConnection()).Returns(_hardenedConnectionmock.Object);
+        _hardenedConnectionmock.Setup(x => x.CreateModel()).Returns(_hardenedChannelmock.Object);
     }
 
     /// <summary>
@@ -796,6 +800,124 @@ public sealed class RabbitMqTriggerTests
         sw.Elapsed.Should().BeGreaterThan(TimeSpan.FromMilliseconds(900), "the default pause before requeue is one second");
         _channelMock.Verify(m => m.BasicNack(1, false, true), Times.Once);
         _channelMock.Verify(m => m.BasicAck(It.IsAny<ulong>(), It.IsAny<bool>()), Times.Never);
+    }
+
+    private readonly Mock<IConnectionFactory> _hardenedFactorymock = new();
+    private readonly Mock<IConnection> _hardenedConnectionmock = new();
+    private readonly Mock<IModel> _hardenedChannelmock = new();
+    private readonly Mock<IScheduler> _hardenedSchedulermock = new();
+    private readonly RabbitMqTriggerOptions _hardenedOptions = new()
+    {
+        QueueName = "test-q",
+        ReconnectDelay = TimeSpan.FromMilliseconds(10),
+    };
+    private readonly NexJobOptions _hardenedNexjoboptions = new();
+
+    private RabbitMqTriggerHandler HardenedCreateSut()
+    {
+        return new RabbitMqTriggerHandler(
+            Options.Create(_hardenedOptions),
+            _hardenedFactorymock.Object,
+            _hardenedSchedulermock.Object,
+            _hardenedNexjoboptions,
+            NullLogger<RabbitMqTriggerHandler>.Instance);
+    }
+
+    // ─── Metadata Extraction Branches ──────────────────────────────────────
+
+    /// <summary>Tests traceparent extraction with various header states.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task OnMessageReceived_TraceparentBranches()
+    {
+        var sut = HardenedCreateSut();
+        await sut.StartAsync(CancellationToken.None);
+
+        var props = new Mock<IBasicProperties>();
+        IDictionary<string, object>? nullHeaders = null;
+        props.Setup(p => p.Headers).Returns(nullHeaders!);
+
+        var ea = new BasicDeliverEventArgs("t1", 1, false, "ex", "rk", props.Object, new ReadOnlyMemory<byte>(Encoding.UTF8.GetBytes("{}")));
+
+        var method = typeof(RabbitMqTriggerHandler).GetMethod("OnMessageReceivedAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        await (Task)method!.Invoke(sut, new object[] { new object(), ea })!;
+
+        _hardenedChannelmock.Verify(x => x.BasicNack(1, false, false), Times.AtLeastOnce);
+    }
+
+    // ─── Idempotency Key Fallback ──────────────────────────────────────────
+
+    /// <summary>Tests fallback from CorrelationId to MessageId for idempotency key.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task OnMessageReceived_UsesMessageId_WhenCorrelationIdIsMissing()
+    {
+        var sut = HardenedCreateSut();
+        await sut.StartAsync(CancellationToken.None);
+
+        var props = new Mock<IBasicProperties>();
+        props.Setup(p => p.Headers).Returns(new Dictionary<string, object> { ["nexjob.job_type"] = Encoding.UTF8.GetBytes("Job") });
+        string? nullCorrelation = null;
+        props.Setup(p => p.CorrelationId).Returns(nullCorrelation!);
+        props.Setup(p => p.MessageId).Returns("msg-123");
+
+        var ea = new BasicDeliverEventArgs("tag", 1, false, "ex", "rk", props.Object, new ReadOnlyMemory<byte>(Encoding.UTF8.GetBytes("{}")));
+
+        var method = typeof(RabbitMqTriggerHandler).GetMethod("OnMessageReceivedAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        await (Task)method!.Invoke(sut, new object[] { new object(), ea })!;
+
+        _hardenedSchedulermock.Verify(x => x.EnqueueAsync(It.Is<JobRecord>(j => j.IdempotencyKey == "msg-123"), It.IsAny<DuplicatePolicy>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    // ─── Teardown Branches ────────────────────────────────────────────────
+
+    /// <summary>Tests that teardown handles closed channels and null connections gracefully.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task StopAsync_HandlesClosedResources()
+    {
+        var sut = HardenedCreateSut();
+        await sut.StartAsync(CancellationToken.None);
+
+        _hardenedChannelmock.Setup(x => x.IsOpen).Returns(false);
+
+        await sut.StopAsync(CancellationToken.None);
+
+        _hardenedChannelmock.Verify(x => x.BasicCancel(It.IsAny<string>()), Times.Never);
+        _hardenedChannelmock.Verify(x => x.Dispose(), Times.Once);
+    }
+
+    /// <summary>Tests that teardown swallows exceptions.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task Teardown_SwallowsExceptions()
+    {
+        var sut = HardenedCreateSut();
+        await sut.StartAsync(CancellationToken.None);
+
+        _hardenedChannelmock.Setup(x => x.Dispose()).Throws(new Exception("Disposal error"));
+
+        await sut.StopAsync(CancellationToken.None);
+
+        _hardenedChannelmock.Verify(x => x.Dispose(), Times.Once);
+    }
+
+    // ─── Reconnection Lifecycle Branches ───────────────────────────────────
+
+    /// <summary>Tests the reconnection loop logic upon connection failure.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task StartAsync_WhenConnectionFails_RetriesUntilSuccess()
+    {
+        _hardenedFactorymock.SetupSequence(x => x.CreateConnection())
+            .Throws(new Exception("Rabbit down"))
+            .Returns(_hardenedConnectionmock.Object);
+
+        var sut = HardenedCreateSut();
+        await sut.StartAsync(CancellationToken.None);
+        await Task.Delay(50);
+
+        _hardenedFactorymock.Verify(x => x.CreateConnection(), Times.AtLeast(2));
     }
 }
 

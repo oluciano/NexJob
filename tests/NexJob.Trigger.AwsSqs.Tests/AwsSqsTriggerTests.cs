@@ -1,7 +1,10 @@
+using Amazon.SQS;
 using Amazon.SQS.Model;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Moq;
 using NexJob.Internal;
 using NexJob.Storage;
 using Xunit;
@@ -14,6 +17,8 @@ namespace NexJob.Trigger.AwsSqs.Tests;
 /// </summary>
 public sealed class AwsSqsTriggerTests
 {
+    private const string TestQueueUrl = "https://sqs.us-east-1.amazonaws.com/123456789/test-queue";
+
     // ─── Happy path: message received → job enqueued → message deleted ───────
 
     [Fact]
@@ -377,5 +382,473 @@ public sealed class AwsSqsTriggerTests
     private sealed class TestConsumerSqsJob : IJob<string>
     {
         public Task ExecuteAsync(string input, CancellationToken cancellationToken) => Task.CompletedTask;
+    }
+
+    private readonly Mock<ISqsClient> _sqsMock = new();
+    private readonly Mock<IScheduler> _schedulerMock = new();
+    private readonly AwsSqsTriggerOptions _options = new()
+    {
+        QueueUrl = "http://test-sqs",
+        JobName = "MyJob",
+        VisibilityExtensionIntervalSeconds = 1,
+    };
+    private readonly NexJobOptions _nexJobOptions = new();
+
+    private AwsSqsTriggerHandler CreateSut()
+    {
+        return new AwsSqsTriggerHandler(
+            Options.Create(_options),
+            _sqsMock.Object,
+            _schedulerMock.Object,
+            _nexJobOptions,
+            NullLogger<AwsSqsTriggerHandler>.Instance);
+    }
+
+    // ─── Polling Loop Branches ─────────────────────────────────────────────
+
+    /// <summary>Tests that loop continues upon client failure.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task PollLoopAsync_WhenClientThrows_SurvivesAndContinues()
+    {
+        _sqsMock.SetupSequence(x => x.ReceiveMessageAsync(It.IsAny<ReceiveMessageRequest>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new Exception("AWS Down"))
+            .ThrowsAsync(new OperationCanceledException());
+
+        var sut = CreateSut();
+        await sut.StartAsync(CancellationToken.None);
+        await Task.Delay(50);
+        await sut.StopAsync(CancellationToken.None);
+
+        _sqsMock.Verify(x => x.ReceiveMessageAsync(It.IsAny<ReceiveMessageRequest>(), It.IsAny<CancellationToken>()), Times.AtLeastOnce);
+    }
+
+    // ─── Metadata Extraction Branches ──────────────────────────────────────
+
+    /// <summary>Tests traceparent extraction.</summary>
+    [Fact]
+    public void ExtractTraceparent_HandlesAllBranches()
+    {
+        var msgWithTrace = new Message { MessageAttributes = { ["traceparent"] = new MessageAttributeValue { StringValue = "00-trace" } } };
+        var msgNoTrace = new Message();
+        var msgEmptyTrace = new Message { MessageAttributes = { ["traceparent"] = new MessageAttributeValue { StringValue = string.Empty } } };
+
+        var method = typeof(AwsSqsTriggerHandler).GetMethod("ExtractTraceparent", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+
+        method!.Invoke(null, new object[] { msgWithTrace }).Should().Be("00-trace");
+        method!.Invoke(null, new object[] { msgNoTrace }).Should().BeNull();
+        method!.Invoke(null, new object[] { msgEmptyTrace }).Should().BeNull();
+    }
+
+    // ─── Visibility Extension Branches ─────────────────────────────────────
+
+    /// <summary>Tests that extension survives handle expiration.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task ExtendVisibilityAsync_WhenClientThrows_SurvivesAndExits()
+    {
+        var sut = CreateSut();
+        _sqsMock.Setup(x => x.ChangeMessageVisibilityAsync(It.IsAny<ChangeMessageVisibilityRequest>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new Exception("Expired"));
+
+        using var cts = new CancellationTokenSource();
+        var method = typeof(AwsSqsTriggerHandler).GetMethod("ExtendVisibilityAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        await (Task)method!.Invoke(sut, new object[] { "rh123", cts.Token })!;
+
+        _sqsMock.Verify(x => x.ChangeMessageVisibilityAsync(It.IsAny<ChangeMessageVisibilityRequest>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    // ─── Lifecycle Branches ────────────────────────────────────────────────
+
+    /// <summary>Tests that StopAsync logs polling task faults.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task StopAsync_WhenPollingTaskFaults_LogsError()
+    {
+        var sut = CreateSut();
+
+        // Mock ReceiveMessageAsync to throw immediately
+        _sqsMock.Setup(x => x.ReceiveMessageAsync(It.IsAny<ReceiveMessageRequest>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new Exception("Polling failed"));
+
+        // Start will launch the task, but it will fault quickly
+        await sut.StartAsync(CancellationToken.None);
+
+        // Wait for it to fault
+        await Task.Delay(50);
+
+        // Act
+        var act = () => sut.StopAsync(CancellationToken.None);
+
+        // Assert: Should not throw (error is logged and swallowed)
+        await act.Should().NotThrowAsync();
+    }
+
+    // ─── ProcessMessageAsync Branches (TD001) ──────────────────────────────
+
+    /// <summary>Tests that enqueue failure resets message visibility to 0 without deleting the message.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task ProcessMessageAsync_WhenEnqueueFails_ResetsVisibilityToZeroAndDoesNotDelete()
+    {
+        var sut = CreateSut();
+        var message = new Message
+        {
+            MessageId = "msg-fail-branch",
+            ReceiptHandle = "rh-fail-branch",
+            Body = "{\"key\":\"val\"}",
+        };
+
+        _schedulerMock.Setup(x => x.EnqueueAsync(It.IsAny<JobRecord>(), It.IsAny<DuplicatePolicy>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("Storage unreachable"));
+
+        var method = typeof(AwsSqsTriggerHandler).GetMethod(
+            "ProcessMessageAsync",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+
+        await (Task)method!.Invoke(sut, new object[] { message, CancellationToken.None })!;
+
+        _sqsMock.Verify(
+            x => x.ChangeMessageVisibilityAsync(
+                It.Is<ChangeMessageVisibilityRequest>(r => r.VisibilityTimeout == 0 && r.ReceiptHandle == "rh-fail-branch"),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        _sqsMock.Verify(
+            x => x.DeleteMessageAsync(It.IsAny<DeleteMessageRequest>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    /// <summary>Tests that when enqueue fails and resetting visibility throws, the exception is swallowed and logged.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task ProcessMessageAsync_WhenEnqueueFailsAndResetThrows_SurvivesWithoutCrashing()
+    {
+        var sut = CreateSut();
+        var message = new Message
+        {
+            MessageId = "msg-reset-fail",
+            ReceiptHandle = "rh-reset-fail",
+            Body = "{\"key\":\"val\"}",
+        };
+
+        _schedulerMock.Setup(x => x.EnqueueAsync(It.IsAny<JobRecord>(), It.IsAny<DuplicatePolicy>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("Storage unreachable"));
+
+        _sqsMock.Setup(x => x.ChangeMessageVisibilityAsync(
+                It.Is<ChangeMessageVisibilityRequest>(r => r.VisibilityTimeout == 0),
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new Amazon.SQS.AmazonSQSException("SQS change visibility failed"));
+
+        var method = typeof(AwsSqsTriggerHandler).GetMethod(
+            "ProcessMessageAsync",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+
+        var act = () => (Task)method!.Invoke(sut, new object[] { message, CancellationToken.None })!;
+
+        await act.Should().NotThrowAsync();
+    }
+
+    /// <summary>Tests that when delete fails after successful enqueue, visibility is not reset to 0.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task ProcessMessageAsync_WhenDeleteFailsAfterEnqueue_DoesNotResetVisibility()
+    {
+        var sut = CreateSut();
+        var message = new Message
+        {
+            MessageId = "msg-delete-fail",
+            ReceiptHandle = "rh-delete-fail",
+            Body = "{\"key\":\"val\"}",
+        };
+
+        _schedulerMock.Setup(x => x.EnqueueAsync(It.IsAny<JobRecord>(), It.IsAny<DuplicatePolicy>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(JobId.New());
+
+        _sqsMock.Setup(x => x.DeleteMessageAsync(It.IsAny<DeleteMessageRequest>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new Amazon.SQS.AmazonSQSException("Delete failed"));
+
+        var method = typeof(AwsSqsTriggerHandler).GetMethod(
+            "ProcessMessageAsync",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+
+        var act = () => (Task)method!.Invoke(sut, new object[] { message, CancellationToken.None })!;
+
+        await act.Should().NotThrowAsync();
+
+        _sqsMock.Verify(
+            x => x.ChangeMessageVisibilityAsync(
+                It.Is<ChangeMessageVisibilityRequest>(r => r.VisibilityTimeout == 0),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    /// <summary>Tests that cancellation during visibility reset re-throws OperationCanceledException.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task ProcessMessageAsync_WhenResetVisibilityCancelled_PropagatesCancellation()
+    {
+        var sut = CreateSut();
+        var message = new Message
+        {
+            MessageId = "msg-cancel-reset",
+            ReceiptHandle = "rh-cancel-reset",
+            Body = "{\"key\":\"val\"}",
+        };
+
+        _schedulerMock.Setup(x => x.EnqueueAsync(It.IsAny<JobRecord>(), It.IsAny<DuplicatePolicy>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("Storage unreachable"));
+
+        _sqsMock.Setup(x => x.ChangeMessageVisibilityAsync(
+                It.Is<ChangeMessageVisibilityRequest>(r => r.VisibilityTimeout == 0),
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new OperationCanceledException());
+
+        var method = typeof(AwsSqsTriggerHandler).GetMethod(
+            "ProcessMessageAsync",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+
+        var act = async () =>
+        {
+            try
+            {
+                await ((Task)method!.Invoke(sut, new object[] { message, CancellationToken.None })!).ConfigureAwait(false);
+            }
+            catch (System.Reflection.TargetInvocationException ex) when (ex.InnerException is not null)
+            {
+                throw ex.InnerException;
+            }
+        };
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    // ─── N1: Positive — Enqueue succeeds, message deleted, visibility not reset ─
+
+    /// <summary>
+    /// N1 (Positive): Successful enqueue deletes message from SQS and never resets visibility to 0.
+    /// </summary>
+    [Fact]
+    public async Task Sqs_SuccessfulEnqueue_DeletesMessage_DoesNotResetVisibilityToZero()
+    {
+        // Arrange
+        var sqsClient = new MockSqsClient();
+        var scheduler = new MockScheduler();
+        var trigger = CreateTrigger(sqsClient, scheduler);
+
+        sqsClient.AddTestMessage(new Message
+        {
+            MessageId = "msg-success-01",
+            Body = "{\"data\":\"ok\"}",
+            ReceiptHandle = "rh-success-01",
+            MessageAttributes = new Dictionary<string, MessageAttributeValue>(),
+        });
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+        // Act
+        await trigger.StartAsync(cts.Token);
+        await scheduler.WaitForEnqueueAsync(cts.Token);
+        await trigger.StopAsync(cts.Token);
+
+        // Assert
+        sqsClient.DeleteCalls.Should().ContainSingle().Which.Should().Be("rh-success-01");
+        sqsClient.ChangeVisibilityRequests.Should().NotContain(r => r.VisibilityTimeout == 0);
+    }
+
+    // ─── N2: Negative — Enqueue failure resets visibility to 0 and stops extension ─
+
+    /// <summary>
+    /// TD001: AWS SQS visibility extension should not overlap with retry visibility.
+    /// Expected: When enqueue fails, visibility extension loop stops immediately,
+    /// visibility timeout is reset to 0, and message is NOT deleted.
+    /// </summary>
+    [Fact]
+    public async Task Sqs_EnqueueFailure_ShouldStopVisibilityExtensionImmediately()
+    {
+        // Arrange
+        var sqsClient = new MockSqsClient();
+        var scheduler = new MockScheduler { ShouldFailEnqueue = true };
+        var trigger = CreateTrigger(
+            sqsClient,
+            scheduler,
+            visibilityTimeoutSeconds: 10,
+            visibilityExtensionIntervalSeconds: 1);
+
+        sqsClient.AddTestMessage(new Message
+        {
+            MessageId = "msg-td001-fail",
+            Body = "{\"data\":\"fail\"}",
+            ReceiptHandle = "rh-td001-fail",
+            MessageAttributes = new Dictionary<string, MessageAttributeValue>(),
+        });
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+        // Act
+        await trigger.StartAsync(cts.Token);
+        await scheduler.WaitForEnqueueAttemptAsync(cts.Token);
+
+        // Wait brief delay to ensure no trailing extension call occurs after failure
+        await Task.Delay(TimeSpan.FromMilliseconds(500), cts.Token);
+        await trigger.StopAsync(cts.Token);
+
+        // Assert — message must NOT be deleted
+        sqsClient.DeleteCalls.Should().BeEmpty("enqueue failed so message must not be deleted from SQS");
+
+        // Assert — visibility timeout must be immediately reset to 0
+        var resetRequests = sqsClient.ChangeVisibilityRequests.Where(r => r.VisibilityTimeout == 0).ToList();
+        resetRequests.Should().ContainSingle("visibility timeout must be reset to 0 exactly once upon enqueue failure");
+        resetRequests[0].ReceiptHandle.Should().Be("rh-td001-fail");
+        resetRequests[0].QueueUrl.Should().Be(TestQueueUrl);
+
+        // Assert — extension loop stopped immediately; no subsequent extension calls
+        sqsClient.VisibilityExtensionCalls.Should().Be(0, "extension loop must be cancelled before extending");
+    }
+
+    /// <summary>
+    /// N2 (Negative): When enqueue fails and resetting visibility throws an exception,
+    /// the trigger loop survives and continues processing subsequent messages.
+    /// </summary>
+    [Fact]
+    public async Task Sqs_EnqueueFailure_VisibilityResetThrows_DoesNotCrashTriggerLoop()
+    {
+        // Arrange
+        var sqsClient = new MockSqsClient
+        {
+            ChangeVisibilityException = new AmazonSQSException("Simulated SQS error on visibility change"),
+        };
+        var scheduler = new MockScheduler();
+
+        // First message will fail enqueue, second message will succeed
+        scheduler.FailEnqueuePredicate = job => job.IdempotencyKey == "msg-first-fail";
+
+        var trigger = CreateTrigger(sqsClient, scheduler);
+
+        sqsClient.AddTestMessage(new Message
+        {
+            MessageId = "msg-first-fail",
+            Body = "{\"key\":1}",
+            ReceiptHandle = "rh-first-fail",
+            MessageAttributes = new Dictionary<string, MessageAttributeValue>(),
+        });
+
+        sqsClient.AddTestMessage(new Message
+        {
+            MessageId = "msg-second-success",
+            Body = "{\"key\":2}",
+            ReceiptHandle = "rh-second-success",
+            MessageAttributes = new Dictionary<string, MessageAttributeValue>(),
+        });
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+
+        // Act
+        await trigger.StartAsync(cts.Token);
+
+        // Wait for both attempts (one failed, one succeeded)
+        for (var i = 0; i < 50 && sqsClient.DeleteCalls.Count == 0; i++)
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(100), cts.Token);
+        }
+
+        await trigger.StopAsync(cts.Token);
+
+        // Assert — first message was NOT deleted, second message WAS deleted
+        sqsClient.DeleteCalls.Should().ContainSingle().Which.Should().Be("rh-second-success");
+        sqsClient.ChangeVisibilityRequests.Should().Contain(r => r.VisibilityTimeout == 0 && r.ReceiptHandle == "rh-first-fail");
+    }
+
+    // ─── N3: Boundary / Inputs ──────────────────────────────────────────────
+
+    /// <summary>
+    /// N3 (Boundary/Inputs): When cancellation token is cancelled during message processing,
+    /// OperationCanceledException propagates and loop shuts down cleanly.
+    /// </summary>
+    [Fact]
+    public async Task Sqs_Enqueue_CancellationToken_PropagatesCancellation()
+    {
+        // Arrange
+        var sqsClient = new MockSqsClient();
+        var scheduler = new MockScheduler { EnqueueDelay = TimeSpan.FromSeconds(10) };
+        var trigger = CreateTrigger(sqsClient, scheduler);
+
+        sqsClient.AddTestMessage(new Message
+        {
+            MessageId = "msg-cancel",
+            Body = "{}",
+            ReceiptHandle = "rh-cancel",
+            MessageAttributes = new Dictionary<string, MessageAttributeValue>(),
+        });
+
+        using var startCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await trigger.StartAsync(startCts.Token);
+
+        // Cancel during enqueue
+        using var stopCts = new CancellationTokenSource(TimeSpan.FromMilliseconds(200));
+        await trigger.StopAsync(stopCts.Token);
+
+        // Assert
+        sqsClient.DeleteCalls.Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// N3 (Boundary/Inputs): Message with null body and empty attributes still safely resets visibility to 0.
+    /// </summary>
+    [Fact]
+    public async Task Sqs_EnqueueFailure_MessageWithNullBody_ResetsVisibilitySafely()
+    {
+        // Arrange
+        var sqsClient = new MockSqsClient();
+        var scheduler = new MockScheduler { ShouldFailEnqueue = true };
+        var trigger = CreateTrigger(sqsClient, scheduler);
+
+        sqsClient.AddTestMessage(new Message
+        {
+            MessageId = "msg-null-body",
+            Body = null,
+            ReceiptHandle = "rh-null-body",
+            MessageAttributes = new Dictionary<string, MessageAttributeValue>(),
+        });
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+        // Act
+        await trigger.StartAsync(cts.Token);
+        await scheduler.WaitForEnqueueAttemptAsync(cts.Token);
+        await trigger.StopAsync(cts.Token);
+
+        // Assert
+        sqsClient.DeleteCalls.Should().BeEmpty();
+        sqsClient.ChangeVisibilityRequests.Should().ContainSingle(r => r.VisibilityTimeout == 0 && r.ReceiptHandle == "rh-null-body");
+    }
+
+    // ─── Helpers ─────────────────────────────────────────────────────────────
+
+    private static AwsSqsTriggerHandler CreateTrigger(
+        ISqsClient sqsClient,
+        IScheduler scheduler,
+        int visibilityTimeoutSeconds = 5,
+        int visibilityExtensionIntervalSeconds = 3)
+    {
+        var options = Options.Create(new AwsSqsTriggerOptions
+        {
+            QueueUrl = TestQueueUrl,
+            JobName = typeof(TestJob).AssemblyQualifiedName!,
+            MaxMessages = 1,
+            WaitTimeSeconds = 1,
+            VisibilityTimeoutSeconds = visibilityTimeoutSeconds,
+            VisibilityExtensionIntervalSeconds = visibilityExtensionIntervalSeconds,
+        });
+
+        var nexJobOptions = new NexJobOptions { MaxAttempts = 3 };
+        var logger = new MockLogger<AwsSqsTriggerHandler>();
+
+        return new AwsSqsTriggerHandler(
+            options,
+            sqsClient,
+            scheduler,
+            nexJobOptions,
+            logger);
     }
 }
