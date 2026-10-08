@@ -79,6 +79,7 @@ builder.Services.AddNexJobStandaloneDashboard(builder.Configuration);
 | `Port` | `int` | `5005` | Port number the embedded HTTP server listens on |
 | `Path` | `string` | `"/dashboard"` | URL path prefix where the dashboard is mounted |
 | `Title` | `string` | `"NexJob"` | Title displayed in the browser tab and navigation bar |
+| `EnvironmentName` | `string?` | `null` | Names the deployment environment (for example `"Production"`, `"Staging"`, `"Development"`). When set, the top bar shows a coloured badge and the browser tab title is prefixed (`[PROD] NexJob`, `[STAGING] NexJob`), so nobody mistakes one environment for another. `Production`/`Prod` is red, `Staging`/`Stage`/`QA` amber, `Development`/`Dev`/`Local` green (case-insensitive); any other name gets a neutral badge. On screens up to 768 px the name appears in a ribbon above the header. Names longer than 32 characters are truncated. |
 | `LocalhostOnly` | `bool` | `true` | When `true` (default), binds strictly to `localhost`. Set `false` to listen on all interfaces (needed in a container) and register an `IDashboardAuthorizationHandler` |
 | `PollIntervalSeconds` | `int` | `3` | SSE live stream update interval in seconds |
 | `DisableWorkers` | `bool` | `false` | When `true`, sets `NexJobOptions.Workers = 0` to run as a dedicated ops/monitoring container |

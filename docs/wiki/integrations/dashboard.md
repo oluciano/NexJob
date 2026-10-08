@@ -13,6 +13,10 @@ The NexJob Dashboard gives you a real-time window into every aspect of your back
 
     64px top header with a responsive collapsible sidebar, a live cluster health indicator (`HEALTHY`, `DEGRADED`, `INCIDENT`), and `Ctrl+K` keyboard-shortcut search.
 
+  -   **Environment Badge**
+
+    Set `EnvironmentName` and the top bar shows a Production / Staging / Development badge and prefixes the browser tab title, so a Production tab is never mistaken for Staging.
+
   -   **5 Built-In Themes**
 
     One-click theme customizer offcanvas drawer: **Blue Theme** (Midnight — default), **Dark**, **Light**, **Semi-Dark**, and **Bordered**. Selection is persisted in `localStorage`.
@@ -166,6 +170,7 @@ Choose the package that matches your application type:
 | Option | Type | Default | Description |
 |---|---|---|---|
 | `Title` | `string` | `"NexJob"` | Browser tab title and header label displayed in the UI. |
+| `EnvironmentName` | `string?` | `null` | Names the deployment environment (for example `"Production"`, `"Staging"`, `"Development"`). When set, the top bar shows a coloured badge and the browser tab title is prefixed (`[PROD] NexJob`, `[STAGING] NexJob`), so nobody mistakes one environment for another. `Production`/`Prod` is red, `Staging`/`Stage`/`QA` amber, `Development`/`Dev`/`Local` green (case-insensitive); any other name gets a neutral badge. On screens up to 768 px the name appears in a ribbon above the header. Names longer than 32 characters are truncated. |
 | `DefaultTheme` | `string` | `"blue-theme"` | Default UI theme applied when no user preference is cached in `localStorage` (`"blue-theme"`, `"semi-dark"`, `"dark"`, `"light"`, `"bordered-theme"`). |
 | `EnablePlayground` | `bool` | `false` | Enables the interactive Scenarios drawer and simulator API (`/api/scenarios/*`). Keep `false` in production. See [Live Playground](../playground.md). |
 | `MetricsCacheTtl` | `TimeSpan` | `TimeSpan.FromSeconds(3)` | How long the dashboard caches aggregated metric results before re-querying storage. Set to `TimeSpan.Zero` to disable caching. |
@@ -178,6 +183,7 @@ Choose the package that matches your application type:
 | `Port` | `int` | `5005` | TCP port the embedded HTTP server binds to. |
 | `Path` | `string` | `"/dashboard"` | URL path prefix for all dashboard routes. |
 | `Title` | `string` | `"NexJob"` | Browser tab title and header label. |
+| `EnvironmentName` | `string?` | `null` | Names the deployment environment (for example `"Production"`, `"Staging"`, `"Development"`). When set, the top bar shows a coloured badge and the browser tab title is prefixed (`[PROD] NexJob`, `[STAGING] NexJob`), so nobody mistakes one environment for another. `Production`/`Prod` is red, `Staging`/`Stage`/`QA` amber, `Development`/`Dev`/`Local` green (case-insensitive); any other name gets a neutral badge. On screens up to 768 px the name appears in a ribbon above the header. Names longer than 32 characters are truncated. |
 | `DefaultTheme` | `string` | `"blue-theme"` | Default UI theme applied when no user preference is cached in `localStorage`. |
 | `EnablePlayground` | `bool` | `false` | Enables the interactive Scenarios drawer and simulator API (`/api/scenarios/*`). Keep `false` in production. |
 | `LocalhostOnly` | `bool` | `true` | When `true`, the server binds to `127.0.0.1` only. Set `false` to listen on all interfaces. |
