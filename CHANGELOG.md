@@ -8,6 +8,8 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Dashboard — Unreferenced internals removed** (issue #381): six unused `HtmlFragments` helpers (`JobRowOverview`, `StatusPills`, `DetailSection`, `LogsSection`, `ServerRow`, `RecurringJobPagination`) plus `DetailRow`, `RecurringJobDetailViewModel` and `JobDetailViewModel.FormattedId` had no references. All were `internal`; the rendered pages are unchanged.
+- **Tests — Overlapping tests folded** (issue #381): four proven-duplicate retry-policy and dead-letter dispatcher tests were removed. Unit-test line and branch coverage is unchanged (3624/8140 lines, 1282/2730 branches).
 - **Tests — One canonical test file per class** (issue #379): the 26 parallel `*HardeningTests.cs` files were merged into their canonical `<Class>Tests.cs` (or renamed by feature), 27 proven-duplicate test cases and 2 skipped placeholder tests (tracked by #167 and #169) were removed, and `TestSuiteConventionTests` now fails when a `*HardeningTests.cs` file is added again. The rule "existing tests are immutable" now means never weakening an assertion; moving and merging tests is allowed. Test-only change; production code is untouched.
 
 ### Fixed
