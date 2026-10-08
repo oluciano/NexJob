@@ -6,6 +6,8 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [5.10.0] - 2026-10-08
+
 ### Added
 
 - **Dashboard — Environment badge** (issue #357): `DashboardOptions.EnvironmentName` (and the same option on the standalone dashboard) shows a coloured badge in the top bar and prefixes the browser tab title (`[PROD] NexJob`). `Production`/`Prod` is red, `Staging`/`Stage`/`QA` amber, `Development`/`Dev`/`Local` green, any other name neutral; the name is HTML-escaped and capped at 32 characters. On screens up to 768 px the name appears in a ribbon above the header. Unset (the default) changes nothing.
