@@ -14,6 +14,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Tests — Timing-sensitive retention and crash tests** (issue #371): `JobRetentionService_PassesRetentionDeadLetterAndBatchSizeToPolicy` slept a fixed 50 ms before verifying and failed in 3 of 40 CPU-saturated runs; it now waits for the first purge. `SqlServerCrashTests.JobRunningInAKilledProcess_IsRecoveredByAnotherHost_AndRunsOnce` read the marker file as soon as it existed, before the worker wrote the job id (1 failure in 10); it now waits for the content. Test-only change; production code and assertions are untouched.
 - **Tests — Deadline reliability tests** (issue #371): `JobNotExecutedAfterDeadline_*` enqueued the job right after pausing the queue, so a polling cycle already under way could fetch and run it before its deadline passed. The tests now wait until the dispatcher logs that every queue is paused. Test-only change; production code and assertions are untouched.
 
 ## [5.9.0] - 2026-10-05
