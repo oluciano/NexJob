@@ -230,6 +230,11 @@ dotnet test tests/NexJob.IntegrationTests --filter "FullyQualifiedName~<Provider
 dotnet test tests/NexJob.<Package>.IntegrationTests
 ```
 
+- **Test Contract Self-Audit (mandatory when the diff touches `tests/**`):**
+  ```bash
+  git diff develop -- tests | grep -E '^-' | grep -E 'Should\(|Assert\.|Verify\(|Times\.|\[Fact|\[Theory|Skip ='
+  ```
+  Every line printed must be explained in the PR body: moved to which file, duplicate of which surviving test, or `// Behavior changed in vX.Y: <reason>`. An unexplained line means an assertion was weakened: restore it and fix the production code instead.
 - **Architecture Compliance Audit (`03-validation-mode.md`):**
   - [ ] Storage is the single source of truth (no in-memory cache overriding state transitions).
   - [ ] Dispatcher remains stateless.
@@ -329,6 +334,7 @@ gh pr create \
 - [x] \`dotnet format --verify-no-changes\` passed
 - [x] \`dotnet build -c Release\` passed with 0 warnings (TreatWarningsAsErrors)
 - [x] \`dotnet test\` passed with 3N test coverage (Positive/Negative/Input)
+- [x] No assertion weakened or removed; every removed assertion is listed above with its reason (moved, named duplicate, or \`Behavior changed\` marker)
 - [x] No protected core files or storage interfaces modified
 - [x] Public API has XML documentation (///)
 - [x] Documentation & Wiki updated (\`README.md\` and \`docs/wiki/*.md\`)

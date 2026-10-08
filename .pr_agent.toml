@@ -15,6 +15,7 @@ extra_instructions = """
 You are reviewing NexJob, a .NET 8 background job processing library.
 Rules: Storage is source of truth, dispatcher is stateless, deadline enforced before execution. 
 Zero warnings in Release builds. StyleCop enforced.
+Test contract: flag every removed or changed assertion (.Should(), Assert., .Verify(, Times., Throw) and every removed [Fact]/[Theory] under tests/. A removal is acceptable only if the same assertion reappears elsewhere in the PR (a move), it is a named duplicate of a surviving test, or it carries "// Behavior changed in vX.Y: <reason>". Otherwise report it as a weakened test contract.
 """
 
 [pr_description]
