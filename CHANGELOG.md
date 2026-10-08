@@ -6,6 +6,26 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [5.10.0] - 2026-10-08
+
+### Added
+
+- **Dashboard — Environment badge** (issue #357): `DashboardOptions.EnvironmentName` (and the same option on the standalone dashboard) shows a coloured badge in the top bar and prefixes the browser tab title (`[PROD] NexJob`). `Production`/`Prod` is red, `Staging`/`Stage`/`QA` amber, `Development`/`Dev`/`Local` green, any other name neutral; the name is HTML-escaped and capped at 32 characters. On screens up to 768 px the name appears in a ribbon above the header. Unset (the default) changes nothing.
+
+### Changed
+
+- **Dashboard — Unreferenced internals removed** (issue #381): six unused `HtmlFragments` helpers (`JobRowOverview`, `StatusPills`, `DetailSection`, `LogsSection`, `ServerRow`, `RecurringJobPagination`) plus `DetailRow`, `RecurringJobDetailViewModel` and `JobDetailViewModel.FormattedId` had no references. All were `internal`; the rendered pages are unchanged.
+- **Tests — Overlapping tests folded** (issue #381): four proven-duplicate retry-policy and dead-letter dispatcher tests were removed. Unit-test line and branch coverage is unchanged (3624/8140 lines, 1282/2730 branches).
+- **Tests — One canonical test file per class** (issue #379): the 26 parallel `*HardeningTests.cs` files were merged into their canonical `<Class>Tests.cs` (or renamed by feature), 27 proven-duplicate test cases and 2 skipped placeholder tests (tracked by #167 and #169) were removed, and `TestSuiteConventionTests` now fails when a `*HardeningTests.cs` file is added again. The rule "existing tests are immutable" now means never weakening an assertion; moving and merging tests is allowed. Test-only change; production code is untouched.
+
+### Fixed
+
+- **Dashboard — Narrow screens** (issue #357): below 768 px the sidebar took 260 px and the content was squeezed into 130 px, the header overflowed, and several pages scrolled horizontally (719 px wide on a 390 px screen). The sidebar is now icon-only, the header drops the search box and external links, and grids with a fixed minimum column width (`minmax(400px, 1fr)`) and the overview grid shrink to one column. All eight pages measured 390 px wide at a 390 px viewport.
+- **Tests — Retry delay growth test now exercises the real factory** (issue #381): `RetryDelay_MinimumValue_IncreasesWithAttempts` asserted on a lambda defined inside the test and still passed with a constant delay. It now calls the default `RetryDelayFactory`; the delay ranges for attempts 1, 3 and 5 do not overlap, so one sample each is deterministic. Test-only change; production code is untouched.
+- **Tests — Fixed sleeps replaced by waits for the observed state** (issue #371): the dispatcher, filter, retention, orphan-watcher, recurring-result and heartbeat tests no longer sleep a fixed time before asserting, and the dashboard tests no longer hand the same TCP port to two hosts (`address already in use`). In 40 CPU-saturated runs the assembly failed 4 times before the fixes; `NexJob.Tests` now passes 20 of 20 runs at normal load. Test-only change; production code and assertions are untouched.
+- **Tests — Timing-sensitive retention and crash tests** (issue #371): `JobRetentionService_PassesRetentionDeadLetterAndBatchSizeToPolicy` slept a fixed 50 ms before verifying and failed in 3 of 40 CPU-saturated runs; it now waits for the first purge. `SqlServerCrashTests.JobRunningInAKilledProcess_IsRecoveredByAnotherHost_AndRunsOnce` read the marker file as soon as it existed, before the worker wrote the job id (1 failure in 10); it now waits for the content. Test-only change; production code and assertions are untouched.
+- **Tests — Deadline reliability tests** (issue #371): `JobNotExecutedAfterDeadline_*` enqueued the job right after pausing the queue, so a polling cycle already under way could fetch and run it before its deadline passed. The tests now wait until the dispatcher logs that every queue is paused. Test-only change; production code and assertions are untouched.
+
 ## [5.9.0] - 2026-10-05
 
 ### Added

@@ -9,7 +9,7 @@ namespace NexJob.Internal.Tests;
 /// Hardening unit tests for <see cref="JobRecordFactory"/>.
 /// Targets 100% branch coverage for record construction logic.
 /// </summary>
-public sealed class JobRecordFactoryHardeningTests
+public sealed class JobRecordFactoryTests
 {
     private readonly NexJobOptions _options = new() { MaxAttempts = 5 };
 

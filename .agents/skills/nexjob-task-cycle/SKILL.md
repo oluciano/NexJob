@@ -72,9 +72,11 @@ When a task is new, non-trivial, or ambiguous (or when explicitly requested via 
    - **The SRE Question:** If this triggers at 3 AM during an outage, how does the on-call SRE discover, diagnose, and remediate it? Is a Dashboard representation required (`/queues`, `/servers`, `/jobs`, `/catalog`)?
    - **The Developer Question:** Does the developer enqueuing or inspecting jobs have clear visibility into whether their job is waiting, deferred, throttled, or paused?
    - Explicitly decide in grooming: **Is UI representation part of the current DoD**, or should a dedicated UI issue be logged?
-5. **Interactive Alignment:**
-   - Present 2 to 4 concise, targeted trade-off questions to the developer.
-   - Once aligned, formalize the **Definition of Done (DoD)** and the **3N Testing Plan**.
+5. **Interactive Alignment (`/grill-me` Protocol):**
+   - **Zero Raw Text in Chat:** Never ask trade-offs via long chat paragraphs. Trigger the native interactive modal (`ask_question` tool).
+   - Present 2 to 4 concise trade-off questions along the core axes (Scope, Contracts, Failure Modes, UI Visibility, Testing).
+   - Format each option in first-person voice, with the recommended architectural choice first prefixed by `(Recommended)`.
+   - Once the user submits their choices via the modal, immediately formalize the **Definition of Done (DoD)** and the **3N Testing Plan**.
 6. **Backlog Health & Threshold Alert (Anti-Accumulation Guard):**
    - Before or upon creating new issues, monitor open issue volume (`gh issue list --state open --limit 50 | wc -l`).
    - If open issues exceed **15 items**, provide a gentle, non-bureaucratic prompt:
@@ -174,10 +176,11 @@ Writing the tests first is not enough: show that they test something.
 4. **If the red run shows the premise was wrong** (the bug lives elsewhere, or the behaviour is already correct), stop and go back to Phase 0. Do not bend the test until it fails.
 5. **Storage fixes go one commit per provider**, each turning the shared contract test green for that provider.
 
-### The Immutable Test Contract Rule:
-- **NEVER** rewrite, rename, or delete an existing passing test to make new code pass.
+### The Test Contract Rule:
+- **NEVER** weaken, invert, skip or delete an assertion to make new code pass.
 - When an existing test breaks: fix the production code, not the test.
-- The only exception is if the architect explicitly changed the specification (marked with `// Behavior changed in vX.Y: <reason>`).
+- Moving a test into its canonical `<Class>Tests.cs`, merging into a `[Theory]`, or deleting a proven duplicate is allowed; name the surviving test in the PR. Twin files such as `*HardeningTests.cs` are banned.
+- The only exception to changing an expectation is an explicit architect decision (marked with `// Behavior changed in vX.Y: <reason>`).
 
 ---
 
@@ -227,6 +230,11 @@ dotnet test tests/NexJob.IntegrationTests --filter "FullyQualifiedName~<Provider
 dotnet test tests/NexJob.<Package>.IntegrationTests
 ```
 
+- **Test Contract Self-Audit (mandatory when the diff touches `tests/**`):**
+  ```bash
+  git diff develop -- tests | grep -E '^-' | grep -E 'Should\(|Assert\.|Verify\(|Times\.|\[Fact|\[Theory|Skip ='
+  ```
+  Every line printed must be explained in the PR body: moved to which file, duplicate of which surviving test, or `// Behavior changed in vX.Y: <reason>`. An unexplained line means an assertion was weakened: restore it and fix the production code instead.
 - **Architecture Compliance Audit (`03-validation-mode.md`):**
   - [ ] Storage is the single source of truth (no in-memory cache overriding state transitions).
   - [ ] Dispatcher remains stateless.
@@ -326,6 +334,7 @@ gh pr create \
 - [x] \`dotnet format --verify-no-changes\` passed
 - [x] \`dotnet build -c Release\` passed with 0 warnings (TreatWarningsAsErrors)
 - [x] \`dotnet test\` passed with 3N test coverage (Positive/Negative/Input)
+- [x] No assertion weakened or removed; every removed assertion is listed above with its reason (moved, named duplicate, or \`Behavior changed\` marker)
 - [x] No protected core files or storage interfaces modified
 - [x] Public API has XML documentation (///)
 - [x] Documentation & Wiki updated (\`README.md\` and \`docs/wiki/*.md\`)

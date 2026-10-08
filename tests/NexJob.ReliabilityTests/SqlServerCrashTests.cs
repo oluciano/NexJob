@@ -47,7 +47,8 @@ public sealed class SqlServerCrashTests
         using var worker = StartWorker(queue, marker);
         try
         {
-            (await WaitUntil(() => Task.FromResult(File.Exists(marker)), Timeout))
+            // Behavior changed in v5.10: the file appears before the worker has written the job id into it; wait for the content (#371).
+            (await WaitUntil(() => MarkerHasContentAsync(marker), Timeout))
                 .Should().BeTrue($"the worker process should start the job (exited={worker.HasExited})");
             (await File.ReadAllTextAsync(marker)).Should().Be(jobId.Value.ToString(), "the worker took the job we enqueued");
 
@@ -82,6 +83,18 @@ public sealed class SqlServerCrashTests
         stored!.Attempts.Should().Be(2, "the attempt of the process that died is not given back");
 
         await recovering.StopAsync();
+    }
+
+    private static async Task<bool> MarkerHasContentAsync(string marker)
+    {
+        try
+        {
+            return File.Exists(marker) && (await File.ReadAllTextAsync(marker)).Length > 0;
+        }
+        catch (IOException)
+        {
+            return false; // the worker still has the file open for writing
+        }
     }
 
     private static void Register(IServiceCollection services, ExecutionLog log)

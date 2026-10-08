@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Reflection;
 using System.Text.Json;
 using FluentAssertions;
@@ -5,6 +6,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
+using NexJob.Exceptions;
+using NexJob.Internal;
 using NexJob.Storage;
 using Xunit;
 
@@ -36,6 +39,16 @@ public sealed class JobExecutorTests
             _deadLetterDispatcher.Object,
             _throttleRegistry,
             _options,
+            Enumerable.Empty<IJobExecutionFilter>(),
+            NullLogger<JobExecutor>.Instance);
+
+        _hardenedSut = new JobExecutor(
+            _hardenedStorage.Object,
+            _hardenedInvokerfactory.Object,
+            _hardenedRetrypolicy.Object,
+            _hardenedDeadletterdispatcher.Object,
+            _hardenedThrottleregistry,
+            _hardenedOptions,
             Enumerable.Empty<IJobExecutionFilter>(),
             NullLogger<JobExecutor>.Instance);
     }
@@ -516,5 +529,369 @@ public sealed class JobExecutorTests
         var scope = logger.CapturedScopes[0];
         scope.Should().ContainKey("NexJob.TraceParent")
             .WhoseValue.Should().Be(string.Empty, because: "null TraceParent must map to empty string, not null");
+    }
+
+    private readonly Mock<IJobStorage> _hardenedStorage = new();
+    private readonly Mock<IJobInvokerFactory> _hardenedInvokerfactory = new();
+    private readonly Mock<IJobRetryPolicy> _hardenedRetrypolicy = new();
+    private readonly Mock<IDeadLetterDispatcher> _hardenedDeadletterdispatcher = new();
+    private readonly ThrottleRegistry _hardenedThrottleregistry = new();
+    private readonly NexJobOptions _hardenedOptions = new() { HeartbeatInterval = TimeSpan.FromMilliseconds(10) };
+    private readonly JobExecutor _hardenedSut;
+
+    // ─── TryHandleExpirationAsync Branches ─────────────────────────────────
+
+    /// <summary>Tests that expired jobs are marked as expired and not executed.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task ExecuteJobAsync_WhenJobIsExpired_SetsStatusAndReturns()
+    {
+        // Arrange
+        var job = new JobRecord
+        {
+            Id = JobId.New(),
+            ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(-1),
+            JobType = "TestJob",
+        };
+
+        // Act
+        await _hardenedSut.ExecuteJobAsync(job);
+
+        // Assert
+        _hardenedStorage.Verify(x => x.SetExpiredAsync(job.Id, It.IsAny<CancellationToken>()), Times.Once);
+        _hardenedInvokerfactory.Verify(x => x.PrepareAsync(It.IsAny<JobRecord>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    /// <summary>Tests that jobs with future expiration are executed normally.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task ExecuteJobAsync_WhenJobNotExpired_ExecutesNormally()
+    {
+        // Arrange
+        var job = new JobRecord
+        {
+            Id = JobId.New(),
+            ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(10),
+            JobType = "TestJob",
+        };
+        _ = SetupSuccessfulInvoker(job);
+
+        // Act
+        await _hardenedSut.ExecuteJobAsync(job);
+
+        // Assert
+        _hardenedStorage.Verify(x => x.SetExpiredAsync(job.Id, It.IsAny<CancellationToken>()), Times.Never);
+        _hardenedStorage.Verify(x => x.CommitJobResultAsync(job.Id, It.Is<JobExecutionResult>(r => r.Succeeded), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    // ─── Failure Path Branches ─────────────────────────────────────────────
+
+    /// <summary>Tests that dead-letter dispatcher is invoked when retries are exhausted.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task ExecuteJobAsync_WhenRetryAtIsNull_DispatchesToDeadLetter()
+    {
+        // Arrange
+        var job = new JobRecord { Id = JobId.New(), JobType = "TestJob" };
+        var exception = new Exception("Terminal failure");
+
+        _hardenedInvokerfactory.Setup(x => x.PrepareAsync(job, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(exception);
+
+        _hardenedRetrypolicy.Setup(x => x.ComputeRetryAt(job, exception))
+            .Returns((DateTimeOffset?)null);
+
+        // Act
+        await _hardenedSut.ExecuteJobAsync(job);
+
+        // Assert
+        _hardenedDeadletterdispatcher.Verify(x => x.DispatchAsync(job, exception, It.IsAny<CancellationToken>()), Times.Once);
+        _hardenedStorage.Verify(x => x.CommitJobResultAsync(job.Id, It.Is<JobExecutionResult>(r => !r.Succeeded && r.RetryAt == null), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    /// <summary>Tests that dead-letter is NOT invoked when a retry is scheduled.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task ExecuteJobAsync_WhenRetryIsScheduled_DoesNotDispatchToDeadLetter()
+    {
+        // Arrange
+        var job = new JobRecord { Id = JobId.New(), JobType = "TestJob" };
+        var exception = new Exception("Transient failure");
+        var retryAt = DateTimeOffset.UtcNow.AddMinutes(1);
+
+        _hardenedInvokerfactory.Setup(x => x.PrepareAsync(job, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(exception);
+
+        _hardenedRetrypolicy.Setup(x => x.ComputeRetryAt(job, exception))
+            .Returns(retryAt);
+
+        // Act
+        await _hardenedSut.ExecuteJobAsync(job);
+
+        // Assert
+        _hardenedDeadletterdispatcher.Verify(x => x.DispatchAsync(It.IsAny<JobRecord>(), It.IsAny<Exception>(), It.IsAny<CancellationToken>()), Times.Never);
+        _hardenedStorage.Verify(x => x.CommitJobResultAsync(job.Id, It.Is<JobExecutionResult>(r => r.RetryAt == retryAt), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    // ─── Throttling Branches ───────────────────────────────────────────────
+
+    /// <summary>Tests that JobExecutor respects throttling attributes.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task ExecuteJobAsync_WithThrottling_AcquiresAndReleasesSlots()
+    {
+        // Arrange
+        var job = new JobRecord { Id = JobId.New(), JobType = "TestJob" };
+        var throttle = new ThrottleAttribute("resource1", 1);
+        _ = SetupSuccessfulInvoker(job, new[] { throttle });
+
+        // Act
+        await _hardenedSut.ExecuteJobAsync(job);
+
+        // Assert
+        _hardenedStorage.Verify(x => x.CommitJobResultAsync(job.Id, It.Is<JobExecutionResult>(r => r.Succeeded), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    // ─── Filter Branches ───────────────────────────────────────────────────
+
+    /// <summary>Tests that JobExecutor invokes filters in the correct order.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task ExecuteJobAsync_WithFilters_InvokesPipeline()
+    {
+        // Arrange
+        var job = new JobRecord { Id = JobId.New(), JobType = "TestJob" };
+        var filterMock = new Mock<IJobExecutionFilter>();
+
+        var sutWithFilters = new JobExecutor(
+            _hardenedStorage.Object,
+            _hardenedInvokerfactory.Object,
+            _hardenedRetrypolicy.Object,
+            _hardenedDeadletterdispatcher.Object,
+            _hardenedThrottleregistry,
+            _hardenedOptions,
+            new[] { filterMock.Object },
+            NullLogger<JobExecutor>.Instance);
+
+        _ = SetupSuccessfulInvoker(job);
+
+        // Act
+        await sutWithFilters.ExecuteJobAsync(job);
+
+        // Assert
+        filterMock.Verify(x => x.OnExecutingAsync(
+            It.IsAny<JobExecutingContext>(),
+            It.IsAny<JobExecutionDelegate>(),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    // ─── Heartbeat Branches ────────────────────────────────────────────────
+
+    /// <summary>Tests that heartbeat is updated during job execution.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task ExecuteJobAsync_UpdatesHeartbeatDuringExecution()
+    {
+        // Arrange
+        var job = new JobRecord { Id = JobId.New(), JobType = "TestJob" };
+        var heartbeatSeen = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _hardenedStorage.Setup(x => x.UpdateHeartbeatAsync(job.Id, It.IsAny<CancellationToken>()))
+            .Callback(() => heartbeatSeen.TrySetResult())
+            .Returns(Task.CompletedTask);
+
+        _hardenedInvokerfactory.Setup(x => x.PrepareAsync(job, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                var scope = new Mock<IServiceScope>();
+
+                // Behavior changed in v5.10: the job runs until the heartbeat is observed instead of a fixed 50 ms, which a loaded machine could outlast (#371).
+                return new JobInvocationContext(
+                    scope.Object,
+                    new object(),
+                    new object(),
+                    (object j, object i, CancellationToken ct) => heartbeatSeen.Task.WaitAsync(TimeSpan.FromSeconds(10), ct),
+                    Array.Empty<ThrottleAttribute>());
+            });
+
+        // Act
+        await _hardenedSut.ExecuteJobAsync(job);
+
+        // Assert
+        _hardenedStorage.Verify(x => x.UpdateHeartbeatAsync(job.Id, It.IsAny<CancellationToken>()), Times.AtLeastOnce);
+    }
+
+    // ─── Foreign Job Branches ──────────────────────────────────────────────
+
+    /// <summary>N1 (Positive): Tests that foreign job is deferred with ForeignJobRetryDelay, resets attempt, and is not dead-lettered.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task ExecuteJobAsync_WhenForeignJobTypeExceptionThrown_DefersJobWithoutPenalizingAttempts()
+    {
+        // Arrange
+        var job = new JobRecord { Id = JobId.New(), JobType = "ForeignService.Job", Attempts = 1, MaxAttempts = 3 };
+        var foreignException = new ForeignJobTypeException(job.JobType, "Cannot load job type: ForeignService.Job");
+
+        _hardenedInvokerfactory.Setup(x => x.PrepareAsync(job, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(foreignException);
+
+        // Act
+        await _hardenedSut.ExecuteJobAsync(job);
+
+        // Assert
+        // Behavior changed in v5.8: the attempt is given back by the storage (RefundAttempt, issue #327). Editing the local
+        // JobRecord was never persisted by the database providers, so the executor no longer touches it.
+        job.Attempts.Should().Be(1, "the executor leaves the local copy alone; the storage refunds the attempt");
+        _hardenedDeadletterdispatcher.Verify(x => x.DispatchAsync(It.IsAny<JobRecord>(), It.IsAny<Exception>(), It.IsAny<CancellationToken>()), Times.Never);
+        _hardenedRetrypolicy.Verify(x => x.ComputeRetryAt(It.IsAny<JobRecord>(), It.IsAny<Exception>()), Times.Never);
+        _hardenedStorage.Verify(x => x.CommitJobResultAsync(
+            job.Id,
+            It.Is<JobExecutionResult>(r => !r.Succeeded && r.RetryAt != null && r.Exception == foreignException && r.RefundAttempt),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    /// <summary>N2 (Negative): Tests that normal exceptions (non-foreign) are handled via standard retry policy and dead-lettering.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task ExecuteJobAsync_WhenNonForeignExceptionThrown_UsesStandardRetryAndDeadLetter()
+    {
+        // Arrange
+        var job = new JobRecord { Id = JobId.New(), JobType = "TestJob", Attempts = 1, MaxAttempts = 1 };
+        var standardException = new InvalidOperationException("Standard execution failure");
+
+        _hardenedInvokerfactory.Setup(x => x.PrepareAsync(job, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(standardException);
+        _hardenedRetrypolicy.Setup(x => x.ComputeRetryAt(job, standardException))
+            .Returns((DateTimeOffset?)null);
+
+        // Act
+        await _hardenedSut.ExecuteJobAsync(job);
+
+        // Assert
+        _hardenedDeadletterdispatcher.Verify(x => x.DispatchAsync(job, standardException, It.IsAny<CancellationToken>()), Times.Once);
+        _hardenedStorage.Verify(x => x.CommitJobResultAsync(
+            job.Id,
+            It.Is<JobExecutionResult>(r => !r.Succeeded && r.RetryAt == null),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    /// <summary>N3 (Boundary): Tests that when job.Attempts is already 0, deferring a foreign job does not make Attempts negative.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task ExecuteJobAsync_WhenAttemptsZero_ForeignJobDoesNotMakeAttemptsNegative()
+    {
+        // Arrange
+        var job = new JobRecord { Id = JobId.New(), JobType = "ForeignService.Job", Attempts = 0, MaxAttempts = 3 };
+        var foreignException = new ForeignJobTypeException(job.JobType, "Cannot load job type: ForeignService.Job");
+
+        _hardenedInvokerfactory.Setup(x => x.PrepareAsync(job, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(foreignException);
+
+        // Act
+        await _hardenedSut.ExecuteJobAsync(job);
+
+        // Assert
+        job.Attempts.Should().Be(0);
+        _hardenedStorage.Verify(x => x.CommitJobResultAsync(
+            job.Id,
+            It.Is<JobExecutionResult>(r => !r.Succeeded && r.RetryAt != null),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    // ─── Attempt refund through the storage (#327) ─────────────────────────
+
+    /// <summary>N1 (Positive): a foreign job is committed with RefundAttempt so database providers give the attempt back.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task ExecuteJobAsync_WhenForeignJobTypeExceptionThrown_CommitsWithRefundAttempt()
+    {
+        var job = new JobRecord { Id = JobId.New(), JobType = "ForeignService.Job", Attempts = 2, MaxAttempts = 3 };
+        _hardenedInvokerfactory.Setup(x => x.PrepareAsync(job, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new ForeignJobTypeException(job.JobType, "Cannot load job type"));
+
+        await _hardenedSut.ExecuteJobAsync(job);
+
+        _hardenedStorage.Verify(x => x.CommitJobResultAsync(
+            job.Id,
+            It.Is<JobExecutionResult>(r => !r.Succeeded && r.RetryAt != null && r.RefundAttempt),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    /// <summary>N1 (Positive): a job interrupted by shutdown is requeued with RefundAttempt, not dead-lettered.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task ExecuteJobAsync_WhenInterruptedByShutdown_CommitsWithRefundAttempt()
+    {
+        var job = new JobRecord { Id = JobId.New(), JobType = "TestJob", Attempts = 2, MaxAttempts = 3 };
+        using var shutdown = new CancellationTokenSource();
+        _hardenedInvokerfactory.Setup(x => x.PrepareAsync(job, It.IsAny<CancellationToken>()))
+            .Callback(() => shutdown.Cancel())
+            .ThrowsAsync(new OperationCanceledException(shutdown.Token));
+
+        await _hardenedSut.ExecuteJobAsync(job, shutdown.Token);
+
+        _hardenedStorage.Verify(x => x.CommitJobResultAsync(
+            job.Id,
+            It.Is<JobExecutionResult>(r => !r.Succeeded && r.RetryAt != null && r.RefundAttempt),
+            It.IsAny<CancellationToken>()), Times.Once);
+        _hardenedDeadletterdispatcher.Verify(x => x.DispatchAsync(It.IsAny<JobRecord>(), It.IsAny<Exception>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    /// <summary>N2 (Negative): a job that genuinely fails is not refunded; it keeps consuming attempts.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task ExecuteJobAsync_WhenJobFailsNormally_DoesNotRefundTheAttempt()
+    {
+        var job = new JobRecord { Id = JobId.New(), JobType = "TestJob", Attempts = 1, MaxAttempts = 3 };
+        var failure = new InvalidOperationException("real failure");
+        _hardenedInvokerfactory.Setup(x => x.PrepareAsync(job, It.IsAny<CancellationToken>())).ThrowsAsync(failure);
+        _hardenedRetrypolicy.Setup(x => x.ComputeRetryAt(job, failure)).Returns(DateTimeOffset.UtcNow.AddSeconds(1));
+
+        await _hardenedSut.ExecuteJobAsync(job);
+
+        _hardenedStorage.Verify(x => x.CommitJobResultAsync(
+            job.Id,
+            It.Is<JobExecutionResult>(r => !r.Succeeded && r.RetryAt != null && !r.RefundAttempt),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    /// <summary>N3 (Boundary): the executor leaves the local attempt count alone at zero; the storage guards the floor.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task ExecuteJobAsync_WhenAttemptsZeroAndInterrupted_DoesNotGoNegative()
+    {
+        var job = new JobRecord { Id = JobId.New(), JobType = "TestJob", Attempts = 0, MaxAttempts = 3 };
+        using var shutdown = new CancellationTokenSource();
+        _hardenedInvokerfactory.Setup(x => x.PrepareAsync(job, It.IsAny<CancellationToken>()))
+            .Callback(() => shutdown.Cancel())
+            .ThrowsAsync(new OperationCanceledException(shutdown.Token));
+
+        await _hardenedSut.ExecuteJobAsync(job, shutdown.Token);
+
+        job.Attempts.Should().BeGreaterOrEqualTo(0);
+    }
+
+    // ─── Helpers ───────────────────────────────────────────────────────────
+
+    private JobInvocationContext SetupSuccessfulInvoker(JobRecord job, ThrottleAttribute[]? throttles = null)
+    {
+        var scope = new Mock<IServiceScope>();
+        var context = new JobInvocationContext(
+            scope.Object,
+            new object(),
+            new object(),
+            (object j, object i, CancellationToken ct) => Task.CompletedTask,
+            throttles ?? Array.Empty<ThrottleAttribute>());
+
+        _hardenedInvokerfactory.Setup(x => x.PrepareAsync(job, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(context);
+
+        return context;
+    }
+
+    /// <summary>Support job.</summary>
+    public class HardenedTestJob : IJob
+    {
+        /// <inheritdoc/>
+        public Task ExecuteAsync(CancellationToken cancellationToken) => Task.CompletedTask;
     }
 }

@@ -28,7 +28,7 @@
 - Make the **smallest safe change** to fix the root cause.
 - **No refactoring:** Do not clean up unrelated code while fixing a bug.
 - Respect all non-negotiable invariants (storage single source of truth, deadline checks, stateless dispatcher).
-- **Immutable Tests Rule:** NEVER modify an existing passing test to make new code pass. Fix production code.
+- **Test Contract Rule:** NEVER weaken, invert or delete an assertion to make new code pass. Fix production code. Moving or merging tests into the canonical `<Class>Tests.cs` is allowed; no `*HardeningTests.cs` twins.
 
 ---
 

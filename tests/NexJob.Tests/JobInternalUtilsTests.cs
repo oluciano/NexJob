@@ -8,7 +8,7 @@ namespace NexJob.Internal.Tests;
 /// Hardening unit tests for internal utility classes.
 /// Targets 100% coverage for JobTypeResolver and MigrationPipeline.
 /// </summary>
-public sealed class JobInternalUtilsHardeningTests
+public sealed class JobInternalUtilsTests
 {
     // ─── JobTypeResolver ─────────────────────────────────────────────────────
 

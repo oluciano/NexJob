@@ -147,3 +147,6 @@ The dispatcher picks up the job immediately. If the job is not started within 5 
     Distributed traces and metrics are emitted out of the box via `NexJob.OpenTelemetry`. No plugins, no wrappers — just wire up your exporter.
 
 </div>
+
+<img referrerpolicy="no-referrer-when-downgrade" src="https://static.scarf.sh/a.png?x-pxid=088bbff5-783b-4a01-aab6-c4f00637fe56" />
+

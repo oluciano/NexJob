@@ -152,13 +152,18 @@ public sealed class JobRetentionDeadLetterAndBatchingTests
         };
 
         runtimeStore.Setup(x => x.GetAsync(It.IsAny<CancellationToken>())).ReturnsAsync(runtime);
-        storage.Setup(x => x.PurgeJobsAsync(It.IsAny<RetentionPolicy>(), It.IsAny<CancellationToken>())).ReturnsAsync(0);
+        var purged = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        storage.Setup(x => x.PurgeJobsAsync(It.IsAny<RetentionPolicy>(), It.IsAny<CancellationToken>()))
+            .Callback(() => purged.TrySetResult())
+            .ReturnsAsync(0);
 
         var sut = new JobRetentionService(storage.Object, runtimeStore.Object, options, NullLogger<JobRetentionService>.Instance);
         using var cts = new CancellationTokenSource();
 
         _ = sut.StartAsync(cts.Token);
-        await Task.Delay(50, CancellationToken.None);
+
+        // Behavior changed in v5.10: wait for the first purge instead of a fixed 50 ms, which was not enough on a loaded machine (#371).
+        await purged.Task.WaitAsync(TimeSpan.FromSeconds(10));
         await sut.StopAsync(CancellationToken.None);
 
         storage.Verify(x => x.PurgeJobsAsync(

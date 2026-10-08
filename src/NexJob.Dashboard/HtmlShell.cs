@@ -8,6 +8,12 @@ namespace NexJob.Dashboard;
 [ExcludeFromCodeCoverage]
 internal static class HtmlShell
 {
+    /// <summary>Placeholder in the header that <see cref="ApplyEnvironment"/> replaces with the environment badge.</summary>
+    internal const string EnvironmentBadgeMarker = "<!--nexjob:env-badge-->";
+
+    /// <summary>Placeholder after the opening body tag that <see cref="ApplyEnvironment"/> replaces with the narrow-screen ribbon.</summary>
+    internal const string EnvironmentRibbonMarker = "<!--nexjob:env-ribbon-->";
+
     private const string Css =
         """
         :root {
@@ -166,6 +172,12 @@ internal static class HtmlShell
         .header-left { display: flex; align-items: center; gap: 16px; }
         .header-logo { display: flex; align-items: center; gap: 10px; text-decoration: none; color: inherit; width: calc(var(--sidebar-width) - 40px); }
         .header-logo h1 { font-size: 20px; font-weight: 700; color: var(--text-primary); letter-spacing: -0.5px; }
+        .env-badge { display: inline-flex; align-items: center; max-width: 160px; padding: 4px 10px; border-radius: 6px; font-size: 12px; font-weight: 700; letter-spacing: 0.4px; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .env-prod { background: #dc2626; color: #ffffff; }
+        .env-stage { background: #f59e0b; color: #1f2937; }
+        .env-dev { background: #16a34a; color: #ffffff; }
+        .env-other { background: var(--border); color: var(--text-primary); }
+        @media (max-width: 640px) { .env-badge { max-width: 90px; padding: 2px 6px; font-size: 11px; } }
         .logo-badge { font-size: 10px; font-weight: 700; background: var(--primary-light); color: var(--primary); padding: 2px 6px; border-radius: 4px; text-transform: uppercase; }
 
         .btn-toggle-sidebar {
@@ -252,6 +264,30 @@ internal static class HtmlShell
         }
         .sidebar.collapsed ~ .main-content {
             margin-left: 72px; max-width: calc(100vw - 72px);
+        }
+
+        .env-ribbon { display: none; }
+
+        /* Narrow screens: the sidebar is always icon-only and the header drops what does not fit. */
+        @media (max-width: 768px) {
+            .header-search, .header-right > a.header-btn, .header-right .theme-customizer-btn span { display: none; }
+            .header-logo { width: auto; }
+            .top-header { padding: 0 12px; }
+            .sidebar { width: 72px; }
+            .sidebar .nav-category-title,
+            .sidebar .nav-counter,
+            .sidebar .sidebar-footer span,
+            .sidebar .nav-label { display: none; }
+            .sidebar .nav-item { justify-content: center; padding: 12px; }
+            .main-content, .sidebar ~ .main-content { margin-left: 72px; max-width: calc(100vw - 72px); padding: 16px; }
+            #overview-grid { grid-template-columns: 1fr !important; }
+
+            /* The environment name moves from the header to a ribbon above it, which always fits. */
+            .top-header .env-badge { display: none; }
+            .env-ribbon { display: flex; position: fixed; top: 0; left: 0; right: 0; height: 22px; align-items: center; justify-content: center; z-index: 1100; font-size: 11px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; white-space: nowrap; overflow: hidden; }
+            .env-ribbon ~ .top-header { top: 22px; }
+            .env-ribbon ~ .app-container { padding-top: calc(var(--top-header-height) + 22px); }
+            .env-ribbon ~ .app-container .sidebar { top: calc(var(--top-header-height) + 22px); }
         }
 
         /* Health Badge */
@@ -362,7 +398,7 @@ internal static class HtmlShell
         .page-title { font-size: 24px; font-weight: 700; color: var(--text-primary); margin-bottom: 4px; }
         .page-subtitle { font-size: 14px; color: var(--text-secondary); }
 
-        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 24px; margin-bottom: 32px; }
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr)); gap: 24px; margin-bottom: 32px; }
         .stat-card {
             background: var(--bg-primary); border-radius: var(--radius); padding: 20px;
             box-shadow: var(--shadow); transition: var(--transition);
@@ -506,6 +542,8 @@ internal static class HtmlShell
         .retry-loop-banner.recovered::before { background: var(--success); }
         """;
 
+    private const int MaxEnvironmentNameLength = 32;
+
     private static readonly string CoreVersion = GetAssemblyVersion(typeof(JobRecord).Assembly);
 
     /// <summary>Gets or sets the default theme applied when no stored theme preference is found.</summary>
@@ -513,6 +551,40 @@ internal static class HtmlShell
 
     /// <summary>Gets or sets a value indicating whether playground scenario triggers are rendered.</summary>
     internal static bool EnablePlayground { get; set; }
+
+    /// <summary>Adds the environment badge and the browser tab title prefix to a rendered page.</summary>
+    /// <param name="html">The rendered page.</param>
+    /// <param name="environmentName">The configured environment name, or <see langword="null"/> when none is set.</param>
+    /// <returns>The page with the environment markers applied.</returns>
+    internal static string ApplyEnvironment(string html, string? environmentName)
+    {
+        var name = environmentName?.Trim();
+        if (string.IsNullOrEmpty(name))
+        {
+            return html
+                .Replace(EnvironmentBadgeMarker, string.Empty, StringComparison.Ordinal)
+                .Replace(EnvironmentRibbonMarker, string.Empty, StringComparison.Ordinal);
+        }
+
+        if (name.Length > MaxEnvironmentNameLength)
+        {
+            name = name[..MaxEnvironmentNameLength];
+        }
+
+        var (cssClass, tabLabel) = ClassifyEnvironment(name);
+        var encodedName = System.Web.HttpUtility.HtmlEncode(name);
+        var badge = $"<span class=\"env-badge {cssClass}\" title=\"Environment: {encodedName}\">{encodedName}</span>";
+        var ribbon = $"<div class=\"env-ribbon {cssClass}\">{encodedName}</div>";
+        var page = html
+            .Replace(EnvironmentBadgeMarker, badge, StringComparison.Ordinal)
+            .Replace(EnvironmentRibbonMarker, ribbon, StringComparison.Ordinal);
+
+        const string titleOpen = "<title>";
+        var titleStart = page.IndexOf(titleOpen, StringComparison.Ordinal);
+        return titleStart < 0
+            ? page
+            : page.Insert(titleStart + titleOpen.Length, $"[{System.Web.HttpUtility.HtmlEncode(tabLabel)}] ");
+    }
 
     /// <summary>Wraps the content in the standard HTML shell.</summary>
     internal static string Wrap(
@@ -537,6 +609,7 @@ internal static class HtmlShell
             <style>{{Css}}</style>
         </head>
         <body>
+        {{EnvironmentRibbonMarker}}
         <!-- Top Header (Maxton 64px) -->
         <header class="top-header">
             <div class="header-left">
@@ -554,6 +627,7 @@ internal static class HtmlShell
                 </div>
             </div>
             <div class="header-right">
+                {{EnvironmentBadgeMarker}}
                 {{ClusterSwitcher(clusters, activeCluster)}}
                 {{HealthBadge(metrics)}}
                 {{ScenariosButton()}}
@@ -858,6 +932,18 @@ internal static class HtmlShell
 
     /// <summary>Generates a 404 page.</summary>
     internal static string NotFound(string title, string pathPrefix) => Wrap(title, pathPrefix, string.Empty, "404 Not Found");
+
+    private static (string CssClass, string TabLabel) ClassifyEnvironment(string name)
+    {
+        var upper = name.ToUpperInvariant();
+        return upper switch
+        {
+            "PRODUCTION" or "PROD" => ("env-prod", "PROD"),
+            "STAGING" or "STAGE" or "QA" => ("env-stage", upper),
+            "DEVELOPMENT" or "DEV" or "LOCAL" => ("env-dev", upper),
+            _ => ("env-other", upper),
+        };
+    }
 
     private static string HealthBadge(JobMetrics? m)
     {

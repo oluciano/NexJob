@@ -9,6 +9,16 @@ public sealed class DashboardOptions
     public string Title { get; set; } = "NexJob";
 
     /// <summary>
+    /// Name of the deployment environment, for example <c>Production</c>, <c>Staging</c> or <c>Development</c>.
+    /// When set, the dashboard shows a badge in the top bar and prefixes the browser tab title, so an operator
+    /// cannot mistake one environment for another. <c>Production</c> (or <c>Prod</c>) is red, <c>Staging</c>,
+    /// <c>Stage</c> and <c>QA</c> are amber, <c>Development</c>, <c>Dev</c> and <c>Local</c> are green
+    /// (case-insensitive); any other name gets a neutral badge.
+    /// Defaults to <see langword="null"/> (no badge and no title prefix).
+    /// </summary>
+    public string? EnvironmentName { get; set; }
+
+    /// <summary>
     /// Default color theme when no user preference is stored in the browser.
     /// Defaults to <c>blue-theme</c>. Supported options: <c>blue-theme</c>, <c>semi-dark</c>, <c>dark</c>, <c>light</c>, <c>bordered-theme</c>.
     /// </summary>

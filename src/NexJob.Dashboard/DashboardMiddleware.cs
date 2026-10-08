@@ -120,6 +120,7 @@ public sealed class DashboardMiddleware
             context.Response.StatusCode = 404;
         }
 
+        html = HtmlShell.ApplyEnvironment(html, _options.EnvironmentName);
         context.Response.ContentType = "text/html; charset=utf-8";
         await context.Response.WriteAsync(html, context.RequestAborted).ConfigureAwait(false);
     }

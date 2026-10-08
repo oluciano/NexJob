@@ -1,7 +1,9 @@
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
+using NexJob.Internal;
 using Xunit;
 
 namespace NexJob.Internal.Tests;
@@ -153,5 +155,44 @@ public sealed class DeadLetterDispatcherTests
 
         public Task HandleAsync(JobRecord failedJob, Exception lastException, CancellationToken cancellationToken) =>
             Task.FromException(_exception);
+    }
+
+    public DeadLetterDispatcherTests()
+    {
+        _hardenedScopefactory.Setup(x => x.CreateScope()).Returns(_hardenedScope.Object);
+    }
+
+    private readonly Mock<IServiceScopeFactory> _hardenedScopefactory = new();
+    private readonly Mock<IServiceScope> _hardenedScope = new();
+    private readonly ServiceCollection _hardenedServices = new();
+
+    private DefaultDeadLetterDispatcher CreateSut()
+    {
+        var sp = _hardenedServices.BuildServiceProvider();
+        _hardenedScope.Setup(x => x.ServiceProvider).Returns(sp);
+        return new DefaultDeadLetterDispatcher(_hardenedScopefactory.Object, NullLogger<DefaultDeadLetterDispatcher>.Instance);
+    }
+
+    /// <summary>Tests that dispatcher handles cases where job type cannot be resolved.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task DispatchAsync_InvalidJobType_DoesNotThrow()
+    {
+        // Arrange
+        var sut = CreateSut();
+        var job = new JobRecord { Id = JobId.New(), JobType = "InvalidType" };
+
+        // Act
+        Func<Task> act = () => sut.DispatchAsync(job, new Exception(), CancellationToken.None);
+
+        // Assert
+        await act.Should().NotThrowAsync();
+    }
+
+    /// <summary>Support job.</summary>
+    public sealed class HardenedTestJob : IJob
+    {
+        /// <inheritdoc/>
+        public Task ExecuteAsync(CancellationToken cancellationToken) => Task.CompletedTask;
     }
 }

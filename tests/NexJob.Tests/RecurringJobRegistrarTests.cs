@@ -11,16 +11,16 @@ namespace NexJob.Internal.Tests;
 /// Hardening unit tests for <see cref="RecurringJobRegistrar"/>.
 /// Targets 100% branch coverage for ID assignment and type resolution.
 /// </summary>
-public sealed class RecurringJobRegistrarHardeningTests
+public sealed class RecurringJobRegistrarTests
 {
     private readonly Mock<IRecurringStorage> _storage = new();
     private readonly NexJobJobRegistry _jobRegistry = new();
     private readonly RecurringJobRegistrar _sut;
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="RecurringJobRegistrarHardeningTests"/> class.
+    /// Initializes a new instance of the <see cref="RecurringJobRegistrarTests"/> class.
     /// </summary>
-    public RecurringJobRegistrarHardeningTests()
+    public RecurringJobRegistrarTests()
     {
         _sut = new RecurringJobRegistrar(_storage.Object, _jobRegistry, NullLogger<RecurringJobRegistrar>.Instance);
     }
@@ -98,5 +98,32 @@ public sealed class RecurringJobRegistrarHardeningTests
     {
         /// <summary>Value.</summary>
         public string Value { get; set; } = string.Empty;
+    }
+
+    /// <summary>Tests RecurringJobRegistrar logic for ID assignment and type resolution.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task RecurringJobRegistrar_HandlesDuplicateNamesAndInvalidTypes()
+    {
+        var storage = new Mock<IRecurringStorage>();
+        var registry = new NexJobJobRegistry();
+        var sut = new RecurringJobRegistrar(storage.Object, registry, NullLogger<RecurringJobRegistrar>.Instance);
+
+        registry.Register(typeof(TestJob));
+
+        // Duplicate names without IDs
+        var configs = new[]
+        {
+            new RecurringJobSettings { Job = nameof(TestJob), Cron = "* * * * *" },
+            new RecurringJobSettings { Job = nameof(TestJob), Cron = "* * * * *" },
+        };
+
+        await sut.RegisterRecurringJobsAsync(configs);
+        sut.RegisteredJobIds.Should().Contain(new[] { nameof(TestJob), $"{nameof(TestJob)}-1" });
+
+        // Invalid job type
+        var invalidConfigs = new[] { new RecurringJobSettings { Job = "NonExistent", Cron = "* * * * *" } };
+        await sut.RegisterRecurringJobsAsync(invalidConfigs);
+        // Error logged, registered IDs should not contain the invalid one
     }
 }

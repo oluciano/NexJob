@@ -51,17 +51,15 @@ public sealed class RetryPolicyTests
     [Fact]
     public void RetryDelay_MinimumValue_IncreasesWithAttempts()
     {
-        // The minimum possible value ignores the random component entirely (rand=0).
-        // min(attempt) = pow(attempt, 4) + 15
-        // Compare deterministic lower bounds: min at attempt 3 > min at attempt 1.
-        // pow(1,4)+15 = 16 ; pow(3,4)+15 = 96
-        // We verify this by checking many samples — with rand suppressed via a seeded factory.
-        var deterministicFactory = new Func<int, TimeSpan>(attempt =>
-            TimeSpan.FromSeconds(Math.Pow(attempt, 4) + 15)); // rand = 0
+        // Behavior changed in v5.10: this test used to assert on a lambda defined inside the test, which never
+        // called production code and passed even with a constant delay. It now calls the default factory (#381).
+        // The delay is pow(a,4) + 15 + rand(0..29) * (a+1), so the ranges for attempts 1, 3 and 5 do not overlap:
+        // [16, 74], [96, 212] and [640, 814] seconds. A single sample each is therefore deterministic.
+        var factory = DefaultOptions().RetryDelayFactory;
 
-        var delayAt1 = deterministicFactory(1);
-        var delayAt3 = deterministicFactory(3);
-        var delayAt5 = deterministicFactory(5);
+        var delayAt1 = factory(1);
+        var delayAt3 = factory(3);
+        var delayAt5 = factory(5);
 
         delayAt3.Should().BeGreaterThan(delayAt1,
             "minimum delay at attempt 3 must exceed minimum delay at attempt 1");
