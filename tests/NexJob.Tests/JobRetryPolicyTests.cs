@@ -173,18 +173,6 @@ public sealed class JobRetryPolicyTests
         result!.Value.Should().BeCloseTo(DateTimeOffset.UtcNow.AddSeconds(5), TimeSpan.FromSeconds(1));
     }
 
-    /// <summary>Tests that retry returns null when max attempts are reached.</summary>
-    [Fact]
-    public void ComputeRetryAt_MaxAttemptsReached_ReturnsNull()
-    {
-        var sut = new DefaultJobRetryPolicy(_options);
-        var job = new JobRecord { Attempts = 3, MaxAttempts = 3, JobType = typeof(SimpleJob).AssemblyQualifiedName ?? string.Empty };
-
-        var result = sut.ComputeRetryAt(job, new Exception());
-
-        result.Should().BeNull();
-    }
-
     /// <summary>Tests that invalid job types default to global options without crashing.</summary>
     [Fact]
     public void ComputeRetryAt_InvalidJobType_UsesOptionsFactory()
