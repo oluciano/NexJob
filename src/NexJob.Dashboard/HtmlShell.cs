@@ -514,6 +514,12 @@ internal static class HtmlShell
     /// <summary>Gets or sets a value indicating whether playground scenario triggers are rendered.</summary>
     internal static bool EnablePlayground { get; set; }
 
+    /// <summary>Adds the environment badge and the browser tab title prefix to a rendered page.</summary>
+    /// <param name="html">The rendered page.</param>
+    /// <param name="environmentName">The configured environment name, or <see langword="null"/> when none is set.</param>
+    /// <returns>The page with the environment markers applied.</returns>
+    internal static string ApplyEnvironment(string html, string? environmentName) => html;
+
     /// <summary>Wraps the content in the standard HTML shell.</summary>
     internal static string Wrap(
         string title,

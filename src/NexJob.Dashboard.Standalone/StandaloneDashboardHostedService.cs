@@ -97,6 +97,7 @@ internal sealed class StandaloneDashboardHostedService : IHostedService
         {
             opt.Title = _options.Title;
             opt.DefaultTheme = _options.DefaultTheme;
+            opt.EnvironmentName = _options.EnvironmentName;
             opt.EnablePlayground = _options.EnablePlayground;
             opt.Queues = _options.Queues;
             foreach (var cluster in _options.Clusters)
