@@ -242,14 +242,7 @@ public sealed class StandaloneDashboardAuthorizationTests
         }
     }
 
-    private static int GetFreeTcpPort()
-    {
-        var listener = new TcpListener(IPAddress.Loopback, 0);
-        listener.Start();
-        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
-        listener.Stop();
-        return port;
-    }
+    private static int GetFreeTcpPort() => TestPorts.Next();
 
     // Mirrors the example in docs/wiki/10-Dashboard.md, so the documented code is compiled and run.
     private sealed class BasicAuthDashboardHandler(IConfiguration config) : IDashboardAuthorizationHandler
