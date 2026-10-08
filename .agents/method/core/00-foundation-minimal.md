@@ -110,6 +110,14 @@ public void Method()
 
 ---
 
+## Test Suite Shape
+
+- One canonical test file per production class: `FooTests.cs`. Twin files (`FooHardeningTests.cs`) are banned and enforced by `TestSuiteConventionTests`.
+- Never weaken, invert or delete an assertion. Moving, merging into a `[Theory]` and deleting a proven duplicate are allowed.
+- Internal code is not a contract: simplify the existing method instead of adding a `*WithX` / `*V2` sibling.
+
+---
+
 ## Golden Rule
 
 **If behavior is not explicitly defined → DO NOT IMPLEMENT → ASK instead**

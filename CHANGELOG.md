@@ -6,6 +6,10 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **Tests — One canonical test file per class** (issue #379): the 26 parallel `*HardeningTests.cs` files were merged into their canonical `<Class>Tests.cs` (or renamed by feature), 30 proven-duplicate test cases were removed, and `TestSuiteConventionTests` now fails when a `*HardeningTests.cs` file is added again. The rule "existing tests are immutable" now means never weakening an assertion; moving and merging tests is allowed. Test-only change; production code is untouched.
+
 ### Fixed
 
 - **Tests — Deadline reliability tests** (issue #371): `JobNotExecutedAfterDeadline_*` enqueued the job right after pausing the queue, so a polling cycle already under way could fetch and run it before its deadline passed. The tests now wait until the dispatcher logs that every queue is paused. Test-only change; production code and assertions are untouched.

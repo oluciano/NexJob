@@ -26,7 +26,7 @@ Write the tests FIRST before implementing production code:
 - **N2 — Negative:** Handled failure scenarios (timeouts, broker drops, dead-letter dispatch).
 - **N3 — Invalid Input:** Boundary values, nulls, empty collections, malformed arguments.
 - **Red-First Proof:** Run the new tests against existing code, watch them fail for the expected reason, and commit them first (`test(scope): <description>, red (#id)`).
-- **Immutable Tests Rule:** Never modify, rename, or delete existing passing tests. Fix the production code, not the tests.
+- **Test Contract Rule:** Never weaken, invert or delete an assertion. Fix the production code, not the tests. Moving or merging tests into the canonical `<Class>Tests.cs` is allowed; no `*HardeningTests.cs` twins.
 
 ---
 
