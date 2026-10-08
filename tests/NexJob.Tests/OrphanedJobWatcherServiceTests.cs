@@ -146,7 +146,9 @@ public sealed class OrphanedJobWatcherServiceTests
 
         // Act
         _ = sut.StartAsync(cts.Token);
-        await Task.Delay(100, CancellationToken.None);
+
+        // Behavior changed in v5.10: wait for two recovery cycles instead of a fixed 100 ms (#371).
+        await TestWait.InvokedAsync(storage, nameof(IJobStorage.RequeueOrphanedJobsAsync), 2);
         await sut.StopAsync(CancellationToken.None);
 
         // Assert

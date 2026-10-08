@@ -257,7 +257,9 @@ public sealed class JobRetentionServiceTests
 
         // Act
         _ = sut.StartAsync(cts.Token);
-        await Task.Delay(100, CancellationToken.None); // Allow multiple cycles
+
+        // Behavior changed in v5.10: wait for two purge cycles instead of a fixed 100 ms (#371).
+        await TestWait.InvokedAsync(_storage, nameof(IJobStorage.PurgeJobsAsync), 2);
         await sut.StopAsync(CancellationToken.None);
 
         // Assert
@@ -284,7 +286,9 @@ public sealed class JobRetentionServiceTests
 
         // Act
         _ = sut.StartAsync(cts.Token);
-        await Task.Delay(50, CancellationToken.None);
+
+        // Behavior changed in v5.10: wait for the first purge instead of a fixed 50 ms (#371).
+        await TestWait.InvokedAsync(_storage, nameof(IJobStorage.PurgeJobsAsync), 1);
         await sut.StopAsync(CancellationToken.None);
 
         // Assert
