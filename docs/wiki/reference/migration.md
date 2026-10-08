@@ -6,6 +6,20 @@ description: "Step-by-step migration guides for NexJob major version upgrades, i
 
 This page covers every breaking change between NexJob releases and tells you exactly what to update in your code. Schema migrations for PostgreSQL and SQL Server apply automatically at startup. Follow the steps in order for each version jump you're crossing.
 
+## v5.9.0 → v5.10.0
+
+Nothing in the public API is removed, there is no schema migration and no stored format changes. One thing is visible to your users.
+
+#### The dashboard has a layout for narrow screens
+
+Up to 768 px wide, the sidebar is icon-only, the header drops the search box and the Docs and GitHub links, and the pages fit the screen (before, they scrolled horizontally). Nothing to do. If you embedded the dashboard behind a proxy or a screenshot test at a phone width, expect a different picture.
+
+#### Rolling upgrade and rollback
+
+Nothing is stored differently, so old and new nodes run together without any special step, and you can go back to 5.9.0 at any time. Upgrade one node first and open the dashboard on a phone-sized window.
+
+New and opt-in, with no action needed: `EnvironmentName` on `DashboardOptions` and `StandaloneDashboardOptions` ([Dashboard](../integrations/dashboard.md#configuration-options)) shows a Production, Staging or Development badge and prefixes the browser tab title.
+
 ## v5.8.0 → v5.9.0
 
 Nothing in the public API is removed and there is no schema migration. Two things need your attention.
