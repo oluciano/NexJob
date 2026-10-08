@@ -104,7 +104,10 @@ public sealed class JobDispatcherServiceTests
         });
 
         await tcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        await Task.Delay(50); // let AcknowledgeAsync + SetRecurringJobLastExecutionResultAsync complete
+
+        // Behavior changed in v5.10: wait until the last execution result is stored instead of a fixed 50 ms (#371).
+        await TestWait.UntilAsync(async () => (await storage.GetRecurringJobsAsync())
+            .Single(r => r.RecurringJobId == "daily-success").LastExecutionStatus is not null);
 
         var all = await storage.GetRecurringJobsAsync();
         all.Single(r => r.RecurringJobId == "daily-success")
@@ -153,7 +156,10 @@ public sealed class JobDispatcherServiceTests
 
         // Wait until the job is dead-lettered
         await tcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        await Task.Delay(100);
+
+        // Behavior changed in v5.10: wait until the last execution result is stored instead of a fixed 100 ms (#371).
+        await TestWait.UntilAsync(async () => (await storage.GetRecurringJobsAsync())
+            .Single(r => r.RecurringJobId == "daily-fail").LastExecutionStatus is not null);
 
         var all = await storage.GetRecurringJobsAsync();
         var rec = all.Single(r => r.RecurringJobId == "daily-fail");
