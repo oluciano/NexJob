@@ -147,6 +147,9 @@ Allowed, as long as every scenario and assertion survives:
 ### One Canonical Test File per Class
 Production class `Foo` has one test file, `FooTests.cs`. Parallel or twin files (`FooHardeningTests.cs`, `FooExtraTests.cs`) are banned: edge cases and branch-coverage hardening go inside `FooTests.cs`. `TestSuiteConventionTests` fails the build of the test project when a `*HardeningTests.cs` file appears. Copy-pasting a test verbatim fails the build too (Sonar S4144).
 
+### No Fixed Sleeps in Tests
+A test never waits a fixed time for something to happen ("sleep 50 ms, then assert"): on a loaded machine the time is not enough and the test fails with no bug behind it. Wait for the observed state with `TestWait.UntilAsync` / `TestWait.SucceededAsync` / `TestWait.InvokedAsync` (`tests/NexJob.Tests/TestWait.cs`), a `TaskCompletionSource` signalled by the code under test, or the `PauseObservedSignal` helper in the reliability tests. A sleep is acceptable only to assert that something did NOT happen. Ports for hosts come from `TestPorts.Next()`, never from a bare `TcpListener(…, 0)`.
+
 ### Prefer Simplification Over Accumulation
 Internal code (`Internal/`, non-public types) is not a contract. When adding behavior, change the existing internal method instead of adding a `*WithX` / `*V2` sibling. Public API (`IScheduler`, `IJobStorage`, public models) stays protected by SemVer. Leave the code with fewer lines than you found it when you touch it.
 
