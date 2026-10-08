@@ -235,9 +235,11 @@ public sealed class JobFilterTests
         await scheduler.EnqueueAsync<QuickSuccessJob, QuickInput>(new());
 
         await tcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        await Task.Delay(50);
 
         var storage = (InMemoryStorageProvider)host.Services.GetRequiredService<NexJob.Storage.IStorageProvider>();
+
+        // Behavior changed in v5.10: wait until the dispatcher stored Succeeded instead of a fixed 50 ms (#371).
+        await TestWait.SucceededAsync(storage, 1);
         var metrics = await storage.GetMetricsAsync();
         metrics.Succeeded.Should().Be(1);
 
@@ -262,13 +264,15 @@ public sealed class JobFilterTests
         var scheduler = host.Services.GetRequiredService<IScheduler>();
         await scheduler.EnqueueAsync<ShortCircuitTestJob, QuickInput>(new());
 
-        await Task.Delay(1000);
+        var storage = (InMemoryStorageProvider)host.Services.GetRequiredService<NexJob.Storage.IStorageProvider>();
+
+        // Behavior changed in v5.10: wait until the dispatcher stored Succeeded instead of a fixed 1000 ms (#371).
+        await TestWait.SucceededAsync(storage, 1);
 
         jobExecuted.Should().BeFalse("filter short-circuited and job should not execute");
 
         // Job should be marked as succeeded because filter didn't call next
         // but completed successfully (no exception thrown)
-        var storage = (InMemoryStorageProvider)host.Services.GetRequiredService<NexJob.Storage.IStorageProvider>();
         var metrics = await storage.GetMetricsAsync();
         metrics.Succeeded.Should().Be(1);
 

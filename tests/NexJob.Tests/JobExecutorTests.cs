@@ -694,16 +694,22 @@ public sealed class JobExecutorTests
     {
         // Arrange
         var job = new JobRecord { Id = JobId.New(), JobType = "TestJob" };
+        var heartbeatSeen = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _hardenedStorage.Setup(x => x.UpdateHeartbeatAsync(job.Id, It.IsAny<CancellationToken>()))
+            .Callback(() => heartbeatSeen.TrySetResult())
+            .Returns(Task.CompletedTask);
 
         _hardenedInvokerfactory.Setup(x => x.PrepareAsync(job, It.IsAny<CancellationToken>()))
             .ReturnsAsync(() =>
             {
                 var scope = new Mock<IServiceScope>();
+
+                // Behavior changed in v5.10: the job runs until the heartbeat is observed instead of a fixed 50 ms, which a loaded machine could outlast (#371).
                 return new JobInvocationContext(
                     scope.Object,
                     new object(),
                     new object(),
-                    (object j, object i, CancellationToken ct) => Task.Delay(50, ct),
+                    (object j, object i, CancellationToken ct) => heartbeatSeen.Task.WaitAsync(TimeSpan.FromSeconds(10), ct),
                     Array.Empty<ThrottleAttribute>());
             });
 

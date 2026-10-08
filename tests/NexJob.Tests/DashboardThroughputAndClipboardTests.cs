@@ -208,14 +208,7 @@ public sealed class DashboardThroughputAndClipboardTests
         }
     }
 
-    private static int GetFreeTcpPort()
-    {
-        using var listener = new TcpListener(IPAddress.Loopback, 0);
-        listener.Start();
-        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
-        listener.Stop();
-        return port;
-    }
+    private static int GetFreeTcpPort() => TestPorts.Next();
 
     private sealed class SampleJob : IJob
     {
