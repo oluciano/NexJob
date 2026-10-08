@@ -27,6 +27,7 @@ public sealed class DashboardEnvironmentBadgeTests
         var html = HtmlShell.ApplyEnvironment(Page(), name);
 
         html.Should().Contain($"env-badge {cssClass}", "known environments get a semantic colour");
+        html.Should().Contain($"class=\"env-ribbon {cssClass}\"", "narrow screens show the name in a ribbon above the header");
         html.Should().Contain($">{name}</span>", "the badge shows the name as configured");
         html.Should().Contain($"<title>{titlePrefix}NexJob</title>");
     }
@@ -50,8 +51,10 @@ public sealed class DashboardEnvironmentBadgeTests
     {
         var html = HtmlShell.ApplyEnvironment(Page(), name);
 
-        html.Should().NotContain("env-badge");
+        html.Should().NotContain("class=\"env-badge", "the badge element is absent (the CSS rule may still be in the page)");
         html.Should().NotContain("nexjob:env-badge", "the placeholder must not leak into the page");
+        html.Should().NotContain("nexjob:env-ribbon");
+        html.Should().NotContain("class=\"env-ribbon");
         html.Should().Contain("<title>NexJob</title>");
     }
 
@@ -60,7 +63,7 @@ public sealed class DashboardEnvironmentBadgeTests
     {
         var html = await GetDashboardHtmlAsync(null);
 
-        html.Should().NotContain("env-badge");
+        html.Should().NotContain("class=\"env-badge", "the badge element is absent (the CSS rule may still be in the page)");
         html.Should().Contain("<title>NexJob");
     }
 
@@ -95,6 +98,18 @@ public sealed class DashboardEnvironmentBadgeTests
         var html = HtmlShell.ApplyEnvironment(fragment, "Production");
 
         html.Should().Be(fragment);
+    }
+
+    // N1 (regression guard for the narrow-screen fix): the shell carries the rules that keep the page inside the viewport.
+    [Fact]
+    public void Wrap_ShellCss_HasNarrowScreenRulesAndNoFixedMinimumGrids()
+    {
+        var html = Page();
+
+        html.Should().Contain("@media (max-width: 768px)");
+        html.Should().Contain(".env-ribbon ~ .top-header", "the ribbon pushes the fixed header down");
+        html.Should().Contain("#overview-grid { grid-template-columns: 1fr !important; }");
+        html.Should().NotMatchRegex(@"minmax\(\d+px, ?1fr\)", "a fixed minimum column width overflows narrow screens; use minmax(min(Npx, 100%), 1fr)");
     }
 
     private static async Task<string> GetDashboardHtmlAsync(string? environmentName)
