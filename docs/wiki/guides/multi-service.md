@@ -20,6 +20,16 @@ builder.Services.AddNexJob(options => options.Queues = ["inventory"]);
 
 Enqueue with the queue of the service that owns the job type (`queue: "billing"`). This is the recommended pattern.
 
+### The default queue is prefixed
+
+From v6.0, a job enqueued without a queue, or with `"default"`, is stored in `{prefix}.default`. The prefix is `NexJobOptions.QueuePrefix` or, when unset, the full lowercase name of the entry assembly (`Acme.Billing.Worker` becomes `acme.billing.worker.default`). Two services on one database therefore stop sharing `default` with no configuration.
+
+- Only the implicit `default` is prefixed. A queue you name (`"emails"`) and a name that already contains a dot (`"billing.default"`) are used as they are, so a producer can still target another service's queue.
+- Jobs stored in the old `default` queue still run: every host also polls `default`, and a job of another service falls into the foreign-job deferral below. No row is renamed.
+- Pausing, a circuit breaker or an execution window configured for `"default"` applies to the prefixed queue too.
+- Renaming the assembly changes the derived prefix and leaves jobs in the old queue. Set `QueuePrefix` explicitly in production; the host logs a warning when it is derived.
+- Recurring job ids and `[Throttle]` resources are still global.
+
 ## Layer 2: foreign jobs are deferred, not failed
 
 If a service fetches a job whose type (or input type) it cannot load, the job is a **foreign job**. NexJob does not run it, does not use an attempt and does not dead-letter it. It returns the job to the queue after `ForeignJobRetryDelay` (default 5 seconds) so the owning service can take it. The host logs a warning (`references foreign type ... Deferring`) and the trace of the attempt carries `nexjob.foreign_job = true`.

@@ -6,6 +6,20 @@ description: "Step-by-step migration guides for NexJob major version upgrades, i
 
 This page covers every breaking change between NexJob releases and tells you exactly what to update in your code. Schema migrations for PostgreSQL and SQL Server apply automatically at startup. Follow the steps in order for each version jump you're crossing.
 
+## v5.10.0 → v6.0.0
+
+No schema migration. One behavior changes for everyone who enqueues without naming a queue.
+
+**The implicit `default` queue is now `{prefix}.default`.** The prefix is `NexJobOptions.QueuePrefix` or, when unset, the full lowercase entry assembly name. What this means for you:
+
+- **Stored jobs keep running.** Every host also polls the legacy `default` queue; no row is renamed. Recurring jobs already stored with queue `default` keep firing into it.
+- **New jobs go to the new queue.** The dashboard, the queue metric tags and any query by queue name show `{prefix}.default` for them. Update dashboards and alerts that filter on `default`.
+- **Set the prefix yourself in production.** A derived prefix changes when the assembly is renamed and jobs stay in the old queue. The host logs a warning while the prefix is derived.
+- **Rolling deploy.** A node still on v5 enqueues and polls `default`; a v6 node drains it, so nothing is lost. Jobs enqueued by v6 nodes into `{prefix}.default` are not seen by v5 nodes until they are upgraded.
+- **Configuration keyed by `"default"`** (`ConfigureQueue`, pause, circuit breaker, execution window) applies to the prefixed queue as well.
+- **Triggers** (`TargetQueue = "default"`) enqueue into the prefixed queue. A queue you name explicitly is not prefixed.
+- **Dashboard queue scope** (`DashboardOptions.Queues`) lists stored names: add `{prefix}.default` next to `default`.
+
 ## v5.9.0 → v5.10.0
 
 Nothing in the public API is removed, there is no schema migration and no stored format changes. One thing is visible to your users.

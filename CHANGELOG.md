@@ -6,6 +6,10 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking — Default queue prefixed per host** (issue #377): a job or recurring job enqueued without a queue (or with `"default"`) is now stored in `{prefix}.default`, so hosts that share a database no longer share a queue. The prefix is `NexJobOptions.QueuePrefix` (also `NexJob:QueuePrefix` in `appsettings.json`), or, when unset, the full lowercase name of the entry assembly. Queues named on purpose and names that already contain a dot are never prefixed. The dispatcher also keeps polling the legacy `default` queue, so jobs stored before the upgrade still run; no row is renamed. A configuration keyed by `"default"` (queue settings, circuit breaker, pause) applies to the prefixed queue as well. A startup warning is logged when the prefix is derived, because renaming the assembly changes it: set `QueuePrefix` explicitly in production. Recurring job ids and `[Throttle]` resources stay global (issue #389).
+
 ## [5.10.0] - 2026-10-08
 
 ### Added
