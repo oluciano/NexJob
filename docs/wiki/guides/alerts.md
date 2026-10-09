@@ -117,6 +117,7 @@ To use Teams, Discord, e-mail or PagerDuty, keep the forwarder and the queue, an
 - **Rate limiting is yours.** A failed dependency can dead-letter thousands of jobs in a minute. The bounded queue protects the process; to protect the channel, group the messages (for example "37 `ProcessPaymentJob` failed in the last minute") in the sender.
 - **Each node alerts for the jobs it dead-lettered.** With several nodes, an outage produces alerts from each of them. Group in the receiving tool, or alert from a metric (below).
 - **An exception in the forwarder is logged and swallowed.** It never stops the job pipeline, but it also means a broken forwarder fails silently. Watch the counter `nexjob.dead_letter.forward_failed`.
+- **A host with `Workers = 0` reports 0 active and 0 total workers** (a dashboard-only host, see `DisableWorkers`). Do not alert on `nexjob.workers.active` at 0 for such hosts; alert on the queue depth, which is read from the storage.
 - **Put the webhook URL in a secret store.** Anyone with the URL can post to your channel.
 
 ## Alerting from metrics

@@ -42,6 +42,8 @@ Other available methods: `RequeueJobAsync`, `ResetQueueCircuitAsync`.
 | `DeleteJobAsync(id)` | The job and its logs are removed. A job that is running finishes, and its result is discarded. | **Jobs**, **Failed / DLQ** |
 | `ResetQueueCircuitAsync(queue)` | The circuit breaker of the queue closes and its counters reset. | **Queues**, **Reset Circuit** |
 
+For the default queue, `default` and `{prefix}.default` are paused, resumed and reset together; see [the default queue](../concepts/queues.md#the-default-queue).
+
 There is **no operation to cancel a job that is already running**. To stop work in flight, pass the `CancellationToken` your job receives to everything it awaits and stop the host (a clean shutdown puts interrupted jobs back in the queue without using an attempt).
 
 ## Try it

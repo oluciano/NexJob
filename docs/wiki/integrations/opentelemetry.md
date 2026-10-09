@@ -111,12 +111,14 @@ NexJob exposes the following metrics under the `"NexJob"` meter:
 | `nexjob.dead_letter.forwarded` | Counter | Dead-lettered jobs that an `IDeadLetterForwarder` handed over to its destination. Tagged with `nexjob.forwarder`. See [dead-letter forwarding](../concepts/retries-and-dead-letter.md). |
 | `nexjob.dead_letter.forward_failed` | Counter | Forwards that failed; the exception is logged and swallowed, so this counter is the only signal. Tagged with `nexjob.forwarder`. |
 | `nexjob.jobs.cancellation_ignored` | Counter | Jobs still running 10 seconds after their execution timeout cancelled their token, so they still hold a worker slot. Tagged with `nexjob.job_type`. |
-| `nexjob.jobs.throttle_deferred` | Counter | Jobs returned to the queue because a slot of their `[Throttle]` resource was not free. Tagged with `nexjob.job_type`. |
+| `nexjob.jobs.throttle_deferred` | Counter | Jobs returned to the queue because a slot of their `[Throttle]` resource was not free. Tagged with `nexjob.job_type` and `nexjob.resource`. |
 | `nexjob.recurring.id_collisions` | Counter | Recurring job registrations that overwrote a job of a different type stored under the same id (two applications sharing a database). Tagged with `recurring_job_id`. See [recurring job ids](../concepts/recurring-jobs.md#recurring-job-ids-are-global-to-the-database). |
 | `nexjob.job.duration` | Histogram | Job execution time in milliseconds. Tagged with `nexjob.job_type` and `nexjob.status`. |
 | `nexjob.queue.depth` | ObservableGauge | Current number of enqueued jobs waiting per queue. Tagged with `nexjob.queue`. |
 | `nexjob.workers.active` | ObservableGauge | Number of workers currently executing jobs on this node. |
-| `nexjob.workers.total` | ObservableGauge | Total number of worker slots configured on this node. |
+| `nexjob.workers.total` | ObservableGauge | Total number of worker slots configured on this node (`0` on a host with `Workers = 0`). |
+
+The `nexjob.queue` tag carries the stored queue name. Since v6.0 the default queue of an application is `{prefix}.default`, so alerts and dashboards that filter on `default` need the new name (see [the v6.0.0 migration](../reference/migration.md#v5100-v600)).
 
 ---
 

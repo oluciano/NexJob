@@ -109,7 +109,7 @@ So a `Low` priority job in `critical` is fetched before a `Critical` priority jo
 
 ## Per-queue settings
 
-Use `ConfigureQueue` to attach behavior to one queue. The name match is case-insensitive, and calling it again with the same name edits the same settings.
+Use `ConfigureQueue` to attach behavior to one queue. Calling it again with the same name (ignoring case) edits the same settings. A job's queue is matched to its execution window by exact name, while the circuit breaker ignores case: write the name with the same case in `ConfigureQueue` and where you enqueue.
 
 ```csharp
 builder.Services.AddNexJob(options =>

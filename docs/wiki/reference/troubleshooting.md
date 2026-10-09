@@ -56,6 +56,14 @@ NexJob is designed to surface diagnostic information through structured logs, me
     options.Workers = 50; // Increase from default 10
     ```
 
+    **Check 6 — The host executes no jobs**
+
+    A host with `Workers = 0`, or a standalone dashboard with `DisableWorkers = true`, fetches nothing by design and logs `Workers = 0: this host does not fetch or execute jobs.` at start. Jobs wait until a host with workers polls their queue. See [`DisableWorkers`](configuration.md).
+
+    **Check 7 — The queue prefix changed**
+
+    If the entry assembly was renamed (or `QueuePrefix` changed), jobs stay in the old `{oldprefix}.default` and no node reads it. The dashboard **Servers** page flags the queue as unattended and names the `QueuePrefix` that brings it back. Set `QueuePrefix` explicitly so the name survives renames: see [the default queue](../concepts/queues.md#the-default-queue).
+
 
 ???+ "Jobs stuck in Processing (orphaned jobs)"
     **Symptom:** A job shows `Processing` in the dashboard but no worker is actively running it. It never completes.

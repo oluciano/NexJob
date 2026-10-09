@@ -26,6 +26,7 @@ builder.Services.AddNexJobRedis("localhost:6379,abortConnect=false");
 builder.Services.AddNexJob(options =>
 {
     options.Workers = 10;
+    options.QueuePrefix = "myapp"; // the "default" queue below is stored as "myapp.default"
     options.Queues  = ["default", "critical"];
 });
 ```

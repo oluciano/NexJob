@@ -8,7 +8,7 @@ This page covers every breaking change between NexJob releases and tells you exa
 
 ## v5.10.0 → v6.0.0
 
-No schema migration. One behavior changes for everyone who enqueues without naming a queue.
+No schema migration. The change that reaches everyone who enqueues without naming a queue is the default queue; the other behaviour changes are listed after it.
 
 **The implicit `default` queue is now `{prefix}.default`.** The prefix is `NexJobOptions.QueuePrefix` or, when unset, the full lowercase entry assembly name. What this means for you:
 
@@ -21,7 +21,14 @@ No schema migration. One behavior changes for everyone who enqueues without nami
 - **Triggers** (`TargetQueue = "default"`) enqueue into the prefixed queue. A queue you name explicitly is not prefixed.
 - **`SalesforceStreamingTriggerHandler` constructor.** The `IOptions<NexJobOptions>` parameter is now `NexJobOptions`: `AddNexJob` registers the options as a singleton, and `IOptions` handed the handler a default instance. Only code that constructs the handler by hand is affected; registration through `AddNexJobSalesforceStreamingTrigger` needs no change.
 - **The Servers page and the "no active workers" checks now show what you configured.** Each node used to register the default queues and worker count instead of the configured ones, so a host with custom `Queues`, `Workers` or `QueuePrefix` appeared wrong. Capacity and queue lists you see after the upgrade are the real ones.
+- **`QueuePrefix` rules.** An explicit prefix is stored exactly as you type it (trimmed); only the prefix derived from the assembly name is lowercase. It may have at most 100 characters, no whitespace, and must not start or end with a dot; anything else throws `ArgumentException` when you set it. Write the same case wherever you refer to the queue (`queue: "Billing.default"`).
+- **Pause and resume treat the default queue as one.** `PauseQueueAsync("default")`, `ResumeQueueAsync` and `ResetQueueCircuitAsync` act on `default` and `{prefix}.default` together.
+- **`Workers = 0` and `DisableWorkers = true` now mean what the documentation always said.** A host with no workers fetches and executes nothing (before, `Workers = 0` crashed the dispatcher at start and `DisableWorkers = true` still executed jobs). If you set `DisableWorkers = true` on a host and relied on it executing jobs, set the worker count instead. A negative `Workers` throws `ArgumentOutOfRangeException`.
 - **Dashboard queue scope** (`DashboardOptions.Queues`): `default` also covers `{prefix}.default`, nothing to change. A standalone dashboard needs the same `NexJob:QueuePrefix` as the workers.
+
+**Rollout and rollback.**
+- **Roll out:** set `QueuePrefix` explicitly first, upgrade one node, and watch the dashboard **Queues** page: new jobs appear in `{prefix}.default` and the legacy `default` empties. Then upgrade the rest. Nodes of both versions can run together (see [Multi-Service](../guides/multi-service.md)); every job runs once.
+- **Roll back:** nothing is migrated, so going back to 5.10.0 is safe for the data. Jobs that v6 nodes enqueued stay in `{prefix}.default` and a v5 node does not read that queue: they wait until a v6 node (or the same prefix) is back, and the dashboard flags the queue as unattended with the `QueuePrefix` to set. To run them on v5 meanwhile, re-enqueue them with a named queue that the v5 nodes poll.
 
 ## v5.9.0 → v5.10.0
 

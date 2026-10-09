@@ -46,7 +46,7 @@ Run one dashboard per team, limited to that team's queues, so the counters and l
 
 ## Upgrading some services before others
 
-Services on different NexJob versions can share a database during a rolling upgrade, with the limits listed in the [migration guide](../reference/migration.md#v570-v580) (for example, on MongoDB do not use `deadlineAfter` until every node runs v5.8).
+Services on different NexJob versions can share a database during a rolling upgrade, with the limits listed in the [migration guide](../reference/migration.md#v570-v580). From v5 to v6, nodes of both versions can run together and every job runs once, but jobs enqueued by a v6 node wait in `{prefix}.default` until a v6 node reads them (see [the v6.0.0 migration](../reference/migration.md#v5100-v600)) (for example, on MongoDB do not use `deadlineAfter` until every node runs v5.8).
 
 ## See also
 
