@@ -16,6 +16,22 @@ public sealed class NexJobOptionsTests
     }
 
     [Fact]
+    public void PolledQueues_ImplicitDefault_PollsPrefixedAndLegacyDefault()
+    {
+        var options = new NexJobOptions { QueuePrefix = "billing" };
+
+        options.PolledQueues.Should().Equal("billing.default", "default");
+    }
+
+    [Fact]
+    public void PolledQueues_NamedQueuesOnly_DoesNotDrainLegacyDefault()
+    {
+        var options = new NexJobOptions { QueuePrefix = "billing", Queues = ["emails"] };
+
+        options.PolledQueues.Should().Equal("emails");
+    }
+
+    [Fact]
     public void HealthCheckTimeout_DefaultValue_IsFiveSeconds()
     {
         // Assert
