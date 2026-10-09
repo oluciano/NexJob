@@ -34,7 +34,7 @@ These answers describe verified behavior as of v5.6.1 and later.
 ???+ "Can several microservices share the same NexJob database?"
     Yes, as long as each service only fetches the jobs it can run. Two mechanisms keep this safe:
 
-    1. **Queue isolation.** A host polls only queues listed in `NexJobOptions.Queues`. Give each service its own queue names and they never fetch each other's jobs.
+    1. **Queue isolation.** A host polls only queues listed in `NexJobOptions.Queues`. Give each service its own queue names and they never fetch each other's jobs. Jobs enqueued without a queue are also kept apart by the [default queue prefix](../concepts/queues.md#the-default-queue).
     2. **Foreign job deferral.** If a service fetches a job whose type it cannot load, it does *not* count the attempt and does *not* dead-letter the job. It releases the job back after `ForeignJobRetryDelay` (default 5 s) so the correct service can claim it.
 
     The catch: if two services poll the **same** queue they keep bouncing each other's jobs. Nothing breaks, but it wastes fetches and delays execution. Separate queues are the recommended pattern. See the [Multi-Service guide](../guides/multi-service.md).

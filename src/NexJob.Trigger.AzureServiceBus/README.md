@@ -60,7 +60,7 @@ This trigger registers with `IListenerRegistry` to report live connection states
 | `QueueOrTopicName` | Name of the queue or topic (required) | - |
 | `SubscriptionName` | Subscription name (required for topics) | null |
 | `MaxConcurrentMessages` | Max concurrent messages | 1 |
-| `TargetQueue` | NexJob target queue name | "default" |
+| `TargetQueue` | NexJob target queue name; `"default"` is the application's [default queue](https://github.com/oluciano/NexJob/blob/main/docs/wiki/concepts/queues.md) (`{prefix}.default`) | "default" |
 | `JobPriority` | Job execution priority | Normal |
 
 ## Message Contract

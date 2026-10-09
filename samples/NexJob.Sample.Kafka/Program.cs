@@ -26,6 +26,7 @@ if (!string.IsNullOrWhiteSpace(sqlServerConn))
 builder.Services.AddNexJob(opt =>
     {
         opt.Workers = 30;
+        opt.QueuePrefix = "kafka-sample"; // "default" below is stored as "kafka-sample.default"
         opt.Queues = ["default", "customers-queue"];
         opt.PollingInterval = TimeSpan.FromMilliseconds(20);
     })

@@ -75,8 +75,7 @@ builder.Services.AddNexJob(options =>
     // Ordered list of queues this host polls. Queues drain in this order.
     options.Queues = new[] { "default", "emails", "reports" }; // Default: ["default"]
 
-    // Prefix of the implicit "default" queue, so hosts sharing a database do not share it.
-    // Default: null = the lowercase entry assembly name (a startup warning asks you to set it).
+    // Prefix of the implicit "default" queue (see Queues concept page). Default: null = lowercase entry assembly name.
     options.QueuePrefix = "billing"; // jobs without a queue go to "billing.default"
 
     // ── Health checks ────────────────────────────────────────────────────────

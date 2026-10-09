@@ -57,7 +57,7 @@ SQS does not read a job type from the message attributes: every message on the q
 | `WaitTimeSeconds` | Long polling wait time (0–20) | 20 |
 | `VisibilityTimeoutSeconds` | Message visibility timeout | 30 |
 | `VisibilityExtensionIntervalSeconds` | Extension loop interval | 15 |
-| `TargetQueue` | NexJob target queue name | "default" |
+| `TargetQueue` | NexJob target queue name; `"default"` is the application's [default queue](https://github.com/oluciano/NexJob/blob/main/docs/wiki/concepts/queues.md) (`{prefix}.default`) | "default" |
 | `JobPriority` | Job execution priority | Normal |
 
 ## Broker Guarantees
