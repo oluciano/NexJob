@@ -148,6 +148,13 @@ public sealed class NexJobOptions
     public IReadOnlyList<string> Queues { get; set; } = ["default"];
 
     /// <summary>
+    /// Prefix applied to the implicit <c>default</c> queue so hosts sharing a database do not share a queue.
+    /// When <see langword="null"/> or blank, the lowercase name of the entry assembly is used.
+    /// Queues named explicitly, and names that already contain a dot, are never prefixed.
+    /// </summary>
+    public string? QueuePrefix { get; set; }
+
+    /// <summary>
     /// Computes the retry delay for a failed job given the attempt number (1-based).
     /// Defaults to exponential backoff: <c>pow(attempt, 4) + 15 + rand(30) × (attempt + 1)</c> seconds.
     /// </summary>
@@ -242,6 +249,9 @@ public sealed class NexJobOptions
     /// and counted. Internal on purpose; tests shorten it.
     /// </summary>
     internal TimeSpan CancellationGracePeriod { get; set; } = TimeSpan.FromSeconds(10);
+
+    /// <summary>The queue names the dispatcher polls: <see cref="Queues"/> mapped to stored names, plus the legacy <c>default</c>.</summary>
+    internal IReadOnlyList<string> PolledQueues => Queues;
 
     /// <summary>
     /// Set by <see cref="ApplySettings"/> when <c>appsettings.json</c> carries a <c>DefaultQueue</c> other than
