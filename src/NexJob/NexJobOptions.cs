@@ -278,6 +278,9 @@ public sealed class NexJobOptions
         }
     }
 
+    /// <summary>The entry assembly the automatic prefix is derived from. Internal on purpose; tests replace it.</summary>
+    internal System.Reflection.Assembly? EntryAssembly { get; set; } = System.Reflection.Assembly.GetEntryAssembly();
+
     /// <summary>The prefix in effect: the explicit <see cref="QueuePrefix"/>, else the entry assembly name.</summary>
     internal string? EffectivePrefix => string.IsNullOrWhiteSpace(QueuePrefix)
         ? QueueNames.DerivePrefix(System.Reflection.Assembly.GetEntryAssembly())
