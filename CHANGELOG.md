@@ -8,6 +8,10 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Recurring job id collisions are reported** (issue #389): when a recurring job registered from configuration finds its id already stored for a job of another type (two applications sharing a database, or two `CleanupJob` entries without `Id`), startup logs a warning with both types and queues and where to set a unique `Id`, and increments the counter `nexjob.recurring.id_collisions` (tag `recurring_job_id`). The registration is unchanged: the last application to start still owns the id. The id rule is documented in one place (`concepts/recurring-jobs.md`), with a troubleshooting entry and a row in the alert signals; `[Throttle]` resource names are documented as global to the throttle store. No storage change.
+
+### Added
+
 - **Dashboard — Orphaned queue hint** (issue #391): a queue that holds jobs and has no live node used to show only a generic "no workers" warning. The Servers banner and the Queues `NO WORKERS` badge (now a link to Servers) list the queues the live nodes poll and, for a queue named `X.default`, suggest `QueuePrefix = X` to drain it after a prefix or assembly rename. No new option and no storage change.
 
 ### Fixed

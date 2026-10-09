@@ -6,6 +6,11 @@ description: "Debug common NexJob problems: jobs not running, stuck in Processin
 
 NexJob is designed to surface diagnostic information through structured logs, metrics, and the dashboard, but some problems require you to know where to look. This guide walks through the most common issues and their fixes, organized by symptom.
 
+??? "A recurring job never runs, or runs another job"
+    **Symptom:** A recurring job registered by your application does not fire, or fires and runs a job you did not write.
+
+    **Check — The id is shared with another application.** Recurring job ids are global to the database. Open the dashboard **Recurring** page and compare the job type and queue shown for that id with what your application registers. If they belong to another application, the two share the id and the last one to start owns it. Give each recurring job a unique `Id` as described in [Recurring job ids](../concepts/recurring-jobs.md#recurring-job-ids-are-global-to-the-database). The application that overwrote the job also logs a warning and increments `nexjob.recurring.id_collisions`.
+
 ???+ "Jobs not being picked up (staying Enqueued or Scheduled)"
     **Symptom:** A job stays in `Enqueued` or `Scheduled` indefinitely and never moves to `Processing`.
 

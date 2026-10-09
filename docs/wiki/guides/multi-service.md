@@ -41,7 +41,7 @@ Run one dashboard per team, limited to that team's queues, so the counters and l
 ## Things that are shared
 
 - **Pausing a queue** is stored in the database, so it applies to every node of every service that polls that queue. See [Runtime Control](../guides/runtime-control.md).
-- **Recurring jobs** are stored in the database. Give each recurring job an id and a queue that belong to one service.
+- **Recurring jobs** are stored in the database. Give each recurring job an id and a queue that belong to one service; see [recurring job ids](../concepts/recurring-jobs.md#recurring-job-ids-are-global-to-the-database).
 - **Retention and the orphan watcher** run in every node. They act on the whole database, not only on the jobs of their own service.
 
 ## Upgrading some services before others

@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using NexJob.Configuration;
 using NexJob.Storage;
+using NexJob.Telemetry;
 
 namespace NexJob.Internal;
 
@@ -55,10 +56,11 @@ internal sealed class RecurringJobRegistrar
     {
         var configs = recurringJobs.ToList();
         var assignments = AssignEffectiveIds(configs);
+        var existing = await LoadExistingAsync(cancellationToken).ConfigureAwait(false);
 
         foreach (var (config, effectiveId) in assignments)
         {
-            await RegisterRecurringJobAsync(config, effectiveId, cancellationToken).ConfigureAwait(false);
+            await RegisterRecurringJobAsync(config, effectiveId, existing, cancellationToken).ConfigureAwait(false);
         }
 
         _logger.LogInformation(
@@ -72,7 +74,26 @@ internal sealed class RecurringJobRegistrar
     /// </summary>
     /// <param name="assemblyQualifiedName">An assembly-qualified type name.</param>
     /// <returns>The type name without the assembly.</returns>
-    internal static string TypeNameWithoutAssembly(string assemblyQualifiedName) => assemblyQualifiedName;
+    internal static string TypeNameWithoutAssembly(string assemblyQualifiedName)
+    {
+        var depth = 0;
+        for (var i = 0; i < assemblyQualifiedName.Length; i++)
+        {
+            switch (assemblyQualifiedName[i])
+            {
+                case '[':
+                    depth++;
+                    break;
+                case ']':
+                    depth--;
+                    break;
+                case ',' when depth == 0:
+                    return assemblyQualifiedName[..i];
+            }
+        }
+
+        return assemblyQualifiedName;
+    }
 
     // ────────────────────────────────────────────────────────────────────────────
     // Static Helpers
@@ -200,16 +221,60 @@ internal sealed class RecurringJobRegistrar
     // Instance Methods
     // ────────────────────────────────────────────────────────────────────────────
 
+    /// <summary>Reads the stored recurring jobs once; a failure only disables the collision check.</summary>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>The stored recurring jobs by id.</returns>
+    private async Task<IReadOnlyDictionary<string, RecurringJobRecord>> LoadExistingAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var stored = await _storage.GetRecurringJobsAsync(cancellationToken).ConfigureAwait(false);
+            return (stored ?? [])
+                .GroupBy(r => r.RecurringJobId, StringComparer.Ordinal)
+                .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not read the stored recurring jobs; skipping the check for ids shared with another application.");
+            return new Dictionary<string, RecurringJobRecord>(StringComparer.Ordinal);
+        }
+    }
+
+    /// <summary>Logs and counts a recurring job id that already belongs to a job of another type.</summary>
+    /// <param name="current">The stored record that is about to be overwritten.</param>
+    /// <param name="incoming">The record this host registers.</param>
+    /// <param name="derivedId">Whether the id was derived from the job name because no id is configured.</param>
+    private void ReportCollision(RecurringJobRecord current, RecurringJobRecord incoming, bool derivedId)
+    {
+        NexJobMetrics.RecurringIdCollisions.Add(1, new KeyValuePair<string, object?>("recurring_job_id", incoming.RecurringJobId));
+        _logger.LogWarning(
+            "Recurring job id '{Id}' already exists for {OldType} (queue '{OldQueue}'); this host registers {NewType} (queue '{NewQueue}') under the same id and overwrites it. "
+            + "If these are different applications sharing a database, give each recurring job a unique Id: NexJob:RecurringJobs:N:Id in appsettings, AddRecurringJob(id: ...) in options, "
+            + "or the first argument of RecurringAsync. The old application loses the job until its next deploy.{Derived}",
+            incoming.RecurringJobId,
+            current.JobType,
+            current.Queue,
+            incoming.JobType,
+            incoming.Queue,
+            derivedId ? " The id was derived from the job name because no Id is configured." : string.Empty);
+    }
+
     /// <summary>
     /// Registers a single recurring job.
     /// </summary>
     /// <param name="jobConfig">The job configuration.</param>
     /// <param name="effectiveId">The effective ID assigned to this job.</param>
+    /// <param name="existing">The recurring jobs already stored, by id.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>A task representing the asynchronous operation.</returns>
     private async Task RegisterRecurringJobAsync(
         RecurringJobSettings jobConfig,
         string effectiveId,
+        IReadOnlyDictionary<string, RecurringJobRecord> existing,
         CancellationToken cancellationToken)
     {
         try
@@ -247,6 +312,12 @@ internal sealed class RecurringJobRegistrar
                 CreatedAt = DateTimeOffset.UtcNow,
                 NextExecution = nextExecution,
             };
+
+            if (existing.TryGetValue(effectiveId, out var current)
+                && !string.Equals(TypeNameWithoutAssembly(current.JobType), TypeNameWithoutAssembly(recurringJob.JobType), StringComparison.Ordinal))
+            {
+                ReportCollision(current, recurringJob, derivedId: string.IsNullOrWhiteSpace(jobConfig.Id));
+            }
 
             // Always upsert: the definition in configuration wins on every start, while the fields an operator changes
             // in the dashboard (cron override, paused, deleted) are preserved by the storage on conflict.
