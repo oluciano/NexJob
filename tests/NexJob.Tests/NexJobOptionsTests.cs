@@ -149,6 +149,30 @@ public sealed class NexJobOptionsTests
         options.SettingsFor("billing.default").Should().BeNull();
     }
 
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(int.MinValue)]
+    public void Workers_Negative_IsRejected(int value)
+    {
+        // #404: zero means "this host does not execute jobs"; a negative count means nothing.
+        var options = new NexJobOptions();
+
+        var act = () => options.Workers = value;
+
+        act.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(64)]
+    public void Workers_ZeroOrPositive_IsAccepted(int value)
+    {
+        var options = new NexJobOptions { Workers = value };
+
+        options.Workers.Should().Be(value);
+    }
+
     [Fact]
     public void EffectivePrefix_InTheTestHost_IsTestHost()
     {

@@ -53,7 +53,7 @@ internal sealed class ServerHeartbeatService : IHostedService, IDisposable
         {
             Id = _serverId,
             WorkerCount = _options.Workers,
-            Queues = _options.PolledQueues,
+            Queues = _options.Workers == 0 ? [] : _options.PolledQueues,
             StartedAt = DateTimeOffset.UtcNow,
             HeartbeatAt = DateTimeOffset.UtcNow,
         };

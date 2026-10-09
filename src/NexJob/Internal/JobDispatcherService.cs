@@ -125,6 +125,12 @@ internal sealed class JobDispatcherService : BackgroundService
                 hint);
         }
 
+        if (_options.Workers == 0)
+        {
+            _logger.LogInformation("Workers = 0: this host does not fetch or execute jobs.");
+            return;
+        }
+
         // Outlives ExecuteAsync: jobs still draining during shutdown release their slot after the loop exits.
         var workerSlots = new SemaphoreSlim(_options.Workers, _options.Workers);
         _workerSlots = workerSlots;
