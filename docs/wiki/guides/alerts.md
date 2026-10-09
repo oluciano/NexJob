@@ -14,6 +14,7 @@ NexJob does not send notifications itself. It exposes the **signals**, and you c
 | A job **passed its deadline** before it started | Counter `nexjob.jobs.expired` | Dashboard **Failed / DLQ**, _Expired_ tab |
 | Failures are **rising** (retries included) | Counter `nexjob.jobs.failed` (one increment per failed _attempt_) | Dashboard overview |
 | A queue **is not draining** | Gauge `nexjob.queue.depth` growing; gauge `nexjob.workers.active` at 0 | Dashboard **Queues**: `⚠️ NO WORKERS` badge |
+| Two applications **registered the same recurring job id** (one loses its schedule) | Counter `nexjob.recurring.id_collisions` (tag `recurring_job_id`) | Startup warning in the log; dashboard **Recurring**: job type and queue shown for that id. See [recurring job ids](../concepts/recurring-jobs.md#recurring-job-ids-are-global-to-the-database) |
 | A queue's **circuit breaker opened** | Dashboard **Queues**: circuit state and **Reset Circuit** | There is no metric for the circuit state yet |
 
 !!! note

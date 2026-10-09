@@ -55,6 +55,8 @@ By default, `[Throttle]` is enforced **per worker process** using an in-memory s
 
 If you need a true global cap regardless of how many nodes are running, enable distributed throttling.
 
+The resource name is global to the throttle store: two applications that use the same store and the same resource name share one limit, which is what you want for an external quota and a surprise for two unrelated resources that happen to share a name. Choose names that do not collide, for example `billing-api` instead of `api`. Without the distributed store the limit is local to each process and names cannot collide.
+
 ### Distributed Throttling with Redis
 
 Install the `NexJob.Redis` package and call `AddNexJobDistributedThrottle()` when registering NexJob services.
