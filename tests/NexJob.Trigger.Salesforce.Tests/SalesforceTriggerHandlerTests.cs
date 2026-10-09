@@ -415,6 +415,66 @@ public sealed class SalesforceTriggerHandlerTests
         a7.Should().Throw<ArgumentNullException>();
     }
 
+    [Fact]
+    public async Task StopRightAfterEnqueue_StillCommitsTheReplayId()
+    {
+        // N1 (#393): the event is already a job; a stop between the enqueue and the commit must not skip the offset.
+        var consumerEvent = new ConsumerEvent
+        {
+            ReplayId = ByteString.CopyFrom([0x07]),
+            Event = new ProducerEvent { Id = "evt-stop", SchemaId = "schema-1", Payload = ByteString.CopyFrom([0x10]) },
+        };
+        var saved = new TaskCompletionSource<CancellationToken>(TaskCreationOptions.RunContinuationsAsynchronously);
+        SalesforceTriggerHandler? handler = null;
+        _replayStoreMock.Setup(s => s.GetLastReplayIdAsync(_options.Topic, It.IsAny<CancellationToken>())).ReturnsAsync((byte[]?)null);
+        _replayStoreMock.Setup(s => s.SaveReplayIdAsync(_options.Topic, It.IsAny<byte[]>(), It.IsAny<CancellationToken>()))
+            .Callback<string, byte[], CancellationToken>((_, _, ct) => saved.TrySetResult(ct))
+            .Returns(default(ValueTask));
+        _pubSubClientMock.Setup(c => c.SubscribeAsync(_options.Topic, null, SalesforceReplayPreset.Latest, _options.BatchSize, It.IsAny<CancellationToken>()))
+            .Returns(ToAsyncEnumerable([consumerEvent]));
+        _schemaServiceMock.Setup(s => s.DecodePayloadToJsonAsync("schema-1", It.IsAny<byte[]>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync("{}");
+        _schedulerMock.Setup(s => s.EnqueueAsync(It.IsAny<JobRecord>(), DuplicatePolicy.AllowAfterFailed, It.IsAny<CancellationToken>()))
+            .Callback<JobRecord, DuplicatePolicy, CancellationToken>((_, _, _) => _ = handler!.StopAsync(CancellationToken.None))
+            .ReturnsAsync(JobId.New());
+        handler = CreateHandler();
+
+        await handler.StartAsync(CancellationToken.None);
+        var tokenAtSave = await saved.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await handler.StopAsync(CancellationToken.None);
+
+        tokenAtSave.IsCancellationRequested.Should().BeFalse("the commit after a successful enqueue is not cancelled by the stop");
+    }
+
+    [Fact]
+    public async Task NoStop_CommitsTheReplayIdOnce()
+    {
+        // N2 (#393): guard: without a stop the commit still happens exactly once.
+        var consumerEvent = new ConsumerEvent
+        {
+            ReplayId = ByteString.CopyFrom([0x08]),
+            Event = new ProducerEvent { Id = "evt-run", SchemaId = "schema-1", Payload = ByteString.CopyFrom([0x10]) },
+        };
+        var saved = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _replayStoreMock.Setup(s => s.GetLastReplayIdAsync(_options.Topic, It.IsAny<CancellationToken>())).ReturnsAsync((byte[]?)null);
+        _replayStoreMock.Setup(s => s.SaveReplayIdAsync(_options.Topic, It.IsAny<byte[]>(), It.IsAny<CancellationToken>()))
+            .Callback(() => saved.TrySetResult(true))
+            .Returns(default(ValueTask));
+        _pubSubClientMock.Setup(c => c.SubscribeAsync(_options.Topic, null, SalesforceReplayPreset.Latest, _options.BatchSize, It.IsAny<CancellationToken>()))
+            .Returns(ToAsyncEnumerable([consumerEvent]));
+        _schemaServiceMock.Setup(s => s.DecodePayloadToJsonAsync("schema-1", It.IsAny<byte[]>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync("{}");
+        _schedulerMock.Setup(s => s.EnqueueAsync(It.IsAny<JobRecord>(), DuplicatePolicy.AllowAfterFailed, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(JobId.New());
+        var handler = CreateHandler();
+
+        await handler.StartAsync(CancellationToken.None);
+        await saved.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await handler.StopAsync(CancellationToken.None);
+
+        _replayStoreMock.Verify(s => s.SaveReplayIdAsync(_options.Topic, It.IsAny<byte[]>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
     private SalesforceTriggerHandler CreateHandler()
     {
         return new SalesforceTriggerHandler(
