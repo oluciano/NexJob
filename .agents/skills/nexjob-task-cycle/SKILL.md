@@ -268,6 +268,10 @@ Before generating the Pull Request:
 
 Every task that introduces or modifies public options, defaults, architecture behaviors, or multi-service patterns MUST audit and update documentation directly in the working branch:
 
+> **Tool first:** run the `nexjob-docs-truth` skill with `--scope diff` (`dotnet run --project tools/DocsTruth -c Release -- --strict`, then the
+> semantic review of the pages that describe the changed areas). A rule lives in one page and the others link to it; do not copy it.
+> The checklist below says where each kind of change is documented.
+
 1. **Package / Root READMEs:**
    - If a new feature or behavior was added to a package, update the corresponding `src/<Package>/README.md` or root `README.md`.
 2. **Wiki Pages (`docs/wiki/*.md`):**

@@ -189,7 +189,7 @@ test: add tests
 4. All changes must have tests
 5. Strict async/await usage
 6. Classes must be sealed by default
-7. Documentation must be updated
+7. Documentation must be updated, and it must match the code: run `dotnet run --project tools/DocsTruth -c Release -- --strict` (metrics, options, settings keys, defaults and stale phrases against `docs/wiki`). The `Docs Truth` job of the CI shows the same report.
 
 ---
 
