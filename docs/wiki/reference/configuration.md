@@ -17,7 +17,7 @@ builder.Services.AddNexJob(options =>
     // Maximum number of jobs that execute concurrently on this host.
     // Each worker runs in its own Task. Keep this below your storage
     // connection pool size to avoid contention.
-    options.Workers = 10; // Default: 10
+    options.Workers = 10; // Default: 10 (0 = this host does not execute jobs)
 
     // ── Identity ─────────────────────────────────────────────────────────────
     // Human-readable name for this node shown in the dashboard.
@@ -349,4 +349,6 @@ builder.Services.AddNexJobStandaloneDashboard(options =>
     The standalone dashboard binds to **loopback only** by default (`LocalhostOnly = true`). In a container, this makes the dashboard unreachable through a published port. Set `LocalhostOnly = false` **and** register an `IDashboardAuthorizationHandler` — without a handler, NexJob logs a startup warning. The embedded server has no authentication middleware, so your handler must authenticate from `context.Request` directly.
 
 
-Set `DisableWorkers = true` to run a dashboard-only process that serves the UI without executing any jobs. This sets `Workers = 0` for that host.
+Set `DisableWorkers = true` to run a dashboard-only process that serves the UI without executing any jobs. This sets `Workers = 0` for that host before any service starts.
+
+`Workers = 0` is valid on its own (`options.Workers = 0` or `"Workers": 0`) and means that the host does not fetch or execute jobs. The host still starts and registers as a node with 0 workers and **no polled queues**, so it is not counted as listening to a queue (the dashboard still flags a queue that only such hosts could read). The recurring scheduler, the orphan watcher and the retention keep running: they maintain the whole database and run on any node. A negative value throws `ArgumentOutOfRangeException`.

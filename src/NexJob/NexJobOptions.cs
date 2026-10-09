@@ -12,18 +12,28 @@ public sealed class NexJobOptions
     private const int MaxQueuePrefixLength = 100;
     private TimeSpan? _defaultExecutionTimeout;
     private string? _queuePrefix;
+    private int _workers = 10;
     private IReadOnlyList<Type> _ignoreRetryAttemptExceptions = [];
 
     /// <summary>
     /// Maximum number of jobs that can execute concurrently on this host.
-    /// Defaults to <c>10</c>.
+    /// Defaults to <c>10</c>. <c>0</c> means that this host does not fetch or execute jobs (for example a dashboard-only host);
+    /// it still registers as a node, with no workers and no polled queues. A negative value is rejected.
     /// </summary>
     /// <remarks>
     /// Each worker runs in its own <see cref="System.Threading.Tasks.Task"/>.
     /// Setting this higher than your storage connection pool size may cause contention.
     /// For CPU-bound jobs, values above <c>Environment.ProcessorCount</c> rarely help.
     /// </remarks>
-    public int Workers { get; set; } = 10;
+    public int Workers
+    {
+        get => _workers;
+        set
+        {
+            ArgumentOutOfRangeException.ThrowIfNegative(value);
+            _workers = value;
+        }
+    }
 
     /// <summary>
     /// Optional identifier for the server/node. If null, MachineName + Guid is used.

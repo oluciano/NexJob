@@ -13,7 +13,7 @@ namespace NexJob.Dashboard.Standalone;
 /// and any host that does not expose its own HTTP pipeline.
 /// The server starts with the host and stops gracefully when the host shuts down.
 /// </summary>
-internal sealed class StandaloneDashboardHostedService : IHostedService
+internal sealed class StandaloneDashboardHostedService : IHostedLifecycleService
 {
     private readonly StandaloneDashboardOptions _options;
     private readonly IServiceProvider _rootProvider;
@@ -37,6 +37,29 @@ internal sealed class StandaloneDashboardHostedService : IHostedService
     }
 
     /// <inheritdoc/>
+    public Task StartingAsync(CancellationToken cancellationToken)
+    {
+        // The host calls StartingAsync on every service before any StartAsync, so the dispatcher reads Workers = 0.
+        // Setting it in StartAsync was too late: the dispatcher had already started and kept executing jobs.
+        if (_options.DisableWorkers)
+        {
+            _rootProvider.GetRequiredService<NexJobOptions>().Workers = 0;
+            _logger.LogInformation("Standalone dashboard running in dedicated ops host mode (workers disabled: Workers = 0).");
+        }
+
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc/>
+    public Task StartedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    /// <inheritdoc/>
+    public Task StoppingAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    /// <inheritdoc/>
+    public Task StoppedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    /// <inheritdoc/>
     public async Task StartAsync(CancellationToken cancellationToken)
     {
         var listenUrl = _options.LocalhostOnly
@@ -55,11 +78,6 @@ internal sealed class StandaloneDashboardHostedService : IHostedService
         builder.WebHost.UseUrls(listenUrl);
 
         var rootNexJobOptions = _rootProvider.GetRequiredService<NexJobOptions>();
-        if (_options.DisableWorkers)
-        {
-            rootNexJobOptions.Workers = 0;
-            _logger.LogInformation("Standalone dashboard running in dedicated ops host mode (workers disabled: Workers = 0).");
-        }
 
         // Re-use the IStorageProvider, IRuntimeSettingsStore and NexJobOptions
         // already registered in the parent host — single source of truth

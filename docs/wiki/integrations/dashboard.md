@@ -188,7 +188,7 @@ Choose the package that matches your application type:
 | `EnablePlayground` | `bool` | `false` | Enables the interactive Scenarios drawer and simulator API (`/api/scenarios/*`). Keep `false` in production. |
 | `LocalhostOnly` | `bool` | `true` | When `true`, the server binds to `127.0.0.1` only. Set `false` to listen on all interfaces. |
 | `PollIntervalSeconds` | `int` | `3` | How often the dashboard front-end polls for updated metrics. |
-| `DisableWorkers` | `bool` | `false` | When `true`, sets `Workers = 0` on this host — useful for a dedicated ops dashboard that should not process jobs. |
+| `DisableWorkers` | `bool` | `false` | When `true`, sets `Workers = 0` on this host before any service starts — useful for a dedicated ops dashboard that should not process jobs (see [`DisableWorkers`](../reference/configuration.md)). |
 
 ---
 

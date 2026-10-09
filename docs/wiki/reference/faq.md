@@ -179,7 +179,7 @@ These answers describe verified behavior as of v5.6.1 and later.
 
     The standalone package starts a small embedded web server inside your worker process (port 5005 by default). You deploy nothing extra.
 
-    To run a dashboard-only host with no job execution, set `DisableWorkers = true` in the standalone options. It sets `Workers = 0` for that process.
+    To run a dashboard-only host with no job execution, set `DisableWorkers = true` in the standalone options. It sets `Workers = 0` for that process, which means [no job execution on that host](configuration.md).
 
     **Security note:** the standalone dashboard binds to loopback only by default. Set `LocalhostOnly = false` in containers and register an `IDashboardAuthorizationHandler`. Without a handler, NexJob logs a startup warning.
 
