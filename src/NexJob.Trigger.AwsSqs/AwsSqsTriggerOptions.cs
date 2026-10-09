@@ -50,7 +50,7 @@ public sealed class AwsSqsTriggerOptions
     public int VisibilityExtensionIntervalSeconds { get; set; } = 15;
 
     /// <summary>
-    /// Target NexJob queue name. Defaults to "default".
+    /// Target NexJob queue name. Defaults to "default", which is the default queue of the application (<c>{prefix}.default</c>).
     /// </summary>
     public string TargetQueue { get; set; } = "default";
 

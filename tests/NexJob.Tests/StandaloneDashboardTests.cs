@@ -454,6 +454,33 @@ public sealed class StandaloneDashboardTests
     }
 
     [Fact]
+    public async Task StandaloneDashboard_DefaultPausedByTheOldName_QueuesPageShowsThePrefixedDefaultPaused()
+    {
+        // N1 (#377): pausing "default" also pauses {prefix}.default for the dispatcher; the Queues page must say so.
+        var html = await GetPageAsync("/dashboard/queues", null, pause: "default", seeded: ["billing.default"]);
+
+        html.Should().Contain("PAUSED</span>");
+    }
+
+    [Fact]
+    public async Task StandaloneDashboard_NothingPaused_QueuesPageShowsNoPausedBadge()
+    {
+        // N2 (#377): guard so the assertion above cannot pass vacuously.
+        var html = await GetPageAsync("/dashboard/queues", null, pause: null, seeded: ["billing.default"]);
+
+        html.Should().NotContain("PAUSED</span>");
+    }
+
+    [Fact]
+    public async Task StandaloneDashboard_OtherQueuePaused_PrefixedDefaultStaysActive()
+    {
+        // N2 (#377): guard: only "default" (or the stored name) pauses the prefixed default.
+        var html = await GetPageAsync("/dashboard/queues", null, pause: "emails", seeded: ["billing.default"]);
+
+        html.Should().NotContain("PAUSED</span>");
+    }
+
+    [Fact]
     public async Task StandaloneDashboard_WithoutScoping_PreservesGlobalQueues()
     {
         // N2 (Negative): Without Queues scoping (null), all cluster queues are preserved in counters and pages

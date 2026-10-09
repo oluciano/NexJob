@@ -19,6 +19,8 @@ No schema migration. One behavior changes for everyone who enqueues without nami
 - **Rolling deploy.** A node still on v5 enqueues and polls `default`; a v6 node drains it, so nothing is lost. Jobs enqueued by v6 nodes into `{prefix}.default` are not seen by v5 nodes until they are upgraded.
 - **Configuration keyed by `"default"`** (`ConfigureQueue`, pause, circuit breaker, execution window) applies to the prefixed queue as well.
 - **Triggers** (`TargetQueue = "default"`) enqueue into the prefixed queue. A queue you name explicitly is not prefixed.
+- **`SalesforceStreamingTriggerHandler` constructor.** The `IOptions<NexJobOptions>` parameter is now `NexJobOptions`: `AddNexJob` registers the options as a singleton, and `IOptions` handed the handler a default instance. Only code that constructs the handler by hand is affected; registration through `AddNexJobSalesforceStreamingTrigger` needs no change.
+- **The Servers page and the "no active workers" checks now show what you configured.** Each node used to register the default queues and worker count instead of the configured ones, so a host with custom `Queues`, `Workers` or `QueuePrefix` appeared wrong. Capacity and queue lists you see after the upgrade are the real ones.
 - **Dashboard queue scope** (`DashboardOptions.Queues`): `default` also covers `{prefix}.default`, nothing to change. A standalone dashboard needs the same `NexJob:QueuePrefix` as the workers.
 
 ## v5.9.0 → v5.10.0

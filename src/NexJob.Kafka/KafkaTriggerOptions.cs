@@ -26,7 +26,7 @@ public sealed class KafkaTriggerOptions
     public string GroupId { get; set; } = string.Empty;
 
     /// <summary>
-    /// Gets or sets the target NexJob queue name. Defaults to "default".
+    /// Gets or sets the target NexJob queue name. Defaults to "default", which is the default queue of the application (<c>{prefix}.default</c>).
     /// </summary>
     public string TargetQueue { get; set; } = "default";
 

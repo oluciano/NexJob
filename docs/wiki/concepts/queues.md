@@ -16,7 +16,7 @@ await scheduler.EnqueueAsync<SendEmailJob, SendEmailInput>(input, cancellationTo
 await scheduler.ScheduleAsync<CleanupJob>(TimeSpan.FromHours(1), cancellationToken: ct);
 ```
 
-The stored name is `{prefix}.default`, so applications that share a database do not share a queue. The prefix is `NexJobOptions.QueuePrefix` (or `NexJob:QueuePrefix` in `appsettings.json`). When it is not set, NexJob uses the full lowercase name of the entry assembly: `Acme.Billing.Worker` becomes `acme.billing.worker.default`. The name is never shortened, so `Acme.Billing.Worker` and `Acme.Logistics.Worker` cannot collide. An explicit prefix is stored lowercase too, may have at most 100 characters, no whitespace, and must not start or end with a dot; anything else throws `ArgumentException` when you set it.
+The stored name is `{prefix}.default`, so applications that share a database do not share a queue. The prefix is `NexJobOptions.QueuePrefix` (or `NexJob:QueuePrefix` in `appsettings.json`). When it is not set, NexJob uses the full lowercase name of the entry assembly: `Acme.Billing.Worker` becomes `acme.billing.worker.default`. The name is never shortened, so `Acme.Billing.Worker` and `Acme.Logistics.Worker` cannot collide. An explicit prefix is stored exactly as you type it (trimmed): `QueuePrefix = "Billing"` gives `Billing.default`, so write the same case wherever you refer to that queue, because most databases tell `Billing.default` and `billing.default` apart. It may have at most 100 characters, no whitespace, and must not start or end with a dot; anything else throws `ArgumentException` when you set it.
 
 ```csharp
 builder.Services.AddNexJob(options =>
@@ -29,7 +29,7 @@ These rules apply everywhere a queue name is accepted: `EnqueueAsync`, `Schedule
 
 - **Only the implicit default is prefixed.** `"default"` (or no queue) becomes `{prefix}.default`. A queue you name on purpose, such as `"emails"`, is used as it is.
 - **A name with a dot is already qualified** and is never prefixed again. A producer in one service targets another service's default queue with `queue: "billing.default"`.
-- **Configuration keyed by `"default"` follows the prefix.** `ConfigureQueue("default", ...)`, a circuit breaker, an execution window, pausing `default` and `ResetQueueCircuitAsync("default")` apply to `{prefix}.default` too.
+- **Configuration keyed by `"default"` follows the prefix.** `ConfigureQueue("default", ...)`, a circuit breaker, an execution window, pausing `default` and `ResetQueueCircuitAsync("default")` apply to `{prefix}.default` too. For pause and resume `default` and `{prefix}.default` are one queue: resuming either name resumes both, so the **Resume** button of the dashboard works whichever name paused the queue.
 - **The legacy `default` queue is still drained.** Every host also polls `default`, so jobs stored before the upgrade still run. Nothing is renamed. A job of another application that sits in `default` is deferred back (see [Multi-Service](../guides/multi-service.md)). The drain is not covered by the execution window or circuit breaker you configured for `"default"` (they apply to the prefixed queue), and an explicit `queue: "default"` now means the prefixed queue: there is no way to enqueue into the legacy one.
 
 !!! danger "Did you share `default` between services on purpose?"

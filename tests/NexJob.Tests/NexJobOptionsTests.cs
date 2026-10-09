@@ -70,11 +70,14 @@ public sealed class NexJobOptionsTests
     }
 
     [Fact]
-    public void ResolveQueue_ExplicitMixedCasePrefix_IsStoredLowercase()
+    public void ResolveQueue_ExplicitMixedCasePrefix_IsStoredAsTyped()
     {
+        // Behavior changed in v6.0: an explicit prefix is stored exactly as typed (trimmed). Only the prefix derived
+        // from the assembly name is lowercased. Lowercasing it hid what the developer wrote, so a queue written as
+        // "Billing.default" in another service no longer matched the stored "billing.default".
         var options = new NexJobOptions { QueuePrefix = "  Billing " };
 
-        options.ResolveQueue(null).Should().Be("billing.default");
+        options.ResolveQueue(null).Should().Be("Billing.default");
     }
 
     [Fact]
