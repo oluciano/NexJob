@@ -108,6 +108,8 @@ NexJob exposes the following metrics under the `"NexJob"` meter:
 | `nexjob.jobs.succeeded` | Counter | Total jobs that completed successfully. Tagged with `nexjob.job_type`. |
 | `nexjob.jobs.failed` | Counter | Failed execution attempts — one increment per failed attempt, including attempts that will be retried. Tagged with `nexjob.job_type`. |
 | `nexjob.jobs.expired` | Counter | Total jobs that exceeded their deadline and were expired. Tagged with `nexjob.job_type`. |
+| `nexjob.dead_letter.forwarded` | Counter | Dead-lettered jobs that an `IDeadLetterForwarder` handed over to its destination. Tagged with `nexjob.forwarder`. See [dead-letter forwarding](../concepts/retries-and-dead-letter.md). |
+| `nexjob.dead_letter.forward_failed` | Counter | Forwards that failed; the exception is logged and swallowed, so this counter is the only signal. Tagged with `nexjob.forwarder`. |
 | `nexjob.jobs.cancellation_ignored` | Counter | Jobs still running 10 seconds after their execution timeout cancelled their token, so they still hold a worker slot. Tagged with `nexjob.job_type`. |
 | `nexjob.jobs.throttle_deferred` | Counter | Jobs returned to the queue because a slot of their `[Throttle]` resource was not free. Tagged with `nexjob.job_type`. |
 | `nexjob.recurring.id_collisions` | Counter | Recurring job registrations that overwrote a job of a different type stored under the same id (two applications sharing a database). Tagged with `recurring_job_id`. See [recurring job ids](../concepts/recurring-jobs.md#recurring-job-ids-are-global-to-the-database). |

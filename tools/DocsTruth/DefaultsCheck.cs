@@ -12,6 +12,11 @@ internal static class DefaultsCheck
         RegexOptions.Multiline,
         TimeSpan.FromSeconds(1));
 
+    private static readonly Regex Duration = new(
+        @"^(?<n>\d+(?:\.\d+)?)\s*(?<unit>ms|milliseconds?|s|sec|secs|seconds?|min|mins|minutes?|h|hrs?|hours?|d|days?)$",
+        RegexOptions.IgnoreCase,
+        TimeSpan.FromSeconds(1));
+
     private static readonly Regex TimeSpanFactory = new(
         @"^TimeSpan\.From(?<unit>Milliseconds|Seconds|Minutes|Hours|Days)\((?<n>[\d.]+)\)$",
         RegexOptions.None,
@@ -106,6 +111,21 @@ internal static class DefaultsCheck
                 "Seconds" => TimeSpan.FromSeconds(n),
                 "Minutes" => TimeSpan.FromMinutes(n),
                 "Hours" => TimeSpan.FromHours(n),
+                _ => TimeSpan.FromDays(n),
+            };
+        }
+
+        var written = Duration.Match(documented);
+        if (written.Success)
+        {
+            var n = double.Parse(written.Groups["n"].Value, CultureInfo.InvariantCulture);
+            return char.ToLowerInvariant(written.Groups["unit"].Value[0]) switch
+            {
+                'm' when written.Groups["unit"].Value.StartsWith("ms", StringComparison.OrdinalIgnoreCase)
+                    || written.Groups["unit"].Value.StartsWith("milli", StringComparison.OrdinalIgnoreCase) => TimeSpan.FromMilliseconds(n),
+                'm' => TimeSpan.FromMinutes(n),
+                's' => TimeSpan.FromSeconds(n),
+                'h' => TimeSpan.FromHours(n),
                 _ => TimeSpan.FromDays(n),
             };
         }
