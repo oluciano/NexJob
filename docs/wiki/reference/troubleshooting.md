@@ -24,7 +24,7 @@ NexJob is designed to surface diagnostic information through structured logs, me
 
     **Check 2 — Queue name mismatch**
 
-    The dispatcher only processes queues listed in `options.Queues`. If you enqueued a job on `"emails"` but your options only list `"default"`, the job sits untouched.
+    The dispatcher only processes queues listed in `options.Queues`. If you enqueued a job on `"emails"` but your options only list `"default"`, the job sits untouched. A job enqueued without a queue is stored in the [default queue](../concepts/queues.md#the-default-queue), `{prefix}.default`; the dashboard shows that name, not `default`.
 
     Verify the job's queue name matches your configuration:
 

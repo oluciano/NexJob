@@ -8,38 +8,43 @@ A NexJob queue is a named logical partition of the jobs stored in your database.
 
 ## The default queue
 
-When you enqueue without a `queue` argument, the job goes to the queue named `default`. A host polls `["default"]` unless you configure something else, so a single-service app works without ever naming a queue.
+When you enqueue without a `queue` argument, the job goes to the **default queue of your application**. A host polls it unless you configure something else, so a single-service app works without ever naming a queue.
 
 ```csharp
-// Both jobs land in the "default" queue
+// Both jobs land in the default queue of this application
 await scheduler.EnqueueAsync<SendEmailJob, SendEmailInput>(input, cancellationToken: ct);
 await scheduler.ScheduleAsync<CleanupJob>(TimeSpan.FromHours(1), cancellationToken: ct);
 ```
 
-!!! tip "Sharing a database with other applications?"
-    `default` is global to the database. If other applications use the same database and also rely on `default`, you see each other's jobs in the dashboard and your workers keep bouncing the jobs they cannot run. Give your application its own queue name, for example `myproject.default`, and use it everywhere:
+The stored name is `{prefix}.default`, so applications that share a database do not share a queue. The prefix is `NexJobOptions.QueuePrefix` (or `NexJob:QueuePrefix` in `appsettings.json`). When it is not set, NexJob uses the full lowercase name of the entry assembly: `Acme.Billing.Worker` becomes `acme.billing.worker.default`. The name is never shortened, so `Acme.Billing.Worker` and `Acme.Logistics.Worker` cannot collide. An explicit prefix is stored lowercase too, may have at most 100 characters, no whitespace, and must not start or end with a dot; anything else throws `ArgumentException` when you set it.
 
-    ```csharp
-    builder.Services.AddNexJob(options =>
-    {
-        options.Queues = ["myproject.default"];
-    });
+```csharp
+builder.Services.AddNexJob(options =>
+{
+    options.QueuePrefix = "billing"; // jobs without a queue go to "billing.default"
+});
+```
 
-    await scheduler.EnqueueAsync<SendEmailJob, SendEmailInput>(
-        input,
-        queue: "myproject.default",
-        cancellationToken: ct);
-    ```
+These rules apply everywhere a queue name is accepted: `EnqueueAsync`, `ScheduleAsync`, recurring jobs (in code and in `appsettings.json`), broker triggers (`TargetQueue`) and `NexJobOptions.Queues`.
 
-    Pass the same `queue` to recurring jobs and set `TargetQueue` on broker triggers. A job enqueued **without** `queue` still goes to `default`, which your host no longer polls, so it stays `Enqueued` forever. See [Multi-Service](../guides/multi-service.md).
+- **Only the implicit default is prefixed.** `"default"` (or no queue) becomes `{prefix}.default`. A queue you name on purpose, such as `"emails"`, is used as it is.
+- **A name with a dot is already qualified** and is never prefixed again. A producer in one service targets another service's default queue with `queue: "billing.default"`.
+- **Configuration keyed by `"default"` follows the prefix.** `ConfigureQueue("default", ...)`, a circuit breaker, an execution window, pausing `default` and `ResetQueueCircuitAsync("default")` apply to `{prefix}.default` too.
+- **The legacy `default` queue is still drained.** Every host also polls `default`, so jobs stored before the upgrade still run. Nothing is renamed. A job of another application that sits in `default` is deferred back (see [Multi-Service](../guides/multi-service.md)). The drain is not covered by the execution window or circuit breaker you configured for `"default"` (they apply to the prefixed queue), and an explicit `queue: "default"` now means the prefixed queue: there is no way to enqueue into the legacy one.
 
-    **Renaming an existing queue:** jobs already enqueued keep the old name, and nothing moves them. Do not delete them. Keep the old queue in the list until it is empty, then remove it:
+!!! danger "Did you share `default` between services on purpose?"
+    If service A enqueues without a queue and service B was meant to run those jobs by polling `default`, that stops working: A now stores them in `a.default`, which B never reads, and they stay `Enqueued` with no error. Name the queue on both sides (`queue: "orders"` in A, `Queues = ["orders"]` in B) or target B's default queue explicitly with `queue: "b.default"`. Check the dashboard for queues that have jobs and no node polling them.
 
-    ```csharp
-    options.Queues = ["myproject.default", "default"]; // drain "default", then drop it
-    ```
+!!! warning "Set the prefix yourself in production"
+    A derived prefix changes when the entry assembly is renamed, and jobs already stored stay in the old queue, which the drain does not cover (it only reads `default`). Set `QueuePrefix` explicitly so the name survives renames and refactors. The host logs a warning at startup while the prefix is derived.
 
-    Watch the **Queues** page of the dashboard until `default` reaches zero. Recurring jobs registered in code or in `appsettings.json` move to the new queue on the next startup. If another application shares the database, it may have jobs in `default` too: a job type your host cannot load is deferred back, but a type from an assembly you both reference would run on your host.
+!!! warning "No entry assembly, or a shared host"
+    Some hosts have no entry assembly, and others run many applications under one entry assembly (for example a shared runner). In the first case no prefix is derived and the shared `default` comes back: the host logs a warning saying so. In the second, every application derives the same prefix and shares a queue again. In both cases set `QueuePrefix` explicitly.
+
+!!! note "Queue scope in the dashboard"
+    `DashboardOptions.Queues` lists stored names. To show the default queue, list `{prefix}.default` (and `default` while old jobs remain). See [Queue Scoping](../integrations/dashboard.md).
+
+Recurring job ids and `[Throttle]` resources are not prefixed; they are still global to the database.
 
 ## Route a job to a queue
 

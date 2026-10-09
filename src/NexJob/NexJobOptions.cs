@@ -1,4 +1,5 @@
 using NexJob.Configuration;
+using NexJob.Internal;
 
 namespace NexJob;
 
@@ -8,7 +9,9 @@ namespace NexJob;
 /// </summary>
 public sealed class NexJobOptions
 {
+    private const int MaxQueuePrefixLength = 100;
     private TimeSpan? _defaultExecutionTimeout;
+    private string? _queuePrefix;
     private IReadOnlyList<Type> _ignoreRetryAttemptExceptions = [];
 
     /// <summary>
@@ -148,6 +151,35 @@ public sealed class NexJobOptions
     public IReadOnlyList<string> Queues { get; set; } = ["default"];
 
     /// <summary>
+    /// Prefix applied to the implicit <c>default</c> queue so hosts sharing a database do not share a queue.
+    /// When <see langword="null"/> or blank, the lowercase name of the entry assembly is used.
+    /// Stored lowercase. Queues named explicitly, and names that already contain a dot, are never prefixed.
+    /// </summary>
+    /// <exception cref="ArgumentException">
+    /// The prefix is longer than 100 characters, contains whitespace, or starts or ends with a dot.
+    /// </exception>
+    public string? QueuePrefix
+    {
+        get => _queuePrefix;
+        set
+        {
+            var trimmed = value?.Trim();
+            if (!string.IsNullOrEmpty(trimmed)
+                && (trimmed.Length > MaxQueuePrefixLength
+                    || trimmed.Any(char.IsWhiteSpace)
+                    || trimmed.StartsWith('.')
+                    || trimmed.EndsWith('.')))
+            {
+                throw new ArgumentException(
+                    $"QueuePrefix must be at most {MaxQueuePrefixLength} characters, without whitespace, and must not start or end with a dot.",
+                    nameof(value));
+            }
+
+            _queuePrefix = value;
+        }
+    }
+
+    /// <summary>
     /// Computes the retry delay for a failed job given the attempt number (1-based).
     /// Defaults to exponential backoff: <c>pow(attempt, 4) + 15 + rand(30) × (attempt + 1)</c> seconds.
     /// </summary>
@@ -243,6 +275,41 @@ public sealed class NexJobOptions
     /// </summary>
     internal TimeSpan CancellationGracePeriod { get; set; } = TimeSpan.FromSeconds(10);
 
+    /// <summary>The queue names the dispatcher polls: <see cref="Queues"/> mapped to stored names, plus the legacy <c>default</c>.</summary>
+    internal IReadOnlyList<string> PolledQueues
+    {
+        get
+        {
+            var prefix = EffectivePrefix;
+            var result = new List<string>();
+            var drainsLegacy = false;
+            foreach (var queue in Queues)
+            {
+                var stored = QueueNames.Resolve(queue, prefix);
+                drainsLegacy |= !string.Equals(stored, queue, StringComparison.Ordinal);
+                if (!result.Contains(stored, StringComparer.Ordinal))
+                {
+                    result.Add(stored);
+                }
+            }
+
+            if (drainsLegacy && !result.Contains(QueueNames.Default, StringComparer.Ordinal))
+            {
+                result.Add(QueueNames.Default);
+            }
+
+            return result;
+        }
+    }
+
+    /// <summary>The entry assembly the automatic prefix is derived from. Internal on purpose; tests replace it.</summary>
+    internal System.Reflection.Assembly? EntryAssembly { get; set; } = System.Reflection.Assembly.GetEntryAssembly();
+
+    /// <summary>The prefix in effect: the explicit <see cref="QueuePrefix"/>, else the entry assembly name.</summary>
+    internal string? EffectivePrefix => string.IsNullOrWhiteSpace(QueuePrefix)
+        ? QueueNames.DerivePrefix(EntryAssembly)
+        : QueuePrefix.Trim().ToLowerInvariant();
+
     /// <summary>
     /// Set by <see cref="ApplySettings"/> when <c>appsettings.json</c> carries a <c>DefaultQueue</c> other than
     /// <c>default</c>: the value is accepted but never applied.
@@ -300,6 +367,7 @@ public sealed class NexJobOptions
         ServerId = s.ServerId;
         QueueSettings = s.QueueSettings;
         RecurringJobs = s.RecurringJobs;
+        QueuePrefix = s.QueuePrefix;
         if (s.Queues.Length > 0)
         {
             Queues = s.Queues;
@@ -335,4 +403,9 @@ public sealed class NexJobOptions
 
         return ignored;
     }
+
+    /// <summary>Maps a user-facing queue name to the name stored with jobs.</summary>
+    /// <param name="queue">The queue the caller asked for, or <see langword="null"/> for the implicit default.</param>
+    /// <returns>The stored queue name.</returns>
+    internal string ResolveQueue(string? queue) => QueueNames.Resolve(queue, EffectivePrefix);
 }

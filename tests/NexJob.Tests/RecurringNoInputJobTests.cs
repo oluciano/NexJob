@@ -73,6 +73,20 @@ public sealed class RecurringNoInputJobTests
     }
 
     /// <summary>
+    /// Verifies that a recurring job without a queue is stored in the prefixed default queue (#377).
+    /// </summary>
+    [Fact]
+    public async Task RecurringAsync_WithoutQueue_UsesPrefixedDefault()
+    {
+        var sut = new DefaultScheduler(_storage, _storage, _storage, new NexJobOptions { QueuePrefix = "billing" }, new JobWakeUpChannel());
+
+        await sut.RecurringAsync<RecurringNoInputStubJob>("prefixed-default", "0 0 * * *");
+
+        var record = (await _storage.GetRecurringJobsAsync()).Single(r => r.RecurringJobId == "prefixed-default");
+        record.Queue.Should().Be("billing.default");
+    }
+
+    /// <summary>
     /// Verifies that the recurring job respects the concurrency policy.
     /// </summary>
     [Fact]
@@ -283,6 +297,7 @@ public sealed class RecurringNoInputJobTests
             ["NexJob:RecurringJobs:0:Cron"] = "* * * * *",
             ["NexJob:RecurringJobs:0:Queue"] = "default",
             ["NexJob:RecurringJobs:0:Enabled"] = "true",
+            ["NexJob:QueuePrefix"] = "app",
         };
 
         var configuration = new ConfigurationBuilder()
@@ -308,7 +323,8 @@ public sealed class RecurringNoInputJobTests
         // Verify job was registered
         registered.Should().NotBeNull("job should be registered from appsettings");
         registered!.Cron.Should().Be("* * * * *");
-        registered.Queue.Should().Be("default");
+        // Behavior changed in v6.0: the implicit default queue is stored as "{prefix}.default" (#377).
+        registered.Queue.Should().Be("app.default");
         registered.Enabled.Should().BeTrue();
 
         // Verify the next execution is the next cron occurrence (within a minute for "* * * * *")

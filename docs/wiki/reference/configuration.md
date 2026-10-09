@@ -75,6 +75,9 @@ builder.Services.AddNexJob(options =>
     // Ordered list of queues this host polls. Queues drain in this order.
     options.Queues = new[] { "default", "emails", "reports" }; // Default: ["default"]
 
+    // Prefix of the implicit "default" queue (see Queues concept page). Default: null = lowercase entry assembly name.
+    options.QueuePrefix = "billing"; // jobs without a queue go to "billing.default"
+
     // ── Health checks ────────────────────────────────────────────────────────
     // Storage probe timeout before reporting Unhealthy.
     options.HealthCheckTimeout = TimeSpan.FromSeconds(5); // Default: 5s
@@ -134,6 +137,7 @@ Not every option can be set from `appsettings.json`. The table below lists every
 | `HealthCheckTimeout` | `HealthCheckTimeout` | `TimeSpan` string |
 | `HealthCheckFailedThreshold` | `HealthCheckFailedThreshold` | Integer |
 | `Queues` | `Queues` | JSON array of strings |
+| `QueuePrefix` | `QueuePrefix` | String |
 | `QueueSettings` | `QueueSettings` | Array — see Queue Settings section |
 | `RecurringJobs` | `RecurringJobs` | Array of recurring job descriptors |
 | Dashboard `Path` | `Dashboard.Path` | String |

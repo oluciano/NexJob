@@ -32,6 +32,7 @@ builder.Services.AddNexJobSqlServer(
 builder.Services.AddNexJob(options =>
 {
     options.Workers = 10;
+    options.QueuePrefix = "myapp"; // the "default" queue below is stored as "myapp.default"
     options.Queues = ["default", "critical"];
 });
 ```

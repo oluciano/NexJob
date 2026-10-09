@@ -85,7 +85,7 @@ builder.Services.AddNexJobStandaloneDashboard(builder.Configuration);
 | `DisableWorkers` | `bool` | `false` | When `true`, sets `NexJobOptions.Workers = 0` to run as a dedicated ops/monitoring container |
 | `DefaultTheme` | `string` | `"blue-theme"` | Color theme used when the browser has no stored preference: `blue-theme`, `semi-dark`, `dark`, `light` or `bordered-theme` |
 | `EnablePlayground` | `bool` | `false` | Enables the interactive playground drawer with demo scenarios. Off by default for production safety |
-| `Queues` | `IReadOnlyList<string>?` | `null` | Optional list of queues to scope the dashboard view, nav counters, and default job listings |
+| `Queues` | `IReadOnlyList<string>?` | `null` | Optional list of queues to scope the dashboard view, nav counters, and default job listings Names are the stored ones: list `{prefix}.default` to show the default queue. |
 | `Clusters` | `IReadOnlyList<DashboardCluster>` | `[]` | Registered federated clusters for multi-cluster operations |
 
 ---

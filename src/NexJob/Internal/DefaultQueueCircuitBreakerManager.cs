@@ -27,7 +27,7 @@ internal sealed class DefaultQueueCircuitBreakerManager : IQueueCircuitBreakerMa
         {
             foreach (var qs in options.QueueSettings.Where(s => s.CircuitBreaker is not null))
             {
-                _circuits.TryAdd(qs.Name, new CircuitEntry(qs.CircuitBreaker!));
+                _circuits.TryAdd(options.ResolveQueue(qs.Name), new CircuitEntry(qs.CircuitBreaker!));
             }
         }
     }

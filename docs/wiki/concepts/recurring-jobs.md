@@ -110,7 +110,7 @@ builder.Services.AddNexJob(builder.Configuration, options =>
     **Configuration rules to keep in mind:**
       - The `Job` field must match the class name exactly (not the fully qualified name). If two jobs share the same class name, give each entry an explicit `Id` field.
       - `Input` is a JSON string with escaped inner quotes — it is **not** a nested JSON object.
-      - Available per-entry fields: `Id`, `Job`, `Cron`, `Input`, `Queue` (defaults to `"default"`), `TimeZoneId`, `ConcurrencyPolicy` (defaults to `SkipIfRunning`), and `Enabled` (defaults to `true`).
+      - Available per-entry fields: `Id`, `Job`, `Cron`, `Input`, `Queue` (defaults to the [default queue](queues.md#the-default-queue), `{prefix}.default`), `TimeZoneId`, `ConcurrencyPolicy` (defaults to `SkipIfRunning`), and `Enabled` (defaults to `true`).
 
 
 ### Behavior on Application Restart

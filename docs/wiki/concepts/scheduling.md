@@ -172,7 +172,7 @@ The table below lists every method on `IScheduler` and its key parameters:
 <div class="grid cards" markdown>
   -   **queue**
 
-    Queue name. Defaults to `"default"` when `null`.
+    Queue name. When `null`, the [default queue](queues.md#the-default-queue) of the application (`{prefix}.default`).
 
   -   **priority**
 
