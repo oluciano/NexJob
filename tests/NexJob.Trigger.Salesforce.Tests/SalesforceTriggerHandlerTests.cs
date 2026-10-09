@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Moq;
 using NexJob.Internal;
+using NexJob.Tests;
 using Xunit;
 
 namespace NexJob.Trigger.Salesforce.Tests;
@@ -120,7 +121,7 @@ public sealed class SalesforceTriggerHandlerTests
         // Act
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
         await handler.StartAsync(cts.Token);
-        await Task.Delay(100);
+        await WaitForCallAsync(_pubSubClientMock, nameof(ISalesforcePubSubClient.SubscribeAsync));
         await handler.StopAsync(CancellationToken.None);
 
         // Assert
@@ -171,7 +172,7 @@ public sealed class SalesforceTriggerHandlerTests
         // Act
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
         await handler.StartAsync(cts.Token);
-        await Task.Delay(200);
+        await WaitForCallAsync(_schedulerMock, nameof(IScheduler.EnqueueAsync));
         await handler.StopAsync(CancellationToken.None);
 
         // Assert — Guarantee 5: Replay ID must NOT be saved
@@ -222,7 +223,7 @@ public sealed class SalesforceTriggerHandlerTests
         // Act
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
         await handler.StartAsync(cts.Token);
-        await Task.Delay(200);
+        await TestWait.UntilAsync(() => Task.FromResult(dlqJob is not null), because: "the failed event to reach the dead-letter queue");
         await handler.StopAsync(CancellationToken.None);
 
         // Assert
@@ -275,7 +276,7 @@ public sealed class SalesforceTriggerHandlerTests
         // Act
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
         await handler.StartAsync(cts.Token);
-        await Task.Delay(200);
+        await WaitForCallAsync(_schedulerMock, nameof(IScheduler.EnqueueAsync), atLeast: 2);
         await handler.StopAsync(CancellationToken.None);
 
         // Assert - ReplayId should NOT be committed
@@ -342,7 +343,7 @@ public sealed class SalesforceTriggerHandlerTests
         // Act
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
         await handler.StartAsync(cts.Token);
-        await Task.Delay(1200); // allow reconnect after 1s delay
+        await WaitForCallAsync(_pubSubClientMock, nameof(ISalesforcePubSubClient.SubscribeAsync), atLeast: 2);
         await handler.StopAsync(CancellationToken.None);
 
         // Assert: Second subscribe call must have null replayId and Latest preset
@@ -380,7 +381,7 @@ public sealed class SalesforceTriggerHandlerTests
         // Act
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
         await handler.StartAsync(cts.Token);
-        await Task.Delay(1200);
+        await WaitForCallAsync(_pubSubClientMock, nameof(ISalesforcePubSubClient.SubscribeAsync), atLeast: 2);
         await handler.StopAsync(CancellationToken.None);
 
         // Assert: Second subscribe call must have null replayId and Earliest preset
@@ -479,6 +480,12 @@ public sealed class SalesforceTriggerHandlerTests
         _replayStoreMock.Verify(s => s.SaveReplayIdAsync(_options.Topic, It.IsAny<byte[]>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
+    private static Task WaitForCallAsync<T>(Mock<T> mock, string method, int atLeast = 1)
+        where T : class =>
+        TestWait.UntilAsync(
+            () => Task.FromResult(mock.Invocations.Count(i => string.Equals(i.Method.Name, method, StringComparison.Ordinal)) >= atLeast),
+            because: $"{method} to be called {atLeast} time(s)");
+
     private SalesforceTriggerHandler CreateHandler()
     {
         return new SalesforceTriggerHandler(
@@ -537,7 +544,7 @@ public sealed class SalesforceTriggerHandlerTests
             .Returns(ToAsyncEnumerable(Array.Empty<ConsumerEvent>()));
 
         await handler.StartAsync(CancellationToken.None);
-        await Task.Delay(100);
+        await TestWait.UntilAsync(() => Task.FromResult(registry.Get($"salesforce:{_options.Topic}")?.Status == ListenerStatus.Listening), because: "the listener to report Listening");
 
         var listening = registry.Get($"salesforce:{_options.Topic}");
         listening!.Status.Should().Be(ListenerStatus.Listening);
