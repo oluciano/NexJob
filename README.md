@@ -208,24 +208,9 @@ Complete documentation is on the [Documentation Site](https://oluciano.github.io
 
 ---
 
-## Samples & Reference Architecture
+## Samples
 
-The [`samples/`](samples/) directory provides comprehensive, runnable reference architectures for all NexJob capabilities:
-
-| Sample | Stack / Focus | Port | Highlights |
-|---|---|---|---|
-| [`NexJob.Sample.MinimalApi`](samples/NexJob.Sample.MinimalApi) | ASP.NET Core Minimal API | `5001` | Segregated `IDashboardStorage`, dead-letter handler, deadline enforcement |
-| [`NexJob.Sample.WebApi`](samples/NexJob.Sample.WebApi) | ASP.NET Core Web API | `5002` | Dual-storage (InMemory / PostgreSQL), REST endpoints, `.http` file |
-| [`NexJob.Sample.WorkerService`](samples/NexJob.Sample.WorkerService) | Headless Console Worker | `5005` (dashboard) | Standalone embedded HTTP dashboard server, graceful shutdown |
-| [`NexJob.Sample.ConfiguredRecurring`](samples/NexJob.Sample.ConfiguredRecurring) | Declarative Recurring | `5004` | Zero-code recurring job registration via `appsettings.json` with timezones |
-| [`NexJob.Sample.RabbitMQ`](samples/NexJob.Sample.RabbitMQ) | Broker Integration | `5009` | Outbox producer + trigger consumer with 5 trigger guarantees |
-| [`NexJob.Sample.Kafka`](samples/NexJob.Sample.Kafka) | Streaming Broker | `5010` | Partitioned Outbox event publishing + consumer trigger with offset tracking |
-| [`NexJob.Sample.Storage`](samples/NexJob.Sample.Storage) | Enterprise Topology | `5007` | PostgreSQL primary + read replica (`UseDashboardReadReplica`), Redis throttle (`AddNexJobDistributedThrottle`), OTel |
-| [`NexJob.Sample.CloudTriggers`](samples/NexJob.Sample.CloudTriggers) | Unified Cloud Consumers | `5008` | AWS SQS, Azure Service Bus, GCP Pub/Sub, Salesforce gRPC & CometD with `/simulate/*` endpoints |
-| [`NexJob.Sample.Reliability`](samples/NexJob.Sample.Reliability) | Reliability behaviors | `5011` | `[Retry]`, checkpoint resume, deadline, dead-letter, queue circuit breaker, `IJobControlService`, health checks |
-| [`NexJob.Sample.Providers`](samples/NexJob.Sample.Providers) | One app, any storage | `5012` | InMemory / PostgreSQL / SQL Server / Redis / MongoDB chosen by `Sample:Provider` |
-
-A full local test stack (PostgreSQL 16, Redis 7, RabbitMQ 3.13, and Kafka KRaft) is provided in [`samples/docker-compose.yml`](samples/docker-compose.yml).
+Runnable examples for the web, worker, storage and broker scenarios are in [`samples/`](samples/), with the full catalog and a Docker Compose stack (PostgreSQL, Redis, RabbitMQ, Kafka) in [`samples/README.md`](samples/README.md).
 
 ---
 
