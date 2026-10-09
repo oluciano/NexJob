@@ -3,10 +3,12 @@ using System.Text;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Moq;
 using NexJob.Exceptions;
 using NexJob.Internal;
 using NexJob.Storage;
+using NexJob.Tests;
 using RabbitMQ.Client;
 using Xunit;
 
@@ -37,7 +39,8 @@ public sealed class RabbitMqTriggerTests : IClassFixture<RabbitMqTriggerFixture>
     {
         // Arrange
         var services = new ServiceCollection();
-        services.AddLogging();
+        var sink = new LevelLogSink();
+        services.AddLogging(b => b.AddProvider(sink));
         services.AddNexJob();
         services.AddNexJobRabbitMqTrigger(options =>
         {
@@ -81,17 +84,20 @@ public sealed class RabbitMqTriggerTests : IClassFixture<RabbitMqTriggerFixture>
 
         // Wait for processing
         JobRecord? job = null;
-        for (int i = 0; i < 50; i++)
-        {
-            var jobs = await scheduler.GetJobsByTagAsync("trigger:rabbitmq");
-            job = jobs.FirstOrDefault(j => j.IdempotencyKey == "id-123");
-            if (job != null)
+        await TestWait.UntilAsync(
+            async () =>
             {
-                break;
-            }
+                var jobs = await scheduler.GetJobsByTagAsync("trigger:rabbitmq");
+                job = jobs.FirstOrDefault(j => j.IdempotencyKey == "id-123");
+                return job is not null;
+            },
+            because: "the message to become a job");
 
-            await Task.Delay(100);
-        }
+        // The ack is sent after the enqueue and the trigger logs right after it: stopping before that would
+        // requeue the message and the check below would see it again.
+        await TestWait.UntilAsync(
+            () => Task.FromResult(sink.Entries.Any(e => e.Message.Contains("enqueued as NexJob job", StringComparison.Ordinal))),
+            because: "the message to be acknowledged");
 
         await trigger.StopAsync(CancellationToken.None);
 
@@ -112,13 +118,16 @@ public sealed class RabbitMqTriggerTests : IClassFixture<RabbitMqTriggerFixture>
     {
         // Arrange
         var services = new ServiceCollection();
-        services.AddLogging();
+        var sink = new LevelLogSink();
+        services.AddLogging(b => b.AddProvider(sink));
         services.AddNexJob();
 
-        // Setup failing storage
-        var mockStorage = new Mock<IStorageProvider>();
+        // Setup failing storage. The scheduler enqueues through IJobStorage, so that is what must fail: a mock
+        // registered as IStorageProvider is never used and the enqueue silently succeeded (the test passed without a nack).
+        // FormatException is a permanent failure, which is the nack(requeue: false) path this test is about.
+        var mockStorage = new Mock<IJobStorage>();
         mockStorage.Setup(s => s.EnqueueAsync(It.IsAny<JobRecord>(), It.IsAny<DuplicatePolicy>(), It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new Exception("Simulated storage failure"));
+            .ThrowsAsync(new FormatException("Simulated permanent failure"));
 
         services.AddSingleton(mockStorage.Object);
 
@@ -156,7 +165,9 @@ public sealed class RabbitMqTriggerTests : IClassFixture<RabbitMqTriggerFixture>
 
         // Act
         await trigger.StartAsync(CancellationToken.None);
-        await Task.Delay(1000); // Wait for processing attempt
+        await TestWait.UntilAsync(
+            () => Task.FromResult(sink.Entries.Any(e => e.Message.Contains("can never be enqueued", StringComparison.Ordinal))),
+            because: "the trigger to reject the message as a permanent failure");
         await trigger.StopAsync(CancellationToken.None);
 
         // Assert
@@ -212,17 +223,14 @@ public sealed class RabbitMqTriggerTests : IClassFixture<RabbitMqTriggerFixture>
         await trigger.StartAsync(CancellationToken.None);
 
         JobRecord? job = null;
-        for (int i = 0; i < 50; i++)
-        {
-            var jobs = await scheduler.GetJobsByTagAsync("trigger:rabbitmq");
-            job = jobs.FirstOrDefault();
-            if (job != null)
+        await TestWait.UntilAsync(
+            async () =>
             {
-                break;
-            }
-
-            await Task.Delay(100);
-        }
+                var jobs = await scheduler.GetJobsByTagAsync("trigger:rabbitmq");
+                job = jobs.FirstOrDefault();
+                return job is not null;
+            },
+            because: "the message to become a job");
 
         await trigger.StopAsync(CancellationToken.None);
 

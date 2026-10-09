@@ -29,5 +29,6 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="..\Shared\TestWait.Until.cs" Link="Shared\TestWait.Until.cs" />
+    <Compile Include="..\NexJob.Tests\LevelLogSink.cs" Link="Shared\LevelLogSink.cs" />
   </ItemGroup>
 </Project>
