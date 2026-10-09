@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -17,7 +18,7 @@ public sealed class ServerHeartbeatServiceTests
         NexJobOptions options) =>
         new ServerHeartbeatService(
             storage,
-            Options.Create(options),
+            options,
             NullLogger<ServerHeartbeatService>.Instance);
 
     [Fact]
@@ -96,7 +97,7 @@ public sealed class ServerHeartbeatServiceTests
 
     private ServerHeartbeatService CreateSut()
     {
-        return new ServerHeartbeatService(_storage.Object, Options.Create(_options), NullLogger<ServerHeartbeatService>.Instance);
+        return new ServerHeartbeatService(_storage.Object, _options, NullLogger<ServerHeartbeatService>.Instance);
     }
 
     /// <summary>Tests that StartAsync registers the server and handles errors.</summary>
@@ -141,7 +142,7 @@ public sealed class ServerHeartbeatServiceTests
     public void Constructor_HandlesEmptyServerId()
     {
         var options = new NexJobOptions { ServerId = null };
-        var sut = new ServerHeartbeatService(_storage.Object, Options.Create(options), NullLogger<ServerHeartbeatService>.Instance);
+        var sut = new ServerHeartbeatService(_storage.Object, options, NullLogger<ServerHeartbeatService>.Instance);
         sut.Should().NotBeNull();
 
         // Verify it generated a composite ID
@@ -178,7 +179,7 @@ public sealed class ServerHeartbeatServiceTests
         var storage = new Mock<IJobStorage>();
         var options = new NexJobOptions { ServerId = "h-server", Workers = 5, Queues = new[] { "q1" } };
 
-        var sut = new ServerHeartbeatService(storage.Object, Options.Create(options), NullLogger<ServerHeartbeatService>.Instance);
+        var sut = new ServerHeartbeatService(storage.Object, options, NullLogger<ServerHeartbeatService>.Instance);
 
         // Start
         await sut.StartAsync(CancellationToken.None);
@@ -198,9 +199,36 @@ public sealed class ServerHeartbeatServiceTests
         storage.Setup(x => x.RegisterServerAsync(It.IsAny<ServerRecord>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new Exception("DB Down"));
 
-        var sut = new ServerHeartbeatService(storage.Object, Options.Create(new NexJobOptions()), NullLogger<ServerHeartbeatService>.Instance);
+        var sut = new ServerHeartbeatService(storage.Object, new NexJobOptions(), NullLogger<ServerHeartbeatService>.Instance);
 
         Func<Task> act = () => sut.StartAsync(CancellationToken.None);
         await act.Should().NotThrowAsync("Service must survive startup registration errors.");
+    }
+
+    /// <summary>
+    /// N1 (#377): the node registers with the options the host configured, not with a default instance
+    /// (the options are registered as a singleton, so <c>IOptions&lt;NexJobOptions&gt;</c> is not them).
+    /// </summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task ResolvedFromTheContainer_RegistersTheConfiguredQueuesAndWorkers()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddNexJob(o =>
+        {
+            o.QueuePrefix = "billing";
+            o.Queues = ["emails", "default"];
+            o.Workers = 3;
+        });
+        using var provider = services.BuildServiceProvider();
+        var heartbeat = provider.GetServices<IHostedService>().OfType<ServerHeartbeatService>().Single();
+
+        await heartbeat.StartAsync(CancellationToken.None);
+
+        var server = (await provider.GetRequiredService<IJobStorage>().GetActiveServersAsync(TimeSpan.FromMinutes(1))).Single();
+        server.Queues.Should().Equal("emails", "billing.default", "default");
+        server.WorkerCount.Should().Be(3);
+        await heartbeat.StopAsync(CancellationToken.None);
     }
 }

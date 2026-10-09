@@ -41,6 +41,36 @@ public sealed class SalesforceStreamingNexJobExtensionsTests
     }
 
     [Fact]
+    public void AddNexJobSalesforceStreamingTrigger_HandlerUsesTheConfiguredNexJobOptions()
+    {
+        // Regression (#377): IOptions<NexJobOptions> is a default instance, not the registered singleton, so the
+        // handler built jobs in the derived default queue and ignored QueuePrefix and MaxAttempts.
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddNexJob(o =>
+        {
+            o.QueuePrefix = "billing";
+            o.MaxAttempts = 7;
+        });
+        services.AddNexJobSalesforceStreamingTrigger(options =>
+        {
+            options.Channel = "/event/OrderEvent__e";
+            options.Authentication.AuthType = SalesforceStreamingAuthType.SessionId;
+            options.Authentication.InstanceUrl = "https://example.my.salesforce.com";
+            options.Authentication.SessionId = "token-123";
+        });
+        using var provider = services.BuildServiceProvider();
+
+        var handler = provider.GetServices<IHostedService>().OfType<SalesforceStreamingTriggerHandler>().Single();
+        var held = (NexJobOptions)typeof(SalesforceStreamingTriggerHandler)
+            .GetField("_nexJobOptions", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .GetValue(handler)!;
+
+        held.Should().BeSameAs(provider.GetRequiredService<NexJobOptions>());
+        held.QueuePrefix.Should().Be("billing");
+    }
+
+    [Fact]
     public void AddNexJobSalesforceStreamingTrigger_WithCustomJob_RegistersJobType()
     {
         // Arrange

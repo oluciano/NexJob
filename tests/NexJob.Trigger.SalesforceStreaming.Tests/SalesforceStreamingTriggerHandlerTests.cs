@@ -13,7 +13,7 @@ public sealed class SalesforceStreamingTriggerHandlerTests
     private readonly Mock<ISalesforceStreamingAuthService> _mockAuthService = new();
     private readonly Mock<ISalesforceBayeuxClient> _mockBayeuxClient = new();
     private readonly InMemoryStreamingReplayIdStore _store = new();
-    private readonly IOptions<NexJobOptions> _nexJobOptions = Microsoft.Extensions.Options.Options.Create(new NexJobOptions());
+    private readonly NexJobOptions _nexJobOptions = new();
 
     [Fact]
     public async Task ExecuteAsync_HappyPath_ReceivesEventEnqueuesAndCommitsReplayId()
