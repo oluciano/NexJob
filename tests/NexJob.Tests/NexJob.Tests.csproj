@@ -45,4 +45,7 @@
     <ProjectReference Include="..\..\src\NexJob.MongoDB\NexJob.MongoDB.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Include="..\Shared\TestWait.Until.cs" Link="Shared\TestWait.Until.cs" />
+  </ItemGroup>
 </Project>

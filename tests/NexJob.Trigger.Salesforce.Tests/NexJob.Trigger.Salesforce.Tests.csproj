@@ -28,4 +28,7 @@
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
   </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\Shared\TestWait.Until.cs" Link="Shared\TestWait.Until.cs" />
+  </ItemGroup>
 </Project>

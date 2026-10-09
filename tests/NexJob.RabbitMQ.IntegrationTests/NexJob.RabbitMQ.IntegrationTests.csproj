@@ -27,4 +27,8 @@
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.0" />
     <PackageReference Include="Microsoft.Extensions.Options" Version="8.0.2" />
   </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\Shared\TestWait.Until.cs" Link="Shared\TestWait.Until.cs" />
+    <Compile Include="..\NexJob.Tests\LevelLogSink.cs" Link="Shared\LevelLogSink.cs" />
+  </ItemGroup>
 </Project>

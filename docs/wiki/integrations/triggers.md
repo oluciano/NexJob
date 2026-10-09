@@ -16,7 +16,7 @@ All NexJob triggers satisfy five core guarantees regardless of the broker:
 2. **Idempotency** — The broker's native message identity is used as the `idempotencyKey`, preventing duplicate jobs on redelivery.
 3. **Trace propagation** — W3C `traceparent` is extracted from message headers or attributes and attached to the job record for end-to-end distributed tracing.
 4. **Signal after enqueue** — Enqueueing a job automatically signals the dispatcher; no manual wake-up is needed.
-5. **Ack only after success** — Messages are acknowledged only after `IScheduler.EnqueueAsync` completes successfully.
+5. **Ack only after success** — Messages are acknowledged only after `IScheduler.EnqueueAsync` completes successfully. This means the job is visible before the acknowledgement (or the Salesforce replay id) is written. A stop or crash in that short window delivers the message again, and the idempotency key keeps it from becoming a second job. A Salesforce commit that follows a successful enqueue is not cancelled by a stop.
 
 ---
 
