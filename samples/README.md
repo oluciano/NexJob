@@ -4,6 +4,23 @@ Welcome to the comprehensive NexJob samples directory. This directory provides p
 
 ---
 
+## Where to start
+
+Run **`NexJob.Sample.MinimalApi`** (a web app) or **`NexJob.Sample.WorkerService`** (no web server) first. The others each show one thing, so pick by what you want to see:
+
+| I want to see | Run |
+|---|---|
+| Retries, checkpoints, deadlines, dead-letter, circuit breaker | [`NexJob.Sample.Reliability`](./NexJob.Sample.Reliability) |
+| The same app on PostgreSQL, SQL Server, Redis or MongoDB | [`NexJob.Sample.Providers`](./NexJob.Sample.Providers) |
+| Recurring jobs from `appsettings.json` | [`NexJob.Sample.ConfiguredRecurring`](./NexJob.Sample.ConfiguredRecurring) |
+| A read replica, distributed throttle and OpenTelemetry | [`NexJob.Sample.Storage`](./NexJob.Sample.Storage) |
+| A broker turning messages into jobs (and an outbox back) | [`NexJob.Sample.RabbitMQ`](./NexJob.Sample.RabbitMQ), [`NexJob.Sample.Kafka`](./NexJob.Sample.Kafka), [`NexJob.Sample.CloudTriggers`](./NexJob.Sample.CloudTriggers) |
+| Controllers instead of minimal endpoints | [`NexJob.Sample.WebApi`](./NexJob.Sample.WebApi) |
+
+`Reliability` and `Providers` are demonstrations: they have one endpoint per behavior and exist to show it, so copy the pattern, not the endpoints, into your application.
+
+---
+
 ## Architecture Matrix
 
 | Project | Type | Storage | Broker / Triggers | Key Architectural Concepts |
