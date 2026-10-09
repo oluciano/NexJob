@@ -29,26 +29,6 @@ If you need jobs that **must run, fail safely, and leave a trace**, NexJob handl
 
 ---
 
-## Why not Hangfire?
-
-NexJob was built for developers who want Hangfire-like reliability without the paid storage providers or the hidden complexity.
-
-| Feature | NexJob | Hangfire |
-|---|---|---|
-| Storage providers | 5 free (PostgreSQL, SQL Server, Redis, MongoDB, InMemory) | Free InMemory only; others require paid license |
-| Deadline enforcement | Built-in (`deadlineAfter`) | Plugin required |
-| Dead-letter handling | Automatic after exhausted retries | Manual |
-| Dispatch latency | Near-zero (wake-up channel) | Polling-based |
-| Dashboard | Built-in, standalone UI | Built-in (Pro required for advanced) |
-| OpenTelemetry | Built-in traces and metrics | Plugin required |
-| Concurrency throttling | `[Throttle]` attribute per resource | Queue-level limits |
-| Ecosystem | Young library, focused scope | Mature ecosystem, many plugins |
-| Package size | ~50 KB | ~2 MB |
-
-NexJob is not a drop-in replacement for Hangfire. If you need calendar-based scheduling, distributed execution across untrusted networks, or enterprise plugin ecosystems, Hangfire is the better choice.
-
----
-
 ## Quick Start
 
 ```bash
@@ -276,7 +256,9 @@ A full local test stack (PostgreSQL 16, Redis 7, RabbitMQ 3.13, and Kafka KRaft)
 
 ## Benchmarks
 
-Measured per individual enqueue operation on .NET 8 (BenchmarkDotNet v0.14, RyuJIT AVX2, in-memory storage baseline):
+Hangfire is the usual reference for .NET background jobs, so it is the comparison here. NexJob is not a drop-in replacement for it: if you need calendar-based scheduling, distributed execution across untrusted networks or a large plugin ecosystem, Hangfire is the better choice.
+
+The figures below measure the cost of **enqueueing** one job, not processing throughput. Measured per individual enqueue operation on .NET 8 (BenchmarkDotNet v0.14, RyuJIT AVX2, in-memory storage baseline):
 
 | Metric | NexJob | Hangfire | Comparison |
 |---|---|---|---|
