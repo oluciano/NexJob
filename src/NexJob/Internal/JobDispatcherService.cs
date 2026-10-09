@@ -258,9 +258,7 @@ internal sealed class JobDispatcherService : BackgroundService
 
         foreach (var q in _polledQueues)
         {
-            // Pausing "default" also pauses the prefixed default: configuration keyed by the old name keeps working.
-            if (runtime.PausedQueues.Contains(q)
-                || (string.Equals(q, _options.ResolveQueue(null), StringComparison.Ordinal) && runtime.PausedQueues.Contains(QueueNames.Default)))
+            if (_options.IsQueuePaused(q, runtime.PausedQueues))
             {
                 _logger.LogDebug("Queue '{Queue}' skipped — paused", q);
                 continue;

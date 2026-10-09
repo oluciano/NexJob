@@ -19,7 +19,7 @@ No schema migration. One behavior changes for everyone who enqueues without nami
 - **Rolling deploy.** A node still on v5 enqueues and polls `default`; a v6 node drains it, so nothing is lost. Jobs enqueued by v6 nodes into `{prefix}.default` are not seen by v5 nodes until they are upgraded.
 - **Configuration keyed by `"default"`** (`ConfigureQueue`, pause, circuit breaker, execution window) applies to the prefixed queue as well.
 - **Triggers** (`TargetQueue = "default"`) enqueue into the prefixed queue. A queue you name explicitly is not prefixed.
-- **Dashboard queue scope** (`DashboardOptions.Queues`) lists stored names: add `{prefix}.default` next to `default`.
+- **Dashboard queue scope** (`DashboardOptions.Queues`): `default` also covers `{prefix}.default`, nothing to change. A standalone dashboard needs the same `NexJob:QueuePrefix` as the workers.
 
 ## v5.9.0 → v5.10.0
 

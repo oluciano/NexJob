@@ -174,7 +174,7 @@ Choose the package that matches your application type:
 | `DefaultTheme` | `string` | `"blue-theme"` | Default UI theme applied when no user preference is cached in `localStorage` (`"blue-theme"`, `"semi-dark"`, `"dark"`, `"light"`, `"bordered-theme"`). |
 | `EnablePlayground` | `bool` | `false` | Enables the interactive Scenarios drawer and simulator API (`/api/scenarios/*`). Keep `false` in production. See [Live Playground](../playground.md). |
 | `MetricsCacheTtl` | `TimeSpan` | `TimeSpan.FromSeconds(3)` | How long the dashboard caches aggregated metric results before re-querying storage. Set to `TimeSpan.Zero` to disable caching. |
-| `Queues` | `IReadOnlyList<string>?` | `null` (all queues) | Scope the dashboard to a subset of queues. Navigation counters, queue cards, and default job queries are filtered to these queues only. Queue names are the stored ones: list `{prefix}.default` to show the [default queue](../concepts/queues.md#the-default-queue). |
+| `Queues` | `IReadOnlyList<string>?` | `null` (all queues) | Scope the dashboard to a subset of queues. Navigation counters, queue cards, and default job queries are filtered to these queues only. `default` also covers the application's prefixed default queue; see [the default queue](../concepts/queues.md#the-default-queue). |
 
 ### `StandaloneDashboardOptions` (Worker Service)
 

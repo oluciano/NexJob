@@ -86,6 +86,21 @@ public sealed class NexJobOptionsTests
         options.PolledQueues.Should().Equal("default");
     }
 
+    [Theory]
+    [InlineData("billing", "default", "billing.default", true)]
+    [InlineData("billing", "billing.default", "billing.default", true)]
+    [InlineData("billing", "billing.default", "default", false)]
+    [InlineData("billing", "default", "default", true)]
+    [InlineData("billing", "default", "emails", false)]
+    [InlineData("billing", "emails", "emails", true)]
+    [InlineData(null, "default", "default", true)]
+    public void IsQueuePaused_FollowsTheDispatcherRule(string? prefix, string paused, string queue, bool expected)
+    {
+        var options = prefix is null ? new NexJobOptions { EntryAssembly = null } : new NexJobOptions { QueuePrefix = prefix };
+
+        options.IsQueuePaused(queue, [paused]).Should().Be(expected);
+    }
+
     [Fact]
     public void EffectivePrefix_InTheTestHost_IsTestHost()
     {

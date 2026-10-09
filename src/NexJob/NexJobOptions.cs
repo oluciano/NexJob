@@ -408,4 +408,15 @@ public sealed class NexJobOptions
     /// <param name="queue">The queue the caller asked for, or <see langword="null"/> for the implicit default.</param>
     /// <returns>The stored queue name.</returns>
     internal string ResolveQueue(string? queue) => QueueNames.Resolve(queue, EffectivePrefix);
+
+    /// <summary>
+    /// Tells whether a stored queue is paused. Pausing <c>default</c> also pauses the prefixed default queue, so
+    /// configuration keyed by the old name keeps working.
+    /// </summary>
+    /// <param name="queue">The stored queue name.</param>
+    /// <param name="pausedQueues">The paused queue names.</param>
+    /// <returns><see langword="true"/> when the queue is paused.</returns>
+    internal bool IsQueuePaused(string queue, HashSet<string> pausedQueues) =>
+        pausedQueues.Contains(queue)
+        || (string.Equals(queue, ResolveQueue(null), StringComparison.Ordinal) && pausedQueues.Contains(QueueNames.Default));
 }

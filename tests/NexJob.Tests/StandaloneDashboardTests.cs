@@ -374,6 +374,45 @@ public sealed class StandaloneDashboardTests
     }
 
     [Fact]
+    public async Task StandaloneDashboard_ScopeDefault_ShowsThePrefixedAndLegacyDefaultQueues()
+    {
+        // N1 (#390): a scope written as "default" before the prefix existed keeps showing the application's jobs.
+        var html = await GetQueuesPageAsync(scope: ["default"], pause: null);
+
+        html.Should().Contain("billing.default");
+        html.Should().NotContain("inventory.default");
+    }
+
+    [Fact]
+    public async Task StandaloneDashboard_ScopeNamedQueue_DoesNotShowTheDefaultQueue()
+    {
+        // N2 (#390): a literal scope stays literal.
+        var html = await GetQueuesPageAsync(scope: ["emails"], pause: null);
+
+        html.Should().NotContain("billing.default");
+    }
+
+    [Fact]
+    public async Task StandaloneDashboard_StoredDefaultQueuePaused_SettingsShowsItPaused()
+    {
+        // N1 (#390): pausing the stored name from the Queues page must show on the Settings page.
+        var html = await GetSettingsPageAsync(pause: "billing.default");
+
+        // The row of the stored queue shows the Paused badge and offers Resume (a bare "Paused" word appears elsewhere).
+        html.Should().Contain("/queues/billing.default/resume");
+        html.Should().Contain("<span class=\"badge badge-warning\">Paused</span>");
+    }
+
+    [Fact]
+    public async Task StandaloneDashboard_NothingPaused_SettingsDoesNotShowPaused()
+    {
+        // N2 (#390): guard so the paused assertion above cannot pass vacuously.
+        var html = await GetSettingsPageAsync(pause: null);
+
+        html.Should().NotContain("<span class=\"badge badge-warning\">Paused</span>");
+    }
+
+    [Fact]
     public async Task StandaloneDashboard_WithoutScoping_PreservesGlobalQueues()
     {
         // N2 (Negative): Without Queues scoping (null), all cluster queues are preserved in counters and pages
@@ -1279,6 +1318,63 @@ public sealed class StandaloneDashboardTests
             var dlqJson = await dlqRes.Content.ReadAsStringAsync();
             dlqJson.Should().Contain("\"success\":true");
             dlqJson.Should().Contain("\"redirectUrl\":\"/dashboard/jobs/");
+        }
+        finally
+        {
+            await host.StopAsync();
+        }
+    }
+
+    private static async Task<string> GetQueuesPageAsync(string[] scope, string? pause) =>
+        await GetPageAsync("/dashboard/queues", scope, pause);
+
+    private static async Task<string> GetSettingsPageAsync(string? pause) =>
+        await GetPageAsync("/dashboard/settings", null, pause);
+
+    private static async Task<string> GetPageAsync(string path, string[]? scope, string? pause)
+    {
+        var port = GetFreeTcpPort();
+        using var host = Host.CreateDefaultBuilder()
+            .ConfigureServices(services =>
+            {
+                services.AddNexJob(opt => opt.QueuePrefix = "billing");
+                services.AddNexJobStandaloneDashboard(options =>
+                {
+                    options.Port = port;
+                    options.Path = "/dashboard";
+                    options.LocalhostOnly = true;
+                    options.Queues = scope;
+                });
+            })
+            .Build();
+
+        try
+        {
+            await host.StartAsync();
+            var storage = host.Services.GetRequiredService<NexJob.Storage.IStorageProvider>();
+            foreach (var queue in new[] { "billing.default", "default", "inventory.default" })
+            {
+                await storage.EnqueueAsync(new JobRecord
+                {
+                    Id = JobId.New(),
+                    JobType = "T",
+                    InputType = "I",
+                    InputJson = "{}",
+                    Queue = queue,
+                    Priority = JobPriority.Normal,
+                    Status = JobStatus.Enqueued,
+                    CreatedAt = DateTimeOffset.UtcNow,
+                    MaxAttempts = 3,
+                });
+            }
+
+            if (pause is not null)
+            {
+                await host.Services.GetRequiredService<IJobControlService>().PauseQueueAsync(pause);
+            }
+
+            using var client = new HttpClient { BaseAddress = new Uri($"http://localhost:{port}"), Timeout = TimeSpan.FromSeconds(5) };
+            return await client.GetStringAsync(path);
         }
         finally
         {
