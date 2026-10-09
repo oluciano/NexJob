@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using NexJob;
+using NexJob.Configuration;
 using NexJob.Internal;
 using NexJob.Storage;
 using Xunit;
@@ -501,6 +502,34 @@ public sealed class JobDispatcherServiceTests
         (await storage.GetJobByIdAsync(other.Id))!.Status.Should().Be(JobStatus.Enqueued);
     }
 
+    /// <summary>N1 (#402): the execution window configured for "default" also holds the legacy "default" back.</summary>
+    [Fact]
+    public async Task PrefixedHost_JobInLegacyDefault_OutsideTheConfiguredWindow_IsNotRun()
+    {
+        var ran = new TaskCompletionSource<bool>();
+        var closedFrom = TimeOnly.FromDateTime(DateTime.UtcNow.AddHours(6));
+        using var host = BuildQueueHost(
+            new LevelLogSink(),
+            ran,
+            o =>
+            {
+                o.Workers = 1;
+                o.Queues = ["default", "emails"];
+                o.ConfigureQueue("default", q => q.ExecutionWindow = new ExecutionWindowSettings { StartTime = closedFrom, EndTime = closedFrom.AddHours(1), TimeZone = "UTC" });
+            });
+        var storage = (InMemoryStorageProvider)host.Services.GetRequiredService<NexJob.Storage.IStorageProvider>();
+        var legacy = QuickRecord("default");
+        await storage.EnqueueAsync(legacy);
+        await storage.EnqueueAsync(QuickRecord("emails"));
+
+        await host.StartAsync();
+
+        // One worker and "emails" is read after the legacy queue: the first job to succeed shows what was fetched first.
+        await TestWait.SucceededAsync(storage, 1);
+        await host.StopAsync();
+        (await storage.GetJobByIdAsync(legacy.Id))!.Status.Should().Be(JobStatus.Enqueued, "the window is closed for the default queue");
+    }
+
     private static JobRecord QuickRecord(string queue) => new()
     {
         Id = JobId.New(),
@@ -514,7 +543,7 @@ public sealed class JobDispatcherServiceTests
         MaxAttempts = 10,
     };
 
-    private static IHost BuildQueueHost(ILoggerProvider sink, TaskCompletionSource<bool> ran) =>
+    private static IHost BuildQueueHost(ILoggerProvider sink, TaskCompletionSource<bool> ran, Action<NexJobOptions>? configure = null) =>
         Host.CreateDefaultBuilder()
             .ConfigureLogging(l => l.AddProvider(sink))
             .ConfigureServices(services =>
@@ -524,6 +553,7 @@ public sealed class JobDispatcherServiceTests
                     o.QueuePrefix = "billing";
                     o.Workers = 2;
                     o.PollingInterval = TimeSpan.FromMilliseconds(20);
+                    configure?.Invoke(o);
                 });
                 services.AddTransient(_ => new QuickSuccessJob(ran));
             })

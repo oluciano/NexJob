@@ -105,6 +105,51 @@ public sealed class NexJobOptionsTests
     }
 
     [Fact]
+    public void SettingsFor_ConfigurationKeyedByDefault_GovernsThePrefixedAndTheLegacyQueue()
+    {
+        // #402: jobs stored in "default" before the upgrade follow the window and the breaker configured for "default".
+        var options = new NexJobOptions { QueuePrefix = "billing" };
+        options.ConfigureQueue("default", q => q.Workers = 3);
+
+        var prefixed = options.SettingsFor("billing.default");
+        var legacy = options.SettingsFor("default");
+
+        prefixed.Should().NotBeNull();
+        legacy.Should().BeSameAs(prefixed);
+    }
+
+    [Fact]
+    public void SettingsFor_OtherQueue_DoesNotInheritTheDefaultSettings()
+    {
+        var options = new NexJobOptions { QueuePrefix = "billing" };
+        options.ConfigureQueue("default", q => q.Workers = 3);
+        options.ConfigureQueue("emails", q => q.Workers = 1);
+
+        options.SettingsFor("emails")!.Name.Should().Be("emails");
+        options.SettingsFor("reports").Should().BeNull();
+    }
+
+    [Fact]
+    public void SettingsFor_ConfiguredWithThePrefixedName_DoesNotGovernTheLegacyQueue()
+    {
+        var options = new NexJobOptions { QueuePrefix = "billing" };
+        options.ConfigureQueue("billing.default", q => q.Workers = 3);
+
+        options.SettingsFor("billing.default").Should().NotBeNull();
+        options.SettingsFor("default").Should().BeNull();
+    }
+
+    [Fact]
+    public void SettingsFor_WithoutPrefix_DefaultIsTheOnlyName()
+    {
+        var options = new NexJobOptions { EntryAssembly = null };
+        options.ConfigureQueue("default", q => q.Workers = 3);
+
+        options.SettingsFor("default").Should().NotBeNull();
+        options.SettingsFor("billing.default").Should().BeNull();
+    }
+
+    [Fact]
     public void EffectivePrefix_InTheTestHost_IsTestHost()
     {
         // Guard (#377): tests that do not pin QueuePrefix rely on the prefix derived from the test host. If the

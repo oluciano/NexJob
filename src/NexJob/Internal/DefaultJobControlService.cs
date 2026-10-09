@@ -61,9 +61,7 @@ internal sealed class DefaultJobControlService : IJobControlService
 
         // "default" and the prefixed default are one queue for pause and resume: whichever name paused it, either resumes it.
         var resumed = rt.PausedQueues.Remove(queue);
-        if (_options is not null
-            && (string.Equals(queue, QueueNames.Default, StringComparison.Ordinal)
-                || string.Equals(queue, _options.ResolveQueue(null), StringComparison.Ordinal)))
+        if (_options is not null && IsDefaultQueue(queue, _options))
         {
             resumed |= rt.PausedQueues.Remove(QueueNames.Default);
             resumed |= rt.PausedQueues.Remove(_options.ResolveQueue(null));
@@ -79,6 +77,17 @@ internal sealed class DefaultJobControlService : IJobControlService
     public Task ResetQueueCircuitAsync(string queue, CancellationToken ct = default)
     {
         _circuitBreakerManager?.Reset(_options?.ResolveQueue(queue) ?? queue);
+        if (_options is not null && IsDefaultQueue(queue, _options))
+        {
+            // The legacy default has a circuit of its own: resetting either name resets both.
+            _circuitBreakerManager?.Reset(QueueNames.Default);
+            _circuitBreakerManager?.Reset(_options.ResolveQueue(null));
+        }
+
         return Task.CompletedTask;
     }
+
+    private static bool IsDefaultQueue(string queue, NexJobOptions options) =>
+        string.Equals(queue, QueueNames.Default, StringComparison.Ordinal)
+        || string.Equals(queue, options.ResolveQueue(null), StringComparison.Ordinal);
 }

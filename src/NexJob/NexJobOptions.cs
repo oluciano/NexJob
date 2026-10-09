@@ -420,4 +420,15 @@ public sealed class NexJobOptions
     internal bool IsQueuePaused(string queue, HashSet<string> pausedQueues) =>
         pausedQueues.Contains(queue)
         || (string.Equals(queue, ResolveQueue(null), StringComparison.Ordinal) && pausedQueues.Contains(QueueNames.Default));
+
+    /// <summary>
+    /// Finds the queue settings (execution window, circuit breaker) that govern a stored queue name. Settings written for
+    /// <c>default</c> govern the prefixed default queue and the legacy <c>default</c> that is still drained.
+    /// </summary>
+    /// <param name="storedQueue">The stored queue name.</param>
+    /// <returns>The settings, or <see langword="null"/> when none are configured.</returns>
+    internal QueueSettings? SettingsFor(string storedQueue) =>
+        QueueSettings.Find(qs =>
+            string.Equals(ResolveQueue(qs.Name), storedQueue, StringComparison.Ordinal)
+            || (string.Equals(qs.Name, QueueNames.Default, StringComparison.Ordinal) && string.Equals(storedQueue, QueueNames.Default, StringComparison.Ordinal)));
 }
