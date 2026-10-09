@@ -268,7 +268,7 @@ internal sealed class JobDispatcherService : BackgroundService
                 continue;
             }
 
-            var settings = _options.QueueSettings.Find(qs => string.Equals(_options.ResolveQueue(qs.Name), q, StringComparison.Ordinal));
+            var settings = _options.SettingsFor(q);
             if (settings?.ExecutionWindow is not null && !settings.ExecutionWindow.IsWithinWindow(now))
             {
                 _logger.LogDebug("Queue '{Queue}' skipped — outside execution window", q);

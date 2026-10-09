@@ -220,7 +220,7 @@ internal sealed class SettingsPage : ComponentBase
         foreach (var q in Options.PolledQueues)
         {
             var isPaused = Options.IsQueuePaused(q, Runtime.PausedQueues);
-            var windowSetting = Options.QueueSettings.Find(qs => string.Equals(Options.ResolveQueue(qs.Name), q, StringComparison.Ordinal));
+            var windowSetting = Options.SettingsFor(q);
             var inWindow = windowSetting?.ExecutionWindow?.IsWithinWindow(now) ?? true;
             var windowSummary = windowSetting?.ExecutionWindow is { } window
                 ? $"<div style=\"font-size:12px;color:var(--text-secondary)\">{System.Web.HttpUtility.HtmlEncode(Helpers.DescribeExecutionWindow(window))}</div>"
