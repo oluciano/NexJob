@@ -18,6 +18,7 @@ internal sealed class RecurringJobRegistrar
     private readonly IRecurringStorage _storage;
     private readonly NexJobJobRegistry _jobRegistry;
     private readonly ILogger<RecurringJobRegistrar> _logger;
+    private readonly NexJobOptions? _options;
     private readonly List<string> _registeredJobIds = [];
 
     /// <summary>
@@ -26,11 +27,14 @@ internal sealed class RecurringJobRegistrar
     /// <param name="storage">The storage provider.</param>
     /// <param name="jobRegistry">The job registry.</param>
     /// <param name="logger">The logger.</param>
+    /// <param name="options">NexJob options, used to resolve the stored queue name.</param>
     public RecurringJobRegistrar(
         IRecurringStorage storage,
         NexJobJobRegistry jobRegistry,
-        ILogger<RecurringJobRegistrar> logger)
+        ILogger<RecurringJobRegistrar> logger,
+        NexJobOptions? options = null)
     {
+        _options = options;
         _storage = storage;
         _jobRegistry = jobRegistry;
         _logger = logger;
@@ -229,7 +233,7 @@ internal sealed class RecurringJobRegistrar
                 InputJson = inputJson,
                 Cron = jobConfig.Cron,
                 TimeZoneId = jobConfig.TimeZoneId,
-                Queue = jobConfig.Queue,
+                Queue = _options?.ResolveQueue(jobConfig.Queue) ?? jobConfig.Queue,
                 ConcurrencyPolicy = jobConfig.ConcurrencyPolicy,
                 Enabled = jobConfig.Enabled,
                 CreatedAt = DateTimeOffset.UtcNow,
@@ -245,7 +249,7 @@ internal sealed class RecurringJobRegistrar
                 "Registered or updated recurring job '{Id}' with cron '{Cron}' in queue '{Queue}'",
                 effectiveId,
                 jobConfig.Cron,
-                jobConfig.Queue);
+                recurringJob.Queue);
         }
         catch (Exception ex)
         {

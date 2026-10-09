@@ -26,6 +26,12 @@ public sealed class NexJobSettings
     /// </summary>
     public string DefaultQueue { get; set; } = "default";
 
+    /// <summary>
+    /// Prefix for the implicit <c>default</c> queue (see <see cref="NexJobOptions.QueuePrefix"/>).
+    /// When <see langword="null"/>, the lowercase entry assembly name is used.
+    /// </summary>
+    public string? QueuePrefix { get; set; }
+
     /// <summary>How often the dispatcher polls for new jobs. Defaults to <c>15 seconds</c>.</summary>
     public TimeSpan PollingInterval { get; set; } = TimeSpan.FromSeconds(15);
 

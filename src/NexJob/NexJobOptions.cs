@@ -1,4 +1,5 @@
 using NexJob.Configuration;
+using NexJob.Internal;
 
 namespace NexJob;
 
@@ -251,7 +252,36 @@ public sealed class NexJobOptions
     internal TimeSpan CancellationGracePeriod { get; set; } = TimeSpan.FromSeconds(10);
 
     /// <summary>The queue names the dispatcher polls: <see cref="Queues"/> mapped to stored names, plus the legacy <c>default</c>.</summary>
-    internal IReadOnlyList<string> PolledQueues => Queues;
+    internal IReadOnlyList<string> PolledQueues
+    {
+        get
+        {
+            var prefix = EffectivePrefix;
+            var result = new List<string>();
+            var drainsLegacy = false;
+            foreach (var queue in Queues)
+            {
+                var stored = QueueNames.Resolve(queue, prefix);
+                drainsLegacy |= !string.Equals(stored, queue, StringComparison.Ordinal);
+                if (!result.Contains(stored, StringComparer.Ordinal))
+                {
+                    result.Add(stored);
+                }
+            }
+
+            if (drainsLegacy && !result.Contains(QueueNames.Default, StringComparer.Ordinal))
+            {
+                result.Add(QueueNames.Default);
+            }
+
+            return result;
+        }
+    }
+
+    /// <summary>The prefix in effect: the explicit <see cref="QueuePrefix"/>, else the entry assembly name.</summary>
+    internal string? EffectivePrefix => string.IsNullOrWhiteSpace(QueuePrefix)
+        ? QueueNames.DerivePrefix(System.Reflection.Assembly.GetEntryAssembly())
+        : QueuePrefix.Trim();
 
     /// <summary>
     /// Set by <see cref="ApplySettings"/> when <c>appsettings.json</c> carries a <c>DefaultQueue</c> other than
@@ -310,6 +340,7 @@ public sealed class NexJobOptions
         ServerId = s.ServerId;
         QueueSettings = s.QueueSettings;
         RecurringJobs = s.RecurringJobs;
+        QueuePrefix = s.QueuePrefix;
         if (s.Queues.Length > 0)
         {
             Queues = s.Queues;
@@ -345,4 +376,9 @@ public sealed class NexJobOptions
 
         return ignored;
     }
+
+    /// <summary>Maps a user-facing queue name to the name stored with jobs.</summary>
+    /// <param name="queue">The queue the caller asked for, or <see langword="null"/> for the implicit default.</param>
+    /// <returns>The stored queue name.</returns>
+    internal string ResolveQueue(string? queue) => QueueNames.Resolve(queue, EffectivePrefix);
 }

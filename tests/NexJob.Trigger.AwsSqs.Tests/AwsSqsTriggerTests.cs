@@ -36,7 +36,7 @@ public sealed class AwsSqsTriggerTests
             VisibilityTimeoutSeconds = 5,
             VisibilityExtensionIntervalSeconds = 3,
         });
-        var nexJobOptions = new NexJobOptions { MaxAttempts = 3 };
+        var nexJobOptions = new NexJobOptions { MaxAttempts = 3, QueuePrefix = "app" };
         var logger = new MockLogger<AwsSqsTriggerHandler>();
 
         var trigger = new AwsSqsTriggerHandler(
@@ -65,7 +65,8 @@ public sealed class AwsSqsTriggerTests
         scheduler.EnqueueCalls.Should().HaveCount(1);
         var enqueuedJob = scheduler.EnqueueCalls[0];
         enqueuedJob.IdempotencyKey.Should().Be("test-msg-001");
-        enqueuedJob.Queue.Should().Be("default");
+        // Behavior changed in v6.0: the implicit default queue is stored as "{prefix}.default" (#377).
+        enqueuedJob.Queue.Should().Be("app.default");
         enqueuedJob.TraceParent.Should().BeNull();
         sqsClient.DeleteCalls.Should().HaveCount(1);
         sqsClient.DeleteCalls[0].Should().Be("test-receipt-handle");

@@ -20,6 +20,7 @@ internal sealed class JobDispatcherService : BackgroundService
     private readonly JobWakeUpChannel _wakeUp;
     private readonly IQueueCircuitBreakerManager? _circuitBreakerManager;
     private readonly ILogger<JobDispatcherService> _logger;
+    private IReadOnlyList<string> _polledQueues = [];
     private readonly CancellationTokenSource _stopFetching = new();
     private SemaphoreSlim? _workerSlots;
     private int _activeJobCount;
@@ -95,8 +96,9 @@ internal sealed class JobDispatcherService : BackgroundService
     /// <inheritdoc/>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        _polledQueues = _options.PolledQueues;
         _logger.LogInformation("JobDispatcherService started. Workers: {Workers}, Queues: {Queues}",
-            _options.Workers, string.Join(", ", _options.Queues));
+            _options.Workers, string.Join(", ", _polledQueues));
 
         var ignoredSettings = _options.GetIgnoredSettings();
         if (ignoredSettings.Count > 0)
@@ -241,15 +243,17 @@ internal sealed class JobDispatcherService : BackgroundService
         var now = DateTimeOffset.UtcNow;
         var result = new List<string>();
 
-        foreach (var q in _options.Queues)
+        foreach (var q in _polledQueues)
         {
-            if (runtime.PausedQueues.Contains(q))
+            // Pausing "default" also pauses the prefixed default: configuration keyed by the old name keeps working.
+            if (runtime.PausedQueues.Contains(q)
+                || (string.Equals(q, _options.ResolveQueue(null), StringComparison.Ordinal) && runtime.PausedQueues.Contains(QueueNames.Default)))
             {
                 _logger.LogDebug("Queue '{Queue}' skipped — paused", q);
                 continue;
             }
 
-            var settings = _options.QueueSettings.Find(qs => string.Equals(qs.Name, q, StringComparison.Ordinal));
+            var settings = _options.QueueSettings.Find(qs => string.Equals(_options.ResolveQueue(qs.Name), q, StringComparison.Ordinal));
             if (settings?.ExecutionWindow is not null && !settings.ExecutionWindow.IsWithinWindow(now))
             {
                 _logger.LogDebug("Queue '{Queue}' skipped — outside execution window", q);

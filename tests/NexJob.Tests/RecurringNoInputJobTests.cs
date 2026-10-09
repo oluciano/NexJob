@@ -283,6 +283,7 @@ public sealed class RecurringNoInputJobTests
             ["NexJob:RecurringJobs:0:Cron"] = "* * * * *",
             ["NexJob:RecurringJobs:0:Queue"] = "default",
             ["NexJob:RecurringJobs:0:Enabled"] = "true",
+            ["NexJob:QueuePrefix"] = "app",
         };
 
         var configuration = new ConfigurationBuilder()
@@ -308,7 +309,8 @@ public sealed class RecurringNoInputJobTests
         // Verify job was registered
         registered.Should().NotBeNull("job should be registered from appsettings");
         registered!.Cron.Should().Be("* * * * *");
-        registered.Queue.Should().Be("default");
+        // Behavior changed in v6.0: the implicit default queue is stored as "{prefix}.default" (#377).
+        registered.Queue.Should().Be("app.default");
         registered.Enabled.Should().BeTrue();
 
         // Verify the next execution is the next cron occurrence (within a minute for "* * * * *")

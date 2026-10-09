@@ -16,7 +16,8 @@ public sealed class DefaultSchedulerTests
 
     public DefaultSchedulerTests()
     {
-        _sut = new DefaultScheduler(_storage, _storage, _storage, new NexJobOptions(), _wakeUp);
+        // Behavior changed in v6.0: the implicit default queue is stored as "{prefix}.default" (#377).
+        _sut = new DefaultScheduler(_storage, _storage, _storage, new NexJobOptions { QueuePrefix = "app" }, _wakeUp);
 
         _hardenedSut = new DefaultScheduler(
             _jobStorage.Object,
@@ -41,7 +42,7 @@ public sealed class DefaultSchedulerTests
     {
         await _sut.EnqueueAsync<StubJob, string>("hello");
 
-        var fetched = await _storage.FetchNextAsync(["default"]);
+        var fetched = await _storage.FetchNextAsync(["app.default"]);
 
         fetched.Should().NotBeNull();
         fetched!.Status.Should().Be(JobStatus.Processing);
@@ -52,7 +53,7 @@ public sealed class DefaultSchedulerTests
     {
         await _sut.EnqueueAsync<StubJob, string>("my-payload");
 
-        var fetched = await _storage.FetchNextAsync(["default"]);
+        var fetched = await _storage.FetchNextAsync(["app.default"]);
 
         fetched!.InputJson.Should().Contain("my-payload");
     }
@@ -62,7 +63,7 @@ public sealed class DefaultSchedulerTests
     {
         await _sut.EnqueueAsync<StubJob, string>("hi", queue: "critical-queue");
 
-        var notInDefault = await _storage.FetchNextAsync(["default"]);
+        var notInDefault = await _storage.FetchNextAsync(["app.default"]);
         notInDefault.Should().BeNull();
 
         var fetched = await _storage.FetchNextAsync(["critical-queue"]);
@@ -75,7 +76,7 @@ public sealed class DefaultSchedulerTests
         await _sut.EnqueueAsync<StubJob, string>("lo", priority: JobPriority.Low);
         await _sut.EnqueueAsync<StubJob, string>("hi", priority: JobPriority.High);
 
-        var first = await _storage.FetchNextAsync(["default"]);
+        var first = await _storage.FetchNextAsync(["app.default"]);
 
         first!.Priority.Should().Be(JobPriority.High);
     }
@@ -94,7 +95,7 @@ public sealed class DefaultSchedulerTests
     {
         await _sut.EnqueueAsync<StubJob, string>("x");
 
-        var fetched = await _storage.FetchNextAsync(["default"]);
+        var fetched = await _storage.FetchNextAsync(["app.default"]);
 
         fetched!.JobType.Should().Contain(nameof(StubJob));
         fetched.InputType.Should().Contain(nameof(String));
@@ -115,7 +116,7 @@ public sealed class DefaultSchedulerTests
     {
         await _sut.ScheduleAsync<StubJob, string>("hello", TimeSpan.FromMinutes(5));
 
-        var fetched = await _storage.FetchNextAsync(["default"]);
+        var fetched = await _storage.FetchNextAsync(["app.default"]);
 
         fetched.Should().BeNull("scheduled job is not due yet");
     }
@@ -126,7 +127,7 @@ public sealed class DefaultSchedulerTests
         // Schedule in the past → immediately due
         await _sut.ScheduleAsync<StubJob, string>("hello", TimeSpan.FromMilliseconds(-1));
 
-        var fetched = await _storage.FetchNextAsync(["default"]);
+        var fetched = await _storage.FetchNextAsync(["app.default"]);
 
         fetched.Should().NotBeNull("job scheduled in the past should be promoted immediately");
     }
@@ -138,7 +139,7 @@ public sealed class DefaultSchedulerTests
     {
         await _sut.ScheduleAtAsync<StubJob, string>("hello", DateTimeOffset.UtcNow.AddHours(1));
 
-        var fetched = await _storage.FetchNextAsync(["default"]);
+        var fetched = await _storage.FetchNextAsync(["app.default"]);
 
         fetched.Should().BeNull();
     }
@@ -148,7 +149,7 @@ public sealed class DefaultSchedulerTests
     {
         await _sut.ScheduleAtAsync<StubJob, string>("hello", DateTimeOffset.UtcNow.AddMilliseconds(-1));
 
-        var fetched = await _storage.FetchNextAsync(["default"]);
+        var fetched = await _storage.FetchNextAsync(["app.default"]);
 
         fetched.Should().NotBeNull();
     }
@@ -175,17 +176,17 @@ public sealed class DefaultSchedulerTests
         await _sut.ContinueWithAsync<StubJob, string>(parentId, "child");
 
         // Only parent should be fetchable
-        var first = await _storage.FetchNextAsync(["default"]);
+        var first = await _storage.FetchNextAsync(["app.default"]);
         first!.Id.Should().Be(parentId, "continuation must wait for parent");
 
-        var second = await _storage.FetchNextAsync(["default"]);
+        var second = await _storage.FetchNextAsync(["app.default"]);
         second.Should().BeNull("continuation is still waiting");
 
         // Complete parent
         await _storage.AcknowledgeAsync(parentId);
         await _storage.EnqueueContinuationsAsync(parentId);
 
-        var cont = await _storage.FetchNextAsync(["default"]);
+        var cont = await _storage.FetchNextAsync(["app.default"]);
         cont.Should().NotBeNull("continuation should now be runnable");
     }
 

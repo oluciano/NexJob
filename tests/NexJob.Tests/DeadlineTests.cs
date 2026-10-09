@@ -38,14 +38,15 @@ public sealed class DeadlineTests
     public async Task EnqueueAsync_WithDeadline_CalculatesExpiresAt()
     {
         var storage = new InMemoryStorageProvider();
-        var scheduler = new DefaultScheduler(storage, storage, storage, new NexJobOptions(), new JobWakeUpChannel());
+        // Behavior changed in v6.0: the implicit default queue is stored as "{prefix}.default" (#377).
+        var scheduler = new DefaultScheduler(storage, storage, storage, new NexJobOptions { QueuePrefix = "app" }, new JobWakeUpChannel());
 
         var deadline = TimeSpan.FromSeconds(10);
         var beforeEnqueue = DateTimeOffset.UtcNow;
 
         await scheduler.EnqueueAsync<SimpleJob>(deadlineAfter: deadline);
 
-        var fetched = await storage.FetchNextAsync(["default"]);
+        var fetched = await storage.FetchNextAsync(["app.default"]);
 
         fetched!.ExpiresAt.Should().NotBeNull();
         var expectedDeadline = beforeEnqueue + deadline;
@@ -56,11 +57,11 @@ public sealed class DeadlineTests
     public async Task EnqueueAsync_WithoutDeadline_HasNullExpiresAt()
     {
         var storage = new InMemoryStorageProvider();
-        var scheduler = new DefaultScheduler(storage, storage, storage, new NexJobOptions(), new JobWakeUpChannel());
+        var scheduler = new DefaultScheduler(storage, storage, storage, new NexJobOptions { QueuePrefix = "app" }, new JobWakeUpChannel());
 
         await scheduler.EnqueueAsync<SimpleJob>();
 
-        var fetched = await storage.FetchNextAsync(["default"]);
+        var fetched = await storage.FetchNextAsync(["app.default"]);
 
         fetched!.ExpiresAt.Should().BeNull();
     }
@@ -69,13 +70,13 @@ public sealed class DeadlineTests
     public async Task EnqueueAsync_WithInput_CalculatesExpiresAt()
     {
         var storage = new InMemoryStorageProvider();
-        var scheduler = new DefaultScheduler(storage, storage, storage, new NexJobOptions(), new JobWakeUpChannel());
+        var scheduler = new DefaultScheduler(storage, storage, storage, new NexJobOptions { QueuePrefix = "app" }, new JobWakeUpChannel());
 
         var deadline = TimeSpan.FromSeconds(5);
 
         await scheduler.EnqueueAsync<SimpleInputJob, string>("input", deadlineAfter: deadline);
 
-        var fetched = await storage.FetchNextAsync(["default"]);
+        var fetched = await storage.FetchNextAsync(["app.default"]);
 
         fetched!.ExpiresAt.Should().NotBeNull();
         (fetched.ExpiresAt!.Value - fetched.CreatedAt).Should().BeCloseTo(deadline, TimeSpan.FromMilliseconds(100));
