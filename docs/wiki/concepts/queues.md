@@ -36,7 +36,7 @@ These rules apply everywhere a queue name is accepted: `EnqueueAsync`, `Schedule
     If service A enqueues without a queue and service B was meant to run those jobs by polling `default`, that stops working: A now stores them in `a.default`, which B never reads, and they stay `Enqueued` with no error. Name the queue on both sides (`queue: "orders"` in A, `Queues = ["orders"]` in B) or target B's default queue explicitly with `queue: "b.default"`. Check the dashboard for queues that have jobs and no node polling them.
 
 !!! warning "Set the prefix yourself in production"
-    A derived prefix changes when the entry assembly is renamed, and jobs already stored stay in the old queue, which the drain does not cover (it only reads `default`). Set `QueuePrefix` explicitly so the name survives renames and refactors. The host logs a warning at startup while the prefix is derived.
+    A derived prefix changes when the entry assembly is renamed, and jobs already stored stay in the old queue, which the drain does not cover (it only reads `default`). Set `QueuePrefix` explicitly so the name survives renames and refactors. The host logs a warning at startup while the prefix is derived. If jobs are stranded anyway, the dashboard shows the queue as unattended and tells you which `QueuePrefix` brings it back.
 
 !!! warning "No entry assembly, or a shared host"
     Some hosts have no entry assembly, and others run many applications under one entry assembly (for example a shared runner). In the first case no prefix is derived and the shared `default` comes back: the host logs a warning saying so. In the second, every application derives the same prefix and shares a queue again. In both cases set `QueuePrefix` explicitly.

@@ -454,7 +454,8 @@ internal static class HtmlFragments
         bool isPaused = false,
         DashboardCluster? activeCluster = null,
         bool hasActiveWorkers = true,
-        QueueCircuitStatus? circuitStatus = null)
+        QueueCircuitStatus? circuitStatus = null,
+        string? orphanHint = null)
     {
         var total = queue.Enqueued + queue.Processing;
         var utilPct = total > 0 ? (int)(queue.Processing * 100.0 / total) : 0;
@@ -519,8 +520,10 @@ internal static class HtmlFragments
             }
         }
 
+        const string OrphanTooltip = "No active worker nodes are listening to this queue. Jobs will remain enqueued until a worker configured for this queue is online.";
+        var orphanTitle = HttpUtility.HtmlEncode(orphanHint is null ? OrphanTooltip : $"{OrphanTooltip} {orphanHint}");
         var orphanWarning = !hasActiveWorkers && queue.Enqueued > 0
-            ? " <span class=\"badge badge-warning\" style=\"font-size:10px;margin-left:6px\" title=\"No active worker nodes are listening to this queue. Jobs will remain enqueued until a worker configured for this queue is online.\">⚠️ NO WORKERS</span>"
+            ? $" <a href=\"{pathPrefix}/servers{clusterSuffix}\" style=\"text-decoration:none\"><span class=\"badge badge-warning\" style=\"font-size:10px;margin-left:6px\" title=\"{orphanTitle}\">⚠️ NO WORKERS</span></a>"
             : string.Empty;
 
         var orphanSubtitle = !hasActiveWorkers && queue.Enqueued > 0

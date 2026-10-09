@@ -31,6 +31,7 @@ internal sealed class ServersPage : IComponent
         var activeServers = await Storage.GetActiveServersAsync(TimeSpan.FromMinutes(1));
 
         var unservedQueues = new List<QueueMetrics>();
+        var polledQueues = activeServers.SelectMany(s => s.Queues).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         var effectiveDashboardStorage = DashboardStorage ?? ActiveCluster?.DashboardStorage ?? (Storage as IDashboardStorage);
         if (effectiveDashboardStorage != null)
         {
@@ -39,21 +40,26 @@ internal sealed class ServersPage : IComponent
             unservedQueues = queueMetrics.Where(q => q.Enqueued > 0 && !servedQueues.Contains(q.Queue)).ToList();
         }
 
-        _handle.Render(b => b.AddMarkupContent(0, BuildHtml(activeServers, unservedQueues)));
+        _handle.Render(b => b.AddMarkupContent(0, BuildHtml(activeServers, unservedQueues, polledQueues)));
     }
 
-    private string BuildHtml(IReadOnlyList<ServerRecord> servers, IReadOnlyList<QueueMetrics> unservedQueues)
+    private string BuildHtml(IReadOnlyList<ServerRecord> servers, IReadOnlyList<QueueMetrics> unservedQueues, IReadOnlyCollection<string> polledQueues)
     {
         var warningBanner = string.Empty;
         if (unservedQueues.Count > 0)
         {
             var queueNames = string.Join(", ", unservedQueues.Select(q => $"<strong>{HttpUtility.HtmlEncode(q.Queue)}</strong> ({q.Enqueued} enqueued)"));
+            var hints = string.Concat(unservedQueues.Take(5)
+                .Select(q => (q.Queue, Hint: OrphanQueueHint.For(q.Queue, polledQueues)))
+                .Where(x => x.Hint is not null)
+                .Select(x => $"<div style=\"font-size:12px;margin-top:6px\"><strong>{HttpUtility.HtmlEncode(x.Queue)}</strong>: {HttpUtility.HtmlEncode(x.Hint)}</div>"));
             warningBanner =
                 $"<div style=\"background:var(--warning-light);border:1px solid var(--warning);border-radius:8px;padding:14px 18px;margin-bottom:20px;display:flex;align-items:flex-start;gap:12px;color:var(--text-primary)\">" +
                 $"<span style=\"font-size:20px;line-height:1\">⚠️</span>" +
                 $"<div>" +
                 $"<div style=\"font-weight:600;color:var(--warning);margin-bottom:2px\">Unattended Queues Detected</div>" +
                 $"<div style=\"font-size:13px;line-height:1.5\">The following queues have pending jobs waiting, but no active worker nodes in this cluster are configured to process them: {queueNames}. Jobs will remain enqueued until a worker listening to these queues is started.</div>" +
+                hints +
                 $"</div>" +
                 $"</div>";
         }

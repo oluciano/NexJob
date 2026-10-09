@@ -281,7 +281,7 @@ builder.Services.AddSingleton<IDashboardAuthorizationHandler, BasicAuthDashboard
 
   -   **/queues**
 
-    Per-queue depth, active worker count, and pause/resume controls. Queues with enqueued jobs but no active workers show a `⚠️ NO WORKERS` warning badge. Queues with a [circuit breaker](../guides/circuit-breaker.md) show the current circuit state and a **Reset Circuit** button.
+    Per-queue depth, active worker count, and pause/resume controls. Queues with enqueued jobs but no active workers show a `⚠️ NO WORKERS` warning badge that links to the Servers page; its tooltip and the Servers banner list the queues the live nodes poll and, for a queue named `X.default`, suggest `QueuePrefix = X` (see [the default queue](../concepts/queues.md#the-default-queue)). Queues with a [circuit breaker](../guides/circuit-breaker.md) show the current circuit state and a **Reset Circuit** button.
 
   -   **/failed**
 
