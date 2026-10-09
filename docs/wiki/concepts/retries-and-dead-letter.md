@@ -323,3 +323,6 @@ Use the table below to pick the right approach for common failure scenarios:
 !!! warning
     Jobs in the `Failed` state are retained for 30 days by default, then automatically purged. Once a job is purged, its history and input are gone permanently. If you need longer retention for audit purposes, increase `options.RetentionFailed` — or set it to `TimeSpan.Zero` to keep failed jobs indefinitely.
 
+## Try it
+
+The [`NexJob.Sample.Reliability`](https://github.com/oluciano/NexJob/tree/develop/samples/NexJob.Sample.Reliability) sample runs retries, checkpoint resume and a dead-letter handler on in-memory storage, with no infrastructure: `POST /retry/flaky` fails twice and succeeds on the third attempt, `POST /checkpoint` resumes a retried job from its last step, and `POST /deadletter` ends in the dead-letter handler. Open the dashboard at `/dashboard` while you call them.

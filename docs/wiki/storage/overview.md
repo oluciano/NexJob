@@ -72,3 +72,7 @@ builder.Services.AddNexJob(options => options.UseInMemory());
     Document-model storage, `FindOneAndUpdate` atomic transitions, `UpdateManyAsync` batch acknowledgment, and automatic index creation.
 
 </div>
+
+## Try it
+
+The [`NexJob.Sample.Providers`](https://github.com/oluciano/NexJob/tree/develop/samples/NexJob.Sample.Providers) sample is the same small app on InMemory, PostgreSQL, SQL Server, Redis or MongoDB, chosen by `Sample:Provider`, so you can compare providers without changing code.

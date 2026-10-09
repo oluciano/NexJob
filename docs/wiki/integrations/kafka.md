@@ -256,3 +256,6 @@ Set `ExhaustedJobsTopic` on the trigger to copy a job to another topic once it e
 !!! note
     `NexJob.Kafka` is tested against Kafka clusters running in **KRaft mode** (no ZooKeeper). It is also compatible with ZooKeeper-based clusters, but KRaft is recommended for new deployments.
 
+## Try it
+
+The [`NexJob.Sample.Kafka`](https://github.com/oluciano/NexJob/tree/develop/samples/NexJob.Sample.Kafka) sample publishes events through the partitioned outbox and consumes them with the trigger, tracking offsets. It uses the Kafka (KRaft) container from the Docker Compose stack in `samples/`.

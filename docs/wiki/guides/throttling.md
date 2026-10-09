@@ -170,4 +170,6 @@ Two queue-level controls used to live on this page and now have their own pages:
 
     Protect a legacy database whose connection pool is limited to a small number of connections.
 
+## Try it
 
+The [`NexJob.Sample.Storage`](https://github.com/oluciano/NexJob/tree/develop/samples/NexJob.Sample.Storage) sample limits a resource across all workers with `[Throttle]` and `AddNexJobDistributedThrottle()` on Redis. It needs PostgreSQL and Redis; the Docker Compose stack in `samples/` provides both.

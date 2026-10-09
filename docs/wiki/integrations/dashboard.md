@@ -374,3 +374,7 @@ builder.Services.AddNexJobStandaloneDashboard(options =>
     options.DisableWorkers = true;
 });
 ```
+
+## Try it
+
+The [`NexJob.Sample.WorkerService`](https://github.com/oluciano/NexJob/tree/develop/samples/NexJob.Sample.WorkerService) sample runs the standalone dashboard in a worker with no web server, and [`NexJob.Sample.MinimalApi`](https://github.com/oluciano/NexJob/tree/develop/samples/NexJob.Sample.MinimalApi) mounts it inside an ASP.NET Core application. The [live demo](https://nexjob-playground.fly.dev/) runs the playground scenarios.
