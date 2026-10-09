@@ -32,6 +32,9 @@ These rules apply everywhere a queue name is accepted: `EnqueueAsync`, `Schedule
 - **Configuration keyed by `"default"` follows the prefix.** `ConfigureQueue("default", ...)`, a circuit breaker, an execution window, pausing `default` and `ResetQueueCircuitAsync("default")` apply to `{prefix}.default` too.
 - **The legacy `default` queue is still drained.** Every host also polls `default`, so jobs stored before the upgrade still run. Nothing is renamed. A job of another application that sits in `default` is deferred back (see [Multi-Service](../guides/multi-service.md)). The drain is not covered by the execution window or circuit breaker you configured for `"default"` (they apply to the prefixed queue), and an explicit `queue: "default"` now means the prefixed queue: there is no way to enqueue into the legacy one.
 
+!!! danger "Did you share `default` between services on purpose?"
+    If service A enqueues without a queue and service B was meant to run those jobs by polling `default`, that stops working: A now stores them in `a.default`, which B never reads, and they stay `Enqueued` with no error. Name the queue on both sides (`queue: "orders"` in A, `Queues = ["orders"]` in B) or target B's default queue explicitly with `queue: "b.default"`. Check the dashboard for queues that have jobs and no node polling them.
+
 !!! warning "Set the prefix yourself in production"
     A derived prefix changes when the entry assembly is renamed, and jobs already stored stay in the old queue, which the drain does not cover (it only reads `default`). Set `QueuePrefix` explicitly so the name survives renames and refactors. The host logs a warning at startup while the prefix is derived.
 

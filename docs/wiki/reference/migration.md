@@ -14,6 +14,7 @@ No schema migration. One behavior changes for everyone who enqueues without nami
 
 - **Stored jobs keep running.** Every host also polls the legacy `default` queue; no row is renamed. Recurring jobs already stored with queue `default` keep firing into it.
 - **New jobs go to the new queue.** The dashboard, the queue metric tags and any query by queue name show `{prefix}.default` for them. Update dashboards and alerts that filter on `default`.
+- **Services that shared `default` on purpose stop seeing each other's jobs.** A producer's jobs go to its own `{prefix}.default`. Name the queue on both sides, or see [the default queue](../concepts/queues.md#the-default-queue).
 - **Set the prefix yourself in production.** A derived prefix changes when the assembly is renamed and jobs stay in the old queue. The host logs a warning while the prefix is derived.
 - **Rolling deploy.** A node still on v5 enqueues and polls `default`; a v6 node drains it, so nothing is lost. Jobs enqueued by v6 nodes into `{prefix}.default` are not seen by v5 nodes until they are upgraded.
 - **Configuration keyed by `"default"`** (`ConfigureQueue`, pause, circuit breaker, execution window) applies to the prefixed queue as well.

@@ -434,6 +434,101 @@ public sealed class JobDispatcherServiceTests
             .Should().Be(warns);
     }
 
+    /// <summary>N1 (#377): a job stored in the legacy "default" queue before the upgrade still runs on a host that has a prefix.</summary>
+    [Fact]
+    public async Task PrefixedHost_JobInLegacyDefault_StillRuns()
+    {
+        var ran = new TaskCompletionSource<bool>();
+        using var host = BuildQueueHost(new LevelLogSink(), ran);
+        var storage = (InMemoryStorageProvider)host.Services.GetRequiredService<NexJob.Storage.IStorageProvider>();
+        await storage.EnqueueAsync(QuickRecord("default"));
+
+        await host.StartAsync();
+        await ran.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        await TestWait.SucceededAsync(storage, 1);
+
+        await host.StopAsync();
+        (await storage.GetMetricsAsync()).Succeeded.Should().Be(1);
+    }
+
+    /// <summary>N2 (#377): a job of another application in the legacy "default" queue is deferred, not executed and not dead-lettered.</summary>
+    [Fact]
+    public async Task PrefixedHost_ForeignJobInLegacyDefault_IsDeferredWithoutUsingAnAttempt()
+    {
+        var sink = new LevelLogSink();
+        using var host = BuildQueueHost(sink, new TaskCompletionSource<bool>());
+        var storage = (InMemoryStorageProvider)host.Services.GetRequiredService<NexJob.Storage.IStorageProvider>();
+        var foreign = QuickRecord("default");
+        var foreignRecord = new JobRecord
+        {
+            Id = foreign.Id,
+            JobType = "Other.Service.Job, Other.Service",
+            InputType = foreign.InputType,
+            InputJson = foreign.InputJson,
+            Queue = "default",
+            Priority = JobPriority.Normal,
+            Status = JobStatus.Enqueued,
+            CreatedAt = DateTimeOffset.UtcNow,
+            MaxAttempts = 10,
+        };
+        await storage.EnqueueAsync(foreignRecord);
+
+        await host.StartAsync();
+        await TestWait.UntilAsync(() => Task.FromResult(sink.Entries.Any(e => e.Message.Contains("Deferring", StringComparison.Ordinal))));
+        await host.StopAsync();
+
+        var stored = await storage.GetJobByIdAsync(foreignRecord.Id);
+        stored!.Status.Should().Be(JobStatus.Scheduled, "a deferred foreign job waits for the owning service");
+        stored.Attempts.Should().Be(0);
+    }
+
+    /// <summary>N2 (#377): a job in another application's prefixed queue is never fetched by this host.</summary>
+    [Fact]
+    public async Task PrefixedHost_JobInAnotherPrefixedQueue_IsNeverFetched()
+    {
+        var ran = new TaskCompletionSource<bool>();
+        using var host = BuildQueueHost(new LevelLogSink(), ran);
+        var storage = (InMemoryStorageProvider)host.Services.GetRequiredService<NexJob.Storage.IStorageProvider>();
+        var other = QuickRecord("inventory.default");
+        await storage.EnqueueAsync(other);
+        await storage.EnqueueAsync(QuickRecord("billing.default"));
+
+        await host.StartAsync();
+        await ran.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        await TestWait.SucceededAsync(storage, 1);
+        await host.StopAsync();
+
+        (await storage.GetJobByIdAsync(other.Id))!.Status.Should().Be(JobStatus.Enqueued);
+    }
+
+    private static JobRecord QuickRecord(string queue) => new()
+    {
+        Id = JobId.New(),
+        JobType = typeof(QuickSuccessJob).AssemblyQualifiedName!,
+        InputType = typeof(QuickInput).AssemblyQualifiedName!,
+        InputJson = "{}",
+        Queue = queue,
+        Priority = JobPriority.Normal,
+        Status = JobStatus.Enqueued,
+        CreatedAt = DateTimeOffset.UtcNow,
+        MaxAttempts = 10,
+    };
+
+    private static IHost BuildQueueHost(ILoggerProvider sink, TaskCompletionSource<bool> ran) =>
+        Host.CreateDefaultBuilder()
+            .ConfigureLogging(l => l.AddProvider(sink))
+            .ConfigureServices(services =>
+            {
+                services.AddNexJob(o =>
+                {
+                    o.QueuePrefix = "billing";
+                    o.Workers = 2;
+                    o.PollingInterval = TimeSpan.FromMilliseconds(20);
+                });
+                services.AddTransient(_ => new QuickSuccessJob(ran));
+            })
+            .Build();
+
     private static IHost BuildPrefixHost(ILoggerProvider sink, Action<NexJobOptions> configure) =>
         Host.CreateDefaultBuilder()
             .ConfigureLogging(l => l.AddProvider(sink))
