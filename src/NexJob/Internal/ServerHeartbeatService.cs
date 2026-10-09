@@ -29,12 +29,12 @@ internal sealed class ServerHeartbeatService : IHostedService, IDisposable
     /// <param name="dashboardStorage">Optional dashboard storage used to refresh queue depth metrics.</param>
     public ServerHeartbeatService(
         IJobStorage storage,
-        IOptions<NexJobOptions> options,
+        NexJobOptions options,
         ILogger<ServerHeartbeatService> logger,
         IDashboardStorage? dashboardStorage = null)
     {
         _storage = storage ?? throw new ArgumentNullException(nameof(storage));
-        _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
+        _options = options ?? throw new ArgumentNullException(nameof(options));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _dashboardStorage = dashboardStorage;
 
@@ -53,7 +53,7 @@ internal sealed class ServerHeartbeatService : IHostedService, IDisposable
         {
             Id = _serverId,
             WorkerCount = _options.Workers,
-            Queues = _options.Queues,
+            Queues = _options.Workers == 0 ? [] : _options.PolledQueues,
             StartedAt = DateTimeOffset.UtcNow,
             HeartbeatAt = DateTimeOffset.UtcNow,
         };

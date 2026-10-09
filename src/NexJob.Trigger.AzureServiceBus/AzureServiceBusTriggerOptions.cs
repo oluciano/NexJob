@@ -30,7 +30,7 @@ public sealed class AzureServiceBusTriggerOptions
     public int MaxConcurrentMessages { get; set; } = 1;
 
     /// <summary>
-    /// Target NexJob queue name. Defaults to "default".
+    /// Target NexJob queue name. Defaults to "default", which is the default queue of the application (<c>{prefix}.default</c>).
     /// </summary>
     public string TargetQueue { get; set; } = "default";
 

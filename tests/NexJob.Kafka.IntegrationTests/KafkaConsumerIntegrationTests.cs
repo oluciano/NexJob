@@ -7,6 +7,7 @@ using Microsoft.Extensions.Hosting;
 using NexJob;
 using NexJob.Internal;
 using NexJob.Storage;
+using NexJob.Tests;
 using Xunit;
 
 namespace NexJob.Kafka.IntegrationTests;
@@ -60,17 +61,14 @@ public sealed class KafkaConsumerIntegrationTests
         // Wait for processing
         var scheduler = provider.GetRequiredService<IScheduler>();
         JobRecord? job = null;
-        for (var i = 0; i < 50; i++)
-        {
-            var jobs = await scheduler.GetJobsByTagAsync("trigger:kafka");
-            job = jobs.FirstOrDefault();
-            if (job is not null)
+        await TestWait.UntilAsync(
+            async () =>
             {
-                break;
-            }
-
-            await Task.Delay(200);
-        }
+                var jobs = await scheduler.GetJobsByTagAsync("trigger:kafka");
+                job = jobs.FirstOrDefault();
+                return job is not null;
+            },
+            because: "the message to become a job");
 
         await trigger.StopAsync(CancellationToken.None);
 
@@ -108,11 +106,12 @@ public sealed class KafkaConsumerIntegrationTests
         await PublishMessageAsync(topic, "{\"data\":\"corrupted\"}", jobType: null);
 
         await trigger.StartAsync(CancellationToken.None);
-        await Task.Delay(3000); // wait for processing + DLT production
+
+        // The trigger must keep running until it has produced to the DLT: consuming waits (up to 10 s) for that message.
+        var dltMessage = ConsumeOneMessage(dltTopic, "dlt-verifier-group");
         await trigger.StopAsync(CancellationToken.None);
 
         // Verify message appeared in DLT
-        var dltMessage = ConsumeOneMessage(dltTopic, "dlt-verifier-group");
         dltMessage.Should().NotBeNull("poison message without required job type header must be moved to DLT");
     }
 
@@ -151,17 +150,14 @@ public sealed class KafkaConsumerIntegrationTests
 
         var scheduler = provider.GetRequiredService<IScheduler>();
         JobRecord? job = null;
-        for (var i = 0; i < 50; i++)
-        {
-            var jobs = await scheduler.GetJobsByTagAsync("trigger:kafka");
-            job = jobs.FirstOrDefault(j => j.TraceParent == expectedTraceParent);
-            if (job is not null)
+        await TestWait.UntilAsync(
+            async () =>
             {
-                break;
-            }
-
-            await Task.Delay(200);
-        }
+                var jobs = await scheduler.GetJobsByTagAsync("trigger:kafka");
+                job = jobs.FirstOrDefault(j => j.TraceParent == expectedTraceParent);
+                return job is not null;
+            },
+            because: "the message to become a job");
 
         await trigger.StopAsync(CancellationToken.None);
 

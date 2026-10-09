@@ -3,6 +3,7 @@ using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using NexJob.RabbitMQ;
+using NexJob.Tests;
 using RabbitMQ.Client;
 using Xunit;
 
@@ -77,16 +78,13 @@ public sealed class RabbitMqProducerIntegrationTests : IClassFixture<RabbitMqTri
         using var verifyChannel = verifyConnection.CreateModel();
 
         BasicGetResult? result = null;
-        for (var i = 0; i < 20; i++)
-        {
-            result = verifyChannel.BasicGet(queueName, autoAck: true);
-            if (result != null)
+        await TestWait.UntilAsync(
+            () =>
             {
-                break;
-            }
-
-            await Task.Delay(100);
-        }
+                result = verifyChannel.BasicGet(queueName, autoAck: true);
+                return Task.FromResult(result is not null);
+            },
+            because: "the published message to reach the queue");
 
         result.Should().NotBeNull();
         var bodyString = Encoding.UTF8.GetString(result!.Body.ToArray());

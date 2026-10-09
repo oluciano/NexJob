@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Moq;
 using NexJob.Internal;
+using NexJob.Tests;
 using Xunit;
 
 namespace NexJob.Trigger.Salesforce.Tests;
@@ -74,12 +75,16 @@ public sealed class SalesforceTriggerHandlerTests
             .Callback<JobRecord, DuplicatePolicy, CancellationToken>((j, p, ct) => capturedJob = j)
             .ReturnsAsync(JobId.New());
 
+        var committed = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _replayStoreMock.Setup(s => s.SaveReplayIdAsync(_options.Topic, replayId, It.IsAny<CancellationToken>()))
+            .Callback(() => committed.TrySetResult(true))
+            .Returns(default(ValueTask));
         var handler = CreateHandler();
 
         // Act
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
         await handler.StartAsync(cts.Token);
-        await Task.Delay(200); // Allow event to be processed
+        await committed.Task.WaitAsync(TimeSpan.FromSeconds(5)); // the commit is the last step of processing the event
         await handler.StopAsync(CancellationToken.None);
 
         // Assert
@@ -116,7 +121,7 @@ public sealed class SalesforceTriggerHandlerTests
         // Act
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
         await handler.StartAsync(cts.Token);
-        await Task.Delay(100);
+        await WaitForCallAsync(_pubSubClientMock, nameof(ISalesforcePubSubClient.SubscribeAsync));
         await handler.StopAsync(CancellationToken.None);
 
         // Assert
@@ -167,7 +172,7 @@ public sealed class SalesforceTriggerHandlerTests
         // Act
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
         await handler.StartAsync(cts.Token);
-        await Task.Delay(200);
+        await WaitForCallAsync(_schedulerMock, nameof(IScheduler.EnqueueAsync));
         await handler.StopAsync(CancellationToken.None);
 
         // Assert — Guarantee 5: Replay ID must NOT be saved
@@ -218,7 +223,7 @@ public sealed class SalesforceTriggerHandlerTests
         // Act
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
         await handler.StartAsync(cts.Token);
-        await Task.Delay(200);
+        await TestWait.UntilAsync(() => Task.FromResult(dlqJob is not null), because: "the failed event to reach the dead-letter queue");
         await handler.StopAsync(CancellationToken.None);
 
         // Assert
@@ -271,7 +276,7 @@ public sealed class SalesforceTriggerHandlerTests
         // Act
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
         await handler.StartAsync(cts.Token);
-        await Task.Delay(200);
+        await WaitForCallAsync(_schedulerMock, nameof(IScheduler.EnqueueAsync), atLeast: 2);
         await handler.StopAsync(CancellationToken.None);
 
         // Assert - ReplayId should NOT be committed
@@ -338,7 +343,7 @@ public sealed class SalesforceTriggerHandlerTests
         // Act
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
         await handler.StartAsync(cts.Token);
-        await Task.Delay(1200); // allow reconnect after 1s delay
+        await WaitForCallAsync(_pubSubClientMock, nameof(ISalesforcePubSubClient.SubscribeAsync), atLeast: 2);
         await handler.StopAsync(CancellationToken.None);
 
         // Assert: Second subscribe call must have null replayId and Latest preset
@@ -376,7 +381,7 @@ public sealed class SalesforceTriggerHandlerTests
         // Act
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
         await handler.StartAsync(cts.Token);
-        await Task.Delay(1200);
+        await WaitForCallAsync(_pubSubClientMock, nameof(ISalesforcePubSubClient.SubscribeAsync), atLeast: 2);
         await handler.StopAsync(CancellationToken.None);
 
         // Assert: Second subscribe call must have null replayId and Earliest preset
@@ -414,6 +419,72 @@ public sealed class SalesforceTriggerHandlerTests
         a6.Should().Throw<ArgumentNullException>();
         a7.Should().Throw<ArgumentNullException>();
     }
+
+    [Fact]
+    public async Task StopRightAfterEnqueue_StillCommitsTheReplayId()
+    {
+        // N1 (#393): the event is already a job; a stop between the enqueue and the commit must not skip the offset.
+        var consumerEvent = new ConsumerEvent
+        {
+            ReplayId = ByteString.CopyFrom([0x07]),
+            Event = new ProducerEvent { Id = "evt-stop", SchemaId = "schema-1", Payload = ByteString.CopyFrom([0x10]) },
+        };
+        var saved = new TaskCompletionSource<CancellationToken>(TaskCreationOptions.RunContinuationsAsynchronously);
+        SalesforceTriggerHandler? handler = null;
+        _replayStoreMock.Setup(s => s.GetLastReplayIdAsync(_options.Topic, It.IsAny<CancellationToken>())).ReturnsAsync((byte[]?)null);
+        _replayStoreMock.Setup(s => s.SaveReplayIdAsync(_options.Topic, It.IsAny<byte[]>(), It.IsAny<CancellationToken>()))
+            .Callback<string, byte[], CancellationToken>((_, _, ct) => saved.TrySetResult(ct))
+            .Returns(default(ValueTask));
+        _pubSubClientMock.Setup(c => c.SubscribeAsync(_options.Topic, null, SalesforceReplayPreset.Latest, _options.BatchSize, It.IsAny<CancellationToken>()))
+            .Returns(ToAsyncEnumerable([consumerEvent]));
+        _schemaServiceMock.Setup(s => s.DecodePayloadToJsonAsync("schema-1", It.IsAny<byte[]>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync("{}");
+        _schedulerMock.Setup(s => s.EnqueueAsync(It.IsAny<JobRecord>(), DuplicatePolicy.AllowAfterFailed, It.IsAny<CancellationToken>()))
+            .Callback<JobRecord, DuplicatePolicy, CancellationToken>((_, _, _) => _ = handler!.StopAsync(CancellationToken.None))
+            .ReturnsAsync(JobId.New());
+        handler = CreateHandler();
+
+        await handler.StartAsync(CancellationToken.None);
+        var tokenAtSave = await saved.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await handler.StopAsync(CancellationToken.None);
+
+        tokenAtSave.IsCancellationRequested.Should().BeFalse("the commit after a successful enqueue is not cancelled by the stop");
+    }
+
+    [Fact]
+    public async Task NoStop_CommitsTheReplayIdOnce()
+    {
+        // N2 (#393): guard: without a stop the commit still happens exactly once.
+        var consumerEvent = new ConsumerEvent
+        {
+            ReplayId = ByteString.CopyFrom([0x08]),
+            Event = new ProducerEvent { Id = "evt-run", SchemaId = "schema-1", Payload = ByteString.CopyFrom([0x10]) },
+        };
+        var saved = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _replayStoreMock.Setup(s => s.GetLastReplayIdAsync(_options.Topic, It.IsAny<CancellationToken>())).ReturnsAsync((byte[]?)null);
+        _replayStoreMock.Setup(s => s.SaveReplayIdAsync(_options.Topic, It.IsAny<byte[]>(), It.IsAny<CancellationToken>()))
+            .Callback(() => saved.TrySetResult(true))
+            .Returns(default(ValueTask));
+        _pubSubClientMock.Setup(c => c.SubscribeAsync(_options.Topic, null, SalesforceReplayPreset.Latest, _options.BatchSize, It.IsAny<CancellationToken>()))
+            .Returns(ToAsyncEnumerable([consumerEvent]));
+        _schemaServiceMock.Setup(s => s.DecodePayloadToJsonAsync("schema-1", It.IsAny<byte[]>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync("{}");
+        _schedulerMock.Setup(s => s.EnqueueAsync(It.IsAny<JobRecord>(), DuplicatePolicy.AllowAfterFailed, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(JobId.New());
+        var handler = CreateHandler();
+
+        await handler.StartAsync(CancellationToken.None);
+        await saved.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await handler.StopAsync(CancellationToken.None);
+
+        _replayStoreMock.Verify(s => s.SaveReplayIdAsync(_options.Topic, It.IsAny<byte[]>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    private static Task WaitForCallAsync<T>(Mock<T> mock, string method, int atLeast = 1)
+        where T : class =>
+        TestWait.UntilAsync(
+            () => Task.FromResult(mock.Invocations.Count(i => string.Equals(i.Method.Name, method, StringComparison.Ordinal)) >= atLeast),
+            because: $"{method} to be called {atLeast} time(s)");
 
     private SalesforceTriggerHandler CreateHandler()
     {
@@ -473,7 +544,7 @@ public sealed class SalesforceTriggerHandlerTests
             .Returns(ToAsyncEnumerable(Array.Empty<ConsumerEvent>()));
 
         await handler.StartAsync(CancellationToken.None);
-        await Task.Delay(100);
+        await TestWait.UntilAsync(() => Task.FromResult(registry.Get($"salesforce:{_options.Topic}")?.Status == ListenerStatus.Listening), because: "the listener to report Listening");
 
         var listening = registry.Get($"salesforce:{_options.Topic}");
         listening!.Status.Should().Be(ListenerStatus.Listening);

@@ -11,6 +11,7 @@ internal sealed class DefaultJobControlService : IJobControlService
     private readonly IDashboardStorage _dashboardStorage;
     private readonly IRuntimeSettingsStore _runtimeStore;
     private readonly IQueueCircuitBreakerManager? _circuitBreakerManager;
+    private readonly NexJobOptions? _options;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="DefaultJobControlService"/> class.
@@ -18,11 +19,14 @@ internal sealed class DefaultJobControlService : IJobControlService
     /// <param name="dashboardStorage">The dashboard storage.</param>
     /// <param name="runtimeStore">The runtime store.</param>
     /// <param name="circuitBreakerManager">Optional queue circuit breaker manager.</param>
+    /// <param name="options">Optional NexJob options, used to map a queue name to the stored name.</param>
     public DefaultJobControlService(
         IDashboardStorage dashboardStorage,
         IRuntimeSettingsStore runtimeStore,
-        IQueueCircuitBreakerManager? circuitBreakerManager = null)
+        IQueueCircuitBreakerManager? circuitBreakerManager = null,
+        NexJobOptions? options = null)
     {
+        _options = options;
         _dashboardStorage = dashboardStorage;
         _runtimeStore = runtimeStore;
         _circuitBreakerManager = circuitBreakerManager;
@@ -54,7 +58,16 @@ internal sealed class DefaultJobControlService : IJobControlService
     public async Task ResumeQueueAsync(string queue, CancellationToken ct = default)
     {
         var rt = await _runtimeStore.GetAsync(ct).ConfigureAwait(false);
-        if (rt.PausedQueues.Remove(queue))
+
+        // "default" and the prefixed default are one queue for pause and resume: whichever name paused it, either resumes it.
+        var resumed = rt.PausedQueues.Remove(queue);
+        if (_options is not null && IsDefaultQueue(queue, _options))
+        {
+            resumed |= rt.PausedQueues.Remove(QueueNames.Default);
+            resumed |= rt.PausedQueues.Remove(_options.ResolveQueue(null));
+        }
+
+        if (resumed)
         {
             await _runtimeStore.SaveAsync(rt, ct).ConfigureAwait(false);
         }
@@ -63,7 +76,18 @@ internal sealed class DefaultJobControlService : IJobControlService
     /// <inheritdoc/>
     public Task ResetQueueCircuitAsync(string queue, CancellationToken ct = default)
     {
-        _circuitBreakerManager?.Reset(queue);
+        _circuitBreakerManager?.Reset(_options?.ResolveQueue(queue) ?? queue);
+        if (_options is not null && IsDefaultQueue(queue, _options))
+        {
+            // The legacy default has a circuit of its own: resetting either name resets both.
+            _circuitBreakerManager?.Reset(QueueNames.Default);
+            _circuitBreakerManager?.Reset(_options.ResolveQueue(null));
+        }
+
         return Task.CompletedTask;
     }
+
+    private static bool IsDefaultQueue(string queue, NexJobOptions options) =>
+        string.Equals(queue, QueueNames.Default, StringComparison.Ordinal)
+        || string.Equals(queue, options.ResolveQueue(null), StringComparison.Ordinal);
 }

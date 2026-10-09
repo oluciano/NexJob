@@ -80,6 +80,7 @@ Install only what you need. The core package ships with InMemory storage and the
 - [**Crash recovery**](concepts/delivery-guarantees.md) — a job left behind by a node that died is found by its stale heartbeat and run again, or dead-lettered if it had no attempts left
 - [**Deadline enforcement**](concepts/scheduling.md#deadlines) — jobs expire before execution if `deadlineAfter` has elapsed; no zombie jobs
 - [**Idempotency**](concepts/idempotency.md) — `DuplicatePolicy` controls re-enqueue behavior for jobs with the same idempotency key
+- [**Queue isolation by default**](concepts/queues.md#the-default-queue) — the default queue is `{prefix}.default` per application, so services that share a database do not share a queue; the legacy `default` is still drained
 - [**Queue circuit breaker**](guides/circuit-breaker.md) — pauses a queue automatically when a dependency is down, probes it with one job, and ramps back up gradually
 - [**Concurrency throttling**](guides/throttling.md) — `[Throttle]` caps per-resource concurrency locally; `AddNexJobDistributedThrottle()` enforces cluster-wide limits via [Redis](guides/throttling.md#distributed-throttling-with-redis)
 - [**Execution windows**](guides/execution-windows.md) — restrict a queue to certain hours and days, such as nights only or business days

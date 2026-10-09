@@ -63,7 +63,7 @@ internal sealed class SettingsPage : ComponentBase
             Options.MaxAttempts,
             Options.HeartbeatInterval,
             Options.HeartbeatTimeout,
-            Queues = Options.Queues,
+            Queues = Options.PolledQueues,
             PausedQueues = Runtime.PausedQueues,
             RecurringJobsPaused = Runtime.RecurringJobsPaused,
             RetentionSucceededDays = effectiveRetentionSucceeded,
@@ -209,7 +209,7 @@ internal sealed class SettingsPage : ComponentBase
 
     private string BuildQueueRows(bool isReadOnly, string clusterSuffix)
     {
-        if (Options.Queues.Count == 0)
+        if (Options.PolledQueues.Count == 0)
         {
             return "<div style=\"color:var(--text-tertiary);font-size:12px\">No queues configured.</div>";
         }
@@ -217,10 +217,10 @@ internal sealed class SettingsPage : ComponentBase
         var sb = new System.Text.StringBuilder();
         var now = DateTimeOffset.UtcNow;
 
-        foreach (var q in Options.Queues)
+        foreach (var q in Options.PolledQueues)
         {
-            var isPaused = Runtime.PausedQueues.Contains(q);
-            var windowSetting = Options.QueueSettings.Find(qs => string.Equals(qs.Name, q, StringComparison.Ordinal));
+            var isPaused = Options.IsQueuePaused(q, Runtime.PausedQueues);
+            var windowSetting = Options.SettingsFor(q);
             var inWindow = windowSetting?.ExecutionWindow?.IsWithinWindow(now) ?? true;
             var windowSummary = windowSetting?.ExecutionWindow is { } window
                 ? $"<div style=\"font-size:12px;color:var(--text-secondary)\">{System.Web.HttpUtility.HtmlEncode(Helpers.DescribeExecutionWindow(window))}</div>"

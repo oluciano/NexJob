@@ -389,4 +389,54 @@ public sealed class QueueCircuitBreakerTests
         manager.RecordOutcome("api", succeeded: false, new HttpRequestException("CRITICAL: partner offline"));
         Assert.Equal(QueueCircuitState.Open, manager.GetState("api", out _));
     }
+
+    /// <summary>A breaker configured for "default" guards the prefixed default queue (#377).</summary>
+    [Fact]
+    public void N1_Positive_BreakerConfiguredForDefault_AppliesToPrefixedDefault()
+    {
+        var breaker = new QueueCircuitBreakerOptions { ConsecutiveFailuresThreshold = 2, OpenDuration = TimeSpan.FromMinutes(1) };
+        breaker.BreakOn<DownstreamApiException>();
+        var options = new NexJobOptions { QueuePrefix = "billing" };
+        options.ConfigureQueue("default", q => q.CircuitBreaker = breaker);
+        var manager = new DefaultQueueCircuitBreakerManager(options, timeProvider: new FakeTimeProvider());
+
+        manager.RecordOutcome("billing.default", succeeded: false, new DownstreamApiException("503"));
+        manager.RecordOutcome("billing.default", succeeded: false, new DownstreamApiException("503"));
+
+        Assert.Equal(QueueCircuitState.Open, manager.GetState("billing.default", out _));
+    }
+
+    /// <summary>A breaker configured for "default" also guards the legacy default queue, with a state of its own (#402).</summary>
+    [Fact]
+    public void N1_Positive_BreakerConfiguredForDefault_AlsoGuardsTheLegacyDefault_WithItsOwnState()
+    {
+        var breaker = new QueueCircuitBreakerOptions { ConsecutiveFailuresThreshold = 2, OpenDuration = TimeSpan.FromMinutes(1) };
+        breaker.BreakOn<DownstreamApiException>();
+        var options = new NexJobOptions { QueuePrefix = "billing" };
+        options.ConfigureQueue("default", q => q.CircuitBreaker = breaker);
+        var manager = new DefaultQueueCircuitBreakerManager(options, timeProvider: new FakeTimeProvider());
+
+        manager.RecordOutcome("default", succeeded: false, new DownstreamApiException("503"));
+        manager.RecordOutcome("default", succeeded: false, new DownstreamApiException("503"));
+
+        Assert.Equal(QueueCircuitState.Open, manager.GetState("default", out _));
+        Assert.Equal(QueueCircuitState.Closed, manager.GetState("billing.default", out _));
+    }
+
+    /// <summary>With no prefix there is one circuit for "default", not two (#402).</summary>
+    [Fact]
+    public void N2_Negative_WithoutPrefix_DefaultHasASingleCircuit()
+    {
+        var breaker = new QueueCircuitBreakerOptions { ConsecutiveFailuresThreshold = 2, OpenDuration = TimeSpan.FromMinutes(1) };
+        breaker.BreakOn<DownstreamApiException>();
+        var options = new NexJobOptions { EntryAssembly = null };
+        options.ConfigureQueue("default", q => q.CircuitBreaker = breaker);
+        var manager = new DefaultQueueCircuitBreakerManager(options, timeProvider: new FakeTimeProvider());
+
+        manager.RecordOutcome("default", succeeded: false, new DownstreamApiException("503"));
+        manager.RecordOutcome("default", succeeded: false, new DownstreamApiException("503"));
+
+        Assert.Equal(QueueCircuitState.Open, manager.GetState("default", out _));
+        Assert.Null(manager.GetStatus("billing.default"));
+    }
 }

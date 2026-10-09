@@ -130,6 +130,7 @@ builder.Services.AddNexJob(options =>
 
 In environments where multiple services share a database cluster:
 
+- Set `QueuePrefix` explicitly in each service so its default queue (`{prefix}.default`) survives renames and refactors; the dashboard of a standalone host needs the same value. See [the default queue](../concepts/queues.md#the-default-queue).
 - Run a dedicated dashboard container with `DisableWorkers = true` so operational monitoring does not consume worker threads or take lock slots from backend workers.
 - Scope the dashboard to relevant queues with `options.Queues = ["serviceA-queue"]` so each team sees only their own jobs.
 - NexJob handles foreign job types safely by rolling back attempt counts and deferring via `ForeignJobRetryDelay` rather than dead-lettering them. See the [Multi-Service guide](../guides/multi-service.md).

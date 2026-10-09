@@ -20,6 +20,7 @@ internal sealed class JobDispatcherService : BackgroundService
     private readonly JobWakeUpChannel _wakeUp;
     private readonly IQueueCircuitBreakerManager? _circuitBreakerManager;
     private readonly ILogger<JobDispatcherService> _logger;
+    private IReadOnlyList<string> _polledQueues = [];
     private readonly CancellationTokenSource _stopFetching = new();
     private SemaphoreSlim? _workerSlots;
     private int _activeJobCount;
@@ -95,15 +96,39 @@ internal sealed class JobDispatcherService : BackgroundService
     /// <inheritdoc/>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        _polledQueues = _options.PolledQueues;
         _logger.LogInformation("JobDispatcherService started. Workers: {Workers}, Queues: {Queues}",
-            _options.Workers, string.Join(", ", _options.Queues));
+            _options.Workers, string.Join(", ", _polledQueues));
+
+        if (string.IsNullOrWhiteSpace(_options.QueuePrefix) && _options.EffectivePrefix is { } derivedPrefix)
+        {
+            _logger.LogWarning(
+                "The default queue prefix '{Prefix}' was derived from the entry assembly name. Renaming the assembly changes it and strands jobs in the old queue; set NexJobOptions.QueuePrefix explicitly in production.",
+                derivedPrefix);
+        }
+
+        if (string.IsNullOrWhiteSpace(_options.QueuePrefix) && _options.EffectivePrefix is null)
+        {
+            _logger.LogWarning(
+                "No default queue prefix: there is no entry assembly to derive it from and NexJobOptions.QueuePrefix is not set, so jobs enqueued without a queue go to the shared 'default' queue. Set NexJobOptions.QueuePrefix if other applications use this database.");
+        }
 
         var ignoredSettings = _options.GetIgnoredSettings();
         if (ignoredSettings.Count > 0)
         {
+            var hint = ignoredSettings.Contains("DefaultQueue", StringComparer.Ordinal)
+                ? " DefaultQueue is not used: to name the default queue of this application set NexJobOptions.QueuePrefix."
+                : string.Empty;
             _logger.LogWarning(
-                "These settings are configured but have no effect and are ignored: {Settings}. The worker count is a deployment setting (NexJobOptions.Workers).",
-                string.Join(", ", ignoredSettings));
+                "These settings are configured but have no effect and are ignored: {Settings}. The worker count is a deployment setting (NexJobOptions.Workers).{Hint}",
+                string.Join(", ", ignoredSettings),
+                hint);
+        }
+
+        if (_options.Workers == 0)
+        {
+            _logger.LogInformation("Workers = 0: this host does not fetch or execute jobs.");
+            return;
         }
 
         // Outlives ExecuteAsync: jobs still draining during shutdown release their slot after the loop exits.
@@ -241,15 +266,15 @@ internal sealed class JobDispatcherService : BackgroundService
         var now = DateTimeOffset.UtcNow;
         var result = new List<string>();
 
-        foreach (var q in _options.Queues)
+        foreach (var q in _polledQueues)
         {
-            if (runtime.PausedQueues.Contains(q))
+            if (_options.IsQueuePaused(q, runtime.PausedQueues))
             {
                 _logger.LogDebug("Queue '{Queue}' skipped — paused", q);
                 continue;
             }
 
-            var settings = _options.QueueSettings.Find(qs => string.Equals(qs.Name, q, StringComparison.Ordinal));
+            var settings = _options.SettingsFor(q);
             if (settings?.ExecutionWindow is not null && !settings.ExecutionWindow.IsWithinWindow(now))
             {
                 _logger.LogDebug("Queue '{Queue}' skipped — outside execution window", q);

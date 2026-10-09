@@ -137,10 +137,11 @@ internal sealed class QueuesPage : IComponent
             return HtmlFragments.QueueCard(
                 q,
                 PathPrefix,
-                pausedQueues.Contains(q.Queue),
+                Options.IsQueuePaused(q.Queue, pausedQueues),
                 ActiveCluster,
                 hasActiveWorkers: activeWorkerQueues.Contains(q.Queue),
-                circuitStatus: cs);
+                circuitStatus: cs,
+                orphanHint: activeWorkerQueues.Contains(q.Queue) ? null : OrphanQueueHint.For(q.Queue, activeWorkerQueues));
         }));
 
         var heatmap = BuildWorkerHeatmap(processingJobs);

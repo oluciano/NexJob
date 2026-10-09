@@ -174,7 +174,7 @@ Choose the package that matches your application type:
 | `DefaultTheme` | `string` | `"blue-theme"` | Default UI theme applied when no user preference is cached in `localStorage` (`"blue-theme"`, `"semi-dark"`, `"dark"`, `"light"`, `"bordered-theme"`). |
 | `EnablePlayground` | `bool` | `false` | Enables the interactive Scenarios drawer and simulator API (`/api/scenarios/*`). Keep `false` in production. See [Live Playground](../playground.md). |
 | `MetricsCacheTtl` | `TimeSpan` | `TimeSpan.FromSeconds(3)` | How long the dashboard caches aggregated metric results before re-querying storage. Set to `TimeSpan.Zero` to disable caching. |
-| `Queues` | `IReadOnlyList<string>?` | `null` (all queues) | Scope the dashboard to a subset of queues. Navigation counters, queue cards, and default job queries are filtered to these queues only. |
+| `Queues` | `IReadOnlyList<string>?` | `null` (all queues) | Scope the dashboard to a subset of queues. Navigation counters, queue cards, and default job queries are filtered to these queues only. `default` also covers the application's prefixed default queue; see [the default queue](../concepts/queues.md#the-default-queue). |
 
 ### `StandaloneDashboardOptions` (Worker Service)
 
@@ -188,7 +188,8 @@ Choose the package that matches your application type:
 | `EnablePlayground` | `bool` | `false` | Enables the interactive Scenarios drawer and simulator API (`/api/scenarios/*`). Keep `false` in production. |
 | `LocalhostOnly` | `bool` | `true` | When `true`, the server binds to `127.0.0.1` only. Set `false` to listen on all interfaces. |
 | `PollIntervalSeconds` | `int` | `3` | How often the dashboard front-end polls for updated metrics. |
-| `DisableWorkers` | `bool` | `false` | When `true`, sets `Workers = 0` on this host — useful for a dedicated ops dashboard that should not process jobs. |
+| `DisableWorkers` | `bool` | `false` | When `true`, sets `Workers = 0` on this host before any service starts — useful for a dedicated ops dashboard that should not process jobs (see [`DisableWorkers`](../reference/configuration.md)). |
+| `Queues` | `IReadOnlyList<string>?` | `null` (all queues) | Scope the dashboard to a subset of queues, as for `DashboardOptions.Queues`: `default` also covers the application's `{prefix}.default`, and a standalone dashboard needs the same `NexJob:QueuePrefix` as the workers (see [the default queue](../concepts/queues.md#the-default-queue)). |
 
 ---
 
@@ -281,7 +282,7 @@ builder.Services.AddSingleton<IDashboardAuthorizationHandler, BasicAuthDashboard
 
   -   **/queues**
 
-    Per-queue depth, active worker count, and pause/resume controls. Queues with enqueued jobs but no active workers show a `⚠️ NO WORKERS` warning badge. Queues with a [circuit breaker](../guides/circuit-breaker.md) show the current circuit state and a **Reset Circuit** button.
+    Per-queue depth, active worker count, and pause/resume controls. Queues with enqueued jobs but no active workers show a `⚠️ NO WORKERS` warning badge that links to the Servers page; its tooltip and the Servers banner list the queues the live nodes poll and, for a queue named `X.default`, suggest `QueuePrefix = X` (see [the default queue](../concepts/queues.md#the-default-queue)). Queues with a [circuit breaker](../guides/circuit-breaker.md) show the current circuit state and a **Reset Circuit** button.
 
   -   **/failed**
 

@@ -24,6 +24,7 @@
     <PackageReference Include="Moq" Version="4.20.72" />
     <PackageReference Include="StackExchange.Redis" Version="2.12.14" />
     <ProjectReference Include="..\..\src\NexJob\NexJob.csproj" />
+    <ProjectReference Include="..\..\tools\DocsTruth\DocsTruth.csproj" />
     <ProjectReference Include="..\..\src\NexJob.Dashboard.Standalone\NexJob.Dashboard.Standalone.csproj" />
     <ProjectReference Include="..\..\src\NexJob.Postgres\NexJob.Postgres.csproj" />
     <ProjectReference Include="..\..\src\NexJob.SqlServer\NexJob.SqlServer.csproj" />
@@ -45,4 +46,7 @@
     <ProjectReference Include="..\..\src\NexJob.MongoDB\NexJob.MongoDB.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Include="..\Shared\TestWait.Until.cs" Link="Shared\TestWait.Until.cs" />
+  </ItemGroup>
 </Project>

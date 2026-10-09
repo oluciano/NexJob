@@ -27,7 +27,12 @@ internal sealed class DefaultQueueCircuitBreakerManager : IQueueCircuitBreakerMa
         {
             foreach (var qs in options.QueueSettings.Where(s => s.CircuitBreaker is not null))
             {
-                _circuits.TryAdd(qs.Name, new CircuitEntry(qs.CircuitBreaker!));
+                _circuits.TryAdd(options.ResolveQueue(qs.Name), new CircuitEntry(qs.CircuitBreaker!));
+                if (string.Equals(qs.Name, QueueNames.Default, StringComparison.Ordinal))
+                {
+                    // The legacy default that is still drained gets the same breaker, with a state of its own.
+                    _circuits.TryAdd(QueueNames.Default, new CircuitEntry(qs.CircuitBreaker!));
+                }
             }
         }
     }

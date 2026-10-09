@@ -168,7 +168,7 @@ builder.Services.AddNexJob()
 | `BootstrapServers` | Comma-separated list of Kafka broker endpoints (required) | `""` |
 | `Topic` | Kafka topic to consume messages from | `""` |
 | `GroupId` | Kafka consumer group identifier | `""` |
-| `TargetQueue` | Target NexJob queue name for enqueued jobs | `"default"` |
+| `TargetQueue` | Target NexJob queue name for enqueued jobs; `"default"` is the application's default queue (`{prefix}.default`) | `"default"` |
 | `JobPriority` | Priority of the enqueued jobs | `JobPriority.Normal` |
 | `DeadLetterTopic` | Topic that receives records that can never be enqueued (permanent failures) | `null` |
 | `JobType` | Assembly-qualified job type used when a message has no `nexjob.job_type` header | `null` |

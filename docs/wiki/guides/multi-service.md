@@ -20,6 +20,8 @@ builder.Services.AddNexJob(options => options.Queues = ["inventory"]);
 
 Enqueue with the queue of the service that owns the job type (`queue: "billing"`). This is the recommended pattern.
 
+Jobs enqueued without a queue also stay apart: the default queue is `{prefix}.default`, one per application. See [the default queue](../concepts/queues.md#the-default-queue).
+
 ## Layer 2: foreign jobs are deferred, not failed
 
 If a service fetches a job whose type (or input type) it cannot load, the job is a **foreign job**. NexJob does not run it, does not use an attempt and does not dead-letter it. It returns the job to the queue after `ForeignJobRetryDelay` (default 5 seconds) so the owning service can take it. The host logs a warning (`references foreign type ... Deferring`) and the trace of the attempt carries `nexjob.foreign_job = true`.
@@ -39,12 +41,12 @@ Run one dashboard per team, limited to that team's queues, so the counters and l
 ## Things that are shared
 
 - **Pausing a queue** is stored in the database, so it applies to every node of every service that polls that queue. See [Runtime Control](../guides/runtime-control.md).
-- **Recurring jobs** are stored in the database. Give each recurring job an id and a queue that belong to one service.
+- **Recurring jobs** are stored in the database. Give each recurring job an id and a queue that belong to one service; see [recurring job ids](../concepts/recurring-jobs.md#recurring-job-ids-are-global-to-the-database).
 - **Retention and the orphan watcher** run in every node. They act on the whole database, not only on the jobs of their own service.
 
 ## Upgrading some services before others
 
-Services on different NexJob versions can share a database during a rolling upgrade, with the limits listed in the [migration guide](../reference/migration.md#v570-v580) (for example, on MongoDB do not use `deadlineAfter` until every node runs v5.8).
+Services on different NexJob versions can share a database during a rolling upgrade, with the limits listed in the [migration guide](../reference/migration.md#v570-v580). From v5 to v6, nodes of both versions can run together and every job runs once, but jobs enqueued by a v6 node wait in `{prefix}.default` until a v6 node reads them (see [the v6.0.0 migration](../reference/migration.md#v5100-v600)) (for example, on MongoDB do not use `deadlineAfter` until every node runs v5.8).
 
 ## See also
 

@@ -26,6 +26,19 @@ public sealed class JobRecordFactoryTests
         job.MaxAttempts.Should().Be(5);
     }
 
+    /// <summary>N1/N2 (#377): the implicit queue takes the prefix, a named queue does not.</summary>
+    /// <param name="queue">The requested queue.</param>
+    /// <param name="expected">The stored queue.</param>
+    [Theory]
+    [InlineData(null, "billing.default")]
+    [InlineData("emails", "emails")]
+    public void Build_WithQueuePrefix_PrefixesOnlyTheImplicitDefault(string? queue, string expected)
+    {
+        var options = new NexJobOptions { QueuePrefix = "billing" };
+
+        JobRecordFactory.Build<TestJob>(options, queue).Queue.Should().Be(expected);
+    }
+
     /// <summary>Tests that generic Build for IJob sets NoInput correctly.</summary>
     [Fact]
     public void BuildGeneric_NoInput_SetsNoInputProperties()

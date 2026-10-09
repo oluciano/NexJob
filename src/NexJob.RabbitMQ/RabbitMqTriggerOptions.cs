@@ -45,7 +45,7 @@ public sealed class RabbitMqTriggerOptions
     public ushort PrefetchCount { get; set; } = 1;
 
     /// <summary>
-    /// Gets or sets the target NexJob queue name. Defaults to "default".
+    /// Gets or sets the target NexJob queue name. Defaults to "default", which is the default queue of the application (<c>{prefix}.default</c>).
     /// </summary>
     public string TargetQueue { get; set; } = "default";
 

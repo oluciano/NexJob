@@ -6,6 +6,11 @@ description: "Debug common NexJob problems: jobs not running, stuck in Processin
 
 NexJob is designed to surface diagnostic information through structured logs, metrics, and the dashboard, but some problems require you to know where to look. This guide walks through the most common issues and their fixes, organized by symptom.
 
+??? "A recurring job never runs, or runs another job"
+    **Symptom:** A recurring job registered by your application does not fire, or fires and runs a job you did not write.
+
+    **Check — The id is shared with another application.** Recurring job ids are global to the database. Open the dashboard **Recurring** page and compare the job type and queue shown for that id with what your application registers. If they belong to another application, the two share the id and the last one to start owns it. Give each recurring job a unique `Id` as described in [Recurring job ids](../concepts/recurring-jobs.md#recurring-job-ids-are-global-to-the-database). The application that overwrote the job also logs a warning and increments `nexjob.recurring.id_collisions`.
+
 ???+ "Jobs not being picked up (staying Enqueued or Scheduled)"
     **Symptom:** A job stays in `Enqueued` or `Scheduled` indefinitely and never moves to `Processing`.
 
@@ -24,7 +29,7 @@ NexJob is designed to surface diagnostic information through structured logs, me
 
     **Check 2 — Queue name mismatch**
 
-    The dispatcher only processes queues listed in `options.Queues`. If you enqueued a job on `"emails"` but your options only list `"default"`, the job sits untouched.
+    The dispatcher only processes queues listed in `options.Queues`. If you enqueued a job on `"emails"` but your options only list `"default"`, the job sits untouched. A job enqueued without a queue is stored in the [default queue](../concepts/queues.md#the-default-queue), `{prefix}.default`; the dashboard shows that name, not `default`.
 
     Verify the job's queue name matches your configuration:
 
@@ -50,6 +55,14 @@ NexJob is designed to surface diagnostic information through structured logs, me
     ```csharp
     options.Workers = 50; // Increase from default 10
     ```
+
+    **Check 6 — The host executes no jobs**
+
+    A host with `Workers = 0`, or a standalone dashboard with `DisableWorkers = true`, fetches nothing by design and logs `Workers = 0: this host does not fetch or execute jobs.` at start. Jobs wait until a host with workers polls their queue. See [`DisableWorkers`](configuration.md).
+
+    **Check 7 — The queue prefix changed**
+
+    If the entry assembly was renamed (or `QueuePrefix` changed), jobs stay in the old `{oldprefix}.default` and no node reads it. The dashboard **Servers** page flags the queue as unattended and names the `QueuePrefix` that brings it back. Set `QueuePrefix` explicitly so the name survives renames: see [the default queue](../concepts/queues.md#the-default-queue).
 
 
 ???+ "Jobs stuck in Processing (orphaned jobs)"

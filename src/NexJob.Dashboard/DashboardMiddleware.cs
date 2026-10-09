@@ -176,30 +176,6 @@ public sealed class DashboardMiddleware
     }
 #pragma warning restore SCS0027
 
-    private static JobRecord CreateJobRecord(
-        Type jobType,
-        string rawJobType,
-        string inputTypeName,
-        string inputJson,
-        string? queue,
-        int maxAttempts,
-        string[]? tags = null)
-    {
-        return new JobRecord
-        {
-            Id = JobId.New(),
-            JobType = jobType.AssemblyQualifiedName ?? rawJobType,
-            InputType = inputTypeName,
-            InputJson = inputJson,
-            Queue = string.IsNullOrWhiteSpace(queue) ? "default" : queue,
-            Priority = JobPriority.Normal,
-            Status = JobStatus.Enqueued,
-            CreatedAt = DateTimeOffset.UtcNow,
-            MaxAttempts = maxAttempts,
-            Tags = tags ?? [],
-        };
-    }
-
     private static async Task<List<JobId>> EnqueueJobBatchAsync(
         IScheduler scheduler,
         NexJobOptions options,
@@ -236,8 +212,8 @@ public sealed class DashboardMiddleware
         var enqueuedIds = new List<JobId>(count);
         for (int i = 0; i < count; i++)
         {
-            var jobRecord = CreateJobRecord(
-                jobType, entry.JobType, inputTypeName, inputJson, entry.Queue, options.MaxAttempts, tags);
+            var jobRecord = DashboardJobFactory.CreateJobRecord(
+                jobType, entry.JobType, inputTypeName, inputJson, entry.Queue, options, tags);
 
             await scheduler.EnqueueAsync(jobRecord, DuplicatePolicy.AllowAfterFailed, ct).ConfigureAwait(false);
             enqueuedIds.Add(jobRecord.Id);
@@ -757,8 +733,8 @@ public sealed class DashboardMiddleware
 
                 if (typeof(IJob).IsAssignableFrom(jobType))
                 {
-                    var jobRecord = CreateJobRecord(
-                        jobType, rawType, typeof(NoInput).AssemblyQualifiedName!, "{}", queue, options.MaxAttempts);
+                    var jobRecord = DashboardJobFactory.CreateJobRecord(
+                        jobType, rawType, typeof(NoInput).AssemblyQualifiedName!, "{}", queue, options);
 
                     await scheduler.EnqueueAsync(jobRecord, DuplicatePolicy.AllowAfterFailed, context.RequestAborted).ConfigureAwait(false);
                     LocalRedirect(context, $"{_pathPrefix}/catalog?triggered={Uri.EscapeDataString(jobRecord.Id.Value.ToString())}", activeCluster);
@@ -773,8 +749,8 @@ public sealed class DashboardMiddleware
                         if (deserialized is not null)
                         {
                             var normalizedJson = System.Text.Json.JsonSerializer.Serialize(deserialized);
-                            var jobRecord = CreateJobRecord(
-                                jobType, rawType, inputType.AssemblyQualifiedName!, normalizedJson, queue, options.MaxAttempts);
+                            var jobRecord = DashboardJobFactory.CreateJobRecord(
+                                jobType, rawType, inputType.AssemblyQualifiedName!, normalizedJson, queue, options);
 
                             await scheduler.EnqueueAsync(jobRecord, DuplicatePolicy.AllowAfterFailed, context.RequestAborted).ConfigureAwait(false);
                             LocalRedirect(context, $"{_pathPrefix}/catalog?triggered={Uri.EscapeDataString(jobRecord.Id.Value.ToString())}", activeCluster);
@@ -909,7 +885,7 @@ public sealed class DashboardMiddleware
         var queues = await dashboardStorage.GetQueueMetricsAsync(context.RequestAborted).ConfigureAwait(false);
         var nexJobOptions = context.RequestServices.GetRequiredService<NexJobOptions>();
 
-        var effectiveQueues = activeCluster?.Queues ?? _options.Queues;
+        var effectiveQueues = activeCluster?.Queues ?? QueueScope.Resolve(_options.Queues, nexJobOptions, queues);
 
         // Filter queues when effectiveQueues is specified (queue isolation mode)
         var scopedQueues = effectiveQueues is { Count: > 0 }
@@ -919,7 +895,7 @@ public sealed class DashboardMiddleware
         var activeQueues = scopedQueues.Count(q => q.Processing > 0);
         var totalQueues = effectiveQueues is { Count: > 0 }
             ? effectiveQueues.Count
-            : nexJobOptions.Queues.Count;
+            : nexJobOptions.PolledQueues.Count;
 
         var listenerRegistry = context.RequestServices.GetService<IListenerRegistry>();
         var allListeners = listenerRegistry?.GetAll() ?? Array.Empty<ListenerSnapshot>();

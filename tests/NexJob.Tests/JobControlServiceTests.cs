@@ -221,4 +221,63 @@ public sealed class JobControlServiceTests
         await sut.ResumeQueueAsync("q1");
         runtimeStore.Verify(x => x.SaveAsync(rt, It.IsAny<CancellationToken>()), Times.Exactly(2));
     }
+
+    // ─── #377: the default queue and {prefix}.default are one queue for pause and resume ───
+
+    private static async Task<HashSet<string>> PauseThenResumeAsync(string paused, string resumed, string? prefix = "billing")
+    {
+        var store = new InMemoryRuntimeSettingsStore();
+        var options = prefix is null ? new NexJobOptions { EntryAssembly = null } : new NexJobOptions { QueuePrefix = prefix };
+        var sut = new DefaultJobControlService(new Mock<IDashboardStorage>().Object, store, null, options);
+
+        await sut.PauseQueueAsync(paused);
+        await sut.ResumeQueueAsync(resumed);
+
+        return (await store.GetAsync(CancellationToken.None)).PausedQueues;
+    }
+
+    /// <summary>N1: a queue paused as "default" is resumed by the stored name the dashboard sends.</summary>
+    [Fact]
+    public async Task ResumePrefixedDefault_AfterPausingDefault_Resumes()
+    {
+        (await PauseThenResumeAsync("default", "billing.default")).Should().BeEmpty();
+    }
+
+    /// <summary>N1: a queue paused by its stored name is resumed by "default" too.</summary>
+    [Fact]
+    public async Task ResumeDefault_AfterPausingThePrefixedDefault_Resumes()
+    {
+        (await PauseThenResumeAsync("billing.default", "default")).Should().BeEmpty();
+    }
+
+    /// <summary>N2: guards: the same name pauses and resumes, and another queue is never touched.</summary>
+    /// <param name="paused">The queue paused.</param>
+    /// <param name="resumed">The queue resumed.</param>
+    /// <param name="stillPaused">The queue expected to stay paused, or empty.</param>
+    [Theory]
+    [InlineData("default", "default", "")]
+    [InlineData("billing.default", "billing.default", "")]
+    [InlineData("emails", "default", "emails")]
+    [InlineData("billing.default", "emails", "billing.default")]
+    public async Task Resume_OnlyTouchesTheDefaultQueueGroup(string paused, string resumed, string stillPaused)
+    {
+        var result = await PauseThenResumeAsync(paused, resumed);
+
+        if (stillPaused.Length == 0)
+        {
+            result.Should().BeEmpty();
+        }
+        else
+        {
+            result.Should().BeEquivalentTo(stillPaused);
+        }
+    }
+
+    /// <summary>N3: without a prefix "default" is just "default", and a qualified name from another application is untouched.</summary>
+    [Fact]
+    public async Task Resume_WithoutPrefix_OrOtherApplicationQueue_IsLiteral()
+    {
+        (await PauseThenResumeAsync("default", "default", prefix: null)).Should().BeEmpty();
+        (await PauseThenResumeAsync("inventory.default", "default")).Should().BeEquivalentTo("inventory.default");
+    }
 }

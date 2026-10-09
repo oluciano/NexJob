@@ -110,8 +110,20 @@ builder.Services.AddNexJob(builder.Configuration, options =>
     **Configuration rules to keep in mind:**
       - The `Job` field must match the class name exactly (not the fully qualified name). If two jobs share the same class name, give each entry an explicit `Id` field.
       - `Input` is a JSON string with escaped inner quotes — it is **not** a nested JSON object.
-      - Available per-entry fields: `Id`, `Job`, `Cron`, `Input`, `Queue` (defaults to `"default"`), `TimeZoneId`, `ConcurrencyPolicy` (defaults to `SkipIfRunning`), and `Enabled` (defaults to `true`).
+      - Available per-entry fields: `Id`, `Job`, `Cron`, `Input`, `Queue` (defaults to the [default queue](queues.md#the-default-queue), `{prefix}.default`), `TimeZoneId`, `ConcurrencyPolicy` (defaults to `SkipIfRunning`), and `Enabled` (defaults to `true`).
 
+
+### Recurring job ids are global to the database
+
+The id of a recurring job is its key in the database. Two applications that share a database and register the same id overwrite each other: the one that starts last replaces the job type and queue, and the other application loses that schedule until its next deploy. A recurring job configured **without** `Id` uses its job name as the id (`CleanupJob`), so two applications that both have a `CleanupJob` collide unless you set an `Id`.
+
+Give every recurring job an id that belongs to one application, for example `billing-cleanup`:
+
+- `appsettings.json`: `"Id": "billing-cleanup"` in the entry of `NexJob:RecurringJobs`;
+- options: `options.AddRecurringJob<CleanupJob>(id: "billing-cleanup", ...)`;
+- code: `scheduler.RecurringAsync<CleanupJob>("billing-cleanup", ...)`.
+
+At startup NexJob checks the ids it registers from configuration against the stored ones. When an id already belongs to a job of another type it logs a warning with both types and queues and increments the counter `nexjob.recurring.id_collisions` (tag `recurring_job_id`); the registration itself still goes ahead. Recurring jobs registered from code with `RecurringAsync` are not checked. See [Alerts](../guides/alerts.md) for alerting on the counter.
 
 ### Behavior on Application Restart
 

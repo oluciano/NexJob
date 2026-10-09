@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using NexJob;
+using NexJob.Configuration;
 using NexJob.Internal;
 using NexJob.Storage;
 using Xunit;
@@ -379,6 +380,212 @@ public sealed class JobDispatcherServiceTests
         logSink.Messages.Should().Contain(m => m.Contains("Error fetching next job"),
             "dispatcher must log an error when FetchNextAsync throws");
     }
+
+    /// <summary>N1 (#377): a prefix derived from the assembly name is announced with guidance to set it explicitly.</summary>
+    [Fact]
+    public async Task Startup_WithDerivedQueuePrefix_LogsWarning()
+    {
+        var sink = new LevelLogSink();
+        using var host = BuildPrefixHost(sink, _ => { });
+
+        await host.StartAsync();
+        await host.StopAsync();
+
+        sink.Entries.Should().ContainSingle(e =>
+            e.Level == LogLevel.Warning && e.Message.Contains("QueuePrefix", StringComparison.Ordinal));
+    }
+
+    /// <summary>N2/N3 (#377): an explicit prefix does not warn; a whitespace-only one is treated as unset and does.</summary>
+    /// <param name="prefix">The configured prefix.</param>
+    /// <param name="warns">Whether the derived-prefix warning is expected.</param>
+    [Theory]
+    [InlineData("billing", false)]
+    [InlineData("   ", true)]
+    public async Task Startup_WithConfiguredQueuePrefix_WarnsOnlyWhenDerived(string prefix, bool warns)
+    {
+        var sink = new LevelLogSink();
+        using var host = BuildPrefixHost(sink, o => o.QueuePrefix = prefix);
+
+        await host.StartAsync();
+        await host.StopAsync();
+
+        sink.Entries.Any(e => e.Level == LogLevel.Warning && e.Message.Contains("QueuePrefix", StringComparison.Ordinal))
+            .Should().Be(warns);
+    }
+
+    /// <summary>N1/N2 (#377): without an entry assembly and without a prefix the shared default is back; say so, unless a prefix is set.</summary>
+    /// <param name="prefix">The configured prefix.</param>
+    /// <param name="warns">Whether the no-prefix warning is expected.</param>
+    [Theory]
+    [InlineData(null, true)]
+    [InlineData("billing", false)]
+    public async Task Startup_WithoutEntryAssembly_WarnsOnlyWhenNoPrefixIsSet(string? prefix, bool warns)
+    {
+        var sink = new LevelLogSink();
+        using var host = BuildPrefixHost(sink, o =>
+        {
+            o.EntryAssembly = null;
+            o.QueuePrefix = prefix;
+        });
+
+        await host.StartAsync();
+        await host.StopAsync();
+
+        sink.Entries.Any(e => e.Level == LogLevel.Warning && e.Message.Contains("No default queue prefix", StringComparison.Ordinal))
+            .Should().Be(warns);
+    }
+
+    /// <summary>N1 (#377): a job stored in the legacy "default" queue before the upgrade still runs on a host that has a prefix.</summary>
+    [Fact]
+    public async Task PrefixedHost_JobInLegacyDefault_StillRuns()
+    {
+        var ran = new TaskCompletionSource<bool>();
+        using var host = BuildQueueHost(new LevelLogSink(), ran);
+        var storage = (InMemoryStorageProvider)host.Services.GetRequiredService<NexJob.Storage.IStorageProvider>();
+        await storage.EnqueueAsync(QuickRecord("default"));
+
+        await host.StartAsync();
+        await ran.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        await TestWait.SucceededAsync(storage, 1);
+
+        await host.StopAsync();
+        (await storage.GetMetricsAsync()).Succeeded.Should().Be(1);
+    }
+
+    /// <summary>N2 (#377): a job of another application in the legacy "default" queue is deferred, not executed and not dead-lettered.</summary>
+    [Fact]
+    public async Task PrefixedHost_ForeignJobInLegacyDefault_IsDeferredWithoutUsingAnAttempt()
+    {
+        var sink = new LevelLogSink();
+        using var host = BuildQueueHost(sink, new TaskCompletionSource<bool>());
+        var storage = (InMemoryStorageProvider)host.Services.GetRequiredService<NexJob.Storage.IStorageProvider>();
+        var foreign = QuickRecord("default");
+        var foreignRecord = new JobRecord
+        {
+            Id = foreign.Id,
+            JobType = "Other.Service.Job, Other.Service",
+            InputType = foreign.InputType,
+            InputJson = foreign.InputJson,
+            Queue = "default",
+            Priority = JobPriority.Normal,
+            Status = JobStatus.Enqueued,
+            CreatedAt = DateTimeOffset.UtcNow,
+            MaxAttempts = 10,
+        };
+        await storage.EnqueueAsync(foreignRecord);
+
+        await host.StartAsync();
+        await TestWait.UntilAsync(() => Task.FromResult(sink.Entries.Any(e => e.Message.Contains("Deferring", StringComparison.Ordinal))));
+        await host.StopAsync();
+
+        var stored = await storage.GetJobByIdAsync(foreignRecord.Id);
+        stored!.Status.Should().Be(JobStatus.Scheduled, "a deferred foreign job waits for the owning service");
+        stored.Attempts.Should().Be(0);
+    }
+
+    /// <summary>N2 (#377): a job in another application's prefixed queue is never fetched by this host.</summary>
+    [Fact]
+    public async Task PrefixedHost_JobInAnotherPrefixedQueue_IsNeverFetched()
+    {
+        var ran = new TaskCompletionSource<bool>();
+        using var host = BuildQueueHost(new LevelLogSink(), ran);
+        var storage = (InMemoryStorageProvider)host.Services.GetRequiredService<NexJob.Storage.IStorageProvider>();
+        var other = QuickRecord("inventory.default");
+        await storage.EnqueueAsync(other);
+        await storage.EnqueueAsync(QuickRecord("billing.default"));
+
+        await host.StartAsync();
+        await ran.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        await TestWait.SucceededAsync(storage, 1);
+        await host.StopAsync();
+
+        (await storage.GetJobByIdAsync(other.Id))!.Status.Should().Be(JobStatus.Enqueued);
+    }
+
+    /// <summary>N1 (#402): the execution window configured for "default" also holds the legacy "default" back.</summary>
+    [Fact]
+    public async Task PrefixedHost_JobInLegacyDefault_OutsideTheConfiguredWindow_IsNotRun()
+    {
+        var ran = new TaskCompletionSource<bool>();
+        var closedFrom = TimeOnly.FromDateTime(DateTime.UtcNow.AddHours(6));
+        using var host = BuildQueueHost(
+            new LevelLogSink(),
+            ran,
+            o =>
+            {
+                o.Workers = 1;
+                o.Queues = ["default", "emails"];
+                o.ConfigureQueue("default", q => q.ExecutionWindow = new ExecutionWindowSettings { StartTime = closedFrom, EndTime = closedFrom.AddHours(1), TimeZone = "UTC" });
+            });
+        var storage = (InMemoryStorageProvider)host.Services.GetRequiredService<NexJob.Storage.IStorageProvider>();
+        var legacy = QuickRecord("default");
+        await storage.EnqueueAsync(legacy);
+        await storage.EnqueueAsync(QuickRecord("emails"));
+
+        await host.StartAsync();
+
+        // One worker and "emails" is read after the legacy queue: the first job to succeed shows what was fetched first.
+        await TestWait.SucceededAsync(storage, 1);
+        await host.StopAsync();
+        (await storage.GetJobByIdAsync(legacy.Id))!.Status.Should().Be(JobStatus.Enqueued, "the window is closed for the default queue");
+    }
+
+    /// <summary>N1 (#404): Workers = 0 starts the host, says so, and leaves the job alone.</summary>
+    [Fact]
+    public async Task ZeroWorkers_HostStarts_AndDoesNotExecuteJobs()
+    {
+        var sink = new LevelLogSink();
+        var ran = new TaskCompletionSource<bool>();
+        using var host = BuildQueueHost(sink, ran, o => o.Workers = 0);
+        var storage = (InMemoryStorageProvider)host.Services.GetRequiredService<NexJob.Storage.IStorageProvider>();
+        var job = QuickRecord("billing.default");
+        await storage.EnqueueAsync(job);
+
+        await host.StartAsync();
+        await TestWait.UntilAsync(
+            () => Task.FromResult(sink.Entries.Any(e => e.Message.Contains("does not fetch or execute jobs", StringComparison.Ordinal))),
+            because: "the dispatcher to say that this host executes nothing");
+        await Task.Delay(300); // nothing may happen: the dispatcher polls every 20 ms, so this is many polling cycles
+        await host.StopAsync();
+
+        (await storage.GetJobByIdAsync(job.Id))!.Status.Should().Be(JobStatus.Enqueued);
+        ran.Task.IsCompleted.Should().BeFalse();
+    }
+
+    private static JobRecord QuickRecord(string queue) => new()
+    {
+        Id = JobId.New(),
+        JobType = typeof(QuickSuccessJob).AssemblyQualifiedName!,
+        InputType = typeof(QuickInput).AssemblyQualifiedName!,
+        InputJson = "{}",
+        Queue = queue,
+        Priority = JobPriority.Normal,
+        Status = JobStatus.Enqueued,
+        CreatedAt = DateTimeOffset.UtcNow,
+        MaxAttempts = 10,
+    };
+
+    private static IHost BuildQueueHost(ILoggerProvider sink, TaskCompletionSource<bool> ran, Action<NexJobOptions>? configure = null) =>
+        Host.CreateDefaultBuilder()
+            .ConfigureLogging(l => l.AddProvider(sink))
+            .ConfigureServices(services =>
+            {
+                services.AddNexJob(o =>
+                {
+                    o.QueuePrefix = "billing";
+                    o.Workers = 2;
+                    o.PollingInterval = TimeSpan.FromMilliseconds(20);
+                    configure?.Invoke(o);
+                });
+                services.AddTransient(_ => new QuickSuccessJob(ran));
+            })
+            .Build();
+
+    private static IHost BuildPrefixHost(ILoggerProvider sink, Action<NexJobOptions> configure) =>
+        Host.CreateDefaultBuilder()
+            .ConfigureLogging(l => l.AddProvider(sink))
+            .ConfigureServices(services => services.AddNexJob(configure))
+            .Build();
 }
 
 // ─── Stub jobs ────────────────────────────────────────────────────────────────

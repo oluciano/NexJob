@@ -97,6 +97,7 @@ public sealed class ProcessSalesforceOrderJob : IJob<SalesforceStreamingEventInp
 ```csharp
 builder.Services.AddNexJob(options =>
 {
+    options.QueuePrefix = "myapp"; // the "default" queue below is stored as "myapp.default"
     options.Queues = ["default", "salesforce-events", "salesforce-dlq"];
 })
 .AddSalesforceStreamingTrigger<ProcessSalesforceOrderJob>(options =>

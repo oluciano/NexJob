@@ -120,18 +120,13 @@ Always ask the user explicitly before proceeding:
    - Identify packages with code changes in this release (e.g. `src/NexJob.Dashboard/README.md`, `src/NexJob.Kafka/README.md`).
    - Check if options, methods, endpoints, themes, or UI features are accurately described.
    - If outdated or missing info, **edit the README immediately**.
-3. **Mintlify Customer-Facing Documentation Sync (Interactive Step):**
-   - Prompt the user:
-     > *"Do you have any customer-facing documentation generated or updated in Mintlify (`mintlify-docs`)? If yes, trigger the review/generation in Mintlify now and reply 'gerou' or 'pronto'. If no Mintlify updates are needed, reply 'skip'."*
-   - When the user confirms (e.g. 'gerou' or 'pronto'):
-     - Execute `python3 docs/site/sync-from-mintlify.py`.
-     - The script automatically pulls latest commits (`git pull`) from `mintlify-docs`, converts MDX to MkDocs Material Markdown, and updates `docs/wiki/`.
-     - Run `docs/site/prepare.sh && mkdocs build` to verify 0 broken links with `strict: true`.
-   - If 'skip': proceed with the existing documentation files.
-4. **Audit Wiki (`docs/wiki/`):**
-   - Check relevant wiki pages (e.g. `integrations/dashboard.md`, `integrations/triggers.md`, `integrations/kafka.md`, `concepts/`).
-   - Check for obsolete signatures, missing screenshots/explanations of new UI screens, or omitted configuration parameters.
-   - If outdated, **edit the Wiki pages immediately**.
+3. **There is no external documentation to synchronize.** `docs/wiki` is the single source of the documentation (the Mintlify mirror was retired).
+4. **Run the `nexjob-docs-truth` skill with `--scope full`** (see `.agents/skills/nexjob-docs-truth/SKILL.md`):
+   - Step 1: `dotnet run --project tools/DocsTruth -c Release -- --report docs-truth-report.md --strict`; fix every *drift* in the
+     documentation until it reports 0 and look at every *review* item.
+   - Step 2: the semantic review of the whole documentation in batches by area, ending with the **coverage report per page**.
+   - Attach the tool report and the coverage report to the release PR. A page that was not reviewed must be listed as such.
+   - Then run `docs/site/prepare.sh && mkdocs build` to verify 0 broken links (`strict: true`).
 5. **Commit & Push Docs Direct to `develop`:**
    - Commit all doc and wiki updates with message: `docs: synchronize wiki, root readme and package readmes for vX.Y.Z release`.
    - Push directly to `origin/develop`.

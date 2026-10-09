@@ -3,6 +3,7 @@ using System.Net.Sockets;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using NexJob.Dashboard.Standalone;
 using Xunit;
 
@@ -370,6 +371,168 @@ public sealed class StandaloneDashboardTests
         finally
         {
             await host.StopAsync();
+        }
+    }
+
+    [Fact]
+    public async Task StandaloneDashboard_ScopeDefault_ShowsThePrefixedAndLegacyDefaultQueues()
+    {
+        // N1 (#390): a scope written as "default" before the prefix existed keeps showing the application's jobs.
+        var html = await GetQueuesPageAsync(scope: ["default"], pause: null);
+
+        html.Should().Contain("billing.default");
+        html.Should().NotContain("inventory.default");
+    }
+
+    [Fact]
+    public async Task StandaloneDashboard_ScopeNamedQueue_DoesNotShowTheDefaultQueue()
+    {
+        // N2 (#390): a literal scope stays literal.
+        var html = await GetQueuesPageAsync(scope: ["emails"], pause: null);
+
+        html.Should().NotContain("billing.default");
+    }
+
+    [Fact]
+    public async Task StandaloneDashboard_StoredDefaultQueuePaused_SettingsShowsItPaused()
+    {
+        // N1 (#390): pausing the stored name from the Queues page must show on the Settings page.
+        var html = await GetSettingsPageAsync(pause: "billing.default");
+
+        // The row of the stored queue shows the Paused badge and offers Resume (a bare "Paused" word appears elsewhere).
+        html.Should().Contain("/queues/billing.default/resume");
+        html.Should().Contain("<span class=\"badge badge-warning\">Paused</span>");
+    }
+
+    [Fact]
+    public async Task StandaloneDashboard_NothingPaused_SettingsDoesNotShowPaused()
+    {
+        // N2 (#390): guard so the paused assertion above cannot pass vacuously.
+        var html = await GetSettingsPageAsync(pause: null);
+
+        html.Should().NotContain("<span class=\"badge badge-warning\">Paused</span>");
+    }
+
+    [Fact]
+    public async Task StandaloneDashboard_OrphanPrefixedDefault_ServersBannerSuggestsThePrefix()
+    {
+        // N1 (#391): inventory.default holds jobs and no node polls it.
+        var html = await GetPageAsync("/dashboard/servers", null, null);
+
+        html.Should().Contain("QueuePrefix = inventory");
+        html.Should().Contain("billing.default");
+    }
+
+    [Fact]
+    public async Task StandaloneDashboard_OrphanQueue_QueuesBadgeLinksToServersWithTheHint()
+    {
+        // N1 (#391): the NO WORKERS badge explains itself and leads to the nodes.
+        var html = await GetPageAsync("/dashboard/queues", null, null);
+
+        html.Should().Contain("QueuePrefix = inventory");
+        html.Should().Contain("href=\"/dashboard/servers\"");
+    }
+
+    [Fact]
+    public async Task StandaloneDashboard_NoOrphanQueue_ShowsNoHint()
+    {
+        // N2 (#391): guard: every queue with jobs is polled.
+        var servers = await GetPageAsync("/dashboard/servers", null, null, seeded: ["billing.default", "default"]);
+        var queues = await GetPageAsync("/dashboard/queues", null, null, seeded: ["billing.default", "default"]);
+
+        servers.Should().NotContain("Unattended Queues Detected");
+        queues.Should().NotContain("QueuePrefix =");
+    }
+
+    [Fact]
+    public async Task StandaloneDashboard_OrphanQueueNameWithMarkup_IsEscaped()
+    {
+        // N3 (#391): queue names are operator data.
+        var html = await GetPageAsync("/dashboard/servers", null, null, seeded: ["billing.default", "<b>x</b>.default"]);
+
+        html.Should().NotContain("<b>x</b>");
+        html.Should().Contain("&lt;b&gt;x&lt;/b&gt;");
+    }
+
+    [Fact]
+    public async Task StandaloneDashboard_DefaultPausedByTheOldName_QueuesPageShowsThePrefixedDefaultPaused()
+    {
+        // N1 (#377): pausing "default" also pauses {prefix}.default for the dispatcher; the Queues page must say so.
+        var html = await GetPageAsync("/dashboard/queues", null, pause: "default", seeded: ["billing.default"]);
+
+        html.Should().Contain("PAUSED</span>");
+    }
+
+    [Fact]
+    public async Task StandaloneDashboard_NothingPaused_QueuesPageShowsNoPausedBadge()
+    {
+        // N2 (#377): guard so the assertion above cannot pass vacuously.
+        var html = await GetPageAsync("/dashboard/queues", null, pause: null, seeded: ["billing.default"]);
+
+        html.Should().NotContain("PAUSED</span>");
+    }
+
+    [Fact]
+    public async Task StandaloneDashboard_OtherQueuePaused_PrefixedDefaultStaysActive()
+    {
+        // N2 (#377): guard: only "default" (or the stored name) pauses the prefixed default.
+        var html = await GetPageAsync("/dashboard/queues", null, pause: "emails", seeded: ["billing.default"]);
+
+        html.Should().NotContain("PAUSED</span>");
+    }
+
+    [Fact]
+    public async Task StandaloneDashboard_WithDisableWorkers_DoesNotExecuteJobs()
+    {
+        // N1 (#404): DisableWorkers used to set Workers = 0 after the dispatcher had already started, so jobs still ran.
+        var sink = new NexJob.Tests.LevelLogSink();
+        var port = GetFreeTcpPort();
+        using var host = Host.CreateDefaultBuilder()
+            .ConfigureLogging(l => l.AddProvider(sink))
+            .ConfigureServices(services =>
+            {
+                services.AddNexJob(opt => opt.PollingInterval = TimeSpan.FromMilliseconds(50));
+                services.AddSingleton<DisabledWorkersProbe>();
+                services.AddTransient<DisabledWorkersProbeJob>();
+                services.AddNexJobStandaloneDashboard(options =>
+                {
+                    options.Port = port;
+                    options.LocalhostOnly = true;
+                    options.DisableWorkers = true;
+                });
+            })
+            .Build();
+
+        try
+        {
+            await host.StartAsync();
+            await NexJob.Tests.TestWait.UntilAsync(
+                () => Task.FromResult(sink.Entries.Any(e => e.Message.Contains("does not fetch or execute jobs", StringComparison.Ordinal))),
+                because: "the dispatcher to learn that workers are disabled");
+            var id = await host.Services.GetRequiredService<IScheduler>().EnqueueAsync<DisabledWorkersProbeJob>();
+            await Task.Delay(500); // nothing may happen: ten polling cycles of a normal host
+
+            var job = await host.Services.GetRequiredService<NexJob.Storage.IStorageProvider>().GetJobByIdAsync(id);
+            job!.Status.Should().Be(JobStatus.Enqueued);
+            host.Services.GetRequiredService<DisabledWorkersProbe>().Ran.Should().BeFalse();
+        }
+        finally
+        {
+            await host.StopAsync();
+        }
+    }
+
+    public sealed class DisabledWorkersProbe
+    {
+        public bool Ran { get; set; }
+    }
+
+    public sealed class DisabledWorkersProbeJob(DisabledWorkersProbe probe) : IJob
+    {
+        public Task ExecuteAsync(CancellationToken cancellationToken)
+        {
+            probe.Ran = true;
+            return Task.CompletedTask;
         }
     }
 
@@ -1279,6 +1442,63 @@ public sealed class StandaloneDashboardTests
             var dlqJson = await dlqRes.Content.ReadAsStringAsync();
             dlqJson.Should().Contain("\"success\":true");
             dlqJson.Should().Contain("\"redirectUrl\":\"/dashboard/jobs/");
+        }
+        finally
+        {
+            await host.StopAsync();
+        }
+    }
+
+    private static async Task<string> GetQueuesPageAsync(string[] scope, string? pause) =>
+        await GetPageAsync("/dashboard/queues", scope, pause);
+
+    private static async Task<string> GetSettingsPageAsync(string? pause) =>
+        await GetPageAsync("/dashboard/settings", null, pause);
+
+    private static async Task<string> GetPageAsync(string path, string[]? scope, string? pause, string[]? seeded = null)
+    {
+        var port = GetFreeTcpPort();
+        using var host = Host.CreateDefaultBuilder()
+            .ConfigureServices(services =>
+            {
+                services.AddNexJob(opt => opt.QueuePrefix = "billing");
+                services.AddNexJobStandaloneDashboard(options =>
+                {
+                    options.Port = port;
+                    options.Path = "/dashboard";
+                    options.LocalhostOnly = true;
+                    options.Queues = scope;
+                });
+            })
+            .Build();
+
+        try
+        {
+            await host.StartAsync();
+            var storage = host.Services.GetRequiredService<NexJob.Storage.IStorageProvider>();
+            foreach (var queue in seeded ?? ["billing.default", "default", "inventory.default"])
+            {
+                await storage.EnqueueAsync(new JobRecord
+                {
+                    Id = JobId.New(),
+                    JobType = "T",
+                    InputType = "I",
+                    InputJson = "{}",
+                    Queue = queue,
+                    Priority = JobPriority.Normal,
+                    Status = JobStatus.Enqueued,
+                    CreatedAt = DateTimeOffset.UtcNow,
+                    MaxAttempts = 3,
+                });
+            }
+
+            if (pause is not null)
+            {
+                await host.Services.GetRequiredService<IJobControlService>().PauseQueueAsync(pause);
+            }
+
+            using var client = new HttpClient { BaseAddress = new Uri($"http://localhost:{port}"), Timeout = TimeSpan.FromSeconds(5) };
+            return await client.GetStringAsync(path);
         }
         finally
         {

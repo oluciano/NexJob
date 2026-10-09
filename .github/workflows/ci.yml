@@ -170,6 +170,28 @@ jobs:
       - name: Check formatting
         run: dotnet format --verify-no-changes --severity warn --no-restore
 
+  docs-truth:
+    name: Docs Truth
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    # Reports the drift between the code and the wiki. It does not block the pull request yet: it becomes
+    # blocking (--strict, no continue-on-error) when the baseline stays at zero.
+    continue-on-error: true
+
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5.2.0
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Compare the code with the wiki
+        run: |
+          dotnet run --project tools/DocsTruth -c Release -- --report docs-truth-report.md --strict || STATUS=$?
+          cat docs-truth-report.md >> "$GITHUB_STEP_SUMMARY"
+          exit "${STATUS:-0}"
+
   security-scan:
     name: Security Scan
     runs-on: ubuntu-24.04

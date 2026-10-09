@@ -14,6 +14,7 @@ NexJob does not send notifications itself. It exposes the **signals**, and you c
 | A job **passed its deadline** before it started | Counter `nexjob.jobs.expired` | Dashboard **Failed / DLQ**, _Expired_ tab |
 | Failures are **rising** (retries included) | Counter `nexjob.jobs.failed` (one increment per failed _attempt_) | Dashboard overview |
 | A queue **is not draining** | Gauge `nexjob.queue.depth` growing; gauge `nexjob.workers.active` at 0 | Dashboard **Queues**: `⚠️ NO WORKERS` badge |
+| Two applications **registered the same recurring job id** (one loses its schedule) | Counter `nexjob.recurring.id_collisions` (tag `recurring_job_id`) | Startup warning in the log; dashboard **Recurring**: job type and queue shown for that id. See [recurring job ids](../concepts/recurring-jobs.md#recurring-job-ids-are-global-to-the-database) |
 | A queue's **circuit breaker opened** | Dashboard **Queues**: circuit state and **Reset Circuit** | There is no metric for the circuit state yet |
 
 !!! note
@@ -116,6 +117,7 @@ To use Teams, Discord, e-mail or PagerDuty, keep the forwarder and the queue, an
 - **Rate limiting is yours.** A failed dependency can dead-letter thousands of jobs in a minute. The bounded queue protects the process; to protect the channel, group the messages (for example "37 `ProcessPaymentJob` failed in the last minute") in the sender.
 - **Each node alerts for the jobs it dead-lettered.** With several nodes, an outage produces alerts from each of them. Group in the receiving tool, or alert from a metric (below).
 - **An exception in the forwarder is logged and swallowed.** It never stops the job pipeline, but it also means a broken forwarder fails silently. Watch the counter `nexjob.dead_letter.forward_failed`.
+- **A host with `Workers = 0` reports 0 active and 0 total workers** (a dashboard-only host, see `DisableWorkers`). Do not alert on `nexjob.workers.active` at 0 for such hosts; alert on the queue depth, which is read from the storage.
 - **Put the webhook URL in a secret store.** Anyone with the URL can post to your channel.
 
 ## Alerting from metrics
