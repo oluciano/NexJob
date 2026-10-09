@@ -42,7 +42,9 @@ These rules apply everywhere a queue name is accepted: `EnqueueAsync`, `Schedule
     Some hosts have no entry assembly, and others run many applications under one entry assembly (for example a shared runner). In the first case no prefix is derived and the shared `default` comes back: the host logs a warning saying so. In the second, every application derives the same prefix and shares a queue again. In both cases set `QueuePrefix` explicitly.
 
 !!! note "Queue scope in the dashboard"
-    `DashboardOptions.Queues` lists stored names. To show the default queue, list `{prefix}.default` (and `default` while old jobs remain). See [Queue Scoping](../integrations/dashboard.md).
+    In `DashboardOptions.Queues`, `default` covers the application's `{prefix}.default` and the legacy `default` (the legacy row appears only while it holds jobs), so a scope written before the prefix existed keeps working. Any other entry is matched literally, so list another application's queue by its full name. Scopes of other clusters are literal too. Jobs the dashboard creates itself (Scenarios, **Trigger now**) without a queue go to `{prefix}.default`.
+
+    A standalone dashboard is a separate process with its own entry assembly: set the same `NexJob:QueuePrefix` as the workers, or it derives a different prefix and shows and enqueues into the wrong queue. See [Queue Scoping](../integrations/dashboard.md).
 
 Recurring job ids and `[Throttle]` resources are not prefixed; they are still global to the database.
 

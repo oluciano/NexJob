@@ -27,7 +27,7 @@ internal static class DashboardJobFactory
             JobType = jobType.AssemblyQualifiedName ?? rawJobType,
             InputType = inputTypeName,
             InputJson = inputJson,
-            Queue = string.IsNullOrWhiteSpace(queue) ? "default" : queue,
+            Queue = options.ResolveQueue(string.IsNullOrWhiteSpace(queue) ? null : queue),
             Priority = JobPriority.Normal,
             Status = JobStatus.Enqueued,
             CreatedAt = DateTimeOffset.UtcNow,

@@ -126,5 +126,5 @@ When authorization fails, the dashboard returns `401 Unauthorized`.
 | `MetricsCacheTtl` | `TimeSpan` | `3s` | Cache duration for dashboard metrics to prevent DB overload during SSE polling |
 | `DefaultTheme` | `string` | `"blue-theme"` | Color theme used when the browser has no stored preference: `blue-theme`, `semi-dark`, `dark`, `light` or `bordered-theme` |
 | `EnablePlayground` | `bool` | `false` | Enables the interactive playground drawer with demo scenarios. Off by default for production safety |
-| `Queues` | `IReadOnlyList<string>?` | `null` | Optional list of queues to scope the dashboard view, nav counters, and default job listings Names are the stored ones: list `{prefix}.default` to show the default queue. |
+| `Queues` | `IReadOnlyList<string>?` | `null` | Optional list of queues to scope the dashboard view, nav counters, and default job listings `default` also covers the application's prefixed default queue (`{prefix}.default`). |
 | `Clusters` | `IReadOnlyList<DashboardCluster>` | `[]` | Registered federated clusters for multi-cluster operations |

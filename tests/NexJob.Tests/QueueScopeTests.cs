@@ -69,4 +69,30 @@ public sealed class QueueScopeTests
 
         act.Should().Throw<ArgumentNullException>();
     }
+
+    /// <summary>N1: the legacy default is shown while it holds jobs.</summary>
+    [Fact]
+    public void Resolve_LegacyDefaultHoldsJobs_IsShown()
+    {
+        QueueScope.Resolve(["default"], _options, [new QueueMetrics { Queue = "default", Enqueued = 2 }])
+            .Should().Equal("billing.default", "default");
+    }
+
+    /// <summary>N2: an emptied legacy default is left out instead of staying as a zero row.</summary>
+    [Fact]
+    public void Resolve_LegacyDefaultEmpty_IsHidden()
+    {
+        QueueScope.Resolve(["default"], _options, [new QueueMetrics { Queue = "billing.default", Enqueued = 1 }])
+            .Should().Equal("billing.default");
+    }
+
+    /// <summary>N3: with no prefix the plain default is the application's queue and is never hidden; no scope stays no scope.</summary>
+    [Fact]
+    public void Resolve_WithoutPrefixOrScope_DoesNotHideOrInvent()
+    {
+        var plain = new NexJobOptions { EntryAssembly = null };
+
+        QueueScope.Resolve(["default"], plain, []).Should().Equal("default");
+        QueueScope.Resolve(null, _options, []).Should().BeNull();
+    }
 }

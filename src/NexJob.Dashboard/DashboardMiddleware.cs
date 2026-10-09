@@ -885,7 +885,7 @@ public sealed class DashboardMiddleware
         var queues = await dashboardStorage.GetQueueMetricsAsync(context.RequestAborted).ConfigureAwait(false);
         var nexJobOptions = context.RequestServices.GetRequiredService<NexJobOptions>();
 
-        var effectiveQueues = activeCluster?.Queues ?? _options.Queues;
+        var effectiveQueues = activeCluster?.Queues ?? QueueScope.Resolve(_options.Queues, nexJobOptions, queues);
 
         // Filter queues when effectiveQueues is specified (queue isolation mode)
         var scopedQueues = effectiveQueues is { Count: > 0 }
@@ -895,7 +895,7 @@ public sealed class DashboardMiddleware
         var activeQueues = scopedQueues.Count(q => q.Processing > 0);
         var totalQueues = effectiveQueues is { Count: > 0 }
             ? effectiveQueues.Count
-            : nexJobOptions.Queues.Count;
+            : nexJobOptions.PolledQueues.Count;
 
         var listenerRegistry = context.RequestServices.GetService<IListenerRegistry>();
         var allListeners = listenerRegistry?.GetAll() ?? Array.Empty<ListenerSnapshot>();
