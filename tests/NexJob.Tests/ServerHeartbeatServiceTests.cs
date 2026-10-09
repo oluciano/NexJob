@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -202,5 +203,32 @@ public sealed class ServerHeartbeatServiceTests
 
         Func<Task> act = () => sut.StartAsync(CancellationToken.None);
         await act.Should().NotThrowAsync("Service must survive startup registration errors.");
+    }
+
+    /// <summary>
+    /// N1 (#377): the node registers with the options the host configured, not with a default instance
+    /// (the options are registered as a singleton, so <c>IOptions&lt;NexJobOptions&gt;</c> is not them).
+    /// </summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task ResolvedFromTheContainer_RegistersTheConfiguredQueuesAndWorkers()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddNexJob(o =>
+        {
+            o.QueuePrefix = "billing";
+            o.Queues = ["emails", "default"];
+            o.Workers = 3;
+        });
+        using var provider = services.BuildServiceProvider();
+        var heartbeat = provider.GetServices<IHostedService>().OfType<ServerHeartbeatService>().Single();
+
+        await heartbeat.StartAsync(CancellationToken.None);
+
+        var server = (await provider.GetRequiredService<IJobStorage>().GetActiveServersAsync(TimeSpan.FromMinutes(1))).Single();
+        server.Queues.Should().Equal("emails", "billing.default", "default");
+        server.WorkerCount.Should().Be(3);
+        await heartbeat.StopAsync(CancellationToken.None);
     }
 }
