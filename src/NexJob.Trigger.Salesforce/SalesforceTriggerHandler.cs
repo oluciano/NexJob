@@ -257,8 +257,9 @@ public sealed class SalesforceTriggerHandler : BackgroundService
             return;
         }
 
-        // GUARANTEE 5: Commit Replay ID strictly after enqueue succeeds
-        await _replayIdStore.SaveReplayIdAsync(_options.Topic, replayBytes, ct).ConfigureAwait(false);
+        // GUARANTEE 5: Commit Replay ID strictly after enqueue succeeds. The event is already a job at this point, so
+        // a stop requested now must not skip the commit (the event would be delivered again after the restart).
+        await _replayIdStore.SaveReplayIdAsync(_options.Topic, replayBytes, CancellationToken.None).ConfigureAwait(false);
         _logger.LogInformation("Salesforce event {IdempotencyKey} enqueued on queue {Queue} and Replay ID committed.", idempotencyKey, _options.TargetQueue);
     }
 }
