@@ -32,14 +32,14 @@ public interface IJobControlService
     /// the instant of the call: a job already fetched by a cycle that was in flight when the pause was stored still
     /// runs. Jobs that are already running are never interrupted.
     /// </remarks>
-    /// <param name="queue">The name of the queue to pause.</param>
+    /// <param name="queue">The name of the queue to pause. Pausing <c>default</c> also pauses the default queue of the application (<c>{prefix}.default</c>).</param>
     /// <param name="ct">Token to cancel the operation.</param>
     Task PauseQueueAsync(string queue, CancellationToken ct = default);
 
     /// <summary>
     /// Resumes a paused queue.
     /// </summary>
-    /// <param name="queue">The name of the queue to resume.</param>
+    /// <param name="queue">The name of the queue to resume. Resuming <c>default</c> resumes the legacy <c>default</c> only; resume <c>{prefix}.default</c> by its stored name.</param>
     /// <param name="ct">Token to cancel the operation.</param>
     Task ResumeQueueAsync(string queue, CancellationToken ct = default);
 
@@ -47,7 +47,7 @@ public interface IJobControlService
     /// Resets the circuit breaker state of a queue to <see cref="Configuration.QueueCircuitState.Closed"/>,
     /// clearing consecutive failure counters and cooldown timers.
     /// </summary>
-    /// <param name="queue">The name of the queue whose circuit breaker will be reset.</param>
+    /// <param name="queue">The name of the queue whose circuit breaker will be reset. <c>default</c> resets the circuit of the default queue of the application (<c>{prefix}.default</c>).</param>
     /// <param name="ct">Token to cancel the operation.</param>
     Task ResetQueueCircuitAsync(string queue, CancellationToken ct = default);
 }
