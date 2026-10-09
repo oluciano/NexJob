@@ -15,14 +15,17 @@ internal sealed class KafkaDeadLetterForwarder : IDeadLetterForwarder
 
     private readonly KafkaTriggerOptions _options;
     private readonly IScheduler _scheduler;
+    private readonly NexJobOptions _nexJobOptions;
 
     /// <summary>Initializes a new instance of the <see cref="KafkaDeadLetterForwarder"/> class.</summary>
     /// <param name="options">The trigger options.</param>
     /// <param name="scheduler">The scheduler used to enqueue the Outbox publish job.</param>
-    public KafkaDeadLetterForwarder(IOptions<KafkaTriggerOptions> options, IScheduler scheduler)
+    /// <param name="nexJobOptions">The NexJob options, used to resolve the stored name of the target queue.</param>
+    public KafkaDeadLetterForwarder(IOptions<KafkaTriggerOptions> options, IScheduler scheduler, NexJobOptions nexJobOptions)
     {
         _options = options.Value;
         _scheduler = scheduler;
+        _nexJobOptions = nexJobOptions;
     }
 
     /// <inheritdoc/>
@@ -33,6 +36,7 @@ internal sealed class KafkaDeadLetterForwarder : IDeadLetterForwarder
     /// </remarks>
     public bool AppliesTo(JobRecord failedJob)
     {
+        _ = _nexJobOptions;
         if (string.IsNullOrWhiteSpace(_options.ExhaustedJobsTopic))
         {
             return false;

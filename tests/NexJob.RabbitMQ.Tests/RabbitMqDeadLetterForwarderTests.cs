@@ -173,10 +173,49 @@ public sealed class RabbitMqDeadLetterForwarderTests
 
     // ─── Helpers ──────────────────────────────────────────────────────────────
 
+    [Fact]
+    public void AppliesTo_DefaultTargetQueueWithPrefix_MatchesTheStoredPrefixedQueue()
+    {
+        // #406: the default target queue is stored as "{prefix}.default"; the written name is not what the job carries.
+        var (forwarder, _) = Build(targetQueue: "default", queuePrefix: "shop");
+
+        forwarder.AppliesTo(TriggerJob(queue: "shop.default")).Should().BeTrue();
+    }
+
+    [Fact]
+    public void AppliesTo_DefaultTargetQueueWithPrefix_StillMatchesTheLegacyDefault()
+    {
+        // Jobs the trigger created before the upgrade are still in "default".
+        var (forwarder, _) = Build(targetQueue: "default", queuePrefix: "shop");
+
+        forwarder.AppliesTo(TriggerJob(queue: "default")).Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData("other.default")]
+    [InlineData("emails")]
+    [InlineData("")]
+    public void AppliesTo_DefaultTargetQueueWithPrefix_DoesNotMatchAnotherQueue(string queue)
+    {
+        var (forwarder, _) = Build(targetQueue: "default", queuePrefix: "shop");
+
+        forwarder.AppliesTo(TriggerJob(queue: queue)).Should().BeFalse();
+    }
+
+    [Fact]
+    public void AppliesTo_NamedTargetQueue_MatchesOnlyThatQueue()
+    {
+        var (forwarder, _) = Build(targetQueue: "orders", queuePrefix: "shop");
+
+        forwarder.AppliesTo(TriggerJob(queue: "orders")).Should().BeTrue();
+        forwarder.AppliesTo(TriggerJob(queue: "shop.default")).Should().BeFalse();
+    }
+
     private static (RabbitMqDeadLetterForwarder Forwarder, Captured Captured) Build(
         string? routingKey = "orders.exhausted",
         string targetQueue = "orders",
-        bool includeError = false)
+        bool includeError = false,
+        string? queuePrefix = null)
     {
         var captured = new Captured();
         var scheduler = new Mock<IScheduler>();
@@ -208,7 +247,7 @@ public sealed class RabbitMqDeadLetterForwarderTests
             ExhaustedJobsIncludeErrorHeader = includeError,
         });
 
-        return (new RabbitMqDeadLetterForwarder(options, scheduler.Object), captured);
+        return (new RabbitMqDeadLetterForwarder(options, scheduler.Object, queuePrefix is null ? new NexJobOptions() : new NexJobOptions { QueuePrefix = queuePrefix }), captured);
     }
 
     private static JobRecord TriggerJob(

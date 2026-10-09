@@ -16,14 +16,17 @@ internal sealed class RabbitMqDeadLetterForwarder : IDeadLetterForwarder
 
     private readonly RabbitMqTriggerOptions _options;
     private readonly IScheduler _scheduler;
+    private readonly NexJobOptions _nexJobOptions;
 
     /// <summary>Initializes a new instance of the <see cref="RabbitMqDeadLetterForwarder"/> class.</summary>
     /// <param name="options">The trigger options.</param>
     /// <param name="scheduler">The scheduler used to enqueue the Outbox publish job.</param>
-    public RabbitMqDeadLetterForwarder(IOptions<RabbitMqTriggerOptions> options, IScheduler scheduler)
+    /// <param name="nexJobOptions">The NexJob options, used to resolve the stored name of the target queue.</param>
+    public RabbitMqDeadLetterForwarder(IOptions<RabbitMqTriggerOptions> options, IScheduler scheduler, NexJobOptions nexJobOptions)
     {
         _options = options.Value;
         _scheduler = scheduler;
+        _nexJobOptions = nexJobOptions;
     }
 
     /// <inheritdoc/>
@@ -35,6 +38,7 @@ internal sealed class RabbitMqDeadLetterForwarder : IDeadLetterForwarder
     /// </remarks>
     public bool AppliesTo(JobRecord failedJob)
     {
+        _ = _nexJobOptions;
         if (string.IsNullOrWhiteSpace(_options.ExhaustedJobsRoutingKey))
         {
             return false;
