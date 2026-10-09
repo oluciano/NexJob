@@ -15,6 +15,9 @@ public sealed class DefaultsCheckTests
     [InlineData("options.Enabled = false; // Default: false", "Enabled")]
     [InlineData("options.Poll = X; // Default: TimeSpan.FromSeconds(30)", "Poll")]
     [InlineData("options.Mode = X; // Default: Fast", "Mode")]
+    [InlineData("options.Poll = X; // Default: 30s", "Poll")]
+    [InlineData("options.Retention = X; // Default: 30 days", "Retention")]
+    [InlineData("options.Timeout = X; // Default: 1h", "Timeout")]
     public void Run_WrongDefault_IsDrift(string line, string subject)
     {
         var findings = DefaultsCheck.Run(new Sample(), line);
@@ -33,6 +36,14 @@ public sealed class DefaultsCheckTests
     [InlineData("options.Poll = X; // Default: TimeSpan.FromSeconds(15)")]
     [InlineData("options.Mode = X; // Default: Slow")]
     [InlineData("options.Name = X; // Default: \"abc\"")]
+    [InlineData("options.Poll = X; // Default: 15s")]
+    [InlineData("options.Poll = X; // Default: 15 seconds")]
+    [InlineData("options.Timeout = X; // Default: 5min")]
+    [InlineData("options.Timeout = X; // Default: 5 minutes")]
+    [InlineData("options.Retention = X; // Default: 7 days")]
+    [InlineData("options.Retention = X; // Default: 7d")]
+    [InlineData("options.Heartbeat = X; // Default: 1h")]
+    [InlineData("options.Heartbeat = X; // Default: 1 hour")]
     public void Run_CorrectDefault_ReportsNothing(string line)
     {
         DefaultsCheck.Run(new Sample(), line).Should().BeEmpty();
@@ -70,6 +81,12 @@ public sealed class DefaultsCheckTests
         public bool Enabled { get; set; } = true;
 
         public TimeSpan Poll { get; set; } = TimeSpan.FromSeconds(15);
+
+        public TimeSpan Timeout { get; set; } = TimeSpan.FromMinutes(5);
+
+        public TimeSpan Retention { get; set; } = TimeSpan.FromDays(7);
+
+        public TimeSpan Heartbeat { get; set; } = TimeSpan.FromHours(1);
 
         public Speed Mode { get; set; } = Speed.Slow;
 

@@ -1,0 +1,6 @@
+[
+  { "name": "default-queue-always-default", "pattern": "always\\s+uses\\s+(<c>|`)?default", "since": "6.0.0" },
+  { "name": "default-queue-named-default", "pattern": "queue\\s+named\\s+(<c>|`)?default", "since": "6.0.0" },
+  { "name": "default-is-global", "pattern": "`default`\\s+is\\s+global\\s+to\\s+the\\s+database", "since": "6.0.0" },
+  { "name": "target-queue-defaults-to-default", "pattern": "Defaults to \"default\"\\.\\s*$", "since": "6.0.0" }
+]

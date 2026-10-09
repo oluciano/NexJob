@@ -1,3 +1,5 @@
+using System.Text;
+
 namespace NexJob.DocsTruth;
 
 /// <summary>Turns findings into a report and an exit code.</summary>
@@ -9,7 +11,25 @@ internal static class Report
     internal static string Render(IReadOnlyList<Finding> findings)
     {
         ArgumentNullException.ThrowIfNull(findings);
-        return string.Empty;
+        var text = new StringBuilder("# Docs truth report\n\n");
+        if (findings.Count == 0)
+        {
+            return text.Append("No drift found.\n").ToString();
+        }
+
+        var drift = findings.Count(f => f.Severity == Severity.Drift);
+        text.Append(System.Globalization.CultureInfo.InvariantCulture, $"{drift} drift, {findings.Count - drift} to review.\n");
+        foreach (var group in findings.GroupBy(f => f.Check, StringComparer.Ordinal))
+        {
+            text.Append(System.Globalization.CultureInfo.InvariantCulture, $"\n## {group.Key} ({group.Count()})\n\n");
+            foreach (var finding in group.OrderBy(f => f.Severity))
+            {
+                var label = finding.Severity == Severity.Drift ? "Drift" : "Review";
+                text.Append(System.Globalization.CultureInfo.InvariantCulture, $"- **{label}** `{finding.Subject}`: {finding.Message}\n");
+            }
+        }
+
+        return text.ToString();
     }
 
     /// <summary>The exit code: 1 only with <paramref name="strict"/> and at least one drift finding.</summary>
@@ -19,7 +39,6 @@ internal static class Report
     internal static int ExitCode(IReadOnlyList<Finding> findings, bool strict)
     {
         ArgumentNullException.ThrowIfNull(findings);
-        _ = strict;
-        return 0;
+        return strict && findings.Any(f => f.Severity == Severity.Drift) ? 1 : 0;
     }
 }

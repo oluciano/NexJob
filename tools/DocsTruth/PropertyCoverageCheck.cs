@@ -1,3 +1,6 @@
+using System.Reflection;
+using System.Text.RegularExpressions;
+
 namespace NexJob.DocsTruth;
 
 /// <summary>Every public property of an options type must be mentioned by the documentation.</summary>
@@ -13,6 +16,13 @@ internal static class PropertyCoverageCheck
         ArgumentNullException.ThrowIfNull(check);
         ArgumentNullException.ThrowIfNull(type);
         ArgumentNullException.ThrowIfNull(wikiText);
-        return [];
+        return type
+            .GetProperties(BindingFlags.Public | BindingFlags.Instance)
+            .Select(p => p.Name)
+            .Distinct(StringComparer.Ordinal)
+            .Where(name => !Regex.IsMatch(wikiText, $@"(?<!\w){Regex.Escape(name)}(?!\w)", RegexOptions.None, TimeSpan.FromSeconds(1)))
+            .OrderBy(n => n, StringComparer.Ordinal)
+            .Select(name => new Finding(check, name, $"{type.Name}.{name} is public and the documentation does not mention it."))
+            .ToList();
     }
 }
