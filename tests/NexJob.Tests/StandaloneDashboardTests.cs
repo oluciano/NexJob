@@ -3,6 +3,7 @@ using System.Net.Sockets;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using NexJob.Dashboard.Standalone;
 using Xunit;
 
@@ -478,6 +479,61 @@ public sealed class StandaloneDashboardTests
         var html = await GetPageAsync("/dashboard/queues", null, pause: "emails", seeded: ["billing.default"]);
 
         html.Should().NotContain("PAUSED</span>");
+    }
+
+    [Fact]
+    public async Task StandaloneDashboard_WithDisableWorkers_DoesNotExecuteJobs()
+    {
+        // N1 (#404): DisableWorkers used to set Workers = 0 after the dispatcher had already started, so jobs still ran.
+        var sink = new NexJob.Tests.LevelLogSink();
+        var port = GetFreeTcpPort();
+        using var host = Host.CreateDefaultBuilder()
+            .ConfigureLogging(l => l.AddProvider(sink))
+            .ConfigureServices(services =>
+            {
+                services.AddNexJob(opt => opt.PollingInterval = TimeSpan.FromMilliseconds(50));
+                services.AddSingleton<DisabledWorkersProbe>();
+                services.AddTransient<DisabledWorkersProbeJob>();
+                services.AddNexJobStandaloneDashboard(options =>
+                {
+                    options.Port = port;
+                    options.LocalhostOnly = true;
+                    options.DisableWorkers = true;
+                });
+            })
+            .Build();
+
+        try
+        {
+            await host.StartAsync();
+            await NexJob.Tests.TestWait.UntilAsync(
+                () => Task.FromResult(sink.Entries.Any(e => e.Message.Contains("does not fetch or execute jobs", StringComparison.Ordinal))),
+                because: "the dispatcher to learn that workers are disabled");
+            var id = await host.Services.GetRequiredService<IScheduler>().EnqueueAsync<DisabledWorkersProbeJob>();
+            await Task.Delay(500); // nothing may happen: ten polling cycles of a normal host
+
+            var job = await host.Services.GetRequiredService<NexJob.Storage.IStorageProvider>().GetJobByIdAsync(id);
+            job!.Status.Should().Be(JobStatus.Enqueued);
+            host.Services.GetRequiredService<DisabledWorkersProbe>().Ran.Should().BeFalse();
+        }
+        finally
+        {
+            await host.StopAsync();
+        }
+    }
+
+    public sealed class DisabledWorkersProbe
+    {
+        public bool Ran { get; set; }
+    }
+
+    public sealed class DisabledWorkersProbeJob(DisabledWorkersProbe probe) : IJob
+    {
+        public Task ExecuteAsync(CancellationToken cancellationToken)
+        {
+            probe.Ran = true;
+            return Task.CompletedTask;
+        }
     }
 
     [Fact]

@@ -231,4 +231,27 @@ public sealed class ServerHeartbeatServiceTests
         server.WorkerCount.Should().Be(3);
         await heartbeat.StopAsync(CancellationToken.None);
     }
+
+    /// <summary>N1 (#404): a host without workers is registered with 0 workers and without polled queues.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task ZeroWorkers_RegistersNoWorkersAndNoQueues()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddNexJob(o =>
+        {
+            o.QueuePrefix = "billing";
+            o.Workers = 0;
+        });
+        using var provider = services.BuildServiceProvider();
+        var heartbeat = provider.GetServices<IHostedService>().OfType<ServerHeartbeatService>().Single();
+
+        await heartbeat.StartAsync(CancellationToken.None);
+
+        var server = (await provider.GetRequiredService<IJobStorage>().GetActiveServersAsync(TimeSpan.FromMinutes(1))).Single();
+        server.WorkerCount.Should().Be(0);
+        server.Queues.Should().BeEmpty("a node that executes nothing is not listening to any queue");
+        await heartbeat.StopAsync(CancellationToken.None);
+    }
 }

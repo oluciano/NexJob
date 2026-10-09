@@ -530,6 +530,28 @@ public sealed class JobDispatcherServiceTests
         (await storage.GetJobByIdAsync(legacy.Id))!.Status.Should().Be(JobStatus.Enqueued, "the window is closed for the default queue");
     }
 
+    /// <summary>N1 (#404): Workers = 0 starts the host, says so, and leaves the job alone.</summary>
+    [Fact]
+    public async Task ZeroWorkers_HostStarts_AndDoesNotExecuteJobs()
+    {
+        var sink = new LevelLogSink();
+        var ran = new TaskCompletionSource<bool>();
+        using var host = BuildQueueHost(sink, ran, o => o.Workers = 0);
+        var storage = (InMemoryStorageProvider)host.Services.GetRequiredService<NexJob.Storage.IStorageProvider>();
+        var job = QuickRecord("billing.default");
+        await storage.EnqueueAsync(job);
+
+        await host.StartAsync();
+        await TestWait.UntilAsync(
+            () => Task.FromResult(sink.Entries.Any(e => e.Message.Contains("does not fetch or execute jobs", StringComparison.Ordinal))),
+            because: "the dispatcher to say that this host executes nothing");
+        await Task.Delay(300); // nothing may happen: the dispatcher polls every 20 ms, so this is many polling cycles
+        await host.StopAsync();
+
+        (await storage.GetJobByIdAsync(job.Id))!.Status.Should().Be(JobStatus.Enqueued);
+        ran.Task.IsCompleted.Should().BeFalse();
+    }
+
     private static JobRecord QuickRecord(string queue) => new()
     {
         Id = JobId.New(),
