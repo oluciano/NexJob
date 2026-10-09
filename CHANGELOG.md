@@ -6,6 +6,10 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [6.0.0] - 2026-10-09
+
+**Upgrading from v5:** the default queue changes name (`{prefix}.default`), see the [migration guide](docs/wiki/reference/migration.md); nodes of v5 and v6 can share a database during the upgrade and nothing is migrated.
+
 ### Added
 
 - **Docs-truth tool and skill** (issue #400): `tools/DocsTruth` compares the built code with the wiki and fails `--strict` on drift: every instrument of the NexJob meter must be on the metrics page, every public property of `NexJobOptions` and `NexJobSettings` must be in the configuration page, each documented `// Default:` must equal the real default (numbers, booleans, enums, strings and durations such as `15s` or `7 days`) and phrases listed in `stale-terms.json` must not come back. The first run found, and this change fixed, the two dead-letter counters missing from the metrics page and the undocumented `DefaultQueue` key. A non-blocking `Docs Truth` CI job publishes the report; the new `nexjob-docs-truth` skill adds the semantic review (`--scope diff` for a change, `--scope full` for a release, with a coverage report per page) and is called by `nexjob-release` Phase 3 and `nexjob-task-cycle` Phase 4.6. The Mintlify mirror is retired: `docs/site/sync-from-mintlify.py` (which deleted `docs/wiki` and rewrote it from another repository) is removed, the release flow no longer synchronizes anything, and `docs/wiki` is the single source of the documentation. Tooling and documentation only; the library is untouched.
