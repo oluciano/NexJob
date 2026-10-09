@@ -38,13 +38,12 @@ internal sealed class RabbitMqDeadLetterForwarder : IDeadLetterForwarder
     /// </remarks>
     public bool AppliesTo(JobRecord failedJob)
     {
-        _ = _nexJobOptions;
         if (string.IsNullOrWhiteSpace(_options.ExhaustedJobsRoutingKey))
         {
             return false;
         }
 
-        return string.Equals(failedJob.Queue, _options.TargetQueue, StringComparison.Ordinal)
+        return _nexJobOptions.StandsFor(_options.TargetQueue, failedJob.Queue)
             && failedJob.Tags.Contains(TriggerTag, StringComparer.Ordinal);
     }
 

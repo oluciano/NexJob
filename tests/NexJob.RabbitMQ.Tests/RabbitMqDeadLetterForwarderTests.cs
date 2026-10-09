@@ -157,6 +157,7 @@ public sealed class RabbitMqDeadLetterForwarderTests
     {
         var services = new ServiceCollection();
         services.AddSingleton(new Mock<IScheduler>().Object);
+        services.AddSingleton(new NexJobOptions()); // registered by AddNexJob in a real host
         services.AddRabbitMqProducer(o => o.HostName = "localhost");
         services.AddNexJobRabbitMqTrigger(ConfigureTrigger(routingKey: "orders.exhausted"));
         using var provider = services.BuildServiceProvider();

@@ -36,13 +36,12 @@ internal sealed class KafkaDeadLetterForwarder : IDeadLetterForwarder
     /// </remarks>
     public bool AppliesTo(JobRecord failedJob)
     {
-        _ = _nexJobOptions;
         if (string.IsNullOrWhiteSpace(_options.ExhaustedJobsTopic))
         {
             return false;
         }
 
-        return string.Equals(failedJob.Queue, _options.TargetQueue, StringComparison.Ordinal)
+        return _nexJobOptions.StandsFor(_options.TargetQueue, failedJob.Queue)
             && failedJob.IdempotencyKey is { } key
             && key.StartsWith($"kafka:{_options.Topic}:", StringComparison.Ordinal);
     }

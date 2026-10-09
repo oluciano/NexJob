@@ -173,6 +173,34 @@ public sealed class NexJobOptionsTests
         options.Workers.Should().Be(value);
     }
 
+    [Theory]
+    [InlineData("default", "billing.default", true)]
+    [InlineData("default", "default", true)]
+    [InlineData(null, "billing.default", true)]
+    [InlineData(null, "default", true)]
+    [InlineData("billing.default", "billing.default", true)]
+    [InlineData("orders", "orders", true)]
+    [InlineData("default", "other.default", false)]
+    [InlineData("orders", "billing.default", false)]
+    [InlineData("orders", "default", false)]
+    [InlineData("default", "", false)]
+    public void StandsFor_ADefaultOrNamedQueue_MatchesItsStoredNames(string? written, string stored, bool expected)
+    {
+        // #406: a name written by the developer stands for the stored name it resolves to, and the default also for the legacy "default".
+        var options = new NexJobOptions { QueuePrefix = "billing" };
+
+        options.StandsFor(written, stored).Should().Be(expected);
+    }
+
+    [Fact]
+    public void StandsFor_WithoutPrefix_DefaultIsTheOnlyStoredName()
+    {
+        var options = new NexJobOptions { EntryAssembly = null };
+
+        options.StandsFor("default", "default").Should().BeTrue();
+        options.StandsFor("default", "billing.default").Should().BeFalse();
+    }
+
     [Fact]
     public void EffectivePrefix_InTheTestHost_IsTestHost()
     {

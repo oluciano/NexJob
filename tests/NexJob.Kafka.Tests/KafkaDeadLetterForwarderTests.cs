@@ -157,6 +157,7 @@ public sealed class KafkaDeadLetterForwarderTests
     {
         var services = new ServiceCollection();
         services.AddSingleton(new Mock<IScheduler>().Object);
+        services.AddSingleton(new NexJobOptions()); // registered by AddNexJob in a real host
         services.AddKafkaProducer(o => o.BootstrapServers = "localhost:9092");
         services.AddNexJobKafkaTrigger(ConfigureTrigger(exhaustedTopic: "orders.exhausted"));
         using var provider = services.BuildServiceProvider();
