@@ -39,7 +39,7 @@ public sealed class SalesforceStreamingTriggerHandler : BackgroundService
         ISalesforceStreamingAuthService authService,
         ISalesforceBayeuxClient bayeuxClient,
         IOptions<SalesforceStreamingTriggerOptions> options,
-        IOptions<NexJobOptions> nexJobOptions,
+        NexJobOptions nexJobOptions,
         ILogger<SalesforceStreamingTriggerHandler> logger,
         IStreamingReplayIdStore? customReplayIdStore = null,
         IListenerRegistry? listenerRegistry = null)
@@ -55,7 +55,7 @@ public sealed class SalesforceStreamingTriggerHandler : BackgroundService
         _authService = authService;
         _bayeuxClient = bayeuxClient;
         _options = options.Value;
-        _nexJobOptions = nexJobOptions.Value;
+        _nexJobOptions = nexJobOptions;
         _logger = logger;
         _replayIdStore = customReplayIdStore ?? _options.ReplayIdStore ?? new FileStreamingReplayIdStore(_options.ReplayStoreDirectory);
         _listenerRegistry = listenerRegistry;
