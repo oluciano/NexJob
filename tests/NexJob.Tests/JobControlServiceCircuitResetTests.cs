@@ -116,4 +116,28 @@ public sealed class JobControlServiceCircuitResetTests
             new Mock<IDashboardStorage>().Object,
             new Mock<IRuntimeSettingsStore>().Object,
             manager);
+
+    // ─── #377: the default queue is stored with the application prefix ───────
+
+    [Theory]
+    [InlineData("default")]
+    [InlineData("billing.default")]
+    public async Task ResetQueueCircuitAsync_ForTheDefaultQueue_ClosesThePrefixedCircuit(string queue)
+    {
+        var options = new NexJobOptions { QueuePrefix = "billing" };
+        var breaker = new QueueCircuitBreakerOptions { ConsecutiveFailuresThreshold = 2, OpenDuration = TimeSpan.FromMinutes(5) };
+        breaker.BreakOn<DownstreamFailureException>();
+        options.ConfigureQueue("default", q => q.CircuitBreaker = breaker);
+        var manager = new DefaultQueueCircuitBreakerManager(options, timeProvider: new FakeTimeProvider());
+        Open(manager, "billing.default");
+        var sut = new DefaultJobControlService(
+            new Mock<IDashboardStorage>().Object,
+            new Mock<IRuntimeSettingsStore>().Object,
+            manager,
+            options);
+
+        await sut.ResetQueueCircuitAsync(queue);
+
+        Assert.Equal(QueueCircuitState.Closed, manager.GetState("billing.default", out _));
+    }
 }

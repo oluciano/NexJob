@@ -412,6 +412,28 @@ public sealed class JobDispatcherServiceTests
             .Should().Be(warns);
     }
 
+    /// <summary>N1/N2 (#377): without an entry assembly and without a prefix the shared default is back; say so, unless a prefix is set.</summary>
+    /// <param name="prefix">The configured prefix.</param>
+    /// <param name="warns">Whether the no-prefix warning is expected.</param>
+    [Theory]
+    [InlineData(null, true)]
+    [InlineData("billing", false)]
+    public async Task Startup_WithoutEntryAssembly_WarnsOnlyWhenNoPrefixIsSet(string? prefix, bool warns)
+    {
+        var sink = new LevelLogSink();
+        using var host = BuildPrefixHost(sink, o =>
+        {
+            o.EntryAssembly = null;
+            o.QueuePrefix = prefix;
+        });
+
+        await host.StartAsync();
+        await host.StopAsync();
+
+        sink.Entries.Any(e => e.Level == LogLevel.Warning && e.Message.Contains("No default queue prefix", StringComparison.Ordinal))
+            .Should().Be(warns);
+    }
+
     private static IHost BuildPrefixHost(ILoggerProvider sink, Action<NexJobOptions> configure) =>
         Host.CreateDefaultBuilder()
             .ConfigureLogging(l => l.AddProvider(sink))

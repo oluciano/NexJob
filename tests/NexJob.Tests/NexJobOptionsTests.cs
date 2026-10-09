@@ -31,6 +31,61 @@ public sealed class NexJobOptionsTests
         options.PolledQueues.Should().Equal("emails");
     }
 
+    [Theory]
+    [InlineData("has space")]
+    [InlineData(".leading")]
+    [InlineData("trailing.")]
+    [InlineData("tab\tinside")]
+    public void QueuePrefix_WithWhitespaceOrEdgeDots_IsRejected(string prefix)
+    {
+        var options = new NexJobOptions();
+
+        var act = () => options.QueuePrefix = prefix;
+
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void QueuePrefix_LongerThanTheLimit_IsRejected()
+    {
+        var options = new NexJobOptions();
+
+        var act = () => options.QueuePrefix = new string('x', 101);
+
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Theory]
+    [InlineData("billing")]
+    [InlineData("acme.billing")]
+    [InlineData("   ")]
+    [InlineData(null)]
+    public void QueuePrefix_ValidOrUnset_IsAccepted(string? prefix)
+    {
+        var options = new NexJobOptions();
+
+        var act = () => options.QueuePrefix = prefix;
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void ResolveQueue_ExplicitMixedCasePrefix_IsStoredLowercase()
+    {
+        var options = new NexJobOptions { QueuePrefix = "  Billing " };
+
+        options.ResolveQueue(null).Should().Be("billing.default");
+    }
+
+    [Fact]
+    public void ResolveQueue_WithoutEntryAssemblyAndPrefix_KeepsTheSharedDefault()
+    {
+        var options = new NexJobOptions { EntryAssembly = null };
+
+        options.ResolveQueue(null).Should().Be("default");
+        options.PolledQueues.Should().Equal("default");
+    }
+
     [Fact]
     public void HealthCheckTimeout_DefaultValue_IsFiveSeconds()
     {
