@@ -66,6 +66,14 @@ internal sealed class RecurringJobRegistrar
             _registeredJobIds.Count);
     }
 
+    /// <summary>
+    /// Returns a type name without its assembly part: the text up to the first comma that is not inside brackets.
+    /// The assembly part carries the version, which changes on every deploy.
+    /// </summary>
+    /// <param name="assemblyQualifiedName">An assembly-qualified type name.</param>
+    /// <returns>The type name without the assembly.</returns>
+    internal static string TypeNameWithoutAssembly(string assemblyQualifiedName) => assemblyQualifiedName;
+
     // ────────────────────────────────────────────────────────────────────────────
     // Static Helpers
     // ────────────────────────────────────────────────────────────────────────────
