@@ -7,6 +7,7 @@ using Microsoft.Extensions.Hosting;
 using Moq;
 using NexJob.Internal;
 using NexJob.Storage;
+using NexJob.Tests;
 using NexJob.Trigger.AwsSqs;
 using Xunit;
 
@@ -75,17 +76,25 @@ public sealed class AwsSqsTriggerTests : IClassFixture<AwsSqsTriggerFixture>
         await trigger.StartAsync(CancellationToken.None);
 
         JobRecord? job = null;
-        for (int i = 0; i < 50; i++)
-        {
-            var jobs = await scheduler.GetJobsByTagAsync("trigger:awssqs");
-            job = jobs.FirstOrDefault();
-            if (job != null)
+        await TestWait.UntilAsync(
+            async () =>
             {
-                break;
-            }
+                var jobs = await scheduler.GetJobsByTagAsync("trigger:awssqs");
+                job = jobs.FirstOrDefault();
+                return job is not null;
+            },
+            because: "the message to become a job");
 
-            await Task.Delay(100);
-        }
+        // The message is deleted after the enqueue: stopping first could leave it to reappear.
+        await TestWait.UntilAsync(
+            async () =>
+            {
+                var attributes = await sqsClient.GetQueueAttributesAsync(
+                    queueUrl,
+                    ["ApproximateNumberOfMessages", "ApproximateNumberOfMessagesNotVisible"]);
+                return attributes.ApproximateNumberOfMessages == 0 && attributes.ApproximateNumberOfMessagesNotVisible == 0;
+            },
+            because: "the message to be deleted from the queue");
 
         await trigger.StopAsync(CancellationToken.None);
 
@@ -139,26 +148,25 @@ public sealed class AwsSqsTriggerTests : IClassFixture<AwsSqsTriggerFixture>
 
         // Act
         await trigger.StartAsync(CancellationToken.None);
-        await Task.Delay(2000);
+        await TestWait.UntilAsync(
+            () => Task.FromResult(mockStorage.Invocations.Any(i => i.Method.Name == nameof(IJobStorage.EnqueueAsync))),
+            because: "the trigger to attempt the enqueue");
         await trigger.StopAsync(CancellationToken.None);
 
         // Assert
-        // Retry receive because of possible delay in visibility update
+        // The message is not deleted; it reappears once its visibility timeout (1 s) ends.
         ReceiveMessageResponse? receiveResult = null;
-        for (int i = 0; i < 5; i++)
-        {
-            receiveResult = await sqsClient.ReceiveMessageAsync(new ReceiveMessageRequest
+        await TestWait.UntilAsync(
+            async () =>
             {
-                QueueUrl = queueUrl,
-                WaitTimeSeconds = 1,
-            });
-            if (receiveResult.Messages.Any())
-            {
-                break;
-            }
-
-            await Task.Delay(1000);
-        }
+                receiveResult = await sqsClient.ReceiveMessageAsync(new ReceiveMessageRequest
+                {
+                    QueueUrl = queueUrl,
+                    WaitTimeSeconds = 1,
+                });
+                return receiveResult.Messages.Any();
+            },
+            because: "the undeleted message to become visible again");
 
         receiveResult!.Messages.Should().NotBeEmpty();
     }
@@ -209,17 +217,14 @@ public sealed class AwsSqsTriggerTests : IClassFixture<AwsSqsTriggerFixture>
         await trigger.StartAsync(CancellationToken.None);
 
         JobRecord? job = null;
-        for (int i = 0; i < 50; i++)
-        {
-            var jobs = await scheduler.GetJobsByTagAsync("trigger:awssqs");
-            job = jobs.FirstOrDefault();
-            if (job != null)
+        await TestWait.UntilAsync(
+            async () =>
             {
-                break;
-            }
-
-            await Task.Delay(100);
-        }
+                var jobs = await scheduler.GetJobsByTagAsync("trigger:awssqs");
+                job = jobs.FirstOrDefault();
+                return job is not null;
+            },
+            because: "the message to become a job");
 
         await trigger.StopAsync(CancellationToken.None);
 
