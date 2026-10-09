@@ -438,7 +438,17 @@ public sealed class NexJobOptions
     /// <param name="storedQueue">The stored queue name.</param>
     /// <returns>The settings, or <see langword="null"/> when none are configured.</returns>
     internal QueueSettings? SettingsFor(string storedQueue) =>
-        QueueSettings.Find(qs =>
-            string.Equals(ResolveQueue(qs.Name), storedQueue, StringComparison.Ordinal)
-            || (string.Equals(qs.Name, QueueNames.Default, StringComparison.Ordinal) && string.Equals(storedQueue, QueueNames.Default, StringComparison.Ordinal)));
+        QueueSettings.Find(qs => StandsFor(qs.Name, storedQueue));
+
+    /// <summary>
+    /// Tells whether a queue name written by the developer stands for a stored queue name: the stored name it resolves to,
+    /// and, for the default queue, the legacy <c>default</c> that is still drained.
+    /// </summary>
+    /// <param name="writtenQueue">The name as written (a <c>TargetQueue</c>, a <c>ConfigureQueue</c> name), or <see langword="null"/> for the default.</param>
+    /// <param name="storedQueue">The queue name stored with a job.</param>
+    /// <returns><see langword="true"/> when the stored queue is one the written name stands for.</returns>
+    internal bool StandsFor(string? writtenQueue, string storedQueue) =>
+        string.Equals(ResolveQueue(writtenQueue), storedQueue, StringComparison.Ordinal)
+        || (string.Equals(writtenQueue ?? QueueNames.Default, QueueNames.Default, StringComparison.Ordinal)
+            && string.Equals(storedQueue, QueueNames.Default, StringComparison.Ordinal));
 }
