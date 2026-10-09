@@ -120,9 +120,7 @@ Always ask the user explicitly before proceeding:
    - Identify packages with code changes in this release (e.g. `src/NexJob.Dashboard/README.md`, `src/NexJob.Kafka/README.md`).
    - Check if options, methods, endpoints, themes, or UI features are accurately described.
    - If outdated or missing info, **edit the README immediately**.
-3. **Do NOT run the Mintlify sync.** `docs/site/sync-from-mintlify.py` deletes the folders of `docs/wiki` and rewrites them from the
-   separate `mintlify-docs` repository, so running it would erase every documentation change made in this repository. `docs/wiki`
-   is the single source of the documentation; nothing is synchronized from Mintlify at release time.
+3. **There is no external documentation to synchronize.** `docs/wiki` is the single source of the documentation (the Mintlify mirror was retired).
 4. **Run the `nexjob-docs-truth` skill with `--scope full`** (see `.agents/skills/nexjob-docs-truth/SKILL.md`):
    - Step 1: `dotnet run --project tools/DocsTruth -c Release -- --report docs-truth-report.md --strict`; fix every *drift* in the
      documentation until it reports 0 and look at every *review* item.
