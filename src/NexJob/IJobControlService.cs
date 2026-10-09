@@ -39,7 +39,7 @@ public interface IJobControlService
     /// <summary>
     /// Resumes a paused queue.
     /// </summary>
-    /// <param name="queue">The name of the queue to resume. Resuming <c>default</c> resumes the legacy <c>default</c> only; resume <c>{prefix}.default</c> by its stored name.</param>
+    /// <param name="queue">The name of the queue to resume. <c>default</c> and the default queue of the application (<c>{prefix}.default</c>) are one queue here: resuming either name resumes both, whichever name paused it.</param>
     /// <param name="ct">Token to cancel the operation.</param>
     Task ResumeQueueAsync(string queue, CancellationToken ct = default);
 

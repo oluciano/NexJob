@@ -58,7 +58,18 @@ internal sealed class DefaultJobControlService : IJobControlService
     public async Task ResumeQueueAsync(string queue, CancellationToken ct = default)
     {
         var rt = await _runtimeStore.GetAsync(ct).ConfigureAwait(false);
-        if (rt.PausedQueues.Remove(queue))
+
+        // "default" and the prefixed default are one queue for pause and resume: whichever name paused it, either resumes it.
+        var resumed = rt.PausedQueues.Remove(queue);
+        if (_options is not null
+            && (string.Equals(queue, QueueNames.Default, StringComparison.Ordinal)
+                || string.Equals(queue, _options.ResolveQueue(null), StringComparison.Ordinal)))
+        {
+            resumed |= rt.PausedQueues.Remove(QueueNames.Default);
+            resumed |= rt.PausedQueues.Remove(_options.ResolveQueue(null));
+        }
+
+        if (resumed)
         {
             await _runtimeStore.SaveAsync(rt, ct).ConfigureAwait(false);
         }
