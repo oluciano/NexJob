@@ -50,7 +50,7 @@ public sealed class RecurringJobSettings
 
     /// <summary>
     /// Name of the queue where the recurring job's instances will be enqueued.
-    /// Defaults to "default".
+    /// Defaults to the default queue of the application (<c>{prefix}.default</c>).
     /// </summary>
     public string Queue { get; set; } = "default";
 

@@ -60,7 +60,7 @@ This trigger registers with `IListenerRegistry` to report live connection states
 |---|---|---|
 | `ProjectId` | Google Cloud Project ID (required) | `""` |
 | `SubscriptionId` | Pub/Sub Subscription ID (required) | `""` |
-| `TargetQueue` | Target NexJob queue name | `"default"` |
+| `TargetQueue` | Target NexJob queue name; `"default"` is the application's default queue (`{prefix}.default`) | `"default"` |
 | `JobPriority` | Execution priority for enqueued jobs | `JobPriority.Normal` |
 | `EmulatorHost` | Optional emulator endpoint (e.g. `localhost:8085`) | `null` |
 

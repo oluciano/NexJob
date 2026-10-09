@@ -137,7 +137,7 @@ internal sealed class QueuesPage : IComponent
             return HtmlFragments.QueueCard(
                 q,
                 PathPrefix,
-                pausedQueues.Contains(q.Queue),
+                Options.IsQueuePaused(q.Queue, pausedQueues),
                 ActiveCluster,
                 hasActiveWorkers: activeWorkerQueues.Contains(q.Queue),
                 circuitStatus: cs,

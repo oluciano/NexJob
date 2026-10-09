@@ -116,9 +116,13 @@ internal sealed class JobDispatcherService : BackgroundService
         var ignoredSettings = _options.GetIgnoredSettings();
         if (ignoredSettings.Count > 0)
         {
+            var hint = ignoredSettings.Contains("DefaultQueue", StringComparer.Ordinal)
+                ? " DefaultQueue is not used: to name the default queue of this application set NexJobOptions.QueuePrefix."
+                : string.Empty;
             _logger.LogWarning(
-                "These settings are configured but have no effect and are ignored: {Settings}. The worker count is a deployment setting (NexJobOptions.Workers).",
-                string.Join(", ", ignoredSettings));
+                "These settings are configured but have no effect and are ignored: {Settings}. The worker count is a deployment setting (NexJobOptions.Workers).{Hint}",
+                string.Join(", ", ignoredSettings),
+                hint);
         }
 
         // Outlives ExecuteAsync: jobs still draining during shutdown release their slot after the loop exits.

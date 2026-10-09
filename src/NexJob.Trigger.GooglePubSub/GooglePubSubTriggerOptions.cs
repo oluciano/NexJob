@@ -20,7 +20,7 @@ public sealed class GooglePubSubTriggerOptions
     public string SubscriptionId { get; set; } = string.Empty;
 
     /// <summary>
-    /// Gets or sets the target NexJob queue name. Defaults to "default".
+    /// Gets or sets the target NexJob queue name. Defaults to "default", which is the default queue of the application (<c>{prefix}.default</c>).
     /// </summary>
     public string TargetQueue { get; set; } = "default";
 

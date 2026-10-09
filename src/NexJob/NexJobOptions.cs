@@ -146,7 +146,8 @@ public sealed class NexJobOptions
 
     /// <summary>
     /// Ordered list of queue names that workers on this host will poll.
-    /// Queues are drained in the order specified. Defaults to <c>["default"]</c>.
+    /// Queues are drained in the order specified. Defaults to <c>["default"]</c>, the default queue of the application
+    /// (<c>{prefix}.default</c>, see <see cref="QueuePrefix"/>) plus the legacy <c>default</c>.
     /// </summary>
     public IReadOnlyList<string> Queues { get; set; } = ["default"];
 

@@ -21,8 +21,9 @@ public sealed class NexJobSettings
     public int MaxAttempts { get; set; } = 10;
 
     /// <summary>
-    /// Not applied: enqueueing without a queue always uses <c>default</c>. A value other than <c>default</c>
-    /// has no effect, and the dispatcher logs a warning at startup.
+    /// Not applied: enqueueing without a queue uses the default queue of the application (<c>{prefix}.default</c>,
+    /// see <see cref="NexJobOptions.QueuePrefix"/>). A value other than <c>default</c> has no effect, and the dispatcher logs a
+    /// warning at startup.
     /// </summary>
     public string DefaultQueue { get; set; } = "default";
 
