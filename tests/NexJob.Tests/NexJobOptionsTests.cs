@@ -87,6 +87,14 @@ public sealed class NexJobOptionsTests
     }
 
     [Fact]
+    public void EffectivePrefix_InTheTestHost_IsTestHost()
+    {
+        // Guard (#377): tests that do not pin QueuePrefix rely on the prefix derived from the test host. If the
+        // runner changes, this fails here instead of 20 tests failing on a queue name.
+        new NexJobOptions().EffectivePrefix.Should().Be("testhost");
+    }
+
+    [Fact]
     public void HealthCheckTimeout_DefaultValue_IsFiveSeconds()
     {
         // Assert

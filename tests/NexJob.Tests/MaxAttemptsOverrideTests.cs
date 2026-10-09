@@ -12,7 +12,7 @@ namespace NexJob.Tests;
 public sealed class MaxAttemptsOverrideTests
 {
     private readonly InMemoryStorageProvider _storage = new();
-    private readonly NexJobOptions _options = new();
+    private readonly NexJobOptions _options = new() { QueuePrefix = "app" };
     private readonly DefaultScheduler _sut;
 
     /// <summary>Initializes a new instance of the <see cref="MaxAttemptsOverrideTests"/> class.</summary>
@@ -119,7 +119,8 @@ public sealed class MaxAttemptsOverrideTests
             await call.Should().ThrowAsync<ArgumentOutOfRangeException>();
         }
 
-        (await _storage.FetchNextAsync(["default"])).Should().BeNull("nothing may be stored for a rejected call");
+        // The prefix is pinned so this cannot pass vacuously by looking in a queue nothing was ever written to (#377).
+        (await _storage.FetchNextAsync(["app.default", "default"])).Should().BeNull("nothing may be stored for a rejected call");
     }
 
     // ─── Retry policy: the stored limit decides ─────────────────────────────
