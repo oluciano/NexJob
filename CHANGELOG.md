@@ -8,7 +8,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [6.0.0] - 2026-10-09
 
-**Upgrading from v5:** the default queue changes name (`{prefix}.default`), see the [migration guide](docs/wiki/reference/migration.md); nodes of v5 and v6 can share a database during the upgrade and nothing is migrated.
+**Upgrading from v5:** the default queue changes name (`{prefix}.default`), see the migration guide (`docs/wiki/reference/migration.md`); nodes of v5 and v6 can share a database during the upgrade and nothing is migrated.
 
 ### Added
 
