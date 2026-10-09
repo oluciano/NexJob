@@ -73,6 +73,20 @@ public sealed class RecurringNoInputJobTests
     }
 
     /// <summary>
+    /// Verifies that a recurring job without a queue is stored in the prefixed default queue (#377).
+    /// </summary>
+    [Fact]
+    public async Task RecurringAsync_WithoutQueue_UsesPrefixedDefault()
+    {
+        var sut = new DefaultScheduler(_storage, _storage, _storage, new NexJobOptions { QueuePrefix = "billing" }, new JobWakeUpChannel());
+
+        await sut.RecurringAsync<RecurringNoInputStubJob>("prefixed-default", "0 0 * * *");
+
+        var record = (await _storage.GetRecurringJobsAsync()).Single(r => r.RecurringJobId == "prefixed-default");
+        record.Queue.Should().Be("billing.default");
+    }
+
+    /// <summary>
     /// Verifies that the recurring job respects the concurrency policy.
     /// </summary>
     [Fact]

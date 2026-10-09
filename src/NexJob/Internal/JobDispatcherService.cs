@@ -100,6 +100,13 @@ internal sealed class JobDispatcherService : BackgroundService
         _logger.LogInformation("JobDispatcherService started. Workers: {Workers}, Queues: {Queues}",
             _options.Workers, string.Join(", ", _polledQueues));
 
+        if (string.IsNullOrWhiteSpace(_options.QueuePrefix) && _options.EffectivePrefix is { } derivedPrefix)
+        {
+            _logger.LogWarning(
+                "The default queue prefix '{Prefix}' was derived from the entry assembly name. Renaming the assembly changes it and strands jobs in the old queue; set NexJobOptions.QueuePrefix explicitly in production.",
+                derivedPrefix);
+        }
+
         var ignoredSettings = _options.GetIgnoredSettings();
         if (ignoredSettings.Count > 0)
         {

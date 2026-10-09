@@ -379,6 +379,44 @@ public sealed class JobDispatcherServiceTests
         logSink.Messages.Should().Contain(m => m.Contains("Error fetching next job"),
             "dispatcher must log an error when FetchNextAsync throws");
     }
+
+    /// <summary>N1 (#377): a prefix derived from the assembly name is announced with guidance to set it explicitly.</summary>
+    [Fact]
+    public async Task Startup_WithDerivedQueuePrefix_LogsWarning()
+    {
+        var sink = new LevelLogSink();
+        using var host = BuildPrefixHost(sink, _ => { });
+
+        await host.StartAsync();
+        await host.StopAsync();
+
+        sink.Entries.Should().ContainSingle(e =>
+            e.Level == LogLevel.Warning && e.Message.Contains("QueuePrefix", StringComparison.Ordinal));
+    }
+
+    /// <summary>N2/N3 (#377): an explicit prefix does not warn; a whitespace-only one is treated as unset and does.</summary>
+    /// <param name="prefix">The configured prefix.</param>
+    /// <param name="warns">Whether the derived-prefix warning is expected.</param>
+    [Theory]
+    [InlineData("billing", false)]
+    [InlineData("   ", true)]
+    public async Task Startup_WithConfiguredQueuePrefix_WarnsOnlyWhenDerived(string prefix, bool warns)
+    {
+        var sink = new LevelLogSink();
+        using var host = BuildPrefixHost(sink, o => o.QueuePrefix = prefix);
+
+        await host.StartAsync();
+        await host.StopAsync();
+
+        sink.Entries.Any(e => e.Level == LogLevel.Warning && e.Message.Contains("QueuePrefix", StringComparison.Ordinal))
+            .Should().Be(warns);
+    }
+
+    private static IHost BuildPrefixHost(ILoggerProvider sink, Action<NexJobOptions> configure) =>
+        Host.CreateDefaultBuilder()
+            .ConfigureLogging(l => l.AddProvider(sink))
+            .ConfigureServices(services => services.AddNexJob(configure))
+            .Build();
 }
 
 // ─── Stub jobs ────────────────────────────────────────────────────────────────
