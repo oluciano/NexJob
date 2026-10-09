@@ -20,7 +20,7 @@ public sealed class AzureServiceBusTriggerHandlerTests
 {
     private readonly MockScheduler _scheduler = new();
     private readonly Mock<ILogger<AzureServiceBusTriggerHandler>> _loggerMock = new();
-    private readonly NexJobOptions _nexJobOptions = new() { MaxAttempts = 3 };
+    private readonly NexJobOptions _nexJobOptions = new() { MaxAttempts = 3, QueuePrefix = "app" };
     private readonly AzureServiceBusTriggerOptions _triggerOptions = new()
     {
         ConnectionString = "Endpoint=sb://test.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=fakekey",
@@ -90,7 +90,8 @@ public sealed class AzureServiceBusTriggerHandlerTests
         var enqueued = _scheduler.EnqueueCalls[0];
         enqueued.IdempotencyKey.Should().Be("msg-42");
         enqueued.JobType.Should().Be("ProcessOrderJob");
-        enqueued.Queue.Should().Be("default");
+        // Behavior changed in v6.0: the implicit default queue is stored as "{prefix}.default" (#377).
+        enqueued.Queue.Should().Be("app.default");
         enqueued.Priority.Should().Be(JobPriority.High);
         enqueued.TraceParent.Should().Be("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01");
         enqueued.Tags.Should().Contain("trigger:azuresb");
