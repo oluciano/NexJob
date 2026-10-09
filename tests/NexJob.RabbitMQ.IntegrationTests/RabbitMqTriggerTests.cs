@@ -177,6 +177,73 @@ public sealed class RabbitMqTriggerTests : IClassFixture<RabbitMqTriggerFixture>
     }
 
     /// <summary>
+    /// Verifies that a transient failure (storage unavailable) never loses the message: the trigger nacks it with
+    /// requeue and it is back in the queue.
+    /// </summary>
+    [Fact]
+    public async Task TransientEnqueueFailure_MessageIsRequeued()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        var sink = new LevelLogSink();
+        services.AddLogging(b => b.AddProvider(sink));
+        services.AddNexJob();
+
+        var mockStorage = new Mock<IJobStorage>();
+        mockStorage.Setup(s => s.EnqueueAsync(It.IsAny<JobRecord>(), It.IsAny<DuplicatePolicy>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("Simulated storage outage"));
+        services.AddSingleton(mockStorage.Object);
+
+        services.AddNexJobRabbitMqTrigger(options =>
+        {
+            options.HostName = _fixture.HostName;
+            options.Port = _fixture.Port;
+            options.UserName = RabbitMqTriggerFixture.UserName;
+            options.Password = RabbitMqTriggerFixture.Password;
+            options.QueueName = "transient-queue";
+        });
+
+        var provider = services.BuildServiceProvider();
+        var trigger = provider.GetRequiredService<IHostedService>();
+
+        var factory = new ConnectionFactory
+        {
+            HostName = _fixture.HostName,
+            Port = _fixture.Port,
+            UserName = RabbitMqTriggerFixture.UserName,
+            Password = RabbitMqTriggerFixture.Password,
+        };
+        using var connection = factory.CreateConnection();
+        using var channel = connection.CreateModel();
+        channel.QueueDeclare("transient-queue", durable: false, exclusive: false, autoDelete: false);
+
+        var props = channel.CreateBasicProperties();
+        props.Headers = new Dictionary<string, object>
+        {
+            ["nexjob.job_type"] = typeof(TestJob).AssemblyQualifiedName!,
+        };
+        channel.BasicPublish(string.Empty, "transient-queue", props, Encoding.UTF8.GetBytes("{}"));
+
+        // Act
+        await trigger.StartAsync(CancellationToken.None);
+        await TestWait.UntilAsync(
+            () => Task.FromResult(sink.Entries.Any(e => e.Message.Contains("Failed to enqueue RabbitMQ message", StringComparison.Ordinal))),
+            because: "the trigger to hit the storage outage");
+        await trigger.StopAsync(CancellationToken.None);
+
+        // Assert: the stop interrupts the pause before the nack and the message goes back to the queue.
+        BasicGetResult? result = null;
+        await TestWait.UntilAsync(
+            () =>
+            {
+                result = channel.BasicGet("transient-queue", autoAck: true);
+                return Task.FromResult(result is not null);
+            },
+            because: "the message to be back in the queue");
+        result.Should().NotBeNull();
+    }
+
+    /// <summary>
     /// Verifies that traceparent header is correctly propagated to the JobRecord.
     /// </summary>
     [Fact]
