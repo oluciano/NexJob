@@ -16,7 +16,7 @@ await scheduler.EnqueueAsync<SendEmailJob, SendEmailInput>(input, cancellationTo
 await scheduler.ScheduleAsync<CleanupJob>(TimeSpan.FromHours(1), cancellationToken: ct);
 ```
 
-The stored name is `{prefix}.default`, so applications that share a database do not share a queue. The prefix is `NexJobOptions.QueuePrefix` (or `NexJob:QueuePrefix` in `appsettings.json`). When it is not set, NexJob uses the full lowercase name of the entry assembly: `Acme.Billing.Worker` becomes `acme.billing.worker.default`. The name is never shortened, so `Acme.Billing.Worker` and `Acme.Logistics.Worker` cannot collide. An explicit prefix is stored lowercase too, may have at most 100 characters, no whitespace, and must not start or end with a dot; anything else throws `ArgumentException` when you set it.
+The stored name is `{prefix}.default`, so applications that share a database do not share a queue. The prefix is `NexJobOptions.QueuePrefix` (or `NexJob:QueuePrefix` in `appsettings.json`). When it is not set, NexJob uses the full lowercase name of the entry assembly: `Acme.Billing.Worker` becomes `acme.billing.worker.default`. The name is never shortened, so `Acme.Billing.Worker` and `Acme.Logistics.Worker` cannot collide. An explicit prefix is stored exactly as you type it (trimmed): `QueuePrefix = "Billing"` gives `Billing.default`, so write the same case wherever you refer to that queue, because most databases tell `Billing.default` and `billing.default` apart. It may have at most 100 characters, no whitespace, and must not start or end with a dot; anything else throws `ArgumentException` when you set it.
 
 ```csharp
 builder.Services.AddNexJob(options =>

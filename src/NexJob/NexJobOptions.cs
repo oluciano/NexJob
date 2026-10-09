@@ -154,7 +154,7 @@ public sealed class NexJobOptions
     /// <summary>
     /// Prefix applied to the implicit <c>default</c> queue so hosts sharing a database do not share a queue.
     /// When <see langword="null"/> or blank, the lowercase name of the entry assembly is used.
-    /// Stored lowercase. Queues named explicitly, and names that already contain a dot, are never prefixed.
+    /// An explicit prefix is stored as typed; only the prefix derived from the assembly name is lowercase. Queues named explicitly, and names that already contain a dot, are never prefixed.
     /// </summary>
     /// <exception cref="ArgumentException">
     /// The prefix is longer than 100 characters, contains whitespace, or starts or ends with a dot.
@@ -309,7 +309,7 @@ public sealed class NexJobOptions
     /// <summary>The prefix in effect: the explicit <see cref="QueuePrefix"/>, else the entry assembly name.</summary>
     internal string? EffectivePrefix => string.IsNullOrWhiteSpace(QueuePrefix)
         ? QueueNames.DerivePrefix(EntryAssembly)
-        : QueuePrefix.Trim().ToLowerInvariant();
+        : QueuePrefix.Trim();
 
     /// <summary>
     /// Set by <see cref="ApplySettings"/> when <c>appsettings.json</c> carries a <c>DefaultQueue</c> other than
