@@ -413,6 +413,47 @@ public sealed class StandaloneDashboardTests
     }
 
     [Fact]
+    public async Task StandaloneDashboard_OrphanPrefixedDefault_ServersBannerSuggestsThePrefix()
+    {
+        // N1 (#391): inventory.default holds jobs and no node polls it.
+        var html = await GetPageAsync("/dashboard/servers", null, null);
+
+        html.Should().Contain("QueuePrefix = inventory");
+        html.Should().Contain("billing.default");
+    }
+
+    [Fact]
+    public async Task StandaloneDashboard_OrphanQueue_QueuesBadgeLinksToServersWithTheHint()
+    {
+        // N1 (#391): the NO WORKERS badge explains itself and leads to the nodes.
+        var html = await GetPageAsync("/dashboard/queues", null, null);
+
+        html.Should().Contain("QueuePrefix = inventory");
+        html.Should().Contain("href=\"/dashboard/servers\"");
+    }
+
+    [Fact]
+    public async Task StandaloneDashboard_NoOrphanQueue_ShowsNoHint()
+    {
+        // N2 (#391): guard: every queue with jobs is polled.
+        var servers = await GetPageAsync("/dashboard/servers", null, null, seeded: ["billing.default", "default"]);
+        var queues = await GetPageAsync("/dashboard/queues", null, null, seeded: ["billing.default", "default"]);
+
+        servers.Should().NotContain("Unattended Queues Detected");
+        queues.Should().NotContain("QueuePrefix =");
+    }
+
+    [Fact]
+    public async Task StandaloneDashboard_OrphanQueueNameWithMarkup_IsEscaped()
+    {
+        // N3 (#391): queue names are operator data.
+        var html = await GetPageAsync("/dashboard/servers", null, null, seeded: ["billing.default", "<b>x</b>.default"]);
+
+        html.Should().NotContain("<b>x</b>");
+        html.Should().Contain("&lt;b&gt;x&lt;/b&gt;");
+    }
+
+    [Fact]
     public async Task StandaloneDashboard_WithoutScoping_PreservesGlobalQueues()
     {
         // N2 (Negative): Without Queues scoping (null), all cluster queues are preserved in counters and pages
@@ -1331,7 +1372,7 @@ public sealed class StandaloneDashboardTests
     private static async Task<string> GetSettingsPageAsync(string? pause) =>
         await GetPageAsync("/dashboard/settings", null, pause);
 
-    private static async Task<string> GetPageAsync(string path, string[]? scope, string? pause)
+    private static async Task<string> GetPageAsync(string path, string[]? scope, string? pause, string[]? seeded = null)
     {
         var port = GetFreeTcpPort();
         using var host = Host.CreateDefaultBuilder()
@@ -1352,7 +1393,7 @@ public sealed class StandaloneDashboardTests
         {
             await host.StartAsync();
             var storage = host.Services.GetRequiredService<NexJob.Storage.IStorageProvider>();
-            foreach (var queue in new[] { "billing.default", "default", "inventory.default" })
+            foreach (var queue in seeded ?? ["billing.default", "default", "inventory.default"])
             {
                 await storage.EnqueueAsync(new JobRecord
                 {

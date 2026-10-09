@@ -6,6 +6,10 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Dashboard — Orphaned queue hint** (issue #391): a queue that holds jobs and has no live node used to show only a generic "no workers" warning. The Servers banner and the Queues `NO WORKERS` badge (now a link to Servers) list the queues the live nodes poll and, for a queue named `X.default`, suggest `QueuePrefix = X` to drain it after a prefix or assembly rename. No new option and no storage change.
+
 ### Fixed
 
 - **Dashboard — Queue names with the default queue prefix** (issue #390): `default` in `DashboardOptions.Queues` now covers `{prefix}.default` and the legacy `default` (the legacy row only while it holds jobs); jobs created by the dashboard without a queue (Scenarios, Trigger now) go to `{prefix}.default` instead of the legacy queue; the Settings page lists the polled queues and shows the paused state with the same rule as the dispatcher, so pausing the stored queue from the Queues page shows on Settings; the nav counter counts polled queues. A standalone dashboard must use the same `NexJob:QueuePrefix` as the workers.

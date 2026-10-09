@@ -140,7 +140,8 @@ internal sealed class QueuesPage : IComponent
                 pausedQueues.Contains(q.Queue),
                 ActiveCluster,
                 hasActiveWorkers: activeWorkerQueues.Contains(q.Queue),
-                circuitStatus: cs);
+                circuitStatus: cs,
+                orphanHint: activeWorkerQueues.Contains(q.Queue) ? null : OrphanQueueHint.For(q.Queue, activeWorkerQueues));
         }));
 
         var heatmap = BuildWorkerHeatmap(processingJobs);
