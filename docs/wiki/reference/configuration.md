@@ -17,7 +17,8 @@ builder.Services.AddNexJob(options =>
     // Maximum number of jobs that execute concurrently on this host.
     // Each worker runs in its own Task. Keep this below your storage
     // connection pool size to avoid contention.
-    options.Workers = 10; // Default: 10 (0 = this host does not execute jobs)
+    // 0 means that this host does not fetch or execute jobs (see DisableWorkers below).
+    options.Workers = 10; // Default: 10
 
     // ── Identity ─────────────────────────────────────────────────────────────
     // Human-readable name for this node shown in the dashboard.
