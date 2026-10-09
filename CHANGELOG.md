@@ -9,7 +9,6 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Fixed
 
 - **Dashboard — Queue names with the default queue prefix** (issue #390): `default` in `DashboardOptions.Queues` now covers `{prefix}.default` and the legacy `default` (the legacy row only while it holds jobs); jobs created by the dashboard without a queue (Scenarios, Trigger now) go to `{prefix}.default` instead of the legacy queue; the Settings page lists the polled queues and shows the paused state with the same rule as the dispatcher, so pausing the stored queue from the Queues page shows on Settings; the nav counter counts polled queues. A standalone dashboard must use the same `NexJob:QueuePrefix` as the workers.
-
 - **Server heartbeat and Salesforce Streaming handler ignored the configured options** (follow-up to #377): both took `IOptions<NexJobOptions>`, but the options are registered as a singleton, so `IOptions` handed them a default instance. A node therefore registered itself with the default queues and workers instead of the configured ones (the Servers page, the "no active workers" warning and the Trigger now confirmation were wrong for any host that sets `Queues`, `Workers` or `QueuePrefix`), and Streaming trigger jobs ignored `QueuePrefix` and `MaxAttempts`. Both now take `NexJobOptions` directly.
 
 ### Changed
