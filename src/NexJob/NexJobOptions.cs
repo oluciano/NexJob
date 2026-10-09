@@ -9,7 +9,9 @@ namespace NexJob;
 /// </summary>
 public sealed class NexJobOptions
 {
+    private const int MaxQueuePrefixLength = 100;
     private TimeSpan? _defaultExecutionTimeout;
+    private string? _queuePrefix;
     private IReadOnlyList<Type> _ignoreRetryAttemptExceptions = [];
 
     /// <summary>
@@ -151,9 +153,31 @@ public sealed class NexJobOptions
     /// <summary>
     /// Prefix applied to the implicit <c>default</c> queue so hosts sharing a database do not share a queue.
     /// When <see langword="null"/> or blank, the lowercase name of the entry assembly is used.
-    /// Queues named explicitly, and names that already contain a dot, are never prefixed.
+    /// Stored lowercase. Queues named explicitly, and names that already contain a dot, are never prefixed.
     /// </summary>
-    public string? QueuePrefix { get; set; }
+    /// <exception cref="ArgumentException">
+    /// The prefix is longer than 100 characters, contains whitespace, or starts or ends with a dot.
+    /// </exception>
+    public string? QueuePrefix
+    {
+        get => _queuePrefix;
+        set
+        {
+            var trimmed = value?.Trim();
+            if (!string.IsNullOrEmpty(trimmed)
+                && (trimmed.Length > MaxQueuePrefixLength
+                    || trimmed.Any(char.IsWhiteSpace)
+                    || trimmed.StartsWith('.')
+                    || trimmed.EndsWith('.')))
+            {
+                throw new ArgumentException(
+                    $"QueuePrefix must be at most {MaxQueuePrefixLength} characters, without whitespace, and must not start or end with a dot.",
+                    nameof(value));
+            }
+
+            _queuePrefix = value;
+        }
+    }
 
     /// <summary>
     /// Computes the retry delay for a failed job given the attempt number (1-based).
@@ -283,8 +307,8 @@ public sealed class NexJobOptions
 
     /// <summary>The prefix in effect: the explicit <see cref="QueuePrefix"/>, else the entry assembly name.</summary>
     internal string? EffectivePrefix => string.IsNullOrWhiteSpace(QueuePrefix)
-        ? QueueNames.DerivePrefix(System.Reflection.Assembly.GetEntryAssembly())
-        : QueuePrefix.Trim();
+        ? QueueNames.DerivePrefix(EntryAssembly)
+        : QueuePrefix.Trim().ToLowerInvariant();
 
     /// <summary>
     /// Set by <see cref="ApplySettings"/> when <c>appsettings.json</c> carries a <c>DefaultQueue</c> other than

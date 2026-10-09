@@ -16,7 +16,7 @@ await scheduler.EnqueueAsync<SendEmailJob, SendEmailInput>(input, cancellationTo
 await scheduler.ScheduleAsync<CleanupJob>(TimeSpan.FromHours(1), cancellationToken: ct);
 ```
 
-The stored name is `{prefix}.default`, so applications that share a database do not share a queue. The prefix is `NexJobOptions.QueuePrefix` (or `NexJob:QueuePrefix` in `appsettings.json`). When it is not set, NexJob uses the full lowercase name of the entry assembly: `Acme.Billing.Worker` becomes `acme.billing.worker.default`. The name is never shortened, so `Acme.Billing.Worker` and `Acme.Logistics.Worker` cannot collide.
+The stored name is `{prefix}.default`, so applications that share a database do not share a queue. The prefix is `NexJobOptions.QueuePrefix` (or `NexJob:QueuePrefix` in `appsettings.json`). When it is not set, NexJob uses the full lowercase name of the entry assembly: `Acme.Billing.Worker` becomes `acme.billing.worker.default`. The name is never shortened, so `Acme.Billing.Worker` and `Acme.Logistics.Worker` cannot collide. An explicit prefix is stored lowercase too, may have at most 100 characters, no whitespace, and must not start or end with a dot; anything else throws `ArgumentException` when you set it.
 
 ```csharp
 builder.Services.AddNexJob(options =>
@@ -29,11 +29,14 @@ These rules apply everywhere a queue name is accepted: `EnqueueAsync`, `Schedule
 
 - **Only the implicit default is prefixed.** `"default"` (or no queue) becomes `{prefix}.default`. A queue you name on purpose, such as `"emails"`, is used as it is.
 - **A name with a dot is already qualified** and is never prefixed again. A producer in one service targets another service's default queue with `queue: "billing.default"`.
-- **Configuration keyed by `"default"` follows the prefix.** `ConfigureQueue("default", ...)`, a circuit breaker, an execution window, and pausing `default` apply to `{prefix}.default` too.
-- **The legacy `default` queue is still drained.** Every host also polls `default`, so jobs stored before the upgrade still run. Nothing is renamed. A job of another application that sits in `default` is deferred back (see [Multi-Service](../guides/multi-service.md)).
+- **Configuration keyed by `"default"` follows the prefix.** `ConfigureQueue("default", ...)`, a circuit breaker, an execution window, pausing `default` and `ResetQueueCircuitAsync("default")` apply to `{prefix}.default` too.
+- **The legacy `default` queue is still drained.** Every host also polls `default`, so jobs stored before the upgrade still run. Nothing is renamed. A job of another application that sits in `default` is deferred back (see [Multi-Service](../guides/multi-service.md)). The drain is not covered by the execution window or circuit breaker you configured for `"default"` (they apply to the prefixed queue), and an explicit `queue: "default"` now means the prefixed queue: there is no way to enqueue into the legacy one.
 
 !!! warning "Set the prefix yourself in production"
     A derived prefix changes when the entry assembly is renamed, and jobs already stored stay in the old queue, which the drain does not cover (it only reads `default`). Set `QueuePrefix` explicitly so the name survives renames and refactors. The host logs a warning at startup while the prefix is derived.
+
+!!! warning "No entry assembly, or a shared host"
+    Some hosts have no entry assembly, and others run many applications under one entry assembly (for example a shared runner). In the first case no prefix is derived and the shared `default` comes back: the host logs a warning saying so. In the second, every application derives the same prefix and shares a queue again. In both cases set `QueuePrefix` explicitly.
 
 !!! note "Queue scope in the dashboard"
     `DashboardOptions.Queues` lists stored names. To show the default queue, list `{prefix}.default` (and `default` while old jobs remain). See [Queue Scoping](../integrations/dashboard.md).

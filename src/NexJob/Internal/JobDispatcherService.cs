@@ -107,6 +107,12 @@ internal sealed class JobDispatcherService : BackgroundService
                 derivedPrefix);
         }
 
+        if (string.IsNullOrWhiteSpace(_options.QueuePrefix) && _options.EffectivePrefix is null)
+        {
+            _logger.LogWarning(
+                "No default queue prefix: there is no entry assembly to derive it from and NexJobOptions.QueuePrefix is not set, so jobs enqueued without a queue go to the shared 'default' queue. Set NexJobOptions.QueuePrefix if other applications use this database.");
+        }
+
         var ignoredSettings = _options.GetIgnoredSettings();
         if (ignoredSettings.Count > 0)
         {

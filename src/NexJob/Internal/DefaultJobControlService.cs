@@ -67,8 +67,7 @@ internal sealed class DefaultJobControlService : IJobControlService
     /// <inheritdoc/>
     public Task ResetQueueCircuitAsync(string queue, CancellationToken ct = default)
     {
-        _ = _options;
-        _circuitBreakerManager?.Reset(queue);
+        _circuitBreakerManager?.Reset(_options?.ResolveQueue(queue) ?? queue);
         return Task.CompletedTask;
     }
 }
