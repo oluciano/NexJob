@@ -74,12 +74,16 @@ public sealed class SalesforceTriggerHandlerTests
             .Callback<JobRecord, DuplicatePolicy, CancellationToken>((j, p, ct) => capturedJob = j)
             .ReturnsAsync(JobId.New());
 
+        var committed = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _replayStoreMock.Setup(s => s.SaveReplayIdAsync(_options.Topic, replayId, It.IsAny<CancellationToken>()))
+            .Callback(() => committed.TrySetResult(true))
+            .Returns(default(ValueTask));
         var handler = CreateHandler();
 
         // Act
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
         await handler.StartAsync(cts.Token);
-        await Task.Delay(200); // Allow event to be processed
+        await committed.Task.WaitAsync(TimeSpan.FromSeconds(5)); // the commit is the last step of processing the event
         await handler.StopAsync(CancellationToken.None);
 
         // Assert
