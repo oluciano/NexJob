@@ -2,19 +2,19 @@
 
 # NexJob
 
-**Background jobs for .NET. Predictable. Observable. No magic.**
+**Background jobs for .NET that survive the worst day.**<br/>
+A node that dies, a deploy in the middle of a job, an upgrade from the previous version.
 
 📖 **Documentation: [oluciano.github.io/NexJob](https://oluciano.github.io/NexJob/)** &nbsp;|&nbsp; 🎮 **Live Demo: [nexjob-playground.fly.dev](https://nexjob-playground.fly.dev/)**
 
 [![NuGet](https://img.shields.io/nuget/v/NexJob.svg?style=flat-square&color=512bd4&label=nuget)](https://www.nuget.org/packages/NexJob)
 [![NuGet Downloads](https://img.shields.io/nuget/dt/NexJob?style=flat-square&color=512bd4)](https://www.nuget.org/packages/NexJob)
 [![Build](https://img.shields.io/github/actions/workflow/status/oluciano/NexJob/ci.yml?style=flat-square)](https://github.com/oluciano/NexJob/actions)
-[![Live Demo](https://img.shields.io/badge/live%20demo-fly.io-00cfd5?style=flat-square)](https://nexjob-playground.fly.dev/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg?style=flat-square)](LICENSE)
 
 <br/>
 
-[![NexJob Enterprise Dashboard](docs/assets/dashboard-overview.png)](docs/assets/dashboard-overview.png)
+[![NexJob dashboard](docs/assets/dashboard-overview.png)](https://nexjob-playground.fly.dev/)
 
 </div>
 
@@ -22,10 +22,9 @@
 
 ## What is NexJob?
 
-NexJob is a reliable background job processing library for .NET 8.
-It gives you predictable execution, built-in retries, deadline enforcement, and operational visibility — without the complexity of traditional schedulers.
+A background job library for .NET 8 with five storage providers (PostgreSQL, SQL Server, Redis, MongoDB, in-memory), retries, dead-letter handling, deadlines and a built-in dashboard.
 
-If you need jobs that **must run, fail safely, and leave a trace**, NexJob handles it as a first-class concern.
+It is built for jobs that **must run, fail safely and leave a trace**: every failure has a documented cost (see [Delivery guarantees](https://oluciano.github.io/NexJob/concepts/delivery-guarantees/)), and the behaviour is tested against real databases, not only mocks.
 
 ---
 
@@ -36,13 +35,13 @@ dotnet add package NexJob
 ```
 
 ```csharp
-// 1. Register NexJob and scan for jobs
+// Program.cs: register NexJob (in-memory storage by default) and scan for jobs
 builder.Services.AddNexJob();
 builder.Services.AddNexJobJobs(typeof(Program).Assembly);
 ```
 
 ```csharp
-// 2. Define a job
+// A job
 public sealed class SendInvoiceJob : IJob<SendInvoiceInput>
 {
     private readonly IEmailService _email;
@@ -57,67 +56,42 @@ public sealed record SendInvoiceInput(string Email);
 ```
 
 ```csharp
-// 3. Enqueue from anywhere
+// Enqueue it from anywhere. It expires if it does not start within 5 minutes.
 var scheduler = app.Services.GetRequiredService<IScheduler>();
 await scheduler.EnqueueAsync<SendInvoiceJob, SendInvoiceInput>(
     new SendInvoiceInput("customer@example.com"),
     deadlineAfter: TimeSpan.FromMinutes(5));
 ```
 
-The job expires if not started within 5 minutes — no silent failures, no zombie jobs.
+To watch it run, add the dashboard (`dotnet add package NexJob.Dashboard`) and `app.UseNexJobDashboard("/dashboard");`, then open `/dashboard`. See [Dashboard](#dashboard) for the Worker Service variant, or try the [live demo](https://nexjob-playground.fly.dev/) first.
+
+To use a database instead of memory, see the [storage providers](https://oluciano.github.io/NexJob/storage/overview/).
 
 ---
 
-## Core Features
+## Why you can trust it
 
-**Write and run jobs**
+A job library is judged on the worst day. This is what the test suite proves ([the full page](https://oluciano.github.io/NexJob/reference/how-we-test/)):
 
-- **[`IJob` / `IJob<T>`](https://oluciano.github.io/NexJob/concepts/job-types/)** — simple and structured job interfaces, with full dependency injection
-- **[Job filters](https://oluciano.github.io/NexJob/guides/job-filters/)** — `IJobExecutionFilter` middleware for cross-cutting behaviour
-- **[Progress and checkpoints](https://oluciano.github.io/NexJob/guides/job-context/#progress-checkpoints-for-long-running-jobs)** — report progress, and resume a retried job from its last checkpoint instead of starting over
-- **[Job continuations](https://oluciano.github.io/NexJob/concepts/continuations/)** — chain jobs with parent/child relationships
-- **[Job priority](https://oluciano.github.io/NexJob/concepts/scheduling/#priority)** — `JobPriority` controls the order within a queue
+- **The same tests on every provider.** One contract suite runs on InMemory, PostgreSQL, SQL Server, Redis and MongoDB.
+- **Several nodes, one database.** Reliability scenarios run many workers and nodes on the four databases: each job runs once, no job is lost under concurrent enqueue, and a job left behind by a dead node is recovered and runs once.
+- **A killed process.** On SQL Server a node runs in its own process and is killed in the middle of a job.
+- **Upgrades.** A storage filled by the previous version opens with the new one, with its history and orphans intact.
+- **An honest list of gaps.** The process kill is tested on SQL Server only, and wake-up latency is not asserted. The list is in the page above.
 
-**Stay reliable**
+---
 
-- **[Predictable retries](https://oluciano.github.io/NexJob/concepts/retries-and-dead-letter/)** — a configurable global delay policy plus per-job `[Retry]` with exponential backoff
-- **[Dead-letter handlers and forwarders](https://oluciano.github.io/NexJob/concepts/retries-and-dead-letter/)** — a fallback when all retries are exhausted, and a hook for [alerts](https://oluciano.github.io/NexJob/guides/alerts/)
-- **[Failures that should not be retried](https://oluciano.github.io/NexJob/concepts/retries-and-dead-letter/#failures-that-should-not-be-retried)** — list exception types such as `ArgumentException` and the job goes straight to dead-letter instead of burning attempts
-- **[Per-job attempt limit](https://oluciano.github.io/NexJob/concepts/retries-and-dead-letter/#per-job-attempt-limit)** — pass `maxAttempts` when enqueuing, so the same job type can fail fast for one caller and retry longer for another
-- **[Execution timeout](https://oluciano.github.io/NexJob/concepts/retries-and-dead-letter/#execution-timeout)** — `[ExecutionTimeout]` cancels a job's token after a limit and treats it as a normal failure (opt-in, cooperative)
-- **[Crash recovery](https://oluciano.github.io/NexJob/concepts/delivery-guarantees/)** — a job left behind by a node that died is found by its stale heartbeat and run again, or dead-lettered if it had no attempts left
-- **[Deadline enforcement](https://oluciano.github.io/NexJob/concepts/scheduling/#deadlines)** — jobs expire if not executed in time (`deadlineAfter`)
-- **[Idempotency](https://oluciano.github.io/NexJob/concepts/idempotency/)** — `DuplicatePolicy` controls re-enqueue behavior
-- **[Queue isolation by default](https://oluciano.github.io/NexJob/concepts/queues/#the-default-queue)** — the default queue is `{prefix}.default` per application, so services that share a database do not share a queue; the legacy `default` is still drained
-- **[Queue circuit breaker](https://oluciano.github.io/NexJob/guides/circuit-breaker/)** — pauses a queue when a dependency is down, probes it with one job and ramps back up gradually
-- **[Concurrency throttling](https://oluciano.github.io/NexJob/guides/throttling/)** — `[Throttle]` for per-resource limits, and `AddNexJobDistributedThrottle()` for global cluster-wide limits via Redis
-- **[Execution windows](https://oluciano.github.io/NexJob/guides/execution-windows/)** — restrict a queue to certain hours and days, such as nights only or business days
-- **[Delivery guarantees](https://oluciano.github.io/NexJob/concepts/delivery-guarantees/)** — one table of what each failure costs a job
+## What you get
 
-**Schedule**
-
-- **[Recurring jobs](https://oluciano.github.io/NexJob/concepts/recurring-jobs/)** — via code or [`appsettings.json`](https://oluciano.github.io/NexJob/concepts/recurring-jobs/#configuration-via-appsettingsjson), with time zones
-- **[Delayed and scheduled jobs](https://oluciano.github.io/NexJob/concepts/scheduling/#scheduled-execution)** — run after a delay or at a specific time
-
-**Operate**
-
-- **[Built-in dashboard](https://oluciano.github.io/NexJob/integrations/dashboard/)** — standalone dark UI, zero configuration
-- **[Runtime control](https://oluciano.github.io/NexJob/guides/runtime-control/)** — pause and resume queues, requeue failed jobs, delete jobs and reset circuit breakers with `IJobControlService`
-- **[Alerts](https://oluciano.github.io/NexJob/guides/alerts/)** — know when a job fails for good, with a Slack recipe and the metrics to alert on
-- **[Health checks](https://oluciano.github.io/NexJob/guides/best-practices/#monitoring-and-alerting)** and **[OpenTelemetry](https://oluciano.github.io/NexJob/integrations/opentelemetry/)** — traces and metrics built-in
-- **[Job retention](https://oluciano.github.io/NexJob/guides/best-practices/#control-storage-growth-with-retention-policies)** — automatic cleanup of terminal jobs with configurable TTL
-
-**Storage and integrations**
-
-- **[Five storage providers](https://oluciano.github.io/NexJob/storage/overview/)** — PostgreSQL, SQL Server, Redis, MongoDB and in-memory
-- **[Read replicas](https://oluciano.github.io/NexJob/storage/postgresql/#dashboard-read-replica)** — `UseDashboardReadReplica()` offloads dashboard queries (PostgreSQL, SQL Server)
-- **[Several services on one database](https://oluciano.github.io/NexJob/guides/multi-service/)** — queue isolation, and foreign jobs from other microservices are deferred without penalizing attempts or dead-lettering
-- **[External triggers](https://oluciano.github.io/NexJob/integrations/triggers/)** — turn Kafka, RabbitMQ, AWS SQS, Azure Service Bus, Google Pub/Sub and Salesforce messages into jobs
-- **[Resilient Outbox](https://oluciano.github.io/NexJob/integrations/rabbitmq/)** — transaction-safe event producers for RabbitMQ and Apache Kafka
-
-**Trust**
-
-- **[Tested on real databases](https://oluciano.github.io/NexJob/reference/how-we-test/)** — scenarios with several nodes, a killed process and upgrades from the previous version, and an honest list of what is not covered
+| You need | NexJob gives you |
+|---|---|
+| **Jobs that retry and then stop** | Global and per-job [retries](https://oluciano.github.io/NexJob/concepts/retries-and-dead-letter/), `maxAttempts` per enqueue, [dead-letter handlers and forwarders](https://oluciano.github.io/NexJob/concepts/retries-and-dead-letter/), failures that skip retries, [`[ExecutionTimeout]`](https://oluciano.github.io/NexJob/concepts/retries-and-dead-letter/#execution-timeout) |
+| **No zombie jobs** | [Deadlines](https://oluciano.github.io/NexJob/concepts/scheduling/#deadlines), [crash recovery](https://oluciano.github.io/NexJob/concepts/delivery-guarantees/) by heartbeat, `DuplicatePolicy` [idempotency](https://oluciano.github.io/NexJob/concepts/idempotency/) |
+| **Protect a dependency** | [Queue circuit breaker](https://oluciano.github.io/NexJob/guides/circuit-breaker/), [`[Throttle]`](https://oluciano.github.io/NexJob/guides/throttling/) per resource (cluster-wide with Redis), [execution windows](https://oluciano.github.io/NexJob/guides/execution-windows/) |
+| **Several services, one database** | [Queue isolation by default](https://oluciano.github.io/NexJob/concepts/queues/#the-default-queue) (`{prefix}.default` per application), [multi-service guide](https://oluciano.github.io/NexJob/guides/multi-service/) |
+| **Schedule** | [Recurring jobs](https://oluciano.github.io/NexJob/concepts/recurring-jobs/) from code or `appsettings.json`, with time zones; delayed jobs; continuations; priority |
+| **See and control it** | [Dashboard](https://oluciano.github.io/NexJob/integrations/dashboard/), [runtime control](https://oluciano.github.io/NexJob/guides/runtime-control/) (pause, requeue, delete), [OpenTelemetry](https://oluciano.github.io/NexJob/integrations/opentelemetry/), health checks, [alerts](https://oluciano.github.io/NexJob/guides/alerts/) |
+| **Feed it from brokers** | [Triggers](https://oluciano.github.io/NexJob/integrations/triggers/) for Kafka, RabbitMQ, AWS SQS, Azure Service Bus, Google Pub/Sub and Salesforce, and a resilient outbox for RabbitMQ and Kafka |
 
 ---
 
@@ -137,18 +111,20 @@ All providers implement `IRuntimeSettingsStore` — runtime configuration persis
 
 ## Packages
 
+All packages share one version number.
+
 | Package | NuGet | Description |
 |---|---|---|
-| `NexJob.Dashboard` | [![NuGet](https://img.shields.io/badge/nuget-v6.0.0-blue)](https://www.nuget.org/packages/NexJob.Dashboard) | Embedded ASP.NET Core dashboard middleware |
-| `NexJob.Dashboard.Standalone` | [![NuGet](https://img.shields.io/badge/nuget-v6.0.0-blue)](https://www.nuget.org/packages/NexJob.Dashboard.Standalone) | Embedded HTTP dashboard server for Worker Services |
-| `NexJob.OpenTelemetry` | [![NuGet](https://img.shields.io/badge/nuget-v6.0.0-blue)](https://www.nuget.org/packages/NexJob.OpenTelemetry) | OTel SDK instrumentation |
-| `NexJob.Trigger.AzureServiceBus` | [![NuGet](https://img.shields.io/badge/nuget-v6.0.0-blue)](https://www.nuget.org/packages/NexJob.Trigger.AzureServiceBus) | Azure Service Bus trigger |
-| `NexJob.Trigger.AwsSqs` | [![NuGet](https://img.shields.io/badge/nuget-v6.0.0-blue)](https://www.nuget.org/packages/NexJob.Trigger.AwsSqs) | AWS SQS trigger |
-| `NexJob.RabbitMQ` | [![NuGet](https://img.shields.io/badge/nuget-v6.0.0-blue)](https://www.nuget.org/packages/NexJob.RabbitMQ) | RabbitMQ trigger & resilient outbox producer |
-| `NexJob.Kafka` | [![NuGet](https://img.shields.io/badge/nuget-v6.0.0-blue)](https://www.nuget.org/packages/NexJob.Kafka) | Apache Kafka trigger & resilient outbox producer |
-| `NexJob.Trigger.GooglePubSub` | [![NuGet](https://img.shields.io/badge/nuget-v6.0.0-blue)](https://www.nuget.org/packages/NexJob.Trigger.GooglePubSub) | Google Cloud Pub/Sub trigger |
-| `NexJob.Trigger.Salesforce` | [![NuGet](https://img.shields.io/badge/nuget-v6.0.0-blue)](https://www.nuget.org/packages/NexJob.Trigger.Salesforce) | Salesforce Pub/Sub API trigger (gRPC & Avro) |
-| `NexJob.Trigger.SalesforceStreaming` | [![NuGet](https://img.shields.io/badge/nuget-v6.0.0-blue)](https://www.nuget.org/packages/NexJob.Trigger.SalesforceStreaming) | Salesforce Streaming API trigger (CometD & Bayeux) |
+| `NexJob.Dashboard` | [NuGet](https://www.nuget.org/packages/NexJob.Dashboard) | Embedded ASP.NET Core dashboard middleware |
+| `NexJob.Dashboard.Standalone` | [NuGet](https://www.nuget.org/packages/NexJob.Dashboard.Standalone) | Embedded HTTP dashboard server for Worker Services |
+| `NexJob.OpenTelemetry` | [NuGet](https://www.nuget.org/packages/NexJob.OpenTelemetry) | OTel SDK instrumentation |
+| `NexJob.Trigger.AzureServiceBus` | [NuGet](https://www.nuget.org/packages/NexJob.Trigger.AzureServiceBus) | Azure Service Bus trigger |
+| `NexJob.Trigger.AwsSqs` | [NuGet](https://www.nuget.org/packages/NexJob.Trigger.AwsSqs) | AWS SQS trigger |
+| `NexJob.RabbitMQ` | [NuGet](https://www.nuget.org/packages/NexJob.RabbitMQ) | RabbitMQ trigger & resilient outbox producer |
+| `NexJob.Kafka` | [NuGet](https://www.nuget.org/packages/NexJob.Kafka) | Apache Kafka trigger & resilient outbox producer |
+| `NexJob.Trigger.GooglePubSub` | [NuGet](https://www.nuget.org/packages/NexJob.Trigger.GooglePubSub) | Google Cloud Pub/Sub trigger |
+| `NexJob.Trigger.Salesforce` | [NuGet](https://www.nuget.org/packages/NexJob.Trigger.Salesforce) | Salesforce Pub/Sub API trigger (gRPC & Avro) |
+| `NexJob.Trigger.SalesforceStreaming` | [NuGet](https://www.nuget.org/packages/NexJob.Trigger.SalesforceStreaming) | Salesforce Streaming API trigger (CometD & Bayeux) |
 
 ---
 
@@ -160,13 +136,10 @@ The dashboard provides real-time operational visibility into your background job
 
 [![NexJob Live Broker Listeners & Event Triggers](docs/assets/dashboard-listeners.png)](docs/assets/dashboard-listeners.png)
 
-- **Maxton Design System:** Modern 64px header, live cluster status indicator, and `Ctrl + K` instant job search.
-- **Cluster Pipeline Topology Map:** Native SVG & CSS flow diagram showing Ingress Triggers ➔ Queue Buffers ➔ Worker Nodes.
-- **Live Event Listeners:** Dedicated `/listeners` page monitoring connected message brokers (RabbitMQ, Kafka, AWS SQS, Azure Service Bus, Salesforce).
-- **Job Catalog & Definitions (`/catalog`):** Aggregated job types, queue distribution, run counts, error rates, deep links to history, and on-demand ad-hoc triggering for parameterless jobs.
-- **Server-Sent Events (SSE):** Streaming logs and real-time execution progress bars without page reloads.
-- **Interactive Scenarios Drawer:** Opt-in simulator (`EnablePlayground = true`, disabled by default) to test burst loads and failure scenarios without writing custom scripts.
-- **5 Built-In Themes:** Configurable default theme (`DefaultTheme = "semi-dark"`, `"blue-theme"`, `"dark"`, `"light"`, `"bordered"`).
+- Live cluster status, `Ctrl + K` job search, and a topology map from triggers to queues to worker nodes.
+- Event listeners page for the connected brokers, and a job catalog with error rates and deep links to history.
+- Streaming logs and progress bars (SSE), and five themes (`DefaultTheme = "semi-dark"`, `"blue-theme"`, `"dark"`, `"light"`, `"bordered"`).
+- Opt-in scenario simulator (`EnablePlayground = true`, off by default) to try burst loads and failures without writing scripts.
 
 ### ASP.NET Core Web App
 
@@ -279,55 +252,18 @@ Benchmarks can be parameterized by payload size (`PayloadBytes: 0, 1024, 10240`)
 
 ---
 
-## Roadmap
+## Recent releases
 
 ```
-v0.4.0  ✅ Deadlines, dead-letter handlers, wake-up signaling
-v0.5.0  ✅ Wake-up channel, recurring jobs, dashboard timeline
-v0.6.0  ✅ Distributed reliability tests, recurring config redesign
-v0.7.0  ✅ DuplicatePolicy, atomic commits, AI execution system
-v0.8.0  ✅ Filters, persistent settings, job retention, wiki
-v1.0.0  ✅ API freeze, production hardened
-v2.0.0  ✅ External triggers, OpenTelemetry, metrics cache
-v3.0.0  ✅ Storage segregation (IJobStorage / IRecurringStorage / IDashboardStorage),
-           JobExecutor pipeline, IJobExecutionFilter, IJobControlService,
-           UseDashboardReadReplica(), AddNexJobDistributedThrottle()
-v4.0.0  ✅ Reliability hardening, crash recovery, orphaned job watcher, fault injection
-v5.0.0  ✅ Resilient Outbox producers & triggers for RabbitMQ and Apache Kafka
-v5.1.0  ✅ Salesforce triggers (gRPC Pub/Sub API + CometD Bayeux Streaming API)
-v5.2.0  ✅ Dead-letter retention & chunked purging, consumer-driven triggers, OTel HPA gauges
-v5.3.0  ✅ Kafka security delegates (ConfigureConsumer, ConfigureProducer, SASL/SSL PEM)
-v5.4.0  ✅ Dashboard Maxton layout (5 themes), Cluster Topology, SSE log stream & Event Listeners
-v5.4.1  ✅ Full IListenerRegistry integration across all external triggers (Salesforce, ASB, SQS, Pub/Sub)
-v5.5.0  ✅ High-throughput batch fetching & batch acknowledgment across all storage providers
-v5.6.0  ✅ Queue circuit breaker, job progress checkpoints, anti-bloat retention, structured log scope,
-           dashboard job catalog / multi-cluster federation / ops-host mode, graceful-shutdown and
-           storage-error hardening, Redis job index & crash-safe distributed throttle, trigger idempotency and
-           transient-failure fixes
-v5.6.1  ✅ Broker triggers deliver the message body to `IJob<string>` verbatim as text (fixes non-JSON bodies on every
-           trigger and the PostgreSQL `jsonb` enqueue failure)
-v5.6.2  ✅ Standalone dashboard warns when it is reachable from the network, valid empty-state icons, throttling and
-           sample documentation aligned with the code, documentation site on GitHub Pages
-v5.7.0  ✅ Standalone dashboard is loopback-only by default and enforces `IDashboardAuthorizationHandler`, the Workers control
-           is gone from the dashboard, Postgres `NpgsqlDataSource` registration no longer crashes the host, SQL Server
-           deadlocks under concurrent workers fixed, Redis job index reconciled hourly under a lock, database connection
-           pool guidance and startup advisory
-v5.8.0  ✅ `deadlineAfter` enforced on every database provider (new `expires_at`, migration V11), a saturated `[Throttle]`
-           resource no longer starves a node and an interrupted job keeps its attempt, jobs exhausted by crashes reach
-           dead-letter handlers, `IDeadLetterForwarder` with built-in Kafka/RabbitMQ forwarding, Redis delete ghost and
-           MongoDB rolling-upgrade fixes, 24h throughput chart and CPU/RAM gauges in the dashboard, new guides (alerts,
-           circuit breaker, execution windows, runtime control, delivery guarantees, queues)
-v5.9.0  ✅ `[ExecutionTimeout]` and `DefaultExecutionTimeout` (cooperative cancellation, with a warning and the
-           `nexjob.jobs.cancellation_ignored` counter for jobs that ignore it), per-job `maxAttempts` on
-           `EnqueueAsync`/`ScheduleAsync`, `IgnoreRetryAttemptExceptions` to dead-letter without retrying,
-           `DaysOfWeek` on execution windows, dashboard playground and default theme
-v5.10.0 ✅ `EnvironmentName` on the dashboard (coloured badge and prefixed tab title for Production, Staging and
-           Development), a dashboard layout that fits phones, and sturdier tests (no fixed sleeps, no shared TCP ports)
-v6.0.0  ✅ The default queue is isolated per application (`{prefix}.default`, `QueuePrefix` or the entry assembly name) with
-           a drain of the legacy `default`; dashboard queue scope, orphaned-queue hint and recurring job id collision
-           warning; `Workers = 0` and `DisableWorkers` now really run a host without job execution; the heartbeat and the
-           Salesforce Streaming trigger honour the configured options; docs-truth tool and skill compare the code with the wiki
+v6.0.0  ✅ The default queue is isolated per application (`{prefix}.default`) with a drain of the legacy `default`;
+           orphaned-queue hint and recurring id collision warning in the dashboard; `Workers = 0` and
+           `DisableWorkers` really run a host without job execution
+v5.10.0 ✅ `EnvironmentName` badge on the dashboard, a dashboard layout that fits phones
+v5.9.0  ✅ `[ExecutionTimeout]`, per-job `maxAttempts`, `IgnoreRetryAttemptExceptions`, `DaysOfWeek` on execution windows
+v5.8.0  ✅ `deadlineAfter` enforced on every database provider, `IDeadLetterForwarder`, new guides
 ```
+
+The full history is in the [CHANGELOG](CHANGELOG.md). Security issues: see [SECURITY.md](SECURITY.md).
 
 ---
 
