@@ -25,7 +25,8 @@
 3. **Phase 3: Code vs Documentation Truth Gate (Direct Sync on `develop`):**
    - **Code is the ultimate source of truth:** If docs disagree with code, fix the docs. **Never alter production code (`src/**/*.cs`) to match docs.**
    - Audit root `README.md`, package READMEs (`src/*/README.md`), and Wiki (`docs/wiki/*.md`).
-   - If Mintlify customer docs exist (`mintlify-docs`), synchronize via `python3 docs/site/sync-from-mintlify.py` and verify `mkdocs build --strict`.
+   - There is no external documentation to synchronize: `docs/wiki` is the single source (the Mintlify mirror was retired).
+   - Run the `nexjob-docs-truth` skill with `--scope full` (tool report, semantic review in batches, coverage report per page) and verify `mkdocs build --strict`.
    - Commit documentation updates directly to `develop`.
 4. **Phase 4: Pre-Release Quality & Packaging Rehearsal:**
    - Verify `dotnet build -c Release` (0 warnings, `TreatWarningsAsErrors = true`).

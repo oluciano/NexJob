@@ -129,6 +129,7 @@ Not every option can be set from `appsettings.json`. The table below lists every
 | `MaxAttempts` | `MaxAttempts` | Integer |
 | `MaxJobLogLines` | `MaxJobLogLines` | Integer |
 | `ServerId` | `ServerId` | String |
+| `DefaultQueue` | `DefaultQueue` | String. **Ignored**: the default queue of the application is named by `QueuePrefix`; a value other than `default` only logs a startup warning |
 | `PollingInterval` | `PollingInterval` | `TimeSpan` string, e.g. `"00:00:10"` |
 | `HeartbeatInterval` | `HeartbeatInterval` | `TimeSpan` string |
 | `ServerHeartbeatInterval` | `ServerHeartbeatInterval` | `TimeSpan` string |
