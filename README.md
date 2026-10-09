@@ -14,7 +14,9 @@ A node that dies, a deploy in the middle of a job, an upgrade from the previous 
 
 <br/>
 
-[![NexJob dashboard](docs/assets/dashboard-overview.png)](https://nexjob-playground.fly.dev/)
+[![A job fails three times and reaches the dead-letter queue](docs/assets/dead-letter.gif)](https://nexjob-playground.fly.dev/)
+
+<sub>A job fails three times and lands in the dead-letter queue with its error, ready to requeue. The two others succeed.</sub>
 
 </div>
 
