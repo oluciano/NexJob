@@ -25,8 +25,23 @@ namespace NexJob
         Task ExecuteAsync(TInput input, CancellationToken cancellationToken);
     }
 
+    public sealed class JobRecord
+    {
+    }
+
+    public enum DuplicatePolicy
+    {
+        AllowAfterFailed,
+        ThrowOnDuplicate
+    }
+
     public interface IScheduler
     {
+        Task EnqueueAsync(
+            JobRecord job,
+            DuplicatePolicy duplicatePolicy = DuplicatePolicy.AllowAfterFailed,
+            CancellationToken cancellationToken = default);
+
         Task EnqueueAsync<TJob>(
             string? queue = null,
             string? idempotencyKey = null,
@@ -54,42 +69,6 @@ namespace NexJob
             string? idempotencyKey = null,
             TimeSpan? deadlineAfter = null,
             CancellationToken cancellationToken = default) where TJob : IJob<TInput>;
-    }
-
-    public interface IDashboardAuthorizationHandler
-    {
-    }
-
-    public static class NexJobServiceCollectionExtensions
-    {
-        public static object AddNexJob(this object services) => services;
-    }
-}
-
-namespace NexJob.Dashboard
-{
-    using NexJob;
-
-    public class DashboardOptions
-    {
-        public IDashboardAuthorizationHandler? AuthorizationHandler { get; set; }
-    }
-}
-
-namespace Microsoft.AspNetCore.Builder
-{
-    using NexJob.Dashboard;
-
-    public interface IApplicationBuilder
-    {
-    }
-
-    public static class DashboardExtensions
-    {
-        public static IApplicationBuilder UseNexJobDashboard(
-            this IApplicationBuilder app,
-            string path = ""/dashboard"",
-            System.Action<DashboardOptions>? configure = null) => app;
     }
 }
 ";
@@ -103,6 +82,12 @@ namespace Microsoft.AspNetCore.Builder
         };
 
         test.TestState.Sources.Add(("NexJobStubs.cs", NexJobSources));
+        test.TestState.AnalyzerConfigFiles.Add(("/.editorconfig", @"
+root = true
+[*.cs]
+dotnet_diagnostic.NXJ011.severity = info
+dotnet_diagnostic.NXJ016.severity = info
+"));
         test.ExpectedDiagnostics.AddRange(expected);
 
         await test.RunAsync();

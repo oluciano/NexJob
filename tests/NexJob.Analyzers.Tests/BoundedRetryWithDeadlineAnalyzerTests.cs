@@ -16,16 +16,16 @@ using System.Threading;
 using System.Threading.Tasks;
 using NexJob;
 
-public sealed class MyJob : IJob
+public sealed class DeadlineProcessingJob : IJob
 {
     public Task ExecuteAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 }
 
-public sealed class Service
+public sealed class DeadlineDispatchService
 {
-    public async Task EnqueueBounded(IScheduler scheduler)
+    public async Task EnqueueBoundedRetry(IScheduler scheduler)
     {
-        await scheduler.EnqueueAsync<MyJob>(maxAttempts: 3, deadlineAfter: TimeSpan.FromMinutes(5));
+        await scheduler.EnqueueAsync<DeadlineProcessingJob>(maxAttempts: 3, deadlineAfter: TimeSpan.FromMinutes(5));
     }
 }
 ";
@@ -41,16 +41,16 @@ using System.Threading;
 using System.Threading.Tasks;
 using NexJob;
 
-public sealed class MyJob : IJob
+public sealed class DeadlineProcessingJob : IJob
 {
     public Task ExecuteAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 }
 
-public sealed class Service
+public sealed class DeadlineDispatchService
 {
-    public async Task EnqueueUnbounded(IScheduler scheduler)
+    public async Task EnqueueUnboundedRetry(IScheduler scheduler)
     {
-        await {|#0:scheduler.EnqueueAsync<MyJob>(deadlineAfter: TimeSpan.FromMinutes(5))|};
+        await {|#0:scheduler.EnqueueAsync<DeadlineProcessingJob>(deadlineAfter: TimeSpan.FromMinutes(5))|};
     }
 }
 ";
@@ -68,16 +68,34 @@ using System.Threading;
 using System.Threading.Tasks;
 using NexJob;
 
-public sealed class MyJob : IJob
+public sealed class DeadlineProcessingJob : IJob
 {
     public Task ExecuteAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 }
 
-public sealed class Service
+public sealed class DeadlineDispatchService
 {
-    public async Task EnqueueNormal(IScheduler scheduler)
+    public async Task EnqueueStandardJob(IScheduler scheduler)
     {
-        await scheduler.EnqueueAsync<MyJob>();
+        await scheduler.EnqueueAsync<DeadlineProcessingJob>();
+    }
+}
+";
+        await VerifyCS.VerifyAnalyzerAsync(testCode);
+    }
+
+    [Fact]
+    public async Task N4_Boundary_JobRecordOverload_NoDiagnostics()
+    {
+        const string testCode = @"
+using System.Threading.Tasks;
+using NexJob;
+
+public sealed class IngestionBridge
+{
+    public async Task ForwardJobRecord(IScheduler scheduler, JobRecord record)
+    {
+        await scheduler.EnqueueAsync(record);
     }
 }
 ";

@@ -16,12 +16,10 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - `NXJ005`: Static mutable state (mutable fields, static collections, properties with setters) inside job classes preventing cross-worker pollution.
   - `NXJ006`: Fire-and-forget tasks (`Task.Run(...)`) escaping dispatcher lifecycle tracking.
   - `NXJ007`: Direct service instantiation (`Service`, `Repository`, `DbContext`, `HttpClient`) enforcing constructor DI.
-  - `NXJ008`: Dashboard middleware (`UseNexJobDashboard`) called without authorization handler configuration.
-  - `NXJ009`: Default in-memory storage usage in non-test production entry points.
   - `NXJ010`: Enqueue specifying `deadlineAfter` without bounded `maxAttempts` retry limit.
-  - `NXJ011`: Enqueue missing `idempotencyKey` on repeated or distributed operations.
+  - `NXJ011`: Enqueue missing `idempotencyKey` on repeated or distributed operations (opt-in via `.editorconfig`).
   - `NXJ015`: Direct self-referencing job continuation loop detection within `ExecuteAsync`.
-  - `NXJ016`: Implicit queue prefix mismatch when calling `IScheduler.EnqueueAsync` or `ScheduleAsync` without explicit `queue` parameter in multi-service shared storage clusters.
+  - `NXJ016`: Implicit queue prefix mismatch when calling `IScheduler.EnqueueAsync` or `ScheduleAsync` without explicit `queue` parameter in multi-service shared storage clusters (opt-in via `.editorconfig`).
 
 ### Documentation
 

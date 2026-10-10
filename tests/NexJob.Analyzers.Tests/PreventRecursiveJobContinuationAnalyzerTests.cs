@@ -15,18 +15,18 @@ using System.Threading;
 using System.Threading.Tasks;
 using NexJob;
 
-public sealed class FirstJob : IJob
+public sealed class StageOneJob : IJob
 {
     private readonly IScheduler _scheduler;
-    public FirstJob(IScheduler scheduler) => _scheduler = scheduler;
+    public StageOneJob(IScheduler scheduler) => _scheduler = scheduler;
 
     public async Task ExecuteAsync(CancellationToken cancellationToken)
     {
-        await _scheduler.EnqueueAsync<SecondJob>();
+        await _scheduler.EnqueueAsync<StageTwoJob>();
     }
 }
 
-public sealed class SecondJob : IJob
+public sealed class StageTwoJob : IJob
 {
     public Task ExecuteAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 }
@@ -42,20 +42,20 @@ using System.Threading;
 using System.Threading.Tasks;
 using NexJob;
 
-public sealed class RecursiveJob : IJob
+public sealed class SelfLoopingJob : IJob
 {
     private readonly IScheduler _scheduler;
-    public RecursiveJob(IScheduler scheduler) => _scheduler = scheduler;
+    public SelfLoopingJob(IScheduler scheduler) => _scheduler = scheduler;
 
     public async Task ExecuteAsync(CancellationToken cancellationToken)
     {
-        await {|#0:_scheduler.EnqueueAsync<RecursiveJob>()|};
+        await {|#0:_scheduler.EnqueueAsync<SelfLoopingJob>()|};
     }
 }
 ";
         var expected0 = new DiagnosticResult("NXJ015", Microsoft.CodeAnalysis.DiagnosticSeverity.Info)
             .WithLocation(0)
-            .WithArguments("RecursiveJob");
+            .WithArguments("SelfLoopingJob");
 
         await VerifyCS.VerifyAnalyzerAsync(testCode, expected0);
     }
@@ -68,16 +68,38 @@ using System.Threading;
 using System.Threading.Tasks;
 using NexJob;
 
-public sealed class MyJob : IJob
+public sealed class StandaloneActionJob : IJob
 {
     public Task ExecuteAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 }
 
-public sealed class OrderController
+public sealed class WebCheckoutController
 {
-    public async Task CreateOrder(IScheduler scheduler)
+    public async Task ProcessCheckout(IScheduler scheduler)
     {
-        await scheduler.EnqueueAsync<MyJob>();
+        await scheduler.EnqueueAsync<StandaloneActionJob>();
+    }
+}
+";
+        await VerifyCS.VerifyAnalyzerAsync(testCode);
+    }
+
+    [Fact]
+    public async Task N4_Boundary_JobRecordEnqueue_NoDiagnostics()
+    {
+        const string testCode = @"
+using System.Threading;
+using System.Threading.Tasks;
+using NexJob;
+
+public sealed class RecordForwardingJob : IJob
+{
+    private readonly IScheduler _scheduler;
+    public RecordForwardingJob(IScheduler scheduler) => _scheduler = scheduler;
+
+    public async Task ExecuteAsync(CancellationToken cancellationToken)
+    {
+        await _scheduler.EnqueueAsync(new JobRecord());
     }
 }
 ";

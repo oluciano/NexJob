@@ -15,21 +15,21 @@ using System.Threading;
 using System.Threading.Tasks;
 using NexJob;
 
-public sealed class SampleJob : IJob
+public sealed class TenantBillingReportJob : IJob
 {
     public Task ExecuteAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 }
 
-public sealed class Service
+public sealed class BillingCoordinator
 {
-    public async Task EnqueueWithQueueNamed(IScheduler scheduler)
+    public async Task SubmitNamedQueueJob(IScheduler scheduler)
     {
-        await scheduler.EnqueueAsync<SampleJob>(queue: ""billing"");
+        await scheduler.EnqueueAsync<TenantBillingReportJob>(queue: ""billing-tier1"");
     }
 
-    public async Task EnqueueWithQueuePositional(IScheduler scheduler)
+    public async Task SubmitPositionalQueueJob(IScheduler scheduler)
     {
-        await scheduler.EnqueueAsync<SampleJob>(""billing"");
+        await scheduler.EnqueueAsync<TenantBillingReportJob>(""billing-tier1"");
     }
 }
 ";
@@ -44,16 +44,16 @@ using System.Threading;
 using System.Threading.Tasks;
 using NexJob;
 
-public sealed class SampleJob : IJob
+public sealed class TenantBillingReportJob : IJob
 {
     public Task ExecuteAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 }
 
-public sealed class Service
+public sealed class BillingCoordinator
 {
-    public async Task EnqueueImplicitQueue(IScheduler scheduler)
+    public async Task SubmitDefaultQueueJob(IScheduler scheduler)
     {
-        await {|#0:scheduler.EnqueueAsync<SampleJob>()|};
+        await {|#0:scheduler.EnqueueAsync<TenantBillingReportJob>()|};
     }
 }
 ";
@@ -69,16 +69,34 @@ public sealed class Service
         const string testCode = @"
 using System.Threading.Tasks;
 
-public sealed class CustomQueueService
+public sealed class RabbitPublisher
 {
-    public Task EnqueueAsync<T>() => Task.CompletedTask;
+    public Task EnqueueAsync<TPayload>() => Task.CompletedTask;
 }
 
-public sealed class Service
+public sealed class EventForwarder
 {
-    public async Task CallCustomMethod(CustomQueueService custom)
+    public async Task SendEvent(RabbitPublisher publisher)
     {
-        await custom.EnqueueAsync<string>();
+        await publisher.EnqueueAsync<string>();
+    }
+}
+";
+        await VerifyCS.VerifyAnalyzerAsync(testCode);
+    }
+
+    [Fact]
+    public async Task N4_Boundary_JobRecordOverload_NoDiagnostics()
+    {
+        const string testCode = @"
+using System.Threading.Tasks;
+using NexJob;
+
+public sealed class TriggerBridge
+{
+    public async Task EnqueuePrebuiltRecord(IScheduler scheduler, JobRecord record)
+    {
+        await scheduler.EnqueueAsync(record);
     }
 }
 ";

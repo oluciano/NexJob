@@ -17,9 +17,15 @@ internal static class AnalyzerHelper
     public const string HelpBaseUrl = "https://oluciano.github.io/NexJob/guides/best-practices/";
 
     /// <summary>
-    /// Creates a standard DiagnosticDescriptor with default severity and online documentation link.
+    /// Creates a standard DiagnosticDescriptor with configurable severity and online documentation link.
     /// </summary>
-    public static DiagnosticDescriptor CreateDescriptor(string id, string title, string messageFormat, string category, string description)
+    public static DiagnosticDescriptor CreateDescriptor(
+        string id,
+        string title,
+        string messageFormat,
+        string category,
+        string description,
+        bool isEnabledByDefault = true)
     {
         return new DiagnosticDescriptor(
             id,
@@ -27,7 +33,7 @@ internal static class AnalyzerHelper
             messageFormat,
             category,
             DiagnosticSeverity.Info,
-            isEnabledByDefault: true,
+            isEnabledByDefault: isEnabledByDefault,
             description: description,
             helpLinkUri: HelpBaseUrl);
     }
@@ -71,6 +77,7 @@ internal static class AnalyzerHelper
 
     /// <summary>
     /// Checks whether an invocation expression calls IScheduler.EnqueueAsync or ScheduleAsync.
+    /// Overloads accepting a pre-built JobRecord are excluded because their queue/idempotency configuration lives on the record.
     /// </summary>
     public static bool IsSchedulerEnqueueOrSchedule(InvocationExpressionSyntax invocation, SemanticModel semanticModel, System.Threading.CancellationToken cancellationToken, out IMethodSymbol? methodSymbol)
     {
@@ -94,8 +101,21 @@ internal static class AnalyzerHelper
             return false;
         }
 
-        return methodSymbol.Name.StartsWith("Enqueue", StringComparison.Ordinal) ||
-               methodSymbol.Name.StartsWith("Schedule", StringComparison.Ordinal);
+        var isEnqueueOrSchedule = methodSymbol.Name.StartsWith("Enqueue", StringComparison.Ordinal) ||
+                                  methodSymbol.Name.StartsWith("Schedule", StringComparison.Ordinal);
+
+        if (!isEnqueueOrSchedule)
+        {
+            return false;
+        }
+
+        if (methodSymbol.Parameters.Length > 0 &&
+            string.Equals(methodSymbol.Parameters[0].Type.Name, "JobRecord", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        return true;
     }
 
     /// <summary>
@@ -104,6 +124,14 @@ internal static class AnalyzerHelper
     public static void RegisterInvocation(AnalysisContext context, Action<SyntaxNodeAnalysisContext> action)
     {
         context.RegisterSyntaxNodeAction(action, Microsoft.CodeAnalysis.CSharp.SyntaxKind.InvocationExpression);
+    }
+
+    /// <summary>
+    /// Checks whether the method symbol declares a parameter with the specified name.
+    /// </summary>
+    public static bool HasParameter(IMethodSymbol methodSymbol, string parameterName)
+    {
+        return methodSymbol.Parameters.Any(p => string.Equals(p.Name, parameterName, StringComparison.Ordinal));
     }
 
     /// <summary>
