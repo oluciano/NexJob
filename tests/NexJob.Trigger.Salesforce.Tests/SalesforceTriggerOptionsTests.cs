@@ -226,4 +226,41 @@ public sealed class SalesforceTriggerOptionsTests
         // Assert
         results.Should().BeEmpty();
     }
+
+    [Theory]
+    [InlineData("http://login.salesforce.com/services/oauth2/token")]
+    [InlineData("http://example.com")]
+    public void Validate_AuthEndpointThatIsHttpAndNotLoopback_FailsAndNamesHttps(string authEndpoint)
+    {
+        var options = ValidOptions(authEndpoint);
+
+        var results = options.Validate(new ValidationContext(options)).ToList();
+
+        results.Should().ContainSingle(r => r.MemberNames.Contains(nameof(SalesforceTriggerOptions.AuthEndpoint)))
+            .Which.ErrorMessage.Should().Contain("https");
+    }
+
+    [Theory]
+    [InlineData("https://login.salesforce.com/services/oauth2/token")]
+    [InlineData("HTTPS://login.salesforce.com/services/oauth2/token")]
+    [InlineData("http://localhost:8080/services/oauth2/token")]
+    [InlineData("http://127.0.0.1:5000/token")]
+    [InlineData("http://[::1]:5000/token")]
+    [InlineData("HTTP://LOCALHOST/token")]
+    public void Validate_HttpsOrLoopbackAuthEndpoint_HasNoAuthEndpointError(string authEndpoint)
+    {
+        var options = ValidOptions(authEndpoint);
+
+        var results = options.Validate(new ValidationContext(options)).ToList();
+
+        results.Should().NotContain(r => r.MemberNames.Contains(nameof(SalesforceTriggerOptions.AuthEndpoint)));
+    }
+
+    private static SalesforceTriggerOptions ValidOptions(string authEndpoint) => new()
+    {
+        Topic = "/data/ChangeEvents",
+        ClientId = "client-id-123",
+        ClientSecret = "client-secret-xyz",
+        AuthEndpoint = authEndpoint,
+    };
 }
