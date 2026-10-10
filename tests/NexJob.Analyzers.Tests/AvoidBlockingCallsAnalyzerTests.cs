@@ -36,10 +36,16 @@ using NexJob;
 
 public sealed class BadJob : IJob
 {
+    private readonly object _gate = new();
+
     public Task ExecuteAsync(CancellationToken cancellationToken)
     {
         Task.Delay(10).{|#0:Wait|}();
         var res = Task.FromResult(42).{|#1:Result|};
+        {|#2:Thread.Sleep|}(10);
+        {|#3:lock|} (_gate)
+        {
+        }
         return Task.CompletedTask;
     }
 }
@@ -52,7 +58,15 @@ public sealed class BadJob : IJob
             .WithLocation(1)
             .WithArguments("Result");
 
-        await VerifyCS.VerifyAnalyzerAsync(testCode, expected0, expected1);
+        var expected2 = new DiagnosticResult("NXJ001", Microsoft.CodeAnalysis.DiagnosticSeverity.Warning)
+            .WithLocation(2)
+            .WithArguments("Thread.Sleep");
+
+        var expected3 = new DiagnosticResult("NXJ001", Microsoft.CodeAnalysis.DiagnosticSeverity.Warning)
+            .WithLocation(3)
+            .WithArguments("lock");
+
+        await VerifyCS.VerifyAnalyzerAsync(testCode, expected0, expected1, expected2, expected3);
     }
 
     [Fact]

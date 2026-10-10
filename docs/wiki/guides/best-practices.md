@@ -273,9 +273,13 @@ NexJob ships with built-in compile-time Roslyn Diagnostic Analyzers bundled dire
 
 | Rule ID | Severity | Category | Description & Guidance |
 |---|---|---|---|
-| **NXJ001** | Warning | Reliability | **Avoid blocking calls in job execution**: Flags usage of `.Result` or `.Wait()` inside `IJob.ExecuteAsync`. Background jobs must remain fully asynchronous (`await`) to avoid thread pool starvation. |
+| **NXJ001** | Warning | Reliability | **Avoid blocking calls in job execution**: Flags usage of `.Result`, `.Wait()`, `Thread.Sleep()`, and `lock (...)` inside `IJob.ExecuteAsync`. Background jobs must remain fully asynchronous (`await`) to avoid thread pool starvation. |
 | **NXJ002** | Warning | Reliability | **Avoid DateTime.Now in job execution**: Warns against `DateTime.Now` or `DateTime.Today` in job code. Use `DateTime.UtcNow` or context timestamps to prevent timezone and DST discrepancies across distributed nodes. |
 | **NXJ003** | Warning | Design | **Job class must be public and instantiable**: Ensures classes implementing `IJob` or `IJob<T>` are `public`, non-`abstract`, and have a public constructor so dependency injection can instantiate them at runtime. |
+| **NXJ004** | Warning | Reliability | **Propagate CancellationToken in job execution**: Warns when async I/O or `Task.Delay()` inside `ExecuteAsync` omits the available execution `CancellationToken`, breaking graceful shutdown and deadlines. |
+| **NXJ005** | Warning | Reliability | **Avoid static mutable state in job classes**: Flags mutable (non-readonly) `static` fields inside Job classes to prevent race conditions and cross-job data pollution across concurrent workers. |
+| **NXJ006** | Warning | Reliability | **Avoid fire-and-forget tasks in job execution**: Flags discarded tasks (`_ = Task.Run(...)`) inside `ExecuteAsync`. Jobs must be fully awaited; fire-and-forget escapes dispatcher lifecycle tracking. |
+| **NXJ007** | Warning | Design | **Avoid direct service instantiation inside job**: Flags `new MyService()` or `new DbContext()` within `ExecuteAsync`, enforcing proper constructor dependency injection. |
 
 
 

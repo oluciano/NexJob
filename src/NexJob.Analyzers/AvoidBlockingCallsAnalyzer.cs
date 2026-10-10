@@ -44,6 +44,23 @@ public sealed class AvoidBlockingCallsAnalyzer : DiagnosticAnalyzer
 
         context.RegisterSyntaxNodeAction(AnalyzeInvocation, SyntaxKind.InvocationExpression);
         context.RegisterSyntaxNodeAction(AnalyzeMemberAccess, SyntaxKind.SimpleMemberAccessExpression);
+        context.RegisterSyntaxNodeAction(AnalyzeLockStatement, SyntaxKind.LockStatement);
+    }
+
+    private static void AnalyzeLockStatement(SyntaxNodeAnalysisContext context)
+    {
+        if (context.Node is not LockStatementSyntax lockStatement)
+        {
+            return;
+        }
+
+        if (!IsInsideJobMethod(lockStatement, context.SemanticModel))
+        {
+            return;
+        }
+
+        var diagnostic = Diagnostic.Create(Rule, lockStatement.LockKeyword.GetLocation(), "lock");
+        context.ReportDiagnostic(diagnostic);
     }
 
     private static void AnalyzeInvocation(SyntaxNodeAnalysisContext context)
@@ -59,7 +76,10 @@ public sealed class AvoidBlockingCallsAnalyzer : DiagnosticAnalyzer
         }
 
         var methodName = memberAccess.Name.Identifier.Text;
-        if (!string.Equals(methodName, "Wait", StringComparison.Ordinal))
+        var isWait = string.Equals(methodName, "Wait", StringComparison.Ordinal);
+        var isSleep = string.Equals(methodName, "Sleep", StringComparison.Ordinal);
+
+        if (!isWait && !isSleep)
         {
             return;
         }
@@ -76,9 +96,14 @@ public sealed class AvoidBlockingCallsAnalyzer : DiagnosticAnalyzer
         }
 
         var containingType = symbol.ContainingType.ToDisplayString();
-        if (string.Equals(containingType, "System.Threading.Tasks.Task", StringComparison.Ordinal))
+        if (isWait && string.Equals(containingType, "System.Threading.Tasks.Task", StringComparison.Ordinal))
         {
             var diagnostic = Diagnostic.Create(Rule, memberAccess.Name.GetLocation(), "Wait");
+            context.ReportDiagnostic(diagnostic);
+        }
+        else if (isSleep && string.Equals(containingType, "System.Threading.Thread", StringComparison.Ordinal))
+        {
+            var diagnostic = Diagnostic.Create(Rule, memberAccess.GetLocation(), "Thread.Sleep");
             context.ReportDiagnostic(diagnostic);
         }
     }
