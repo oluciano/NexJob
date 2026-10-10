@@ -188,10 +188,14 @@ public sealed class SqlServerStorageProvider : IStorageProvider, IOrphanedJobRep
                 attempts              = attempts + 1
             OUTPUT INSERTED.*
             WHERE id = (
-                SELECT TOP 1 j.id
-                FROM nexjob_jobs j WITH (UPDLOCK, READPAST)
-                INNER JOIN (VALUES {queueValues}) AS q(name, ord) ON j.queue = q.name
-                WHERE j.status = 'Enqueued'
+                SELECT TOP (1) j.id
+                FROM (VALUES {queueValues}) AS q(name, ord)
+                CROSS APPLY (
+                    SELECT TOP (1) x.id, x.priority, x.created_at
+                    FROM nexjob_jobs x WITH (UPDLOCK, READPAST)
+                    WHERE x.queue = q.name AND x.status = 'Enqueued'
+                    ORDER BY x.priority ASC, x.created_at ASC
+                ) AS j
                 ORDER BY q.ord ASC, j.priority ASC, j.created_at ASC
             )
             """,
@@ -252,9 +256,13 @@ public sealed class SqlServerStorageProvider : IStorageProvider, IOrphanedJobRep
             OUTPUT INSERTED.*
             WHERE id IN (
                 SELECT TOP (@maxBatchSize) j.id
-                FROM nexjob_jobs j WITH (UPDLOCK, READPAST)
-                INNER JOIN (VALUES {queueValues}) AS q(name, ord) ON j.queue = q.name
-                WHERE j.status = 'Enqueued'
+                FROM (VALUES {queueValues}) AS q(name, ord)
+                CROSS APPLY (
+                    SELECT TOP (@maxBatchSize) x.id, x.priority, x.created_at
+                    FROM nexjob_jobs x WITH (UPDLOCK, READPAST)
+                    WHERE x.queue = q.name AND x.status = 'Enqueued'
+                    ORDER BY x.priority ASC, x.created_at ASC
+                ) AS j
                 ORDER BY q.ord ASC, j.priority ASC, j.created_at ASC
             )
             """,

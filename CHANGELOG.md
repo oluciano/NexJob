@@ -6,6 +6,10 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **PostgreSQL and SQL Server — the fetch no longer reads the whole backlog** (issue #412): fetching from several queues (always the case since 6.0.0, which polls `{prefix}.default` and the legacy `default`) sorted every `Enqueued` row, so the cost of a fetch grew with the size of the backlog. Each queue is now read through the fetch index with its own ordered limit and the results are merged in queue order, so the order (queues as listed, then priority, then age) is unchanged. On 20,000 `Enqueued` rows, fetching 5 jobs from two queues went from 18.4 ms to 0.19 ms on PostgreSQL and from 162 to 6 logical reads on SQL Server. No stored format, option or API changes. MongoDB and Redis already claim queue by queue and are not affected.
+
 ## [6.0.0] - 2026-10-09
 
 **Upgrading from v5:** the default queue changes name (`{prefix}.default`), see the migration guide (`docs/wiki/reference/migration.md`); nodes of v5 and v6 can share a database during the upgrade and nothing is migrated.
