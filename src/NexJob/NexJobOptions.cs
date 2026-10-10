@@ -423,8 +423,25 @@ public sealed class NexJobOptions
     /// <returns>One description per mismatched name.</returns>
     internal IReadOnlyList<string> GetQueueNameCaseMismatches()
     {
-        _ = QueueSettings;
-        return [];
+        var known = PolledQueues.Concat(QueueSettings.Select(q => q.Name)).Distinct(StringComparer.Ordinal).ToList();
+        var mismatches = new List<string>();
+        foreach (var name in QueueSettings.Select(q => q.Name).Distinct(StringComparer.Ordinal))
+        {
+            if (PolledQueues.Any(polled => StandsFor(name, polled)))
+            {
+                continue;
+            }
+
+            var lookalike = known.Find(other =>
+                !string.Equals(other, name, StringComparison.Ordinal)
+                && string.Equals(other, name, StringComparison.OrdinalIgnoreCase));
+            if (lookalike is not null)
+            {
+                mismatches.Add($"'{name}' is configured but queue names are matched exactly and '{lookalike}' is the name in use");
+            }
+        }
+
+        return mismatches;
     }
 
     /// <summary>Maps a user-facing queue name to the name stored with jobs.</summary>
