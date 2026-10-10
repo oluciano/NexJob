@@ -26,6 +26,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Documentation
 
+- **Roslyn Diagnostic Analyzers documentation guide & per-rule help links** (issue #461) — introduced dedicated reference page `docs/wiki/guides/analyzers.md` documenting all 14 diagnostic rules with problem/solution code snippets, severity details, and `.editorconfig` instructions; updated `AnalyzerHelper` to generate per-rule anchor help links directly to the guide.
 - **Search engine indexing, site verification and social metadata** — added `robots.txt` referencing the generated sitemap, Google Search Console HTML verification file, and OpenGraph/Twitter Card social meta tags with canonical URLs to the documentation site.
 
 ## [6.1.0] - 2026-10-10

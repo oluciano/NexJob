@@ -269,47 +269,9 @@ Register `NexJobHealthCheck` and include it in your `/healthz` endpoint.
 
 ## Roslyn Diagnostic Analyzers
 
-NexJob ships with built-in compile-time Roslyn Diagnostic Analyzers bundled directly in the core `NexJob` package (`analyzers/dotnet/cs/NexJob.Analyzers.dll`). Installing `NexJob` automatically activates real-time guardrails in your IDE (Visual Studio, JetBrains Rider, VS Code):
+NexJob ships with built-in compile-time Roslyn Diagnostic Analyzers bundled directly in the core `NexJob` package (`analyzers/dotnet/cs/NexJob.Analyzers.dll`). Installing `NexJob` automatically activates real-time guardrails in your IDE (Visual Studio, JetBrains Rider, VS Code) to detect common job-authoring pitfalls (blocking calls, unawaited tasks, swallowed exceptions, and missing cancellation tokens) as you type.
 
-| Rule ID | Severity | Category | Description & Guidance |
-|---|---|---|---|
-| **NXJ001** | Info | Reliability | **Avoid blocking calls in job execution**: Flags usage of `.Result`, `.Wait()`, `Thread.Sleep()`, `GetAwaiter().GetResult()`, `Task.WaitAll`, and `Task.WaitAny` inside `IJob.ExecuteAsync`. Background jobs must remain fully asynchronous (`await`) to avoid thread pool starvation. |
-| **NXJ002** | Info | Reliability | **Avoid DateTime.Now in job execution**: Warns against `DateTime.Now` or `DateTime.Today` in job code. Use `DateTime.UtcNow` or context timestamps to prevent timezone and DST discrepancies across distributed nodes. |
-| **NXJ003** | Info | Design | **Job class must be public and instantiable**: Ensures classes or records implementing `IJob` or `IJob<T>` are `public`, non-`abstract`, and have a public constructor so dependency injection can instantiate them at runtime. |
-| **NXJ004** | Info | Reliability | **Propagate CancellationToken in job execution**: Warns when async I/O, `Task.Delay()`, or methods with cancellation overloads/defaults inside `ExecuteAsync` omit the available execution `CancellationToken`, breaking graceful shutdown and deadlines. |
-| **NXJ005** | Info | Reliability | **Avoid static mutable state in job classes**: Flags mutable (non-readonly) `static` fields, static mutable collections (`List`, `Dictionary`, etc.), and static properties with setters inside Job classes to prevent race conditions and cross-job data pollution across concurrent workers. |
-| **NXJ006** | Info | Reliability | **Avoid fire-and-forget tasks in job execution**: Flags discarded or unawaited tasks (`Task.Run(...)`) inside `ExecuteAsync`. Jobs must be fully awaited; fire-and-forget escapes dispatcher lifecycle tracking. |
-| **NXJ007** | Info | Design | **Avoid direct service instantiation inside job**: Flags direct instantiation of services, repositories, `DbContext`, or `HttpClient` within `ExecuteAsync`, enforcing proper constructor dependency injection. |
-| **NXJ010** | Info | Reliability | **Bounded retry with deadline**: Detects enqueue calls specifying `deadlineAfter` without explicit `maxAttempts`, avoiding unbounded retry loops within deadline windows. |
-| **NXJ011** | Info (Opt-in) | Design | **Consider providing an idempotencyKey**: Recommends supplying an `idempotencyKey` on job enqueues to guarantee deduplication and prevent duplicate execution upon retries. Disabled by default to prevent IDE noise; opt-in via `.editorconfig`. |
-| **NXJ015** | Info | Reliability | **Prevent recursive job continuation**: Flags jobs directly re-enqueuing themselves inside `ExecuteAsync`, preventing infinite continuation cascades. |
-| **NXJ016** | Info (Opt-in) | Reliability | **Implicit queue prefix mismatch**: Detects `IScheduler.EnqueueAsync` or `ScheduleAsync` called without an explicit `queue` parameter. In multi-service deployments sharing storage with distinct `QueuePrefix` settings, omitting `queue` sends jobs to the producer's default queue, which consumer services may never poll. Disabled by default to prevent IDE noise; opt-in via `.editorconfig`. |
-| **NXJ017** | Info | Reliability | **Avoid swallowing exceptions in job execution**: Flags general exception catches (`catch (Exception)` or untyped `catch`) inside `IJob.ExecuteAsync` that do not rethrow. Swallowing exceptions causes jobs to complete as succeeded, preventing retries and dead-letter handling. |
-| **NXJ018** | Info | Reliability | **Avoid swallowing OperationCanceledException in job execution**: Flags catching `OperationCanceledException` or `TaskCanceledException` without rethrowing in `IJob.ExecuteAsync`, which prevents graceful shutdown from requeuing in-flight jobs. If catching a per-call timeout token (e.g. from an internal linked `CancellationTokenSource`) intentionally, suppress or configure via `.editorconfig`. |
-| **NXJ019** | Info | Reliability | **Validate job attribute arguments**: Detects invalid compile-time constant arguments on `[Retry]` (`attempts < 0`), `[Throttle]` (`maxConcurrent < 1` or empty resource name), and `[ExecutionTimeout]` (invalid or non-positive `TimeSpan`). |
-
-### Severity and `.editorconfig` Configuration
-
-By default, NexJob analyzer rules are configured with **`Info`** severity (and rules like NXJ011 and NXJ016 are disabled by default as opt-in). Because default severity is `Info`, diagnostics appear as subtle IDE hints and suggestions without breaking builds in the terminal or CI under `TreatWarningsAsErrors = true`.
-
-To enforce rules in terminal builds and CI or enable opt-in rules, configure your project's `.editorconfig`:
-
-```ini
-[*.cs]
-# Elevate all NexJob reliability or design rules to warning (breaks build under TreatWarningsAsErrors in CI/terminal)
-dotnet_analyzer_diagnostic.category-Reliability.severity = warning
-dotnet_analyzer_diagnostic.category-Design.severity = warning
-
-# Elevate an individual rule
-dotnet_diagnostic.NXJ001.severity = warning
-
-# Enable opt-in rules (NXJ011, NXJ016)
-dotnet_diagnostic.NXJ011.severity = info
-dotnet_diagnostic.NXJ016.severity = info
-
-# Disable a specific rule
-dotnet_diagnostic.NXJ005.severity = none
-```
+For the complete list of rules, code examples, severity levels, and `.editorconfig` configuration instructions, see the dedicated [Roslyn Diagnostic Analyzers Guide](analyzers.md).
 
 
 
