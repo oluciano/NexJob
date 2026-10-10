@@ -35,7 +35,7 @@ public sealed class ImplicitQueuePrefixMismatchAnalyzer : DiagnosticAnalyzer
         context.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.None);
         context.EnableConcurrentExecution();
 
-        context.RegisterSyntaxNodeAction(AnalyzeInvocation, SyntaxKind.InvocationExpression);
+        AnalyzerHelper.RegisterInvocation(context, AnalyzeInvocation);
     }
 
     private static void AnalyzeInvocation(SyntaxNodeAnalysisContext context)
@@ -51,45 +51,10 @@ public sealed class ImplicitQueuePrefixMismatchAnalyzer : DiagnosticAnalyzer
             return;
         }
 
-        // Check if invocation explicitly provides an argument for the 'queue' parameter
-        var queueParameter = methodSymbol.Parameters.FirstOrDefault(p => string.Equals(p.Name, "queue", StringComparison.Ordinal));
-        if (queueParameter == null)
+        if (!AnalyzerHelper.HasNamedOrPositionalArgument(invocation.ArgumentList.Arguments, methodSymbol, "queue"))
         {
-            return;
+            var diagnostic = Diagnostic.Create(Rule, invocation.GetLocation());
+            context.ReportDiagnostic(diagnostic);
         }
-
-        var queueParameterIndex = queueParameter.Ordinal;
-        var arguments = invocation.ArgumentList.Arguments;
-
-        // 1. Check for named argument: queue: "..."
-        for (var i = 0; i < arguments.Count; i++)
-        {
-            var nameColon = arguments[i].NameColon;
-            if (nameColon != null && string.Equals(nameColon.Name.Identifier.Text, "queue", StringComparison.Ordinal))
-            {
-                // Explicitly provided
-                return;
-            }
-        }
-
-        // 2. Check for positional argument (non-named arguments matching parameter ordinal)
-        var positionalCount = 0;
-        for (var i = 0; i < arguments.Count; i++)
-        {
-            if (arguments[i].NameColon == null)
-            {
-                if (positionalCount == queueParameterIndex)
-                {
-                    // Explicitly provided via position
-                    return;
-                }
-
-                positionalCount++;
-            }
-        }
-
-        // The queue parameter was omitted (taking default null / default queue)
-        var diagnostic = Diagnostic.Create(Rule, invocation.GetLocation());
-        context.ReportDiagnostic(diagnostic);
     }
 }

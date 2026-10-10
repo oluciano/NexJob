@@ -35,7 +35,7 @@ public sealed class EncourageIdempotencyKeyAnalyzer : DiagnosticAnalyzer
         context.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.None);
         context.EnableConcurrentExecution();
 
-        context.RegisterSyntaxNodeAction(AnalyzeInvocation, SyntaxKind.InvocationExpression);
+        AnalyzerHelper.RegisterInvocation(context, AnalyzeInvocation);
     }
 
     private static void AnalyzeInvocation(SyntaxNodeAnalysisContext context)
@@ -51,32 +51,7 @@ public sealed class EncourageIdempotencyKeyAnalyzer : DiagnosticAnalyzer
             return;
         }
 
-        var arguments = invocation.ArgumentList.Arguments;
-        var hasIdempotencyKey = false;
-
-        for (var i = 0; i < arguments.Count; i++)
-        {
-            var arg = arguments[i];
-            if (arg.NameColon != null)
-            {
-                if (string.Equals(arg.NameColon.Name.Identifier.Text, "idempotencyKey", StringComparison.Ordinal))
-                {
-                    hasIdempotencyKey = true;
-                    break;
-                }
-            }
-            else
-            {
-                if (i < methodSymbol.Parameters.Length &&
-                    string.Equals(methodSymbol.Parameters[i].Name, "idempotencyKey", StringComparison.Ordinal))
-                {
-                    hasIdempotencyKey = true;
-                    break;
-                }
-            }
-        }
-
-        if (!hasIdempotencyKey)
+        if (!AnalyzerHelper.HasNamedOrPositionalArgument(invocation.ArgumentList.Arguments, methodSymbol, "idempotencyKey"))
         {
             var diagnostic = Diagnostic.Create(Rule, invocation.GetLocation());
             context.ReportDiagnostic(diagnostic);

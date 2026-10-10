@@ -34,7 +34,7 @@ public sealed class DashboardAuthorizationRequiredAnalyzer : DiagnosticAnalyzer
         context.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.None);
         context.EnableConcurrentExecution();
 
-        context.RegisterSyntaxNodeAction(AnalyzeInvocation, SyntaxKind.InvocationExpression);
+        AnalyzerHelper.RegisterInvocation(context, AnalyzeInvocation);
     }
 
     private static void AnalyzeInvocation(SyntaxNodeAnalysisContext context)

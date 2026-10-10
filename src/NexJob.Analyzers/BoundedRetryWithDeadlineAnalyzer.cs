@@ -34,7 +34,7 @@ public sealed class BoundedRetryWithDeadlineAnalyzer : DiagnosticAnalyzer
         context.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.None);
         context.EnableConcurrentExecution();
 
-        context.RegisterSyntaxNodeAction(AnalyzeInvocation, SyntaxKind.InvocationExpression);
+        AnalyzerHelper.RegisterInvocation(context, AnalyzeInvocation);
     }
 
     private static void AnalyzeInvocation(SyntaxNodeAnalysisContext context)
@@ -51,52 +51,8 @@ public sealed class BoundedRetryWithDeadlineAnalyzer : DiagnosticAnalyzer
         }
 
         var arguments = invocation.ArgumentList.Arguments;
-        var hasDeadlineAfter = false;
-        var hasMaxAttempts = false;
-
-        // Check if the invoked method signature has a maxAttempts parameter
-        for (var i = 0; i < methodSymbol.Parameters.Length; i++)
-        {
-            if (string.Equals(methodSymbol.Parameters[i].Name, "maxAttempts", StringComparison.Ordinal))
-            {
-                hasMaxAttempts = true;
-                break;
-            }
-        }
-
-        // Check arguments for deadlineAfter and maxAttempts
-        for (var i = 0; i < arguments.Count; i++)
-        {
-            var arg = arguments[i];
-            if (arg.NameColon != null)
-            {
-                var name = arg.NameColon.Name.Identifier.Text;
-                if (string.Equals(name, "deadlineAfter", StringComparison.Ordinal))
-                {
-                    hasDeadlineAfter = true;
-                }
-                else if (string.Equals(name, "maxAttempts", StringComparison.Ordinal))
-                {
-                    hasMaxAttempts = true;
-                }
-            }
-            else
-            {
-                // Positional: inspect the corresponding parameter symbol
-                if (i < methodSymbol.Parameters.Length)
-                {
-                    var param = methodSymbol.Parameters[i];
-                    if (string.Equals(param.Name, "deadlineAfter", StringComparison.Ordinal))
-                    {
-                        hasDeadlineAfter = true;
-                    }
-                    else if (string.Equals(param.Name, "maxAttempts", StringComparison.Ordinal))
-                    {
-                        hasMaxAttempts = true;
-                    }
-                }
-            }
-        }
+        var hasDeadlineAfter = AnalyzerHelper.HasNamedOrPositionalArgument(arguments, methodSymbol, "deadlineAfter");
+        var hasMaxAttempts = AnalyzerHelper.HasNamedOrPositionalArgument(arguments, methodSymbol, "maxAttempts");
 
         if (hasDeadlineAfter && !hasMaxAttempts)
         {

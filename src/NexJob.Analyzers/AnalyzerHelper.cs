@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Microsoft.CodeAnalysis.Diagnostics;
 
 namespace NexJob.Analyzers;
 
@@ -95,5 +96,41 @@ internal static class AnalyzerHelper
 
         return methodSymbol.Name.StartsWith("Enqueue", StringComparison.Ordinal) ||
                methodSymbol.Name.StartsWith("Schedule", StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Registers an invocation syntax node action.
+    /// </summary>
+    public static void RegisterInvocation(AnalysisContext context, Action<SyntaxNodeAnalysisContext> action)
+    {
+        context.RegisterSyntaxNodeAction(action, Microsoft.CodeAnalysis.CSharp.SyntaxKind.InvocationExpression);
+    }
+
+    /// <summary>
+    /// Checks whether an argument list contains an argument by name or at its positional index.
+    /// </summary>
+    public static bool HasNamedOrPositionalArgument(
+        SeparatedSyntaxList<ArgumentSyntax> arguments,
+        IMethodSymbol methodSymbol,
+        string parameterName)
+    {
+        for (var i = 0; i < arguments.Count; i++)
+        {
+            var arg = arguments[i];
+            if (arg.NameColon != null)
+            {
+                if (string.Equals(arg.NameColon.Name.Identifier.Text, parameterName, StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+            else if (i < methodSymbol.Parameters.Length &&
+                     string.Equals(methodSymbol.Parameters[i].Name, parameterName, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }
