@@ -2365,4 +2365,18 @@ public abstract class StorageProviderTestsBase
         (await storage.FetchBatchAsync([], 5)).Should().BeEmpty();
         (await dashboard.GetJobByIdAsync(job.Id))!.Status.Should().Be(JobStatus.Enqueued);
     }
+
+    [Fact]
+    public async Task GetJobsAsync_queue_filter_is_exact_a_name_differing_by_case_is_another_queue()
+    {
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
+        var upper = MakeJob(queue: "Alpha");
+        var lower = MakeJob(queue: "alpha");
+        await storage.EnqueueAsync(upper);
+        await storage.EnqueueAsync(lower);
+
+        var page = await dashboard.GetJobsAsync(new JobFilter { Queue = "alpha" }, page: 1, pageSize: 10);
+
+        page.Items.Should().ContainSingle().Which.Id.Should().Be(lower.Id);
+    }
 }

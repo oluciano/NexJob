@@ -439,4 +439,33 @@ public sealed class QueueCircuitBreakerTests
         Assert.Equal(QueueCircuitState.Open, manager.GetState("default", out _));
         Assert.Null(manager.GetStatus("billing.default"));
     }
+
+    [Fact]
+    public void N2_Negative_QueueNameIsExact_AQueueDifferingOnlyByCaseHasItsOwnCircuit()
+    {
+        var options = new QueueCircuitBreakerOptions { ConsecutiveFailuresThreshold = 2, OpenDuration = TimeSpan.FromMinutes(1) };
+        options.BreakOn<DownstreamApiException>();
+        var manager = new DefaultQueueCircuitBreakerManager(
+            new Dictionary<string, QueueCircuitBreakerOptions> { ["Payments"] = options },
+            timeProvider: new FakeTimeProvider());
+
+        manager.RecordOutcome("Payments", succeeded: false, new DownstreamApiException("503"));
+        manager.RecordOutcome("Payments", succeeded: false, new DownstreamApiException("503"));
+
+        Assert.Equal(QueueCircuitState.Open, manager.GetState("Payments", out _));
+        Assert.Equal(QueueCircuitState.Closed, manager.GetState("payments", out var concurrency));
+        Assert.Equal(int.MaxValue, concurrency);
+        Assert.Null(manager.GetStatus("payments"));
+    }
+
+    [Fact]
+    public void N3_InvalidInput_UnknownQueueNames_AreClosedWithoutThrowing()
+    {
+        var manager = new DefaultQueueCircuitBreakerManager(
+            new Dictionary<string, QueueCircuitBreakerOptions>(),
+            timeProvider: new FakeTimeProvider());
+
+        Assert.Equal(QueueCircuitState.Closed, manager.GetState(string.Empty, out _));
+        Assert.Equal(QueueCircuitState.Closed, manager.GetState("PAYMENTS", out _));
+    }
 }

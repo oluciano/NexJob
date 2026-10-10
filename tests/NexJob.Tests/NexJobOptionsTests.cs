@@ -255,4 +255,52 @@ public sealed class NexJobOptionsTests
         // Assert
         provider.GetService<IMemoryCache>().Should().NotBeNull();
     }
+
+    [Fact]
+    public void ConfigureQueue_NameIsExact_ADifferentCaseIsAnotherQueue()
+    {
+        var options = new NexJobOptions();
+
+        options.ConfigureQueue("Payments", q => q.Workers = 2);
+        options.ConfigureQueue("payments", q => q.Workers = 5);
+
+        options.QueueSettings.Should().HaveCount(2);
+        options.SettingsFor("Payments")!.Workers.Should().Be(2);
+        options.SettingsFor("payments")!.Workers.Should().Be(5);
+    }
+
+    [Fact]
+    public void ConfigureQueue_SameName_EditsTheSameSettings()
+    {
+        var options = new NexJobOptions();
+
+        options.ConfigureQueue("payments", q => q.Workers = 2);
+        options.ConfigureQueue("payments", q => q.Workers = 5);
+
+        options.QueueSettings.Should().ContainSingle().Which.Workers.Should().Be(5);
+    }
+
+    [Fact]
+    public void SettingsFor_AndPause_DoNotMatchANameThatDiffersByCase()
+    {
+        var options = new NexJobOptions();
+        options.ConfigureQueue("Payments", q => q.Workers = 2);
+
+        options.SettingsFor("payments").Should().BeNull();
+        options.IsQueuePaused("payments", ["Payments"]).Should().BeFalse();
+        options.IsQueuePaused("Payments", ["Payments"]).Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void ConfigureQueue_BlankName_Throws(string? name)
+    {
+        var options = new NexJobOptions();
+
+        var act = () => options.ConfigureQueue(name!, _ => { });
+
+        act.Should().Throw<ArgumentException>();
+    }
 }
