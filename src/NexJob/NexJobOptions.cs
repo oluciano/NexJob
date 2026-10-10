@@ -338,7 +338,7 @@ public sealed class NexJobOptions
         ArgumentException.ThrowIfNullOrWhiteSpace(queueName);
         ArgumentNullException.ThrowIfNull(configure);
 
-        var existing = QueueSettings.Find(q => string.Equals(q.Name, queueName, StringComparison.OrdinalIgnoreCase));
+        var existing = QueueSettings.Find(q => string.Equals(q.Name, queueName, StringComparison.Ordinal));
         if (existing is null)
         {
             existing = new QueueSettings { Name = queueName };

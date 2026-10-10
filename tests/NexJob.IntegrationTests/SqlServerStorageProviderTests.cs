@@ -41,4 +41,7 @@ public sealed class SqlServerStorageProviderTests : StorageProviderTestsBase, IC
         // O próprio provider deve criar as tabelas no banco novo
         return (provider, provider, provider, provider);
     }
+
+    /// <inheritdoc/>
+    protected override bool QueueNamesAreCaseSensitive => false;
 }

@@ -6,6 +6,10 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **Queue names are matched exactly everywhere** (issue #408): the circuit breaker, `ConfigureQueue` and the in-memory storage's queue filter ignored case, while execution windows, pause, the other settings and every database provider compared exactly, so `ConfigureQueue("Payments")` governed the breaker of `payments` but not its window. All of them now compare exactly (`Payments` and `payments` are different queues, as they already were in storage). **Behaviour change:** a breaker or a `ConfigureQueue` entry written with a different case than the queue you enqueue into no longer applies to it; write the name with the same case in both places. `queues.md` is the single place that states the rule.
+
 ### Fixed
 
 - **PostgreSQL and SQL Server — the fetch no longer reads the whole backlog** (issue #412): fetching from several queues (always the case since 6.0.0, which polls `{prefix}.default` and the legacy `default`) sorted every `Enqueued` row, so the cost of a fetch grew with the size of the backlog. Each queue is now read through the fetch index with its own ordered limit and the results are merged in queue order, so the order (queues as listed, then priority, then age) is unchanged. On 20,000 `Enqueued` rows, fetching 5 jobs from two queues went from 18.4 ms to 0.19 ms on PostgreSQL and from 162 to 6 logical reads on SQL Server. No stored format, option or API changes. MongoDB and Redis already claim queue by queue and are not affected.

@@ -2367,7 +2367,7 @@ public abstract class StorageProviderTestsBase
     }
 
     [Fact]
-    public async Task GetJobsAsync_queue_filter_is_exact_a_name_differing_by_case_is_another_queue()
+    public async Task GetJobsAsync_queue_filter_follows_the_case_rule_of_the_storage()
     {
         var (storage, _, dashboard, _) = await CreateStorageAsync();
         var upper = MakeJob(queue: "Alpha");
@@ -2377,6 +2377,19 @@ public abstract class StorageProviderTestsBase
 
         var page = await dashboard.GetJobsAsync(new JobFilter { Queue = "alpha" }, page: 1, pageSize: 10);
 
-        page.Items.Should().ContainSingle().Which.Id.Should().Be(lower.Id);
+        if (QueueNamesAreCaseSensitive)
+        {
+            page.Items.Should().ContainSingle().Which.Id.Should().Be(lower.Id);
+        }
+        else
+        {
+            page.Items.Select(j => j.Id).Should().BeEquivalentTo(new[] { upper.Id, lower.Id });
+        }
     }
+
+    /// <summary>
+    /// Whether the storage tells <c>Alpha</c> from <c>alpha</c>. True for every provider except SQL Server, whose default
+    /// collation ignores case (documented in queues.md).
+    /// </summary>
+    protected virtual bool QueueNamesAreCaseSensitive => true;
 }

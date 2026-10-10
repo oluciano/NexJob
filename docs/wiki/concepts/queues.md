@@ -109,7 +109,7 @@ So a `Low` priority job in `critical` is fetched before a `Critical` priority jo
 
 ## Per-queue settings
 
-Use `ConfigureQueue` to attach behavior to one queue. Calling it again with the same name (ignoring case) edits the same settings. A job's queue is matched to its execution window by exact name, while the circuit breaker ignores case: write the name with the same case in `ConfigureQueue` and where you enqueue.
+Use `ConfigureQueue` to attach behavior to one queue. Calling it again with the same name edits the same settings. Queue names are matched exactly, with the same rule as the storage: `Payments` and `payments` are two different queues, in settings, execution windows, pause and circuit breakers alike. Write the name with the same case in `ConfigureQueue` and where you enqueue. SQL Server is the exception on the storage side: its default collation ignores case, so the database itself (the fetch and the dashboard filter) does not tell `Payments` from `payments` unless the database uses a case-sensitive collation. A startup warning names a configured queue that differs only by case from one the host polls.
 
 ```csharp
 builder.Services.AddNexJob(options =>
