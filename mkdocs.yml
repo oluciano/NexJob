@@ -77,6 +77,7 @@ nav:
       - Writing Tests: guides/writing-tests.md
       - Common Scenarios: guides/common-scenarios.md
       - Best Practices: guides/best-practices.md
+      - Roslyn Analyzers: guides/analyzers.md
   - Storage:
       - Overview: storage/overview.md
       - PostgreSQL: storage/postgresql.md

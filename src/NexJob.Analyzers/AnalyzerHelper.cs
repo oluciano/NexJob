@@ -12,9 +12,22 @@ namespace NexJob.Analyzers;
 internal static class AnalyzerHelper
 {
     /// <summary>
-    /// Base URL for online documentation guidance.
+    /// Base URL for online analyzer documentation guidance.
     /// </summary>
-    public const string HelpBaseUrl = "https://oluciano.github.io/NexJob/guides/best-practices/";
+    public const string HelpBaseUrl = "https://oluciano.github.io/NexJob/guides/analyzers/";
+
+    /// <summary>
+    /// Generates the documentation URL for the given diagnostic rule id.
+    /// </summary>
+    public static string GetHelpLinkUri(string? id)
+    {
+        if (id == null || string.IsNullOrWhiteSpace(id))
+        {
+            return HelpBaseUrl;
+        }
+
+        return $"{HelpBaseUrl}#{id.Trim().ToLowerInvariant()}";
+    }
 
     /// <summary>
     /// Creates a standard DiagnosticDescriptor with configurable severity and online documentation link.
@@ -35,7 +48,7 @@ internal static class AnalyzerHelper
             DiagnosticSeverity.Info,
             isEnabledByDefault: isEnabledByDefault,
             description: description,
-            helpLinkUri: HelpBaseUrl);
+            helpLinkUri: GetHelpLinkUri(id));
     }
 
     /// <summary>
