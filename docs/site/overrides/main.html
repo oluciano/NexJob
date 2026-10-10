@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+
+{% block extrahead %}
+  {# Canonical URL #}
+  {% if page.canonical_url %}
+    <link rel="canonical" href="{{ page.canonical_url }}">
+  {% endif %}
+
+  {# Primary Meta Tags #}
+  <meta name="title" content="{% if page.title and not page.is_homepage %}{{ page.title }} - {% endif %}{{ config.site_name }}">
+  <meta name="description" content="{% if page.meta and page.meta.description %}{{ page.meta.description }}{% else %}{{ config.site_description }}{% endif %}">
+  <meta name="author" content="Luciano Azevedo">
+  <meta name="robots" content="index, follow">
+
+  {# OpenGraph / Facebook / LinkedIn #}
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="{{ config.site_name }}">
+  <meta property="og:url" content="{% if page.canonical_url %}{{ page.canonical_url }}{% else %}{{ config.site_url }}{% endif %}">
+  <meta property="og:title" content="{% if page.title and not page.is_homepage %}{{ page.title }} - {% endif %}{{ config.site_name }}">
+  <meta property="og:description" content="{% if page.meta and page.meta.description %}{{ page.meta.description }}{% else %}{{ config.site_description }}{% endif %}">
+  <meta property="og:image" content="{{ config.site_url }}assets/dashboard-overview.png">
+  <meta property="og:image:alt" content="NexJob - Predictable & Observable Background Job Processing for .NET 8">
+
+  {# Twitter Cards #}
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="{% if page.title and not page.is_homepage %}{{ page.title }} - {% endif %}{{ config.site_name }}">
+  <meta name="twitter:description" content="{% if page.meta and page.meta.description %}{{ page.meta.description }}{% else %}{{ config.site_description }}{% endif %}">
+  <meta name="twitter:image" content="{{ config.site_url }}assets/dashboard-overview.png">
+  <meta name="twitter:image:alt" content="NexJob - Predictable & Observable Background Job Processing for .NET 8">
+{% endblock %}
