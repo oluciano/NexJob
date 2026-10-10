@@ -65,4 +65,33 @@ public sealed class RegularService
 ";
         await VerifyCS.VerifyAnalyzerAsync(testCode);
     }
+
+    [Fact]
+    public async Task N4_OptionalParameter_OmittingCancellationToken_ReportsDiagnostic()
+    {
+        const string testCode = @"
+using System.Threading;
+using System.Threading.Tasks;
+using NexJob;
+
+public class Client
+{
+    public Task FetchAsync(int id, CancellationToken ct = default) => Task.CompletedTask;
+}
+
+public sealed class FetchJob : IJob
+{
+    public async Task ExecuteAsync(CancellationToken cancellationToken)
+    {
+        var client = new Client();
+        await {|#0:client.FetchAsync(42)|};
+    }
+}
+";
+        var expected0 = new DiagnosticResult("NXJ004", Microsoft.CodeAnalysis.DiagnosticSeverity.Info)
+            .WithLocation(0)
+            .WithArguments("client.FetchAsync");
+
+        await VerifyCS.VerifyAnalyzerAsync(testCode, expected0);
+    }
 }

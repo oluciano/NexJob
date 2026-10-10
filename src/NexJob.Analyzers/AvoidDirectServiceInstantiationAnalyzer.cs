@@ -56,13 +56,11 @@ public sealed class AvoidDirectServiceInstantiationAnalyzer : DiagnosticAnalyzer
         }
 
         var typeName = typeInfo.Name;
-        // Flag classes ending with Service, Repository, Handler, Client, or Manager
+        // Flag classes ending with Service, Repository, DbContext, or HttpClient
         if (typeName.EndsWith("Service", StringComparison.Ordinal) ||
             typeName.EndsWith("Repository", StringComparison.Ordinal) ||
-            typeName.EndsWith("Handler", StringComparison.Ordinal) ||
-            typeName.EndsWith("Client", StringComparison.Ordinal) ||
-            typeName.EndsWith("Manager", StringComparison.Ordinal) ||
-            typeName.EndsWith("DbContext", StringComparison.Ordinal))
+            typeName.EndsWith("DbContext", StringComparison.Ordinal) ||
+            string.Equals(typeName, "HttpClient", StringComparison.Ordinal))
         {
             var diagnostic = Diagnostic.Create(Rule, creation.GetLocation(), typeName);
             context.ReportDiagnostic(diagnostic);

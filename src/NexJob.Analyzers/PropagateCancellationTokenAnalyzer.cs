@@ -56,17 +56,30 @@ public sealed class PropagateCancellationTokenAnalyzer : DiagnosticAnalyzer
             return;
         }
 
-        // Check if current invocation already passes a CancellationToken
-        var alreadyPassesCancellationToken = methodSymbol.Parameters.Any(p =>
-            string.Equals(p.Type.ToDisplayString(), "System.Threading.CancellationToken", StringComparison.Ordinal));
+        // Check if current invocation actually passes a CancellationToken argument
+        var arguments = invocation.ArgumentList.Arguments;
+        var passesCancellationToken = false;
+        for (var i = 0; i < arguments.Count; i++)
+        {
+            var argType = context.SemanticModel.GetTypeInfo(arguments[i].Expression, context.CancellationToken).Type;
+            if (argType != null && string.Equals(argType.ToDisplayString(), "System.Threading.CancellationToken", StringComparison.Ordinal))
+            {
+                passesCancellationToken = true;
+                break;
+            }
+        }
 
-        if (alreadyPassesCancellationToken)
+        if (passesCancellationToken)
         {
             return;
         }
 
-        // Check if the containing type offers an overload that accepts CancellationToken
-        var hasCancellationTokenOverload = methodSymbol.ContainingType
+        // Flag if the method itself has a CancellationToken parameter (e.g. optional/default CancellationToken ct = default)
+        // OR if the containing type offers an overload that accepts CancellationToken
+        var methodHasCtParam = methodSymbol.Parameters.Any(p =>
+            string.Equals(p.Type.ToDisplayString(), "System.Threading.CancellationToken", StringComparison.Ordinal));
+
+        var hasCancellationTokenOverload = methodHasCtParam || methodSymbol.ContainingType
             .GetMembers(methodSymbol.Name)
             .OfType<IMethodSymbol>()
             .Any(m => m.Parameters.Any(p => string.Equals(p.Type.ToDisplayString(), "System.Threading.CancellationToken", StringComparison.Ordinal)));

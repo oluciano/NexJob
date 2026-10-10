@@ -73,4 +73,26 @@ public sealed class Factory
 ";
         await VerifyCS.VerifyAnalyzerAsync(testCode);
     }
+
+    [Fact]
+    public async Task N4_LocalHelper_HandlerAllowed_NoDiagnostics()
+    {
+        const string testCode = @"
+using System.Threading;
+using System.Threading.Tasks;
+using NexJob;
+
+public class RetryHandler { }
+
+public sealed class HandlerJob : IJob
+{
+    public Task ExecuteAsync(CancellationToken cancellationToken)
+    {
+        var handler = new RetryHandler();
+        return Task.CompletedTask;
+    }
+}
+";
+        await VerifyCS.VerifyAnalyzerAsync(testCode);
+    }
 }
