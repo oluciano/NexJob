@@ -284,6 +284,9 @@ NexJob ships with built-in compile-time Roslyn Diagnostic Analyzers bundled dire
 | **NXJ011** | Info (Opt-in) | Design | **Consider providing an idempotencyKey**: Recommends supplying an `idempotencyKey` on job enqueues to guarantee deduplication and prevent duplicate execution upon retries. Disabled by default to prevent IDE noise; opt-in via `.editorconfig`. |
 | **NXJ015** | Info | Reliability | **Prevent recursive job continuation**: Flags jobs directly re-enqueuing themselves inside `ExecuteAsync`, preventing infinite continuation cascades. |
 | **NXJ016** | Info (Opt-in) | Reliability | **Implicit queue prefix mismatch**: Detects `IScheduler.EnqueueAsync` or `ScheduleAsync` called without an explicit `queue` parameter. In multi-service deployments sharing storage with distinct `QueuePrefix` settings, omitting `queue` sends jobs to the producer's default queue, which consumer services may never poll. Disabled by default to prevent IDE noise; opt-in via `.editorconfig`. |
+| **NXJ017** | Info | Reliability | **Avoid swallowing exceptions in job execution**: Flags general exception catches (`catch (Exception)` or untyped `catch`) inside `IJob.ExecuteAsync` that do not rethrow. Swallowing exceptions causes jobs to complete as succeeded, preventing retries and dead-letter handling. |
+| **NXJ018** | Info | Reliability | **Avoid swallowing OperationCanceledException in job execution**: Flags catching `OperationCanceledException` or `TaskCanceledException` without rethrowing in `IJob.ExecuteAsync`, which prevents graceful shutdown from requeuing in-flight jobs. |
+| **NXJ019** | Info | Reliability | **Validate job attribute arguments**: Detects invalid compile-time constant arguments on `[Retry]` (`attempts < 0`), `[Throttle]` (`maxConcurrent < 1` or empty resource name), and `[ExecutionTimeout]` (invalid or non-positive `TimeSpan`). |
 
 ### Severity and `.editorconfig` Configuration
 
