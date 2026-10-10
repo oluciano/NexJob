@@ -70,6 +70,33 @@ namespace NexJob
             TimeSpan? deadlineAfter = null,
             CancellationToken cancellationToken = default) where TJob : IJob<TInput>;
     }
+
+    [AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = true)]
+    public sealed class RetryAttribute : Attribute
+    {
+        public RetryAttribute(int attempts) => Attempts = attempts;
+        public int Attempts { get; }
+    }
+
+    [AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = true)]
+    public sealed class ThrottleAttribute : Attribute
+    {
+        public ThrottleAttribute(string resource, int maxConcurrent)
+        {
+            Resource = resource;
+            MaxConcurrent = maxConcurrent;
+        }
+
+        public string Resource { get; }
+        public int MaxConcurrent { get; }
+    }
+
+    [AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = true)]
+    public sealed class ExecutionTimeoutAttribute : Attribute
+    {
+        public ExecutionTimeoutAttribute(string timeout) => Timeout = timeout;
+        public string Timeout { get; }
+    }
 }
 ";
 
@@ -87,6 +114,9 @@ root = true
 [*.cs]
 dotnet_diagnostic.NXJ011.severity = info
 dotnet_diagnostic.NXJ016.severity = info
+dotnet_diagnostic.NXJ017.severity = info
+dotnet_diagnostic.NXJ018.severity = info
+dotnet_diagnostic.NXJ019.severity = info
 "));
         test.ExpectedDiagnostics.AddRange(expected);
 

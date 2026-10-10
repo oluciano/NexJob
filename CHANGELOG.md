@@ -20,6 +20,9 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - `NXJ011`: Enqueue missing `idempotencyKey` on repeated or distributed operations (opt-in via `.editorconfig`).
   - `NXJ015`: Direct self-referencing job continuation loop detection within `ExecuteAsync`.
   - `NXJ016`: Implicit queue prefix mismatch when calling `IScheduler.EnqueueAsync` or `ScheduleAsync` without explicit `queue` parameter in multi-service shared storage clusters (opt-in via `.editorconfig`).
+  - `NXJ017`: Swallowed exception detection in `IJob.ExecuteAsync` when caught without rethrowing.
+  - `NXJ018`: Swallowed `OperationCanceledException` detection in `IJob.ExecuteAsync` preventing graceful shutdown requeuing.
+  - `NXJ019`: Invalid job attribute arguments validation on `[Retry]`, `[Throttle]`, and `[ExecutionTimeout]`.
 
 ### Documentation
 
