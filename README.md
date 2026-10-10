@@ -11,6 +11,9 @@ A node that dies, a deploy in the middle of a job, an upgrade from the previous 
 [![NuGet Downloads](https://img.shields.io/nuget/dt/NexJob?style=flat-square&color=512bd4)](https://www.nuget.org/packages/NexJob)
 [![Build](https://img.shields.io/github/actions/workflow/status/oluciano/NexJob/ci.yml?style=flat-square)](https://github.com/oluciano/NexJob/actions)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg?style=flat-square)](LICENSE)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/oluciano/NexJob/badge)](https://scorecard.dev/viewer/?uri=github.com/oluciano/NexJob)
+
+<sub>The Scorecard badge rates the repository's security practices (pinned actions, least-privilege tokens, dependency updates). It says nothing about throughput or behaviour under failure.</sub>
 
 <br/>
 
