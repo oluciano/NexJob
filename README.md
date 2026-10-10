@@ -251,6 +251,8 @@ Found a bug or have an idea? [Open an issue](https://github.com/oluciano/NexJob/
 ## Recent releases
 
 ```
+v6.1.0  ✅ The PostgreSQL and SQL Server fetch uses the index (no longer reads the backlog); queue names match exactly;
+           Salesforce `AuthEndpoint` and `InstanceUrl` must be https; supply-chain hardening (Scorecard, CodeQL)
 v6.0.0  ✅ The default queue is isolated per application (`{prefix}.default`) with a drain of the legacy `default`;
            orphaned-queue hint and recurring id collision warning in the dashboard; `Workers = 0` and
            `DisableWorkers` really run a host without job execution
