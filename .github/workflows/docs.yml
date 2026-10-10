@@ -39,7 +39,8 @@ jobs:
           cache-dependency-path: docs/site/requirements.txt
 
       - name: Install MkDocs
-        run: pip install --require-hashes --only-binary :all: -r docs/site/requirements.txt
+        run: |
+          pip install --require-hashes --only-binary :all: -r docs/site/requirements.txt
 
       - name: Stage the wiki
         run: docs/site/prepare.sh
