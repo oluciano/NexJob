@@ -6,6 +6,17 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Roslyn Diagnostic Analyzers bundled into NexJob** (issue #456): `NexJob.Analyzers` introduces compile-time Roslyn diagnostic rules bundled directly inside the core `NexJob` package under `analyzers/dotnet/cs/NexJob.Analyzers.dll`. Configured at `Info` severity to ensure backward compatibility and zero build breakages on upgrades. IDEs automatically flag:
+  - `NXJ001`: Blocking calls (`.Result`, `.Wait()`, `Thread.Sleep()`, `GetAwaiter().GetResult()`, `Task.WaitAll`, `Task.WaitAny`) inside `IJob.ExecuteAsync`.
+  - `NXJ002`: `DateTime.Now` / `DateTime.Today` inside job execution, suggesting `DateTime.UtcNow`.
+  - `NXJ003`: Non-public, abstract, or non-instantiable classes/records implementing `IJob` or `IJob<T>`.
+  - `NXJ004`: `CancellationToken` omitted on async calls with cancellation overloads/defaults or `Task.Delay()` inside job execution.
+  - `NXJ005`: Static mutable state (mutable fields, static collections, properties with setters) inside job classes preventing cross-worker pollution.
+  - `NXJ006`: Fire-and-forget tasks (`Task.Run(...)`) escaping dispatcher lifecycle tracking.
+  - `NXJ007`: Direct service instantiation (`Service`, `Repository`, `DbContext`, `HttpClient`) enforcing constructor DI.
+
 ### Documentation
 
 - **Search engine indexing, site verification and social metadata** — added `robots.txt` referencing the generated sitemap, Google Search Console HTML verification file, and OpenGraph/Twitter Card social meta tags with canonical URLs to the documentation site.
