@@ -6,9 +6,37 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [6.2.0] - 2026-10-10
+
+### Added
+
+- **Roslyn Diagnostic Analyzers bundled into NexJob** (issue #456): `NexJob.Analyzers` introduces compile-time Roslyn diagnostic rules bundled directly inside the core `NexJob` package under `analyzers/dotnet/cs/NexJob.Analyzers.dll`. Configured at `Info` severity to ensure backward compatibility and zero build breakages on upgrades. IDEs automatically flag:
+  - `NXJ001`: Blocking calls (`.Result`, `.Wait()`, `Thread.Sleep()`, `GetAwaiter().GetResult()`, `Task.WaitAll`, `Task.WaitAny`) inside `IJob.ExecuteAsync`.
+  - `NXJ002`: `DateTime.Now` / `DateTime.Today` inside job execution, suggesting `DateTime.UtcNow`.
+  - `NXJ003`: Non-public, abstract, or non-instantiable classes/records implementing `IJob` or `IJob<T>`.
+  - `NXJ004`: `CancellationToken` omitted on async calls with cancellation overloads/defaults or `Task.Delay()` inside job execution.
+  - `NXJ005`: Static mutable state (mutable fields, static collections, properties with setters) inside job classes preventing cross-worker pollution.
+  - `NXJ006`: Fire-and-forget tasks (`Task.Run(...)`) escaping dispatcher lifecycle tracking.
+  - `NXJ007`: Direct service instantiation (`Service`, `Repository`, `DbContext`, `HttpClient`) enforcing constructor DI.
+  - `NXJ010`: Enqueue specifying `deadlineAfter` without bounded `maxAttempts` retry limit.
+  - `NXJ011`: Enqueue missing `idempotencyKey` on repeated or distributed operations (opt-in via `.editorconfig`).
+  - `NXJ015`: Direct self-referencing job continuation loop detection within `ExecuteAsync`.
+  - `NXJ016`: Implicit queue prefix mismatch when calling `IScheduler.EnqueueAsync` or `ScheduleAsync` without explicit `queue` parameter in multi-service shared storage clusters (opt-in via `.editorconfig`).
+  - `NXJ017`: Swallowed exception detection in `IJob.ExecuteAsync` when caught without rethrowing.
+  - `NXJ018`: Swallowed `OperationCanceledException` detection in `IJob.ExecuteAsync` preventing graceful shutdown requeuing.
+  - `NXJ019`: Invalid job attribute arguments validation on `[Retry]`, `[Throttle]`, and `[ExecutionTimeout]`.
+
 ### Documentation
 
+- **Roslyn Diagnostic Analyzers documentation guide & per-rule help links** (issue #461) — introduced dedicated reference page `docs/wiki/guides/analyzers.md` documenting all 14 diagnostic rules with problem/solution code snippets, severity details, and `.editorconfig` instructions; updated `AnalyzerHelper` to generate per-rule anchor help links directly to the guide.
 - **Search engine indexing, site verification and social metadata** — added `robots.txt` referencing the generated sitemap, Google Search Console HTML verification file, and OpenGraph/Twitter Card social meta tags with canonical URLs to the documentation site.
+
+### Dependencies
+
+- **`Cronos` 0.8.4 to 0.13.0** (`NexJob`) — updated underlying cron expression parser driving recurring-job schedule calculations (PR #449).
+- **`Dapper` 2.1.35 to 2.1.89** (`NexJob.Postgres`, `NexJob.SqlServer`) — routine maintenance update (PR #450).
+- **`Confluent.Kafka` 2.14.0 to 2.16.0** (`NexJob.Kafka`) — updated Kafka client library (PR #448).
+- **`Apache.Avro` 1.12.0 to 1.12.2** (`NexJob.Trigger.Salesforce`) — updated Avro schema serialization dependency (PR #446).
 
 ## [6.1.0] - 2026-10-10
 

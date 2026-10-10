@@ -41,7 +41,7 @@
     <PackageReference Include="Grpc.Net.Client" Version="2.62.0" />
     <PackageReference Include="Grpc.Tools" Version="2.62.0" PrivateAssets="All" />
     <PackageReference Include="Google.Protobuf" Version="3.26.1" />
-    <PackageReference Include="Apache.Avro" Version="1.12.0" />
+    <PackageReference Include="Apache.Avro" Version="1.12.2" />
     <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="8.0.1" />
     <PackageReference Include="Microsoft.Extensions.Options" Version="8.0.2" />
     <PackageReference Include="Microsoft.Extensions.Options.DataAnnotations" Version="8.0.0" />

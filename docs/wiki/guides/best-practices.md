@@ -267,5 +267,11 @@ Configure OpenTelemetry, enable the dashboard with authorization, and set up ale
 
 Register `NexJobHealthCheck` and include it in your `/healthz` endpoint.
 
+## Roslyn Diagnostic Analyzers
+
+NexJob ships with built-in compile-time Roslyn Diagnostic Analyzers bundled directly in the core `NexJob` package (`analyzers/dotnet/cs/NexJob.Analyzers.dll`). Installing `NexJob` automatically activates real-time guardrails in your IDE (Visual Studio, JetBrains Rider, VS Code) to detect common job-authoring pitfalls (blocking calls, unawaited tasks, swallowed exceptions, and missing cancellation tokens) as you type.
+
+For the complete list of rules, code examples, severity levels, and `.editorconfig` configuration instructions, see the dedicated [Roslyn Diagnostic Analyzers Guide](analyzers.md).
+
 
 
