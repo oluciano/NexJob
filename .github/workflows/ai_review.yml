@@ -6,6 +6,10 @@ on:
   issue_comment:
     types: [created]
 
+# Least privilege: the token can only read; a job that needs more asks for it itself.
+permissions:
+  contents: read
+
 jobs:
   pr_agent:
     # Security: Only authorized users can trigger the bot
@@ -25,7 +29,7 @@ jobs:
 
     steps:
       - name: Run PR-Agent
-        uses: qodo-ai/pr-agent@v0.31
+        uses: qodo-ai/pr-agent@d36ad319f7fb0049205017405a71275c41599587 # v0.31
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GOOGLE_API_KEY: ${{ secrets.GEMINI_API_KEY_2 }}

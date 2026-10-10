@@ -6,6 +6,10 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Security
+
+- **Repository hardening for the OpenSSF Scorecard** (issue #414): every GitHub Action in the workflows is pinned to a commit SHA (with the tag in a comment), every workflow declares `permissions: contents: read` at the top and jobs that need more ask for it themselves, Dependabot proposes weekly updates for the actions and the NuGet packages (minor and patch grouped), and a new `scorecard.yml` runs the OpenSSF Scorecard weekly and on the default branch. Workflow and repository files only; the library and the packages are untouched, and the CI jobs run the same steps.
+
 ### Changed
 
 - **Queue names are matched exactly everywhere** (issue #408): the circuit breaker, `ConfigureQueue` and the in-memory storage's queue filter ignored case, while execution windows, pause, the other settings and every database provider compared exactly, so `ConfigureQueue("Payments")` governed the breaker of `payments` but not its window. All of them now compare exactly (`Payments` and `payments` are different queues, as they already were in storage). **Behaviour change:** a breaker or a `ConfigureQueue` entry written with a different case than the queue you enqueue into no longer applies to it; write the name with the same case in both places. A startup warning names a `ConfigureQueue` name that differs only by case from a queue the host polls or from another configured name, so the change does not fail silently. SQL Server keeps following its collation (case-insensitive by default), documented in `queues.md`, which is the single place that states the rule.
