@@ -2318,4 +2318,51 @@ public abstract class StorageProviderTestsBase
         (await storage.FetchBatchAsync(["default"], 3)).Should().HaveCount(1);
         (await storage.FetchBatchAsync(["default"], 0)).Should().BeEmpty();
     }
+
+    [Fact]
+    public async Task FetchNextAsync_prefers_the_earlier_queue_over_a_higher_priority_in_a_later_queue()
+    {
+        var (storage, _, _, _) = await CreateStorageAsync();
+        var urgentButLater = MakeJob(queue: "b", priority: JobPriority.Critical);
+        var lazyButFirst = MakeJob(queue: "a", priority: JobPriority.Low);
+        await storage.EnqueueAsync(urgentButLater);
+        await storage.EnqueueAsync(lazyButFirst);
+
+        (await storage.FetchNextAsync(["a", "b"]))!.Id.Should().Be(lazyButFirst.Id);
+        (await storage.FetchNextAsync(["a", "b"]))!.Id.Should().Be(urgentButLater.Id);
+        (await storage.FetchNextAsync(["a", "b"])).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task FetchBatchAsync_fills_a_batch_across_queues_in_list_order_then_priority_then_age()
+    {
+        var (storage, _, _, _) = await CreateStorageAsync();
+        var a1 = MakeJob(queue: "a", priority: JobPriority.Normal);
+        await storage.EnqueueAsync(a1);
+        await Task.Delay(5);
+        var a2 = MakeJob(queue: "a", priority: JobPriority.Critical);
+        await storage.EnqueueAsync(a2);
+        await Task.Delay(5);
+        var b1 = MakeJob(queue: "b", priority: JobPriority.Critical);
+        await storage.EnqueueAsync(b1);
+        var c1 = MakeJob(queue: "c");
+        await storage.EnqueueAsync(c1);
+
+        // "empty" has no jobs and sits first: it must not hide the others.
+        var batch = await storage.FetchBatchAsync(["empty", "a", "b", "c"], 3);
+
+        batch.Select(j => j.Id).Should().BeEquivalentTo(new[] { a2.Id, a1.Id, b1.Id });
+        (await storage.FetchBatchAsync(["empty", "a", "b", "c"], 3)).Should().ContainSingle().Which.Id.Should().Be(c1.Id);
+    }
+
+    [Fact]
+    public async Task FetchBatchAsync_with_no_queues_returns_nothing_and_leaves_jobs_enqueued()
+    {
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
+        var job = MakeJob();
+        await storage.EnqueueAsync(job);
+
+        (await storage.FetchBatchAsync([], 5)).Should().BeEmpty();
+        (await dashboard.GetJobByIdAsync(job.Id))!.Status.Should().Be(JobStatus.Enqueued);
+    }
 }
