@@ -303,4 +303,40 @@ public sealed class NexJobOptionsTests
 
         act.Should().Throw<ArgumentException>();
     }
+
+    [Fact]
+    public void GetQueueNameCaseMismatches_ConfiguredNameDiffersByCaseFromAPolledQueue_IsReported()
+    {
+        var options = new NexJobOptions { Queues = ["payments"] };
+        options.ConfigureQueue("Payments", q => q.Workers = null);
+
+        options.GetQueueNameCaseMismatches().Should().ContainSingle()
+            .Which.Should().Contain("Payments").And.Contain("payments");
+    }
+
+    [Fact]
+    public void GetQueueNameCaseMismatches_TwoConfiguredNamesDifferOnlyByCase_AreReported()
+    {
+        var options = new NexJobOptions { Queues = ["emails"] };
+        options.ConfigureQueue("Payments", _ => { });
+        options.ConfigureQueue("payments", _ => { });
+
+        options.GetQueueNameCaseMismatches().Should().NotBeEmpty();
+    }
+
+    [Fact]
+    public void GetQueueNameCaseMismatches_ExactNames_ReportNothing()
+    {
+        var options = new NexJobOptions { Queues = ["payments"] };
+        options.ConfigureQueue("payments", _ => { });
+        options.ConfigureQueue("default", _ => { });
+
+        options.GetQueueNameCaseMismatches().Should().BeEmpty();
+    }
+
+    [Fact]
+    public void GetQueueNameCaseMismatches_NoConfiguration_ReportsNothing()
+    {
+        new NexJobOptions().GetQueueNameCaseMismatches().Should().BeEmpty();
+    }
 }

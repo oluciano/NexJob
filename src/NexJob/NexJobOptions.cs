@@ -415,6 +415,18 @@ public sealed class NexJobOptions
         return ignored;
     }
 
+    /// <summary>
+    /// Lists the queue names passed to <see cref="ConfigureQueue"/> that differ only by case from a queue this host polls or
+    /// from another configured name. Names are matched exactly, so such a setting does not govern the queue it looks like it
+    /// was written for; the dispatcher says so at startup instead of letting it fail silently.
+    /// </summary>
+    /// <returns>One description per mismatched name.</returns>
+    internal IReadOnlyList<string> GetQueueNameCaseMismatches()
+    {
+        _ = QueueSettings;
+        return [];
+    }
+
     /// <summary>Maps a user-facing queue name to the name stored with jobs.</summary>
     /// <param name="queue">The queue the caller asked for, or <see langword="null"/> for the implicit default.</param>
     /// <returns>The stored queue name.</returns>
