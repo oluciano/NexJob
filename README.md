@@ -12,8 +12,9 @@ A node that dies, a deploy in the middle of a job, an upgrade from the previous 
 [![Build](https://img.shields.io/github/actions/workflow/status/oluciano/NexJob/ci.yml?style=flat-square)](https://github.com/oluciano/NexJob/actions)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg?style=flat-square)](LICENSE)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/oluciano/NexJob/badge)](https://scorecard.dev/viewer/?uri=github.com/oluciano/NexJob)
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/15362/badge)](https://www.bestpractices.dev/projects/15362)
 
-<sub>The Scorecard badge rates the repository's security practices (pinned actions, least-privilege tokens, dependency updates). It says nothing about throughput or behaviour under failure.</sub>
+<sub>The Scorecard and Best Practices badges rate the repository's security and engineering practices (pinned actions, least-privilege tokens, dependency updates, documented process). The Best Practices badge is self-declared. Neither says anything about throughput or behaviour under failure.</sub>
 
 <br/>
 
