@@ -292,3 +292,7 @@ NexJob maintains a centralized, thread-safe `IListenerRegistry` that tracks the 
 | `Stopped` | Host shutdown or graceful deregistration. |
 
 All registered triggers and their live states are visible in the dashboard at the `/listeners` route and summarized in the **Cluster Pipeline Topology Map** on the overview page.
+
+## Try it
+
+The [`NexJob.Sample.CloudTriggers`](https://github.com/oluciano/NexJob/tree/develop/samples/NexJob.Sample.CloudTriggers) sample wires AWS SQS, Azure Service Bus, Google Pub/Sub and Salesforce triggers, with `/simulate/*` endpoints to produce messages without the real services.

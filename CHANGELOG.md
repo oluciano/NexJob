@@ -6,6 +6,24 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [6.1.0] - 2026-10-10
+
+### Fixed
+
+- **Salesforce triggers — `AuthEndpoint` must be https** (issue #435, found by CodeQL, issue #417): `NexJob.Trigger.SalesforceStreaming` accepted any absolute URL and `NexJob.Trigger.Salesforce` accepted `http`, so a misconfigured `http://` endpoint sent the OAuth username, password and client secret in clear text. Validation now requires `https`; `http` is accepted only for a loopback host (`localhost`, `127.0.0.1`, `[::1]`), which keeps local mocks and the integration tests working. The default endpoint (`https://login.salesforce.com/...`) is unchanged. `InstanceUrl` of the `SessionId` flow follows the same rule (issue #440), since the access token is sent to it. **Behaviour change:** a non-loopback `http` `AuthEndpoint`, or `InstanceUrl` with `SessionId`, is now a validation error.
+
+### Security
+
+- **Repository hardening for the OpenSSF Scorecard** (issue #414): every GitHub Action in the workflows is pinned to a commit SHA (with the tag in a comment), every workflow declares `permissions: contents: read` at the top and jobs that need more ask for it themselves, Dependabot proposes weekly updates for the actions and the NuGet packages (minor and patch grouped), the two Docker base images are pinned by digest (Dependabot's docker ecosystem bumps them), and a new `scorecard.yml` runs the OpenSSF Scorecard weekly and on the default branch. Dependabot does not propose major-version updates for NuGet packages and Docker base images (they are decided by the maintainer); the first week of proposals showed why: a .NET 8 to 10 base image that CI cannot catch breaking, a rewritten AWS client, and a 38-update group. The documentation build installs its Python dependencies from a hash-locked file (`docs/site/requirements.in` compiled with `pip-compile --generate-hashes`) with `--require-hashes --only-binary :all:`, which closes two SonarCloud findings on `docs.yml` (issue #431). A new `codeql.yml` runs GitHub's CodeQL on every pull request, on pushes to the default branch and weekly, for C# and for the workflows themselves, with the results in the Security tab (issue #417). Workflow and repository files only; the library and the packages are untouched, and the CI jobs run the same steps.
+
+### Changed
+
+- **Queue names are matched exactly everywhere** (issue #408): the circuit breaker, `ConfigureQueue` and the in-memory storage's queue filter ignored case, while execution windows, pause, the other settings and every database provider compared exactly, so `ConfigureQueue("Payments")` governed the breaker of `payments` but not its window. All of them now compare exactly (`Payments` and `payments` are different queues, as they already were in storage). **Behaviour change:** a breaker or a `ConfigureQueue` entry written with a different case than the queue you enqueue into no longer applies to it; write the name with the same case in both places. A startup warning names a `ConfigureQueue` name that differs only by case from a queue the host polls or from another configured name, so the change does not fail silently. SQL Server keeps following its collation (case-insensitive by default), documented in `queues.md`, which is the single place that states the rule.
+
+### Fixed
+
+- **PostgreSQL and SQL Server — the fetch no longer reads the whole backlog** (issue #412): fetching from several queues (always the case since 6.0.0, which polls `{prefix}.default` and the legacy `default`) sorted every `Enqueued` row, so the cost of a fetch grew with the size of the backlog. Each queue is now read through the fetch index with its own ordered limit and the results are merged in queue order, so the order (queues as listed, then priority, then age) is unchanged. On 20,000 `Enqueued` rows, fetching 5 jobs from two queues went from 18.4 ms to 0.19 ms on PostgreSQL and from 162 to 6 logical reads on SQL Server. No stored format, option or API changes. MongoDB and Redis already claim queue by queue and are not affected.
+
 ## [6.0.0] - 2026-10-09
 
 **Upgrading from v5:** the default queue changes name (`{prefix}.default`), see the migration guide (`docs/wiki/reference/migration.md`); nodes of v5 and v6 can share a database during the upgrade and nothing is migrated.

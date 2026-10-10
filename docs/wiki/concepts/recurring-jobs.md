@@ -210,3 +210,7 @@ The `NextExecution` timestamp is recalculated from the cron expression and time 
 
 
 Each fired `JobRecord` is fully independent: if one firing fails, its retries and dead-letter handling operate in isolation, and the next scheduled firing is unaffected.
+
+## Try it
+
+The [`NexJob.Sample.ConfiguredRecurring`](https://github.com/oluciano/NexJob/tree/develop/samples/NexJob.Sample.ConfiguredRecurring) sample registers recurring jobs from `appsettings.json`, with time zones, and no registration code.

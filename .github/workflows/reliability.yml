@@ -19,6 +19,10 @@ on:
     - cron: '0 4 * * *'
   workflow_dispatch:
 
+# Least privilege: the token can only read; a job that needs more asks for it itself.
+permissions:
+  contents: read
+
 jobs:
   reliability:
     name: Reliability - ${{ matrix.provider }}
@@ -31,10 +35,10 @@ jobs:
         provider: [Postgres, SqlServer, Redis, Mongo]
 
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v5.2.0
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: 8.0.x
 
@@ -64,7 +68,7 @@ jobs:
 
       - name: Upload reliability test artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: reliability-${{ matrix.provider }}-artifacts
           path: tests/NexJob.ReliabilityTests/TestResults/**/*.trx

@@ -7,6 +7,12 @@ namespace NexJob.Trigger.SalesforceStreaming;
 /// </summary>
 public sealed class SalesforceStreamingAuthOptions : IValidatableObject
 {
+    private const string InstanceUrlMessage =
+        "InstanceUrl must be an absolute https URL when using SessionId authentication (http is accepted only for a loopback address): the access token is sent to it.";
+
+    private const string AuthEndpointMessage =
+        "AuthEndpoint must be an absolute https URL (http is accepted only for a loopback address): the OAuth credentials are sent to it.";
+
     /// <summary>
     /// Gets or sets the authentication type to use. Defaults to <see cref="SalesforceStreamingAuthType.OAuth2UsernamePassword"/>.
     /// </summary>
@@ -79,10 +85,10 @@ public sealed class SalesforceStreamingAuthOptions : IValidatableObject
         switch (AuthType)
         {
             case SalesforceStreamingAuthType.OAuth2UsernamePassword:
-                if (string.IsNullOrWhiteSpace(AuthEndpoint) || !Uri.TryCreate(AuthEndpoint, UriKind.Absolute, out _))
+                if (!IsHttpsOrLoopbackHttp(AuthEndpoint))
                 {
                     yield return new ValidationResult(
-                        "AuthEndpoint must be a valid absolute URL.",
+                        AuthEndpointMessage,
                         new[] { nameof(AuthEndpoint), });
                 }
 
@@ -117,10 +123,10 @@ public sealed class SalesforceStreamingAuthOptions : IValidatableObject
                 break;
 
             case SalesforceStreamingAuthType.OAuth2ClientCredentials:
-                if (string.IsNullOrWhiteSpace(AuthEndpoint) || !Uri.TryCreate(AuthEndpoint, UriKind.Absolute, out _))
+                if (!IsHttpsOrLoopbackHttp(AuthEndpoint))
                 {
                     yield return new ValidationResult(
-                        "AuthEndpoint must be a valid absolute URL.",
+                        AuthEndpointMessage,
                         new[] { nameof(AuthEndpoint), });
                 }
 
@@ -141,10 +147,10 @@ public sealed class SalesforceStreamingAuthOptions : IValidatableObject
                 break;
 
             case SalesforceStreamingAuthType.SessionId:
-                if (string.IsNullOrWhiteSpace(InstanceUrl) || !Uri.TryCreate(InstanceUrl, UriKind.Absolute, out _))
+                if (!IsHttpsOrLoopbackHttp(InstanceUrl))
                 {
                     yield return new ValidationResult(
-                        "InstanceUrl must be a valid absolute URL when using SessionId authentication.",
+                        InstanceUrlMessage,
                         new[] { nameof(InstanceUrl), });
                 }
 
@@ -158,4 +164,10 @@ public sealed class SalesforceStreamingAuthOptions : IValidatableObject
                 break;
         }
     }
+
+    private static bool IsHttpsOrLoopbackHttp(string? value) =>
+        Uri.TryCreate(value, UriKind.Absolute, out var uri)
+        && (string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
+            || (string.Equals(uri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase)
+                && (uri.IsLoopback || string.Equals(uri.Host, "localhost", StringComparison.OrdinalIgnoreCase))));
 }

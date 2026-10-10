@@ -6,6 +6,20 @@ description: "Step-by-step migration guides for NexJob major version upgrades, i
 
 This page covers every breaking change between NexJob releases and tells you exactly what to update in your code. Schema migrations for PostgreSQL and SQL Server apply automatically at startup. Follow the steps in order for each version jump you're crossing.
 
+## v6.0.0 → v6.1.0
+
+No schema migration, no stored format changes and no public API removed. Two behaviour changes can need an action; the fetch improvement needs none.
+
+- **Queue names are matched exactly.** The circuit breaker, `ConfigureQueue` and the in-memory storage filter used to ignore case; now `Payments` and `payments` are different queues everywhere, as they already were in storage and in execution windows. If a breaker or `ConfigureQueue` entry is written with a different case than the queue you enqueue into, it no longer applies: write the name with the same case in both places. A startup warning names a configured queue that differs only by case from one the host polls. SQL Server keeps following its collation. See [queues](../concepts/queues.md).
+- **Salesforce triggers require https.** `AuthEndpoint` (both Salesforce packages) and, with the `SessionId` flow, `InstanceUrl` must be `https`. `http` is accepted only for a loopback host (`localhost`, `127.0.0.1`, `[::1]`). A non-loopback `http` value is now a validation error at startup; change it to `https`. The default endpoint is unchanged.
+- **PostgreSQL and SQL Server fetch is faster.** Each queue is read through the fetch index and merged in queue order; the job order is unchanged. Nothing to do.
+
+**Rolling upgrade.** No stored data changes, so v6.0.0 and v6.1.0 nodes can run together: both fetch the same jobs in the same order. The only difference while mixed is the case-sensitivity of breaker and `ConfigureQueue` matching on upgraded nodes.
+
+**Rollout and rollback.**
+- **Roll out:** upgrade one node and watch the startup log for the queue-name case warning and for Salesforce validation errors; then upgrade the rest.
+- **Roll back:** go back to 6.0.0; there is no schema migration to undo.
+
 ## v5.10.0 → v6.0.0
 
 No schema migration. The change that reaches everyone who enqueues without naming a queue is the default queue; the other behaviour changes are listed after it.

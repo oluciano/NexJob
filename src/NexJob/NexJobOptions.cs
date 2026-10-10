@@ -338,7 +338,7 @@ public sealed class NexJobOptions
         ArgumentException.ThrowIfNullOrWhiteSpace(queueName);
         ArgumentNullException.ThrowIfNull(configure);
 
-        var existing = QueueSettings.Find(q => string.Equals(q.Name, queueName, StringComparison.OrdinalIgnoreCase));
+        var existing = QueueSettings.Find(q => string.Equals(q.Name, queueName, StringComparison.Ordinal));
         if (existing is null)
         {
             existing = new QueueSettings { Name = queueName };
@@ -413,6 +413,35 @@ public sealed class NexJobOptions
         }
 
         return ignored;
+    }
+
+    /// <summary>
+    /// Lists the queue names passed to <see cref="ConfigureQueue"/> that differ only by case from a queue this host polls or
+    /// from another configured name. Names are matched exactly, so such a setting does not govern the queue it looks like it
+    /// was written for; the dispatcher says so at startup instead of letting it fail silently.
+    /// </summary>
+    /// <returns>One description per mismatched name.</returns>
+    internal IReadOnlyList<string> GetQueueNameCaseMismatches()
+    {
+        var known = PolledQueues.Concat(QueueSettings.Select(q => q.Name)).Distinct(StringComparer.Ordinal).ToList();
+        var mismatches = new List<string>();
+        foreach (var name in QueueSettings.Select(q => q.Name).Distinct(StringComparer.Ordinal))
+        {
+            if (PolledQueues.Any(polled => StandsFor(name, polled)))
+            {
+                continue;
+            }
+
+            var lookalike = known.Find(other =>
+                !string.Equals(other, name, StringComparison.Ordinal)
+                && string.Equals(other, name, StringComparison.OrdinalIgnoreCase));
+            if (lookalike is not null)
+            {
+                mismatches.Add($"'{name}' is configured but queue names are matched exactly and '{lookalike}' is the name in use");
+            }
+        }
+
+        return mismatches;
     }
 
     /// <summary>Maps a user-facing queue name to the name stored with jobs.</summary>

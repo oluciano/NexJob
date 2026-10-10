@@ -214,3 +214,7 @@ Set `ExhaustedJobsRoutingKey` (and, if you do not use the default exchange, `Exh
 | **Confirm timeout** | `TimeoutException` is thrown, triggering retry. |
 | **Retries exhausted** | The message is dispatched to the dead-letter pipeline (`IDeadLetterHandler`) and surfaced in the dashboard. |
 | **Host shutdown** | Active connections and channels are closed cleanly without dropping acknowledged messages. |
+
+## Try it
+
+The [`NexJob.Sample.RabbitMQ`](https://github.com/oluciano/NexJob/tree/develop/samples/NexJob.Sample.RabbitMQ) sample runs the outbox producer and the trigger consumer against a RabbitMQ container from the Docker Compose stack in `samples/`.

@@ -257,3 +257,6 @@ Log.Logger = new LoggerConfiguration()
 !!! tip
     To turn these metrics into alerts (jobs that exhausted their attempts, expired jobs, a queue nobody drains), see the [Alerts](../guides/alerts.md) guide.
 
+## Try it
+
+The [`NexJob.Sample.Storage`](https://github.com/oluciano/NexJob/tree/develop/samples/NexJob.Sample.Storage) sample exports NexJob traces and metrics with OpenTelemetry next to a read replica and a distributed throttle.

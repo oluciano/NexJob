@@ -579,7 +579,7 @@ internal sealed class InMemoryStorageProvider : IStorageProvider, IOrphanedJobRe
 
         if (!string.IsNullOrWhiteSpace(filter.Queue))
         {
-            query = query.Where(j => j.Queue.Equals(filter.Queue, StringComparison.OrdinalIgnoreCase));
+            query = query.Where(j => j.Queue.Equals(filter.Queue, StringComparison.Ordinal));
         }
 
         if (!string.IsNullOrWhiteSpace(filter.Search))

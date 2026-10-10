@@ -256,7 +256,7 @@ builder.Services.AddNexJob()
 
 ## Queue-Specific Settings
 
-Use `ConfigureQueue` to apply an execution time window or a circuit breaker to a named queue. Call it multiple times with the same name to edit the same settings object — the name match is case-insensitive.
+Use `ConfigureQueue` to apply an execution time window or a circuit breaker to a named queue. Call it multiple times with the same name to edit the same settings object — the name match is exact (case-sensitive), like everywhere else queue names are compared; see [Queues](../concepts/queues.md#per-queue-settings).
 
 ### ExecutionWindowSettings
 

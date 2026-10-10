@@ -327,4 +327,82 @@ public sealed class SalesforceStreamingOptionsTests
         Username = "user",
         Password = "pwd",
     };
+
+    [Theory]
+    [InlineData(SalesforceStreamingAuthType.OAuth2UsernamePassword, "http://login.salesforce.com/services/oauth2/token")]
+    [InlineData(SalesforceStreamingAuthType.OAuth2UsernamePassword, "http://example.com")]
+    [InlineData(SalesforceStreamingAuthType.OAuth2ClientCredentials, "http://login.salesforce.com/services/oauth2/token")]
+    [InlineData(SalesforceStreamingAuthType.OAuth2ClientCredentials, "ftp://login.salesforce.com")]
+    public void Validate_AuthEndpointThatIsNotHttpsOrLoopback_FailsAndNamesHttps(SalesforceStreamingAuthType type, string endpoint)
+    {
+        var auth = ValidOAuthOptions(type, endpoint);
+
+        var results = auth.Validate(new ValidationContext(auth)).ToList();
+
+        results.Should().ContainSingle(r => r.MemberNames.Contains(nameof(SalesforceStreamingAuthOptions.AuthEndpoint)))
+            .Which.ErrorMessage.Should().Contain("https");
+    }
+
+    [Theory]
+    [InlineData(SalesforceStreamingAuthType.OAuth2UsernamePassword, "https://login.salesforce.com/services/oauth2/token")]
+    [InlineData(SalesforceStreamingAuthType.OAuth2UsernamePassword, "HTTPS://login.salesforce.com/services/oauth2/token")]
+    [InlineData(SalesforceStreamingAuthType.OAuth2UsernamePassword, "http://localhost:8080/services/oauth2/token")]
+    [InlineData(SalesforceStreamingAuthType.OAuth2ClientCredentials, "http://127.0.0.1:5000/token")]
+    [InlineData(SalesforceStreamingAuthType.OAuth2ClientCredentials, "http://[::1]:5000/token")]
+    [InlineData(SalesforceStreamingAuthType.OAuth2ClientCredentials, "HTTP://LOCALHOST/token")]
+    public void Validate_HttpsOrLoopbackAuthEndpoint_HasNoAuthEndpointError(SalesforceStreamingAuthType type, string endpoint)
+    {
+        var auth = ValidOAuthOptions(type, endpoint);
+
+        var results = auth.Validate(new ValidationContext(auth)).ToList();
+
+        results.Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData("http://mycompany.my.salesforce.com")]
+    [InlineData("http://example.com")]
+    [InlineData("ftp://mycompany.my.salesforce.com")]
+    public void Validate_SessionIdInstanceUrlThatIsNotHttpsOrLoopback_FailsAndNamesHttps(string instanceUrl)
+    {
+        var auth = ValidSessionOptions(instanceUrl);
+
+        var results = auth.Validate(new ValidationContext(auth)).ToList();
+
+        results.Should().ContainSingle(r => r.MemberNames.Contains(nameof(SalesforceStreamingAuthOptions.InstanceUrl)))
+            .Which.ErrorMessage.Should().Contain("https");
+    }
+
+    [Theory]
+    [InlineData("https://mycompany.my.salesforce.com")]
+    [InlineData("HTTPS://mycompany.my.salesforce.com")]
+    [InlineData("http://localhost:8080")]
+    [InlineData("http://127.0.0.1:5000")]
+    [InlineData("http://[::1]:5000")]
+    [InlineData("HTTP://LOCALHOST")]
+    public void Validate_SessionIdHttpsOrLoopbackInstanceUrl_HasNoInstanceUrlError(string instanceUrl)
+    {
+        var auth = ValidSessionOptions(instanceUrl);
+
+        var results = auth.Validate(new ValidationContext(auth)).ToList();
+
+        results.Should().BeEmpty();
+    }
+
+    private static SalesforceStreamingAuthOptions ValidSessionOptions(string instanceUrl) => new()
+    {
+        AuthType = SalesforceStreamingAuthType.SessionId,
+        InstanceUrl = instanceUrl,
+        AccessToken = "token",
+    };
+
+    private static SalesforceStreamingAuthOptions ValidOAuthOptions(SalesforceStreamingAuthType type, string endpoint) => new()
+    {
+        AuthType = type,
+        AuthEndpoint = endpoint,
+        ClientId = "id",
+        ClientSecret = "sec",
+        Username = "u",
+        Password = "p",
+    };
 }
