@@ -6,6 +6,10 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Documentation
+
+- **Search engine indexing and site verification** — added `robots.txt` referencing the generated sitemap and Google Search Console HTML verification file to the documentation site.
+
 ## [6.1.0] - 2026-10-10
 
 ### Fixed
