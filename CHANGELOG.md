@@ -31,6 +31,13 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Roslyn Diagnostic Analyzers documentation guide & per-rule help links** (issue #461) — introduced dedicated reference page `docs/wiki/guides/analyzers.md` documenting all 14 diagnostic rules with problem/solution code snippets, severity details, and `.editorconfig` instructions; updated `AnalyzerHelper` to generate per-rule anchor help links directly to the guide.
 - **Search engine indexing, site verification and social metadata** — added `robots.txt` referencing the generated sitemap, Google Search Console HTML verification file, and OpenGraph/Twitter Card social meta tags with canonical URLs to the documentation site.
 
+### Dependencies
+
+- **`Cronos` 0.8.4 to 0.13.0** (`NexJob`) — updated underlying cron expression parser driving recurring-job schedule calculations (PR #449).
+- **`Dapper` 2.1.35 to 2.1.89** (`NexJob.Postgres`, `NexJob.SqlServer`) — routine maintenance update (PR #450).
+- **`Confluent.Kafka` 2.14.0 to 2.16.0** (`NexJob.Kafka`) — updated Kafka client library (PR #448).
+- **`Apache.Avro` 1.12.0 to 1.12.2** (`NexJob.Trigger.Salesforce`) — updated Avro schema serialization dependency (PR #446).
+
 ## [6.1.0] - 2026-10-10
 
 ### Fixed
