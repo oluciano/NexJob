@@ -125,6 +125,13 @@ internal sealed class JobDispatcherService : BackgroundService
                 hint);
         }
 
+        foreach (var mismatch in _options.GetQueueNameCaseMismatches())
+        {
+            _logger.LogWarning(
+                "Queue name case mismatch: {Mismatch}. Settings, execution windows, pause and circuit breakers do not apply across a difference in case; write the name the same way in ConfigureQueue and where you enqueue.",
+                mismatch);
+        }
+
         if (_options.Workers == 0)
         {
             _logger.LogInformation("Workers = 0: this host does not fetch or execute jobs.");

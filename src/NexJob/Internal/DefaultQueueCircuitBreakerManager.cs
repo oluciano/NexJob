@@ -9,7 +9,7 @@ namespace NexJob.Internal;
 /// </summary>
 internal sealed class DefaultQueueCircuitBreakerManager : IQueueCircuitBreakerManager
 {
-    private readonly ConcurrentDictionary<string, CircuitEntry> _circuits = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, CircuitEntry> _circuits = new(StringComparer.Ordinal);
     private readonly ILogger<DefaultQueueCircuitBreakerManager>? _logger;
     private readonly TimeProvider _timeProvider;
 
