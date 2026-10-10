@@ -280,23 +280,31 @@ NexJob ships with built-in compile-time Roslyn Diagnostic Analyzers bundled dire
 | **NXJ005** | Info | Reliability | **Avoid static mutable state in job classes**: Flags mutable (non-readonly) `static` fields, static mutable collections (`List`, `Dictionary`, etc.), and static properties with setters inside Job classes to prevent race conditions and cross-job data pollution across concurrent workers. |
 | **NXJ006** | Info | Reliability | **Avoid fire-and-forget tasks in job execution**: Flags discarded or unawaited tasks (`Task.Run(...)`) inside `ExecuteAsync`. Jobs must be fully awaited; fire-and-forget escapes dispatcher lifecycle tracking. |
 | **NXJ007** | Info | Design | **Avoid direct service instantiation inside job**: Flags direct instantiation of services, repositories, `DbContext`, or `HttpClient` within `ExecuteAsync`, enforcing proper constructor dependency injection. |
+| **NXJ010** | Info | Reliability | **Bounded retry with deadline**: Detects enqueue calls specifying `deadlineAfter` without explicit `maxAttempts`, avoiding unbounded retry loops within deadline windows. |
+| **NXJ011** | Info (Opt-in) | Design | **Consider providing an idempotencyKey**: Recommends supplying an `idempotencyKey` on job enqueues to guarantee deduplication and prevent duplicate execution upon retries. Disabled by default to prevent IDE noise; opt-in via `.editorconfig`. |
+| **NXJ015** | Info | Reliability | **Prevent recursive job continuation**: Flags jobs directly re-enqueuing themselves inside `ExecuteAsync`, preventing infinite continuation cascades. |
+| **NXJ016** | Info (Opt-in) | Reliability | **Implicit queue prefix mismatch**: Detects `IScheduler.EnqueueAsync` or `ScheduleAsync` called without an explicit `queue` parameter. In multi-service deployments sharing storage with distinct `QueuePrefix` settings, omitting `queue` sends jobs to the producer's default queue, which consumer services may never poll. Disabled by default to prevent IDE noise; opt-in via `.editorconfig`. |
 
 ### Severity and `.editorconfig` Configuration
 
-By default, all NexJob analyzer rules are configured with **`Info`** severity. This ensures suggestions and guidance appear seamlessly in IDEs (Visual Studio, JetBrains Rider, VS Code) without breaking existing project builds or CI pipelines under `TreatWarningsAsErrors = true`.
+By default, NexJob analyzer rules are configured with **`Info`** severity (and rules like NXJ011 and NXJ016 are disabled by default as opt-in). Because default severity is `Info`, diagnostics appear as subtle IDE hints and suggestions without breaking builds in the terminal or CI under `TreatWarningsAsErrors = true`.
 
-You can easily elevate or suppress individual rules or entire categories using your project's `.editorconfig`:
+To enforce rules in terminal builds and CI or enable opt-in rules, configure your project's `.editorconfig`:
 
 ```ini
 [*.cs]
-# Elevate all NexJob reliability or design rules to warning (breaks build under TreatWarningsAsErrors)
+# Elevate all NexJob reliability or design rules to warning (breaks build under TreatWarningsAsErrors in CI/terminal)
 dotnet_analyzer_diagnostic.category-Reliability.severity = warning
 dotnet_analyzer_diagnostic.category-Design.severity = warning
 
-# Elevate a specific rule
+# Elevate an individual rule
 dotnet_diagnostic.NXJ001.severity = warning
 
-# Suppress / disable a specific rule
+# Enable opt-in rules (NXJ011, NXJ016)
+dotnet_diagnostic.NXJ011.severity = info
+dotnet_diagnostic.NXJ016.severity = info
+
+# Disable a specific rule
 dotnet_diagnostic.NXJ005.severity = none
 ```
 

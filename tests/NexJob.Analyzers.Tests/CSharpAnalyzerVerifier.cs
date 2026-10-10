@@ -11,6 +11,7 @@ internal static class CSharpAnalyzerVerifier<TAnalyzer>
     private const string NexJobSources = @"
 namespace NexJob
 {
+    using System;
     using System.Threading;
     using System.Threading.Tasks;
 
@@ -22,6 +23,52 @@ namespace NexJob
     public interface IJob<in TInput>
     {
         Task ExecuteAsync(TInput input, CancellationToken cancellationToken);
+    }
+
+    public sealed class JobRecord
+    {
+    }
+
+    public enum DuplicatePolicy
+    {
+        AllowAfterFailed,
+        ThrowOnDuplicate
+    }
+
+    public interface IScheduler
+    {
+        Task EnqueueAsync(
+            JobRecord job,
+            DuplicatePolicy duplicatePolicy = DuplicatePolicy.AllowAfterFailed,
+            CancellationToken cancellationToken = default);
+
+        Task EnqueueAsync<TJob>(
+            string? queue = null,
+            string? idempotencyKey = null,
+            TimeSpan? deadlineAfter = null,
+            CancellationToken cancellationToken = default) where TJob : IJob;
+
+        Task EnqueueAsync<TJob, TInput>(
+            TInput input,
+            string? queue = null,
+            string? idempotencyKey = null,
+            TimeSpan? deadlineAfter = null,
+            CancellationToken cancellationToken = default) where TJob : IJob<TInput>;
+
+        Task EnqueueAsync<TJob>(
+            int maxAttempts,
+            string? queue = null,
+            string? idempotencyKey = null,
+            TimeSpan? deadlineAfter = null,
+            CancellationToken cancellationToken = default) where TJob : IJob;
+
+        Task EnqueueAsync<TJob, TInput>(
+            TInput input,
+            int maxAttempts,
+            string? queue = null,
+            string? idempotencyKey = null,
+            TimeSpan? deadlineAfter = null,
+            CancellationToken cancellationToken = default) where TJob : IJob<TInput>;
     }
 }
 ";
@@ -35,6 +82,12 @@ namespace NexJob
         };
 
         test.TestState.Sources.Add(("NexJobStubs.cs", NexJobSources));
+        test.TestState.AnalyzerConfigFiles.Add(("/.editorconfig", @"
+root = true
+[*.cs]
+dotnet_diagnostic.NXJ011.severity = info
+dotnet_diagnostic.NXJ016.severity = info
+"));
         test.ExpectedDiagnostics.AddRange(expected);
 
         await test.RunAsync();
