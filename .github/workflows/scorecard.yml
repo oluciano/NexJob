@@ -9,7 +9,8 @@ on:
   push:
     branches: [develop]
 
-permissions: read-all
+permissions:
+  contents: read
 
 jobs:
   analysis:
