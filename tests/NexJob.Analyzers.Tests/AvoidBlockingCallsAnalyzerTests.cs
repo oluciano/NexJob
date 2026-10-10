@@ -27,7 +27,7 @@ public sealed class GoodJob : IJob
     }
 
     [Fact]
-    public async Task N2_Negative_JobCallingResultOrWait_ReportsDiagnostic()
+    public async Task N2_Negative_JobCallingResultOrWaitOrGetResult_ReportsDiagnostic()
     {
         const string testCode = @"
 using System.Threading;
@@ -36,35 +36,31 @@ using NexJob;
 
 public sealed class BadJob : IJob
 {
-    private readonly object _gate = new();
-
     public Task ExecuteAsync(CancellationToken cancellationToken)
     {
         Task.Delay(10).{|#0:Wait|}();
         var res = Task.FromResult(42).{|#1:Result|};
         {|#2:Thread.Sleep|}(10);
-        {|#3:lock|} (_gate)
-        {
-        }
+        var val = Task.FromResult(1).GetAwaiter().{|#3:GetResult|}();
         return Task.CompletedTask;
     }
 }
 ";
-        var expected0 = new DiagnosticResult("NXJ001", Microsoft.CodeAnalysis.DiagnosticSeverity.Warning)
+        var expected0 = new DiagnosticResult("NXJ001", Microsoft.CodeAnalysis.DiagnosticSeverity.Info)
             .WithLocation(0)
             .WithArguments("Wait");
 
-        var expected1 = new DiagnosticResult("NXJ001", Microsoft.CodeAnalysis.DiagnosticSeverity.Warning)
+        var expected1 = new DiagnosticResult("NXJ001", Microsoft.CodeAnalysis.DiagnosticSeverity.Info)
             .WithLocation(1)
             .WithArguments("Result");
 
-        var expected2 = new DiagnosticResult("NXJ001", Microsoft.CodeAnalysis.DiagnosticSeverity.Warning)
+        var expected2 = new DiagnosticResult("NXJ001", Microsoft.CodeAnalysis.DiagnosticSeverity.Info)
             .WithLocation(2)
             .WithArguments("Thread.Sleep");
 
-        var expected3 = new DiagnosticResult("NXJ001", Microsoft.CodeAnalysis.DiagnosticSeverity.Warning)
+        var expected3 = new DiagnosticResult("NXJ001", Microsoft.CodeAnalysis.DiagnosticSeverity.Info)
             .WithLocation(3)
-            .WithArguments("lock");
+            .WithArguments("GetAwaiter().GetResult()");
 
         await VerifyCS.VerifyAnalyzerAsync(testCode, expected0, expected1, expected2, expected3);
     }

@@ -42,7 +42,7 @@ public sealed class BadJob : IJob
     }
 }
 ";
-        var expected0 = new DiagnosticResult("NXJ004", Microsoft.CodeAnalysis.DiagnosticSeverity.Warning)
+        var expected0 = new DiagnosticResult("NXJ004", Microsoft.CodeAnalysis.DiagnosticSeverity.Info)
             .WithLocation(0)
             .WithArguments("Task.Delay");
 

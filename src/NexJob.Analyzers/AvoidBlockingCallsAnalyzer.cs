@@ -21,17 +21,16 @@ public sealed class AvoidBlockingCallsAnalyzer : DiagnosticAnalyzer
     private const string Title = "Avoid blocking calls in job execution";
     private const string MessageFormat = "Avoid blocking call '{0}' in background job execution; use await instead";
     private const string Description = "Background jobs must be fully asynchronous to avoid thread pool starvation.";
-    private const string HelpLinkUri = "https://oluciano.github.io/NexJob/guides/best-practices.md";
 
     private static readonly DiagnosticDescriptor Rule = new(
         DiagnosticId,
         Title,
         MessageFormat,
         "Reliability",
-        DiagnosticSeverity.Warning,
+        DiagnosticSeverity.Info,
         isEnabledByDefault: true,
         description: Description,
-        helpLinkUri: HelpLinkUri);
+        helpLinkUri: AnalyzerHelper.HelpBaseUrl);
 
     /// <inheritdoc/>
     public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics => ImmutableArray.Create(Rule);
@@ -44,23 +43,6 @@ public sealed class AvoidBlockingCallsAnalyzer : DiagnosticAnalyzer
 
         context.RegisterSyntaxNodeAction(AnalyzeInvocation, SyntaxKind.InvocationExpression);
         context.RegisterSyntaxNodeAction(AnalyzeMemberAccess, SyntaxKind.SimpleMemberAccessExpression);
-        context.RegisterSyntaxNodeAction(AnalyzeLockStatement, SyntaxKind.LockStatement);
-    }
-
-    private static void AnalyzeLockStatement(SyntaxNodeAnalysisContext context)
-    {
-        if (context.Node is not LockStatementSyntax lockStatement)
-        {
-            return;
-        }
-
-        if (!IsInsideJobMethod(lockStatement, context.SemanticModel))
-        {
-            return;
-        }
-
-        var diagnostic = Diagnostic.Create(Rule, lockStatement.LockKeyword.GetLocation(), "lock");
-        context.ReportDiagnostic(diagnostic);
     }
 
     private static void AnalyzeInvocation(SyntaxNodeAnalysisContext context)
@@ -77,14 +59,17 @@ public sealed class AvoidBlockingCallsAnalyzer : DiagnosticAnalyzer
 
         var methodName = memberAccess.Name.Identifier.Text;
         var isWait = string.Equals(methodName, "Wait", StringComparison.Ordinal);
+        var isWaitAllOrAny = string.Equals(methodName, "WaitAll", StringComparison.Ordinal) ||
+                             string.Equals(methodName, "WaitAny", StringComparison.Ordinal);
         var isSleep = string.Equals(methodName, "Sleep", StringComparison.Ordinal);
+        var isGetResult = string.Equals(methodName, "GetResult", StringComparison.Ordinal);
 
-        if (!isWait && !isSleep)
+        if (!isWait && !isWaitAllOrAny && !isSleep && !isGetResult)
         {
             return;
         }
 
-        if (!IsInsideJobMethod(invocation, context.SemanticModel))
+        if (!AnalyzerHelper.IsInsideJobMethod(invocation, context.SemanticModel))
         {
             return;
         }
@@ -96,14 +81,26 @@ public sealed class AvoidBlockingCallsAnalyzer : DiagnosticAnalyzer
         }
 
         var containingType = symbol.ContainingType.ToDisplayString();
-        if (isWait && string.Equals(containingType, "System.Threading.Tasks.Task", StringComparison.Ordinal))
+        if (isWait && (string.Equals(containingType, "System.Threading.Tasks.Task", StringComparison.Ordinal) ||
+                       string.Equals(containingType, "System.Threading.Tasks.ValueTask", StringComparison.Ordinal)))
         {
             var diagnostic = Diagnostic.Create(Rule, memberAccess.Name.GetLocation(), "Wait");
+            context.ReportDiagnostic(diagnostic);
+        }
+        else if (isWaitAllOrAny && string.Equals(containingType, "System.Threading.Tasks.Task", StringComparison.Ordinal))
+        {
+            var diagnostic = Diagnostic.Create(Rule, memberAccess.GetLocation(), $"Task.{methodName}");
             context.ReportDiagnostic(diagnostic);
         }
         else if (isSleep && string.Equals(containingType, "System.Threading.Thread", StringComparison.Ordinal))
         {
             var diagnostic = Diagnostic.Create(Rule, memberAccess.GetLocation(), "Thread.Sleep");
+            context.ReportDiagnostic(diagnostic);
+        }
+        else if (isGetResult && (containingType.StartsWith("System.Runtime.CompilerServices.TaskAwaiter", StringComparison.Ordinal) ||
+                                 containingType.StartsWith("System.Runtime.CompilerServices.ValueTaskAwaiter", StringComparison.Ordinal)))
+        {
+            var diagnostic = Diagnostic.Create(Rule, memberAccess.Name.GetLocation(), "GetAwaiter().GetResult()");
             context.ReportDiagnostic(diagnostic);
         }
     }
@@ -121,7 +118,7 @@ public sealed class AvoidBlockingCallsAnalyzer : DiagnosticAnalyzer
             return;
         }
 
-        if (!IsInsideJobMethod(memberAccess, context.SemanticModel))
+        if (!AnalyzerHelper.IsInsideJobMethod(memberAccess, context.SemanticModel))
         {
             return;
         }
@@ -133,28 +130,11 @@ public sealed class AvoidBlockingCallsAnalyzer : DiagnosticAnalyzer
         }
 
         var containingType = symbol.ContainingType.OriginalDefinition.ToDisplayString();
-        if (string.Equals(containingType, "System.Threading.Tasks.Task<TResult>", StringComparison.Ordinal))
+        if (string.Equals(containingType, "System.Threading.Tasks.Task<TResult>", StringComparison.Ordinal) ||
+            string.Equals(containingType, "System.Threading.Tasks.ValueTask<TResult>", StringComparison.Ordinal))
         {
             var diagnostic = Diagnostic.Create(Rule, memberAccess.Name.GetLocation(), "Result");
             context.ReportDiagnostic(diagnostic);
         }
-    }
-
-    private static bool IsInsideJobMethod(SyntaxNode node, SemanticModel semanticModel)
-    {
-        var methodDeclaration = node.FirstAncestorOrSelf<MethodDeclarationSyntax>();
-        if (methodDeclaration == null || !string.Equals(methodDeclaration.Identifier.Text, "ExecuteAsync", StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        var classDeclaration = methodDeclaration.FirstAncestorOrSelf<ClassDeclarationSyntax>();
-        if (classDeclaration == null)
-        {
-            return false;
-        }
-
-        var classSymbol = semanticModel.GetDeclaredSymbol(classDeclaration);
-        return AnalyzerHelper.ImplementsIJob(classSymbol);
     }
 }

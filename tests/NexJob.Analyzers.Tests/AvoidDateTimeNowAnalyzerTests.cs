@@ -48,11 +48,11 @@ public sealed class BadJob : IJob
     }
 }
 ";
-        var expected0 = new DiagnosticResult("NXJ002", Microsoft.CodeAnalysis.DiagnosticSeverity.Warning)
+        var expected0 = new DiagnosticResult("NXJ002", Microsoft.CodeAnalysis.DiagnosticSeverity.Info)
             .WithLocation(0)
             .WithArguments("DateTime.Now");
 
-        var expected1 = new DiagnosticResult("NXJ002", Microsoft.CodeAnalysis.DiagnosticSeverity.Warning)
+        var expected1 = new DiagnosticResult("NXJ002", Microsoft.CodeAnalysis.DiagnosticSeverity.Info)
             .WithLocation(1)
             .WithArguments("DateTime.Today");
 

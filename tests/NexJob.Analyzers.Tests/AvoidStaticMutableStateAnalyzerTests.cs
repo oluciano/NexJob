@@ -27,9 +27,10 @@ public sealed class GoodJob : IJob
     }
 
     [Fact]
-    public async Task N2_Negative_StaticMutableField_ReportsDiagnostic()
+    public async Task N2_Negative_StaticMutableFieldAndProperty_ReportsDiagnostic()
     {
         const string testCode = @"
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using NexJob;
@@ -37,20 +38,25 @@ using NexJob;
 public sealed class BadJob : IJob
 {
     private static int {|#0:ExecutionCounter|};
-    public static string? {|#1:LastMessage|};
+    public static string? {|#1:LastMessage|} { get; set; }
+    private static readonly List<string> {|#2:Items|} = new();
 
     public Task ExecuteAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 }
 ";
-        var expected0 = new DiagnosticResult("NXJ005", Microsoft.CodeAnalysis.DiagnosticSeverity.Warning)
+        var expected0 = new DiagnosticResult("NXJ005", Microsoft.CodeAnalysis.DiagnosticSeverity.Info)
             .WithLocation(0)
             .WithArguments("ExecutionCounter");
 
-        var expected1 = new DiagnosticResult("NXJ005", Microsoft.CodeAnalysis.DiagnosticSeverity.Warning)
+        var expected1 = new DiagnosticResult("NXJ005", Microsoft.CodeAnalysis.DiagnosticSeverity.Info)
             .WithLocation(1)
             .WithArguments("LastMessage");
 
-        await VerifyCS.VerifyAnalyzerAsync(testCode, expected0, expected1);
+        var expected2 = new DiagnosticResult("NXJ005", Microsoft.CodeAnalysis.DiagnosticSeverity.Info)
+            .WithLocation(2)
+            .WithArguments("Items");
+
+        await VerifyCS.VerifyAnalyzerAsync(testCode, expected0, expected1, expected2);
     }
 
     [Fact]

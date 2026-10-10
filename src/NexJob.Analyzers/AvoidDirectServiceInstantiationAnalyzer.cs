@@ -21,17 +21,16 @@ public sealed class AvoidDirectServiceInstantiationAnalyzer : DiagnosticAnalyzer
     private const string Title = "Avoid direct service instantiation inside job";
     private const string MessageFormat = "Do not directly instantiate '{0}' inside job execution; inject dependencies via the job constructor";
     private const string Description = "Background jobs run inside a scoped dependency injection context. Direct instantiation bypasses DI lifetimes, mocking, and scope disposal.";
-    private const string HelpLinkUri = "https://oluciano.github.io/NexJob/guides/best-practices.md";
 
     private static readonly DiagnosticDescriptor Rule = new(
         DiagnosticId,
         Title,
         MessageFormat,
         "Design",
-        DiagnosticSeverity.Warning,
+        DiagnosticSeverity.Info,
         isEnabledByDefault: true,
         description: Description,
-        helpLinkUri: HelpLinkUri);
+        helpLinkUri: AnalyzerHelper.HelpBaseUrl);
 
     /// <inheritdoc/>
     public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics => ImmutableArray.Create(Rule);
@@ -52,20 +51,7 @@ public sealed class AvoidDirectServiceInstantiationAnalyzer : DiagnosticAnalyzer
             return;
         }
 
-        var methodDeclaration = creation.FirstAncestorOrSelf<MethodDeclarationSyntax>();
-        if (methodDeclaration == null || !string.Equals(methodDeclaration.Identifier.Text, "ExecuteAsync", StringComparison.Ordinal))
-        {
-            return;
-        }
-
-        var classDeclaration = methodDeclaration.FirstAncestorOrSelf<ClassDeclarationSyntax>();
-        if (classDeclaration == null)
-        {
-            return;
-        }
-
-        var classSymbol = context.SemanticModel.GetDeclaredSymbol(classDeclaration);
-        if (!AnalyzerHelper.ImplementsIJob(classSymbol))
+        if (!AnalyzerHelper.IsInsideJobMethod(creation, context.SemanticModel))
         {
             return;
         }

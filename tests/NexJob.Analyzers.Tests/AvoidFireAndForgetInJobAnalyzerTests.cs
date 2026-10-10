@@ -27,7 +27,7 @@ public sealed class GoodJob : IJob
     }
 
     [Fact]
-    public async Task N2_Negative_DiscardedTaskRun_ReportsDiagnostic()
+    public async Task N2_Negative_DiscardedOrBareTaskRun_ReportsDiagnostic()
     {
         const string testCode = @"
 using System.Threading;
@@ -39,15 +39,20 @@ public sealed class BadJob : IJob
     public Task ExecuteAsync(CancellationToken cancellationToken)
     {
         _ = {|#0:Task.Run(() => 1 + 1)|};
+        {|#1:Task.Run(() => 2 + 2)|};
         return Task.CompletedTask;
     }
 }
 ";
-        var expected0 = new DiagnosticResult("NXJ006", Microsoft.CodeAnalysis.DiagnosticSeverity.Warning)
+        var expected0 = new DiagnosticResult("NXJ006", Microsoft.CodeAnalysis.DiagnosticSeverity.Info)
             .WithLocation(0)
             .WithArguments("Task.Run");
 
-        await VerifyCS.VerifyAnalyzerAsync(testCode, expected0);
+        var expected1 = new DiagnosticResult("NXJ006", Microsoft.CodeAnalysis.DiagnosticSeverity.Info)
+            .WithLocation(1)
+            .WithArguments("Task.Run");
+
+        await VerifyCS.VerifyAnalyzerAsync(testCode, expected0, expected1);
     }
 
     [Fact]

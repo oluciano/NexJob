@@ -8,7 +8,7 @@ using Microsoft.CodeAnalysis.Diagnostics;
 namespace NexJob.Analyzers;
 
 /// <summary>
-/// Diagnostic analyzer that validates job class accessibility and constructor declarations.
+/// Diagnostic analyzer that validates job class/record accessibility and constructor declarations.
 /// </summary>
 [DiagnosticAnalyzer(LanguageNames.CSharp)]
 public sealed class JobClassStructureAnalyzer : DiagnosticAnalyzer
@@ -19,19 +19,18 @@ public sealed class JobClassStructureAnalyzer : DiagnosticAnalyzer
     public const string DiagnosticId = "NXJ003";
 
     private const string Title = "Job class must be public and instantiable";
-    private const string MessageFormat = "Job '{0}' must be a public, non-abstract class with a public constructor";
-    private const string Description = "NexJob instantiates jobs via dependency injection, which requires public non-abstract classes.";
-    private const string HelpLinkUri = "https://oluciano.github.io/NexJob/guides/best-practices.md";
+    private const string MessageFormat = "Job '{0}' must be a public, non-abstract class or record with a public constructor";
+    private const string Description = "NexJob instantiates jobs via dependency injection, which requires public non-abstract classes or records.";
 
     private static readonly DiagnosticDescriptor Rule = new(
         DiagnosticId,
         Title,
         MessageFormat,
         "Design",
-        DiagnosticSeverity.Warning,
+        DiagnosticSeverity.Info,
         isEnabledByDefault: true,
         description: Description,
-        helpLinkUri: HelpLinkUri);
+        helpLinkUri: AnalyzerHelper.HelpBaseUrl);
 
     /// <inheritdoc/>
     public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics => ImmutableArray.Create(Rule);
@@ -42,31 +41,31 @@ public sealed class JobClassStructureAnalyzer : DiagnosticAnalyzer
         context.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.None);
         context.EnableConcurrentExecution();
 
-        context.RegisterSyntaxNodeAction(AnalyzeClassDeclaration, SyntaxKind.ClassDeclaration);
+        context.RegisterSyntaxNodeAction(AnalyzeTypeDeclaration, SyntaxKind.ClassDeclaration, SyntaxKind.RecordDeclaration);
     }
 
-    private static void AnalyzeClassDeclaration(SyntaxNodeAnalysisContext context)
+    private static void AnalyzeTypeDeclaration(SyntaxNodeAnalysisContext context)
     {
-        if (context.Node is not ClassDeclarationSyntax classDeclaration)
+        if (context.Node is not TypeDeclarationSyntax typeDeclaration)
         {
             return;
         }
 
-        var classSymbol = context.SemanticModel.GetDeclaredSymbol(classDeclaration);
-        if (classSymbol == null || !AnalyzerHelper.ImplementsIJob(classSymbol))
+        var typeSymbol = context.SemanticModel.GetDeclaredSymbol(typeDeclaration);
+        if (typeSymbol == null || !AnalyzerHelper.ImplementsIJob(typeSymbol))
         {
             return;
         }
 
-        var isPublic = classSymbol.DeclaredAccessibility == Accessibility.Public;
-        var isAbstract = classSymbol.IsAbstract;
+        var isPublic = typeSymbol.DeclaredAccessibility == Accessibility.Public;
+        var isAbstract = typeSymbol.IsAbstract;
 
-        var constructors = classSymbol.InstanceConstructors;
+        var constructors = typeSymbol.InstanceConstructors;
         var hasPublicConstructor = constructors.IsEmpty || constructors.Any(c => c.DeclaredAccessibility == Accessibility.Public);
 
         if (!isPublic || isAbstract || !hasPublicConstructor)
         {
-            var diagnostic = Diagnostic.Create(Rule, classDeclaration.Identifier.GetLocation(), classDeclaration.Identifier.Text);
+            var diagnostic = Diagnostic.Create(Rule, typeDeclaration.Identifier.GetLocation(), typeDeclaration.Identifier.Text);
             context.ReportDiagnostic(diagnostic);
         }
     }

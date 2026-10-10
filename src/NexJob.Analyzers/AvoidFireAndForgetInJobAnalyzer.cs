@@ -21,17 +21,16 @@ public sealed class AvoidFireAndForgetInJobAnalyzer : DiagnosticAnalyzer
     private const string Title = "Avoid fire-and-forget tasks in job execution";
     private const string MessageFormat = "Do not fire-and-forget '{0}' inside a background job; await the task or enqueue a job continuation";
     private const string Description = "Background jobs must be fully awaited. Fire-and-forget tasks escape the execution lifecycle, deadline tracking, and error handling of NexJob.";
-    private const string HelpLinkUri = "https://oluciano.github.io/NexJob/guides/best-practices.md";
 
     private static readonly DiagnosticDescriptor Rule = new(
         DiagnosticId,
         Title,
         MessageFormat,
         "Reliability",
-        DiagnosticSeverity.Warning,
+        DiagnosticSeverity.Info,
         isEnabledByDefault: true,
         description: Description,
-        helpLinkUri: HelpLinkUri);
+        helpLinkUri: AnalyzerHelper.HelpBaseUrl);
 
     /// <inheritdoc/>
     public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics => ImmutableArray.Create(Rule);
@@ -43,6 +42,7 @@ public sealed class AvoidFireAndForgetInJobAnalyzer : DiagnosticAnalyzer
         context.EnableConcurrentExecution();
 
         context.RegisterSyntaxNodeAction(AnalyzeAssignment, SyntaxKind.SimpleAssignmentExpression);
+        context.RegisterSyntaxNodeAction(AnalyzeExpressionStatement, SyntaxKind.ExpressionStatement);
     }
 
     private static void AnalyzeAssignment(SyntaxNodeAnalysisContext context)
@@ -63,20 +63,28 @@ public sealed class AvoidFireAndForgetInJobAnalyzer : DiagnosticAnalyzer
             return;
         }
 
-        var methodDeclaration = invocation.FirstAncestorOrSelf<MethodDeclarationSyntax>();
-        if (methodDeclaration == null || !string.Equals(methodDeclaration.Identifier.Text, "ExecuteAsync", StringComparison.Ordinal))
+        CheckInvocation(invocation, context);
+    }
+
+    private static void AnalyzeExpressionStatement(SyntaxNodeAnalysisContext context)
+    {
+        if (context.Node is not ExpressionStatementSyntax statement)
         {
             return;
         }
 
-        var classDeclaration = methodDeclaration.FirstAncestorOrSelf<ClassDeclarationSyntax>();
-        if (classDeclaration == null)
+        // Catch bare Task.Run(...) statement without await or assignment
+        if (statement.Expression is not InvocationExpressionSyntax invocation)
         {
             return;
         }
 
-        var classSymbol = context.SemanticModel.GetDeclaredSymbol(classDeclaration);
-        if (!AnalyzerHelper.ImplementsIJob(classSymbol))
+        CheckInvocation(invocation, context);
+    }
+
+    private static void CheckInvocation(InvocationExpressionSyntax invocation, SyntaxNodeAnalysisContext context)
+    {
+        if (!AnalyzerHelper.IsInsideJobMethod(invocation, context.SemanticModel))
         {
             return;
         }

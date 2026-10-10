@@ -21,17 +21,16 @@ public sealed class AvoidDateTimeNowAnalyzer : DiagnosticAnalyzer
     private const string Title = "Avoid DateTime.Now in job execution";
     private const string MessageFormat = "Avoid '{0}' in background jobs; use DateTime.UtcNow or context timestamp instead";
     private const string Description = "Background jobs should use UtcNow to avoid timezone drift and DST issues across clusters.";
-    private const string HelpLinkUri = "https://oluciano.github.io/NexJob/guides/best-practices.md";
 
     private static readonly DiagnosticDescriptor Rule = new(
         DiagnosticId,
         Title,
         MessageFormat,
         "Reliability",
-        DiagnosticSeverity.Warning,
+        DiagnosticSeverity.Info,
         isEnabledByDefault: true,
         description: Description,
-        helpLinkUri: HelpLinkUri);
+        helpLinkUri: AnalyzerHelper.HelpBaseUrl);
 
     /// <inheritdoc/>
     public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics => ImmutableArray.Create(Rule);
@@ -59,7 +58,7 @@ public sealed class AvoidDateTimeNowAnalyzer : DiagnosticAnalyzer
             return;
         }
 
-        if (!IsInsideJobMethod(memberAccess, context.SemanticModel))
+        if (!AnalyzerHelper.IsInsideJobMethod(memberAccess, context.SemanticModel))
         {
             return;
         }
@@ -76,23 +75,5 @@ public sealed class AvoidDateTimeNowAnalyzer : DiagnosticAnalyzer
             var diagnostic = Diagnostic.Create(Rule, memberAccess.GetLocation(), $"DateTime.{memberName}");
             context.ReportDiagnostic(diagnostic);
         }
-    }
-
-    private static bool IsInsideJobMethod(SyntaxNode node, SemanticModel semanticModel)
-    {
-        var methodDeclaration = node.FirstAncestorOrSelf<MethodDeclarationSyntax>();
-        if (methodDeclaration == null || !string.Equals(methodDeclaration.Identifier.Text, "ExecuteAsync", StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        var classDeclaration = methodDeclaration.FirstAncestorOrSelf<ClassDeclarationSyntax>();
-        if (classDeclaration == null)
-        {
-            return false;
-        }
-
-        var classSymbol = semanticModel.GetDeclaredSymbol(classDeclaration);
-        return AnalyzerHelper.ImplementsIJob(classSymbol);
     }
 }

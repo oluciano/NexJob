@@ -26,7 +26,7 @@ public sealed class ValidJob : IJob
     }
 
     [Fact]
-    public async Task N2_Negative_NonPublicOrAbstractClass_ReportsDiagnostic()
+    public async Task N2_Negative_NonPublicOrAbstractClassOrRecord_ReportsDiagnostic()
     {
         const string testCode = @"
 using System.Threading;
@@ -42,16 +42,25 @@ public abstract class {|#1:AbstractJob|} : IJob
 {
     public abstract Task ExecuteAsync(CancellationToken cancellationToken);
 }
+
+internal record {|#2:InternalRecordJob|}(int X) : IJob
+{
+    public Task ExecuteAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+}
 ";
-        var expected0 = new DiagnosticResult("NXJ003", Microsoft.CodeAnalysis.DiagnosticSeverity.Warning)
+        var expected0 = new DiagnosticResult("NXJ003", Microsoft.CodeAnalysis.DiagnosticSeverity.Info)
             .WithLocation(0)
             .WithArguments("InternalJob");
 
-        var expected1 = new DiagnosticResult("NXJ003", Microsoft.CodeAnalysis.DiagnosticSeverity.Warning)
+        var expected1 = new DiagnosticResult("NXJ003", Microsoft.CodeAnalysis.DiagnosticSeverity.Info)
             .WithLocation(1)
             .WithArguments("AbstractJob");
 
-        await VerifyCS.VerifyAnalyzerAsync(testCode, expected0, expected1);
+        var expected2 = new DiagnosticResult("NXJ003", Microsoft.CodeAnalysis.DiagnosticSeverity.Info)
+            .WithLocation(2)
+            .WithArguments("InternalRecordJob");
+
+        await VerifyCS.VerifyAnalyzerAsync(testCode, expected0, expected1, expected2);
     }
 
     [Fact]

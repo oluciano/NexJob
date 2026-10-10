@@ -22,17 +22,16 @@ public sealed class PropagateCancellationTokenAnalyzer : DiagnosticAnalyzer
     private const string Title = "Propagate CancellationToken in job execution";
     private const string MessageFormat = "Call '{0}' should propagate the available CancellationToken";
     private const string Description = "Background jobs should pass the execution CancellationToken to support graceful shutdown and timeouts.";
-    private const string HelpLinkUri = "https://oluciano.github.io/NexJob/guides/best-practices.md";
 
     private static readonly DiagnosticDescriptor Rule = new(
         DiagnosticId,
         Title,
         MessageFormat,
         "Reliability",
-        DiagnosticSeverity.Warning,
+        DiagnosticSeverity.Info,
         isEnabledByDefault: true,
         description: Description,
-        helpLinkUri: HelpLinkUri);
+        helpLinkUri: AnalyzerHelper.HelpBaseUrl);
 
     /// <inheritdoc/>
     public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics => ImmutableArray.Create(Rule);
@@ -53,20 +52,7 @@ public sealed class PropagateCancellationTokenAnalyzer : DiagnosticAnalyzer
             return;
         }
 
-        var methodDeclaration = invocation.FirstAncestorOrSelf<MethodDeclarationSyntax>();
-        if (methodDeclaration == null || !string.Equals(methodDeclaration.Identifier.Text, "ExecuteAsync", StringComparison.Ordinal))
-        {
-            return;
-        }
-
-        var classDeclaration = methodDeclaration.FirstAncestorOrSelf<ClassDeclarationSyntax>();
-        if (classDeclaration == null)
-        {
-            return;
-        }
-
-        var classSymbol = context.SemanticModel.GetDeclaredSymbol(classDeclaration);
-        if (!AnalyzerHelper.ImplementsIJob(classSymbol))
+        if (!AnalyzerHelper.IsInsideJobMethod(invocation, context.SemanticModel))
         {
             return;
         }
