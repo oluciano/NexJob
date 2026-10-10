@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://oluciano.github.io/NexJob/sitemap.xml
