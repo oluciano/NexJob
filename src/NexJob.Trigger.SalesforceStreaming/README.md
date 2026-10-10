@@ -137,7 +137,7 @@ builder.Services.AddNexJob(options =>
 | Property | Type | Description | Default |
 |---|---|---|---|
 | `AuthType` | `SalesforceStreamingAuthType` | Auth mechanism (`OAuth2UsernamePassword`, `OAuth2ClientCredentials`, `SessionId`) | `OAuth2UsernamePassword` |
-| `AuthEndpoint` | `string` | Salesforce OAuth2 token endpoint URL | `https://login.salesforce.com/services/oauth2/token` |
+| `AuthEndpoint` | `string` | Salesforce OAuth2 token endpoint URL. Must be `https` (`http` is accepted only for a loopback address such as a local mock), because the OAuth credentials are sent to it | `https://login.salesforce.com/services/oauth2/token` |
 | `ClientId` | `string?` | Connected App Consumer Key | `null` |
 | `ClientSecret` | `string?` | Connected App Consumer Secret | `null` |
 | `Username` | `string?` | Integration user username | `null` |

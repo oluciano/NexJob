@@ -120,11 +120,12 @@ public sealed class SalesforceTriggerOptions : IValidatableObject
         }
 
         if (!Uri.TryCreate(AuthEndpoint, UriKind.Absolute, out var uri) ||
-            (!string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) &&
-             !string.Equals(uri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase)))
+            !(string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
+              || (string.Equals(uri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase)
+                  && (uri.IsLoopback || string.Equals(uri.Host, "localhost", StringComparison.OrdinalIgnoreCase)))))
         {
             yield return new ValidationResult(
-                $"AuthEndpoint '{AuthEndpoint}' must be a valid absolute HTTP/HTTPS URL.",
+                $"AuthEndpoint '{AuthEndpoint}' must be an absolute https URL (http is accepted only for a loopback address): the OAuth credentials are sent to it.",
                 [nameof(AuthEndpoint)]);
         }
 

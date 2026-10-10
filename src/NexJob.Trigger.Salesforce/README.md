@@ -98,7 +98,7 @@ builder.Services.AddNexJob(options =>
 | `Topic` | `string` | Salesforce topic name starting with `/` (e.g. `/data/ChangeEvents`, `/event/OrderEvent__e`) | *Required* |
 | `ClientId` | `string` | Connected App OAuth2 Client ID (Consumer Key) | *Required* |
 | `ClientSecret` | `string` | Connected App OAuth2 Client Secret (Consumer Secret) | *Required* |
-| `AuthEndpoint` | `string` | Salesforce OAuth2 token endpoint URL | `https://login.salesforce.com/services/oauth2/token` |
+| `AuthEndpoint` | `string` | Salesforce OAuth2 token endpoint URL. Must be `https` (`http` is accepted only for a loopback address such as a local mock), because the OAuth credentials are sent to it | `https://login.salesforce.com/services/oauth2/token` |
 | `PubSubEndpoint` | `string` | Salesforce Pub/Sub gRPC endpoint | `api.pubsub.salesforce.com:7443` |
 | `TargetQueue` | `string` | Target NexJob queue for enqueued jobs | `salesforce-events` |
 | `JobPriority` | `JobPriority` | Execution priority for enqueued jobs | `Normal` |
