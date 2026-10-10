@@ -11,6 +11,7 @@ internal static class CSharpAnalyzerVerifier<TAnalyzer>
     private const string NexJobSources = @"
 namespace NexJob
 {
+    using System;
     using System.Threading;
     using System.Threading.Tasks;
 
@@ -29,13 +30,66 @@ namespace NexJob
         Task EnqueueAsync<TJob>(
             string? queue = null,
             string? idempotencyKey = null,
+            TimeSpan? deadlineAfter = null,
             CancellationToken cancellationToken = default) where TJob : IJob;
 
         Task EnqueueAsync<TJob, TInput>(
             TInput input,
             string? queue = null,
             string? idempotencyKey = null,
+            TimeSpan? deadlineAfter = null,
             CancellationToken cancellationToken = default) where TJob : IJob<TInput>;
+
+        Task EnqueueAsync<TJob>(
+            int maxAttempts,
+            string? queue = null,
+            string? idempotencyKey = null,
+            TimeSpan? deadlineAfter = null,
+            CancellationToken cancellationToken = default) where TJob : IJob;
+
+        Task EnqueueAsync<TJob, TInput>(
+            TInput input,
+            int maxAttempts,
+            string? queue = null,
+            string? idempotencyKey = null,
+            TimeSpan? deadlineAfter = null,
+            CancellationToken cancellationToken = default) where TJob : IJob<TInput>;
+    }
+
+    public interface IDashboardAuthorizationHandler
+    {
+    }
+
+    public static class NexJobServiceCollectionExtensions
+    {
+        public static object AddNexJob(this object services) => services;
+    }
+}
+
+namespace NexJob.Dashboard
+{
+    using NexJob;
+
+    public class DashboardOptions
+    {
+        public IDashboardAuthorizationHandler? AuthorizationHandler { get; set; }
+    }
+}
+
+namespace Microsoft.AspNetCore.Builder
+{
+    using NexJob.Dashboard;
+
+    public interface IApplicationBuilder
+    {
+    }
+
+    public static class DashboardExtensions
+    {
+        public static IApplicationBuilder UseNexJobDashboard(
+            this IApplicationBuilder app,
+            string path = ""/dashboard"",
+            System.Action<DashboardOptions>? configure = null) => app;
     }
 }
 ";
