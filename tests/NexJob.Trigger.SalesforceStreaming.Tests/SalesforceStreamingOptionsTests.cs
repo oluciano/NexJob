@@ -327,4 +327,45 @@ public sealed class SalesforceStreamingOptionsTests
         Username = "user",
         Password = "pwd",
     };
+
+    [Theory]
+    [InlineData(SalesforceStreamingAuthType.OAuth2UsernamePassword, "http://login.salesforce.com/services/oauth2/token")]
+    [InlineData(SalesforceStreamingAuthType.OAuth2UsernamePassword, "http://example.com")]
+    [InlineData(SalesforceStreamingAuthType.OAuth2ClientCredentials, "http://login.salesforce.com/services/oauth2/token")]
+    [InlineData(SalesforceStreamingAuthType.OAuth2ClientCredentials, "ftp://login.salesforce.com")]
+    public void Validate_AuthEndpointThatIsNotHttpsOrLoopback_FailsAndNamesHttps(SalesforceStreamingAuthType type, string endpoint)
+    {
+        var auth = ValidOAuthOptions(type, endpoint);
+
+        var results = auth.Validate(new ValidationContext(auth)).ToList();
+
+        results.Should().ContainSingle(r => r.MemberNames.Contains(nameof(SalesforceStreamingAuthOptions.AuthEndpoint)))
+            .Which.ErrorMessage.Should().Contain("https");
+    }
+
+    [Theory]
+    [InlineData(SalesforceStreamingAuthType.OAuth2UsernamePassword, "https://login.salesforce.com/services/oauth2/token")]
+    [InlineData(SalesforceStreamingAuthType.OAuth2UsernamePassword, "HTTPS://login.salesforce.com/services/oauth2/token")]
+    [InlineData(SalesforceStreamingAuthType.OAuth2UsernamePassword, "http://localhost:8080/services/oauth2/token")]
+    [InlineData(SalesforceStreamingAuthType.OAuth2ClientCredentials, "http://127.0.0.1:5000/token")]
+    [InlineData(SalesforceStreamingAuthType.OAuth2ClientCredentials, "http://[::1]:5000/token")]
+    [InlineData(SalesforceStreamingAuthType.OAuth2ClientCredentials, "HTTP://LOCALHOST/token")]
+    public void Validate_HttpsOrLoopbackAuthEndpoint_HasNoAuthEndpointError(SalesforceStreamingAuthType type, string endpoint)
+    {
+        var auth = ValidOAuthOptions(type, endpoint);
+
+        var results = auth.Validate(new ValidationContext(auth)).ToList();
+
+        results.Should().BeEmpty();
+    }
+
+    private static SalesforceStreamingAuthOptions ValidOAuthOptions(SalesforceStreamingAuthType type, string endpoint) => new()
+    {
+        AuthType = type,
+        AuthEndpoint = endpoint,
+        ClientId = "id",
+        ClientSecret = "sec",
+        Username = "u",
+        Password = "p",
+    };
 }
