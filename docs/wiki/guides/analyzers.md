@@ -74,7 +74,7 @@ Background jobs execute inside worker threads managed by the dispatcher. Calling
     ```csharp
     public sealed class ExportReportJob : IJob
     {
-        public Task ExecuteAsync(JobExecutionContext context, CancellationToken ct)
+        public Task ExecuteAsync(CancellationToken ct)
         {
             // Blocking call starves worker thread pool
             var data = FetchDataAsync().GetAwaiter().GetResult();
@@ -88,7 +88,7 @@ Background jobs execute inside worker threads managed by the dispatcher. Calling
     ```csharp
     public sealed class ExportReportJob : IJob
     {
-        public async Task ExecuteAsync(JobExecutionContext context, CancellationToken ct)
+        public async Task ExecuteAsync(CancellationToken ct)
         {
             var data = await FetchDataAsync(ct);
             await Task.Delay(1000, ct);
@@ -104,7 +104,7 @@ Background jobs execute inside worker threads managed by the dispatcher. Calling
 **Category:** Reliability  
 **Default Severity:** Info  
 
-`DateTime.Now` and `DateTime.Today` depend on local machine time zones and daylight saving time (DST) transitions. In distributed environments where workers run across multiple containers or servers in different regions, using local time produces inconsistent timestamps, corrupted audit histories, and race conditions. Use `DateTime.UtcNow` or `context.ScheduledAtUtc`.
+`DateTime.Now` and `DateTime.Today` depend on local machine time zones and daylight saving time (DST) transitions. In distributed environments where workers run across multiple containers or servers in different regions, using local time produces inconsistent timestamps, corrupted audit histories, and race conditions. Use `DateTime.UtcNow`.
 
 #### Example
 
@@ -112,7 +112,7 @@ Background jobs execute inside worker threads managed by the dispatcher. Calling
     ```csharp
     public sealed class BillingJob : IJob
     {
-        public async Task ExecuteAsync(JobExecutionContext context, CancellationToken ct)
+        public async Task ExecuteAsync(CancellationToken ct)
         {
             // Depends on local server timezone
             var today = DateTime.Today;
@@ -125,7 +125,7 @@ Background jobs execute inside worker threads managed by the dispatcher. Calling
     ```csharp
     public sealed class BillingJob : IJob
     {
-        public async Task ExecuteAsync(JobExecutionContext context, CancellationToken ct)
+        public async Task ExecuteAsync(CancellationToken ct)
         {
             var nowUtc = DateTime.UtcNow;
             await ProcessBillingAsync(nowUtc, ct);
@@ -150,7 +150,7 @@ NexJob instantiates jobs dynamically using dependency injection when worker slot
     // Internal or abstract job cannot be resolved by DI at runtime
     internal abstract class ProcessOrderJob : IJob
     {
-        public abstract Task ExecuteAsync(JobExecutionContext context, CancellationToken ct);
+        public abstract Task ExecuteAsync(CancellationToken ct);
     }
     ```
 
@@ -165,7 +165,7 @@ NexJob instantiates jobs dynamically using dependency injection when worker slot
             _orderService = orderService;
         }
 
-        public async Task ExecuteAsync(JobExecutionContext context, CancellationToken ct)
+        public async Task ExecuteAsync(CancellationToken ct)
         {
             await _orderService.ProcessAsync(ct);
         }
@@ -188,7 +188,7 @@ NexJob signals cancellation when a job reaches its deadline or when the host und
     ```csharp
     public sealed class SyncDataJob : IJob
     {
-        public async Task ExecuteAsync(JobExecutionContext context, CancellationToken ct)
+        public async Task ExecuteAsync(CancellationToken ct)
         {
             // ct is ignored; cannot be cancelled on graceful shutdown or deadline
             await _client.DownloadUpdatesAsync();
@@ -201,7 +201,7 @@ NexJob signals cancellation when a job reaches its deadline or when the host und
     ```csharp
     public sealed class SyncDataJob : IJob
     {
-        public async Task ExecuteAsync(JobExecutionContext context, CancellationToken ct)
+        public async Task ExecuteAsync(CancellationToken ct)
         {
             await _client.DownloadUpdatesAsync(ct);
             await Task.Delay(2000, ct);
@@ -229,7 +229,7 @@ Worker nodes run multiple job instances concurrently in parallel threads and pro
         private static int _processedCount;
         private static readonly List<string> _errors = new();
 
-        public async Task ExecuteAsync(JobExecutionContext context, CancellationToken ct)
+        public async Task ExecuteAsync(CancellationToken ct)
         {
             _processedCount++;
             _errors.Add("sample");
@@ -249,7 +249,7 @@ Worker nodes run multiple job instances concurrently in parallel threads and pro
             _metrics = metrics;
         }
 
-        public async Task ExecuteAsync(JobExecutionContext context, CancellationToken ct)
+        public async Task ExecuteAsync(CancellationToken ct)
         {
             await _metrics.IncrementProcessedAsync(ct);
         }
@@ -272,7 +272,7 @@ Background jobs must be fully awaited. Invoking `Task.Run(...)` or unawaited asy
     ```csharp
     public sealed class NotificationJob : IJob
     {
-        public Task ExecuteAsync(JobExecutionContext context, CancellationToken ct)
+        public Task ExecuteAsync(CancellationToken ct)
         {
             // Fire-and-forget task escapes dispatcher monitoring and error handling
             _ = Task.Run(() => SendEmailAsync(), ct);
@@ -285,7 +285,7 @@ Background jobs must be fully awaited. Invoking `Task.Run(...)` or unawaited asy
     ```csharp
     public sealed class NotificationJob : IJob
     {
-        public async Task ExecuteAsync(JobExecutionContext context, CancellationToken ct)
+        public async Task ExecuteAsync(CancellationToken ct)
         {
             await SendEmailAsync(ct);
         }
@@ -308,7 +308,7 @@ Jobs execute inside a dedicated scoped dependency injection container. Instantia
     ```csharp
     public sealed class CleanUpJob : IJob
     {
-        public async Task ExecuteAsync(JobExecutionContext context, CancellationToken ct)
+        public async Task ExecuteAsync(CancellationToken ct)
         {
             // Bypasses DI scope, lifetime management, and connection pooling
             using var db = new AppDbContext();
@@ -328,7 +328,7 @@ Jobs execute inside a dedicated scoped dependency injection container. Instantia
             _db = db;
         }
 
-        public async Task ExecuteAsync(JobExecutionContext context, CancellationToken ct)
+        public async Task ExecuteAsync(CancellationToken ct)
         {
             await _db.PurgeOldRecordsAsync(ct);
         }
@@ -413,7 +413,7 @@ Directly scheduling the same job type from inside its own `ExecuteAsync` method 
 
         public PollingJob(IScheduler scheduler) => _scheduler = scheduler;
 
-        public async Task ExecuteAsync(JobExecutionContext context, CancellationToken ct)
+        public async Task ExecuteAsync(CancellationToken ct)
         {
             await PollAsync(ct);
             // Infinite recursive loop
@@ -484,7 +484,7 @@ In batch processing jobs handling collections of independent records in a loop, 
     ```csharp
     public sealed class ProcessPaymentJob : IJob
     {
-        public async Task ExecuteAsync(JobExecutionContext context, CancellationToken ct)
+        public async Task ExecuteAsync(CancellationToken ct)
         {
             try
             {
@@ -503,7 +503,7 @@ In batch processing jobs handling collections of independent records in a loop, 
     ```csharp
     public sealed class ProcessPaymentJob : IJob
     {
-        public async Task ExecuteAsync(JobExecutionContext context, CancellationToken ct)
+        public async Task ExecuteAsync(CancellationToken ct)
         {
             try
             {
@@ -537,7 +537,7 @@ If your job uses an internal per-call timeout via a linked `CancellationTokenSou
     ```csharp
     public sealed class HeavyReportJob : IJob
     {
-        public async Task ExecuteAsync(JobExecutionContext context, CancellationToken ct)
+        public async Task ExecuteAsync(CancellationToken ct)
         {
             try
             {
@@ -556,7 +556,7 @@ If your job uses an internal per-call timeout via a linked `CancellationTokenSou
     ```csharp
     public sealed class HeavyReportJob : IJob
     {
-        public async Task ExecuteAsync(JobExecutionContext context, CancellationToken ct)
+        public async Task ExecuteAsync(CancellationToken ct)
         {
             try
             {
@@ -596,7 +596,7 @@ Validated attributes include:
     [ExecutionTimeout("-00:10:00")]
     public sealed class OrderJob : IJob
     {
-        public Task ExecuteAsync(JobExecutionContext context, CancellationToken ct) => Task.CompletedTask;
+        public Task ExecuteAsync(CancellationToken ct) => Task.CompletedTask;
     }
     ```
 
@@ -607,6 +607,6 @@ Validated attributes include:
     [ExecutionTimeout("00:10:00")]
     public sealed class OrderJob : IJob
     {
-        public Task ExecuteAsync(JobExecutionContext context, CancellationToken ct) => Task.CompletedTask;
+        public Task ExecuteAsync(CancellationToken ct) => Task.CompletedTask;
     }
     ```
