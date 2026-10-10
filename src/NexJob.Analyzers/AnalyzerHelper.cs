@@ -67,4 +67,33 @@ internal static class AnalyzerHelper
         var typeSymbol = semanticModel.GetDeclaredSymbol(typeDeclaration, cancellationToken) as INamedTypeSymbol;
         return ImplementsIJob(typeSymbol);
     }
+
+    /// <summary>
+    /// Checks whether an invocation expression calls IScheduler.EnqueueAsync or ScheduleAsync.
+    /// </summary>
+    public static bool IsSchedulerEnqueueOrSchedule(InvocationExpressionSyntax invocation, SemanticModel semanticModel, System.Threading.CancellationToken cancellationToken, out IMethodSymbol? methodSymbol)
+    {
+        methodSymbol = semanticModel.GetSymbolInfo(invocation, cancellationToken).Symbol as IMethodSymbol;
+        if (methodSymbol == null)
+        {
+            return false;
+        }
+
+        var containingType = methodSymbol.ContainingType;
+        if (containingType == null)
+        {
+            return false;
+        }
+
+        var isScheduler = string.Equals(containingType.Name, "IScheduler", StringComparison.Ordinal) ||
+                          containingType.AllInterfaces.Any(i => string.Equals(i.Name, "IScheduler", StringComparison.Ordinal));
+
+        if (!isScheduler)
+        {
+            return false;
+        }
+
+        return methodSymbol.Name.StartsWith("Enqueue", StringComparison.Ordinal) ||
+               methodSymbol.Name.StartsWith("Schedule", StringComparison.Ordinal);
+    }
 }

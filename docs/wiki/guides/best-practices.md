@@ -280,6 +280,7 @@ NexJob ships with built-in compile-time Roslyn Diagnostic Analyzers bundled dire
 | **NXJ005** | Info | Reliability | **Avoid static mutable state in job classes**: Flags mutable (non-readonly) `static` fields, static mutable collections (`List`, `Dictionary`, etc.), and static properties with setters inside Job classes to prevent race conditions and cross-job data pollution across concurrent workers. |
 | **NXJ006** | Info | Reliability | **Avoid fire-and-forget tasks in job execution**: Flags discarded or unawaited tasks (`Task.Run(...)`) inside `ExecuteAsync`. Jobs must be fully awaited; fire-and-forget escapes dispatcher lifecycle tracking. |
 | **NXJ007** | Info | Design | **Avoid direct service instantiation inside job**: Flags direct instantiation of services, repositories, `DbContext`, or `HttpClient` within `ExecuteAsync`, enforcing proper constructor dependency injection. |
+| **NXJ016** | Info | Reliability | **Implicit queue prefix mismatch**: Detects `IScheduler.EnqueueAsync` or `ScheduleAsync` called without an explicit `queue` parameter. In multi-service deployments sharing storage with distinct `QueuePrefix` settings, omitting `queue` sends jobs to the producer's default queue, which consumer services may never poll. |
 
 ### Severity and `.editorconfig` Configuration
 

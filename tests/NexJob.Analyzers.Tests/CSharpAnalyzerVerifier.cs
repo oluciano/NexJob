@@ -23,6 +23,20 @@ namespace NexJob
     {
         Task ExecuteAsync(TInput input, CancellationToken cancellationToken);
     }
+
+    public interface IScheduler
+    {
+        Task EnqueueAsync<TJob>(
+            string? queue = null,
+            string? idempotencyKey = null,
+            CancellationToken cancellationToken = default) where TJob : IJob;
+
+        Task EnqueueAsync<TJob, TInput>(
+            TInput input,
+            string? queue = null,
+            string? idempotencyKey = null,
+            CancellationToken cancellationToken = default) where TJob : IJob<TInput>;
+    }
 }
 ";
 

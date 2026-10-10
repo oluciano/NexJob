@@ -16,6 +16,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - `NXJ005`: Static mutable state (mutable fields, static collections, properties with setters) inside job classes preventing cross-worker pollution.
   - `NXJ006`: Fire-and-forget tasks (`Task.Run(...)`) escaping dispatcher lifecycle tracking.
   - `NXJ007`: Direct service instantiation (`Service`, `Repository`, `DbContext`, `HttpClient`) enforcing constructor DI.
+  - `NXJ016`: Implicit queue prefix mismatch when calling `IScheduler.EnqueueAsync` or `ScheduleAsync` without explicit `queue` parameter in multi-service shared storage clusters.
 
 ### Documentation
 
