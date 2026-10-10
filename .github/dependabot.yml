@@ -16,10 +16,18 @@ updates:
     groups:
       minor-and-patch:
         update-types: [minor, patch]
+    # Major versions (a new SDK, a new runtime image, a rewritten client library) are decided by the maintainer, not proposed weekly.
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     open-pull-requests-limit: 5
 
   - package-ecosystem: docker
     directory: /
     schedule:
       interval: weekly
+    # Major versions (a new SDK, a new runtime image, a rewritten client library) are decided by the maintainer, not proposed weekly.
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     open-pull-requests-limit: 2

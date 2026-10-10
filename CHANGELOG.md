@@ -8,7 +8,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Security
 
-- **Repository hardening for the OpenSSF Scorecard** (issue #414): every GitHub Action in the workflows is pinned to a commit SHA (with the tag in a comment), every workflow declares `permissions: contents: read` at the top and jobs that need more ask for it themselves, Dependabot proposes weekly updates for the actions and the NuGet packages (minor and patch grouped), the two Docker base images are pinned by digest (Dependabot's docker ecosystem bumps them), and a new `scorecard.yml` runs the OpenSSF Scorecard weekly and on the default branch. Workflow and repository files only; the library and the packages are untouched, and the CI jobs run the same steps.
+- **Repository hardening for the OpenSSF Scorecard** (issue #414): every GitHub Action in the workflows is pinned to a commit SHA (with the tag in a comment), every workflow declares `permissions: contents: read` at the top and jobs that need more ask for it themselves, Dependabot proposes weekly updates for the actions and the NuGet packages (minor and patch grouped), the two Docker base images are pinned by digest (Dependabot's docker ecosystem bumps them), and a new `scorecard.yml` runs the OpenSSF Scorecard weekly and on the default branch. Dependabot does not propose major-version updates for NuGet packages and Docker base images (they are decided by the maintainer); the first week of proposals showed why: a .NET 8 to 10 base image that CI cannot catch breaking, a rewritten AWS client, and a 38-update group. Workflow and repository files only; the library and the packages are untouched, and the CI jobs run the same steps.
 
 ### Changed
 
