@@ -59,6 +59,7 @@ The job expires if it does not start within 5 minutes: no silent failures, no zo
 | Dashboard | `NexJob.Dashboard` (ASP.NET Core), `NexJob.Dashboard.Standalone` (worker services) |
 | Telemetry | `NexJob.OpenTelemetry` |
 | Event triggers | `NexJob.Kafka`, `NexJob.RabbitMQ`, `NexJob.Trigger.AwsSqs`, `NexJob.Trigger.AzureServiceBus`, `NexJob.Trigger.GooglePubSub`, `NexJob.Trigger.Salesforce`, `NexJob.Trigger.SalesforceStreaming` |
+| Roslyn Analyzers | Built directly into `NexJob` (real-time compile-time guardrails in IDE) |
 
 ---
 
