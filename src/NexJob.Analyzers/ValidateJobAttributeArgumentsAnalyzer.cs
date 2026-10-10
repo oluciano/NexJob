@@ -43,46 +43,89 @@ public sealed class ValidateJobAttributeArgumentsAnalyzer : DiagnosticAnalyzer
             return;
         }
 
-        var classDeclaration = attributeSyntax.FirstAncestorOrSelf<ClassDeclarationSyntax>();
-        if (classDeclaration == null)
+        var typeDeclaration = attributeSyntax.FirstAncestorOrSelf<TypeDeclarationSyntax>();
+        if (typeDeclaration == null)
         {
             return;
         }
 
-        var classSymbol = context.SemanticModel.GetDeclaredSymbol(classDeclaration, context.CancellationToken) as INamedTypeSymbol;
-        if (!AnalyzerHelper.ImplementsIJob(classSymbol))
+        var typeSymbol = context.SemanticModel.GetDeclaredSymbol(typeDeclaration, context.CancellationToken) as INamedTypeSymbol;
+        if (!AnalyzerHelper.ImplementsIJob(typeSymbol))
         {
             return;
         }
 
-        var attributeName = attributeSyntax.Name.ToString();
+        var constructorSymbol = context.SemanticModel.GetSymbolInfo(attributeSyntax, context.CancellationToken).Symbol as IMethodSymbol;
+        if (constructorSymbol == null)
+        {
+            return;
+        }
+
+        var attributeType = constructorSymbol.ContainingType;
+        if (attributeType == null || !string.Equals(attributeType.ContainingNamespace?.ToDisplayString(), "NexJob", StringComparison.Ordinal))
+        {
+            return;
+        }
+
         var arguments = attributeSyntax.ArgumentList?.Arguments;
         if (arguments == null || arguments.Value.Count == 0)
         {
             return;
         }
 
-        if (attributeName.Contains("Retry"))
+        var attributeName = attributeType.Name;
+        if (string.Equals(attributeName, "RetryAttribute", StringComparison.Ordinal))
         {
-            ValidateRetry(context, attributeSyntax, arguments.Value);
+            ValidateRetry(context, attributeSyntax, arguments.Value, constructorSymbol);
         }
-        else if (attributeName.Contains("Throttle"))
+        else if (string.Equals(attributeName, "ThrottleAttribute", StringComparison.Ordinal))
         {
-            ValidateThrottle(context, attributeSyntax, arguments.Value);
+            ValidateThrottle(context, attributeSyntax, arguments.Value, constructorSymbol);
         }
-        else if (attributeName.Contains("ExecutionTimeout"))
+        else if (string.Equals(attributeName, "ExecutionTimeoutAttribute", StringComparison.Ordinal))
         {
-            ValidateTimeout(context, attributeSyntax, arguments.Value);
+            ValidateTimeout(context, attributeSyntax, arguments.Value, constructorSymbol);
         }
+    }
+
+    private static ExpressionSyntax? GetArgumentExpression(
+        SeparatedSyntaxList<AttributeArgumentSyntax> arguments,
+        IMethodSymbol constructorSymbol,
+        string parameterName)
+    {
+        for (var i = 0; i < arguments.Count; i++)
+        {
+            var arg = arguments[i];
+            if (arg.NameColon != null)
+            {
+                if (string.Equals(arg.NameColon.Name.Identifier.Text, parameterName, StringComparison.Ordinal))
+                {
+                    return arg.Expression;
+                }
+            }
+            else if (i < constructorSymbol.Parameters.Length &&
+                     string.Equals(constructorSymbol.Parameters[i].Name, parameterName, StringComparison.Ordinal))
+            {
+                return arg.Expression;
+            }
+        }
+
+        return null;
     }
 
     private static void ValidateRetry(
         SyntaxNodeAnalysisContext context,
         AttributeSyntax attributeSyntax,
-        SeparatedSyntaxList<AttributeArgumentSyntax> arguments)
+        SeparatedSyntaxList<AttributeArgumentSyntax> arguments,
+        IMethodSymbol constructorSymbol)
     {
-        var firstArg = arguments[0].Expression;
-        var constantValue = context.SemanticModel.GetConstantValue(firstArg, context.CancellationToken);
+        var attemptsExpr = GetArgumentExpression(arguments, constructorSymbol, "attempts");
+        if (attemptsExpr == null)
+        {
+            return;
+        }
+
+        var constantValue = context.SemanticModel.GetConstantValue(attemptsExpr, context.CancellationToken);
         if (constantValue.HasValue && constantValue.Value is int attempts && attempts < 0)
         {
             var diagnostic = Diagnostic.Create(Descriptor, attributeSyntax.GetLocation(), "Retry", "attempts must be greater than or equal to 0");
@@ -93,38 +136,46 @@ public sealed class ValidateJobAttributeArgumentsAnalyzer : DiagnosticAnalyzer
     private static void ValidateThrottle(
         SyntaxNodeAnalysisContext context,
         AttributeSyntax attributeSyntax,
-        SeparatedSyntaxList<AttributeArgumentSyntax> arguments)
+        SeparatedSyntaxList<AttributeArgumentSyntax> arguments,
+        IMethodSymbol constructorSymbol)
     {
-        if (arguments.Count < 2)
+        var resourceExpr = GetArgumentExpression(arguments, constructorSymbol, "resource");
+        if (resourceExpr != null)
         {
-            return;
+            var resourceConstant = context.SemanticModel.GetConstantValue(resourceExpr, context.CancellationToken);
+            if (resourceConstant.HasValue && resourceConstant.Value is string resource && string.IsNullOrWhiteSpace(resource))
+            {
+                var diagnostic = Diagnostic.Create(Descriptor, attributeSyntax.GetLocation(), "Throttle", "resource name cannot be null or whitespace");
+                context.ReportDiagnostic(diagnostic);
+                return;
+            }
         }
 
-        var resourceArg = arguments[0].Expression;
-        var resourceConstant = context.SemanticModel.GetConstantValue(resourceArg, context.CancellationToken);
-        if (resourceConstant.HasValue && resourceConstant.Value is string resource && string.IsNullOrWhiteSpace(resource))
+        var maxConcurrentExpr = GetArgumentExpression(arguments, constructorSymbol, "maxConcurrent");
+        if (maxConcurrentExpr != null)
         {
-            var diagnostic = Diagnostic.Create(Descriptor, attributeSyntax.GetLocation(), "Throttle", "resource name cannot be null or whitespace");
-            context.ReportDiagnostic(diagnostic);
-            return;
-        }
-
-        var maxConcurrentArg = arguments[1].Expression;
-        var maxConcurrentConstant = context.SemanticModel.GetConstantValue(maxConcurrentArg, context.CancellationToken);
-        if (maxConcurrentConstant.HasValue && maxConcurrentConstant.Value is int maxConcurrent && maxConcurrent < 1)
-        {
-            var diagnostic = Diagnostic.Create(Descriptor, attributeSyntax.GetLocation(), "Throttle", "maxConcurrent must be at least 1");
-            context.ReportDiagnostic(diagnostic);
+            var maxConcurrentConstant = context.SemanticModel.GetConstantValue(maxConcurrentExpr, context.CancellationToken);
+            if (maxConcurrentConstant.HasValue && maxConcurrentConstant.Value is int maxConcurrent && maxConcurrent < 1)
+            {
+                var diagnostic = Diagnostic.Create(Descriptor, attributeSyntax.GetLocation(), "Throttle", "maxConcurrent must be at least 1");
+                context.ReportDiagnostic(diagnostic);
+            }
         }
     }
 
     private static void ValidateTimeout(
         SyntaxNodeAnalysisContext context,
         AttributeSyntax attributeSyntax,
-        SeparatedSyntaxList<AttributeArgumentSyntax> arguments)
+        SeparatedSyntaxList<AttributeArgumentSyntax> arguments,
+        IMethodSymbol constructorSymbol)
     {
-        var timeoutArg = arguments[0].Expression;
-        var constantValue = context.SemanticModel.GetConstantValue(timeoutArg, context.CancellationToken);
+        var timeoutExpr = GetArgumentExpression(arguments, constructorSymbol, "timeout");
+        if (timeoutExpr == null)
+        {
+            return;
+        }
+
+        var constantValue = context.SemanticModel.GetConstantValue(timeoutExpr, context.CancellationToken);
         if (constantValue.HasValue &&
             constantValue.Value is string timeoutStr &&
             (!TimeSpan.TryParse(timeoutStr, CultureInfo.InvariantCulture, out var parsed) || parsed <= TimeSpan.Zero))
