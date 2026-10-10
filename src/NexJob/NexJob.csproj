@@ -12,6 +12,15 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\NexJob.Analyzers\NexJob.Analyzers.csproj">
+      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+      <OutputItemType>Analyzer</OutputItemType>
+      <SetTargetFramework>TargetFramework=netstandard2.0</SetTargetFramework>
+    </ProjectReference>
+    <None Include="..\NexJob.Analyzers\bin\$(Configuration)\netstandard2.0\NexJob.Analyzers.dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
+  </ItemGroup>
+
+  <ItemGroup>
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
       <_Parameter1>NexJob.Tests</_Parameter1>
     </AssemblyAttribute>

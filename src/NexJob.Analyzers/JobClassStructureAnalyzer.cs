@@ -1,5 +1,8 @@
 using System.Collections.Immutable;
+using System.Linq;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Diagnostics;
 
 namespace NexJob.Analyzers;
@@ -38,5 +41,33 @@ public sealed class JobClassStructureAnalyzer : DiagnosticAnalyzer
     {
         context.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.None);
         context.EnableConcurrentExecution();
+
+        context.RegisterSyntaxNodeAction(AnalyzeClassDeclaration, SyntaxKind.ClassDeclaration);
+    }
+
+    private static void AnalyzeClassDeclaration(SyntaxNodeAnalysisContext context)
+    {
+        if (context.Node is not ClassDeclarationSyntax classDeclaration)
+        {
+            return;
+        }
+
+        var classSymbol = context.SemanticModel.GetDeclaredSymbol(classDeclaration);
+        if (classSymbol == null || !AnalyzerHelper.ImplementsIJob(classSymbol))
+        {
+            return;
+        }
+
+        var isPublic = classSymbol.DeclaredAccessibility == Accessibility.Public;
+        var isAbstract = classSymbol.IsAbstract;
+
+        var constructors = classSymbol.InstanceConstructors;
+        var hasPublicConstructor = constructors.IsEmpty || constructors.Any(c => c.DeclaredAccessibility == Accessibility.Public);
+
+        if (!isPublic || isAbstract || !hasPublicConstructor)
+        {
+            var diagnostic = Diagnostic.Create(Rule, classDeclaration.Identifier.GetLocation(), classDeclaration.Identifier.Text);
+            context.ReportDiagnostic(diagnostic);
+        }
     }
 }

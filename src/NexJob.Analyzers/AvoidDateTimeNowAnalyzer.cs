@@ -1,5 +1,8 @@
+using System;
 using System.Collections.Immutable;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Diagnostics;
 
 namespace NexJob.Analyzers;
@@ -38,5 +41,58 @@ public sealed class AvoidDateTimeNowAnalyzer : DiagnosticAnalyzer
     {
         context.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.None);
         context.EnableConcurrentExecution();
+
+        context.RegisterSyntaxNodeAction(AnalyzeMemberAccess, SyntaxKind.SimpleMemberAccessExpression);
+    }
+
+    private static void AnalyzeMemberAccess(SyntaxNodeAnalysisContext context)
+    {
+        if (context.Node is not MemberAccessExpressionSyntax memberAccess)
+        {
+            return;
+        }
+
+        var memberName = memberAccess.Name.Identifier.Text;
+        if (!string.Equals(memberName, "Now", StringComparison.Ordinal) &&
+            !string.Equals(memberName, "Today", StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        if (!IsInsideJobMethod(memberAccess, context.SemanticModel))
+        {
+            return;
+        }
+
+        var symbol = context.SemanticModel.GetSymbolInfo(memberAccess).Symbol as IPropertySymbol;
+        if (symbol == null || symbol.ContainingType == null)
+        {
+            return;
+        }
+
+        var containingType = symbol.ContainingType.ToDisplayString();
+        if (string.Equals(containingType, "System.DateTime", StringComparison.Ordinal))
+        {
+            var diagnostic = Diagnostic.Create(Rule, memberAccess.GetLocation(), $"DateTime.{memberName}");
+            context.ReportDiagnostic(diagnostic);
+        }
+    }
+
+    private static bool IsInsideJobMethod(SyntaxNode node, SemanticModel semanticModel)
+    {
+        var methodDeclaration = node.FirstAncestorOrSelf<MethodDeclarationSyntax>();
+        if (methodDeclaration == null || !string.Equals(methodDeclaration.Identifier.Text, "ExecuteAsync", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var classDeclaration = methodDeclaration.FirstAncestorOrSelf<ClassDeclarationSyntax>();
+        if (classDeclaration == null)
+        {
+            return false;
+        }
+
+        var classSymbol = semanticModel.GetDeclaredSymbol(classDeclaration);
+        return AnalyzerHelper.ImplementsIJob(classSymbol);
     }
 }

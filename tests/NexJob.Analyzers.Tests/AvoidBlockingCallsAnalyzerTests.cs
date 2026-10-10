@@ -38,7 +38,7 @@ public sealed class BadJob : IJob
 {
     public Task ExecuteAsync(CancellationToken cancellationToken)
     {
-        Task.Delay(10).{|#0:Wait()|};
+        Task.Delay(10).{|#0:Wait|}();
         var res = Task.FromResult(42).{|#1:Result|};
         return Task.CompletedTask;
     }

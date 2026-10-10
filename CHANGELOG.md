@@ -6,6 +6,13 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Roslyn Diagnostic Analyzers bundled into NexJob** (issue #456): `NexJob.Analyzers` introduces compile-time Roslyn diagnostic rules bundled directly inside the core `NexJob` package under `analyzers/dotnet/cs/NexJob.Analyzers.dll`. IDEs automatically flag:
+  - `NXJ001`: Blocking calls (`.Result`, `.Wait()`) inside `IJob.ExecuteAsync`.
+  - `NXJ002`: `DateTime.Now` / `DateTime.Today` inside job execution, suggesting `DateTime.UtcNow`.
+  - `NXJ003`: Non-public, abstract, or non-instantiable classes implementing `IJob` or `IJob<T>`.
+
 ### Documentation
 
 - **Search engine indexing, site verification and social metadata** — added `robots.txt` referencing the generated sitemap, Google Search Console HTML verification file, and OpenGraph/Twitter Card social meta tags with canonical URLs to the documentation site.

@@ -267,5 +267,15 @@ Configure OpenTelemetry, enable the dashboard with authorization, and set up ale
 
 Register `NexJobHealthCheck` and include it in your `/healthz` endpoint.
 
+## Roslyn Diagnostic Analyzers
+
+NexJob ships with built-in compile-time Roslyn Diagnostic Analyzers bundled directly in the core `NexJob` package (`analyzers/dotnet/cs/NexJob.Analyzers.dll`). Installing `NexJob` automatically activates real-time guardrails in your IDE (Visual Studio, JetBrains Rider, VS Code):
+
+| Rule ID | Severity | Category | Description & Guidance |
+|---|---|---|---|
+| **NXJ001** | Warning | Reliability | **Avoid blocking calls in job execution**: Flags usage of `.Result` or `.Wait()` inside `IJob.ExecuteAsync`. Background jobs must remain fully asynchronous (`await`) to avoid thread pool starvation. |
+| **NXJ002** | Warning | Reliability | **Avoid DateTime.Now in job execution**: Warns against `DateTime.Now` or `DateTime.Today` in job code. Use `DateTime.UtcNow` or context timestamps to prevent timezone and DST discrepancies across distributed nodes. |
+| **NXJ003** | Warning | Design | **Job class must be public and instantiable**: Ensures classes implementing `IJob` or `IJob<T>` are `public`, non-`abstract`, and have a public constructor so dependency injection can instantiate them at runtime. |
+
 
 
