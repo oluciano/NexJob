@@ -6,6 +6,8 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [6.1.0] - 2026-10-10
+
 ### Fixed
 
 - **Salesforce triggers — `AuthEndpoint` must be https** (issue #435, found by CodeQL, issue #417): `NexJob.Trigger.SalesforceStreaming` accepted any absolute URL and `NexJob.Trigger.Salesforce` accepted `http`, so a misconfigured `http://` endpoint sent the OAuth username, password and client secret in clear text. Validation now requires `https`; `http` is accepted only for a loopback host (`localhost`, `127.0.0.1`, `[::1]`), which keeps local mocks and the integration tests working. The default endpoint (`https://login.salesforce.com/...`) is unchanged. `InstanceUrl` of the `SessionId` flow follows the same rule (issue #440), since the access token is sent to it. **Behaviour change:** a non-loopback `http` `AuthEndpoint`, or `InstanceUrl` with `SessionId`, is now a validation error.
