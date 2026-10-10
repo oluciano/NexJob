@@ -13,14 +13,42 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # Test tooling and analyzers are grouped (a failure there never reaches the packages). The runtime dependencies of
+    # the packages get one pull request each, so one bad update cannot sink the others.
     groups:
-      minor-and-patch:
+      test-tooling:
+        patterns:
+          - "xunit*"
+          - "Microsoft.NET.Test.Sdk"
+          - "coverlet*"
+          - "FluentAssertions*"
+          - "Moq"
+          - "Testcontainers*"
+          - "BenchmarkDotNet*"
+          - "Microsoft.AspNetCore.Mvc.Testing"
+          - "Microsoft.AspNetCore.TestHost"
+          - "Microsoft.Extensions.TimeProvider.Testing"
         update-types: [minor, patch]
-    # Major versions (a new SDK, a new runtime image, a rewritten client library) are decided by the maintainer, not proposed weekly.
+      analyzers:
+        patterns:
+          - "StyleCop.Analyzers"
+          - "SonarAnalyzer.CSharp"
+          - "Meziantou.Analyzer"
+          - "Microsoft.CodeAnalysis.NetAnalyzers"
+          - "MinVer"
+        update-types: [minor, patch]
+    # Major versions are decided by the maintainer, not proposed weekly. The 10.x of the Microsoft families also drags
+    # net8.0 projects to 10.x packages (NU1605 as errors) until the runtime decision of #439.
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
-    open-pull-requests-limit: 5
+      - dependency-name: "Microsoft.Extensions.*"
+        versions: ["10.x"]
+      - dependency-name: "Microsoft.AspNetCore.*"
+        versions: ["10.x"]
+      - dependency-name: "System.Text.*"
+        versions: ["10.x"]
+    open-pull-requests-limit: 8
 
   - package-ecosystem: docker
     directory: /
