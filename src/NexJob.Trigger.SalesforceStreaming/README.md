@@ -143,7 +143,7 @@ builder.Services.AddNexJob(options =>
 | `Username` | `string?` | Integration user username | `null` |
 | `Password` | `string?` | Integration user password | `null` |
 | `SecurityToken` | `string?` | Integration user security token | `null` |
-| `InstanceUrl` | `string?` | Salesforce base instance URL (e.g. `https://na1.salesforce.com`) | `null` |
+| `InstanceUrl` | `string?` | Salesforce base instance URL (e.g. `https://na1.salesforce.com`). With `SessionId` authentication it must be `https` (`http` is accepted only for a loopback address), because the access token is sent to it | `null` |
 | `AccessToken` (or `SessionId`) | `string?` | Direct bearer access token or Session ID | `null` |
 
 ---
