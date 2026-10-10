@@ -242,6 +242,10 @@ Benchmarks can be parameterized by payload size (`PayloadBytes: 0, 1024, 10240`)
 
 ---
 
+## Contributing
+
+Found a bug or have an idea? [Open an issue](https://github.com/oluciano/NexJob/issues) after searching the existing ones. To send code, read [CONTRIBUTING.md](CONTRIBUTING.md): branch from `develop`, open the pull request against `develop`, build with zero warnings, and cover the change with tests (positive, negative and invalid input). Vulnerabilities go through the private channel in [SECURITY.md](SECURITY.md), not a public issue.
+
 ## Recent releases
 
 ```
