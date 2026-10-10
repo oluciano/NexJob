@@ -359,6 +359,43 @@ public sealed class SalesforceStreamingOptionsTests
         results.Should().BeEmpty();
     }
 
+    [Theory]
+    [InlineData("http://mycompany.my.salesforce.com")]
+    [InlineData("http://example.com")]
+    [InlineData("ftp://mycompany.my.salesforce.com")]
+    public void Validate_SessionIdInstanceUrlThatIsNotHttpsOrLoopback_FailsAndNamesHttps(string instanceUrl)
+    {
+        var auth = ValidSessionOptions(instanceUrl);
+
+        var results = auth.Validate(new ValidationContext(auth)).ToList();
+
+        results.Should().ContainSingle(r => r.MemberNames.Contains(nameof(SalesforceStreamingAuthOptions.InstanceUrl)))
+            .Which.ErrorMessage.Should().Contain("https");
+    }
+
+    [Theory]
+    [InlineData("https://mycompany.my.salesforce.com")]
+    [InlineData("HTTPS://mycompany.my.salesforce.com")]
+    [InlineData("http://localhost:8080")]
+    [InlineData("http://127.0.0.1:5000")]
+    [InlineData("http://[::1]:5000")]
+    [InlineData("HTTP://LOCALHOST")]
+    public void Validate_SessionIdHttpsOrLoopbackInstanceUrl_HasNoInstanceUrlError(string instanceUrl)
+    {
+        var auth = ValidSessionOptions(instanceUrl);
+
+        var results = auth.Validate(new ValidationContext(auth)).ToList();
+
+        results.Should().BeEmpty();
+    }
+
+    private static SalesforceStreamingAuthOptions ValidSessionOptions(string instanceUrl) => new()
+    {
+        AuthType = SalesforceStreamingAuthType.SessionId,
+        InstanceUrl = instanceUrl,
+        AccessToken = "token",
+    };
+
     private static SalesforceStreamingAuthOptions ValidOAuthOptions(SalesforceStreamingAuthType type, string endpoint) => new()
     {
         AuthType = type,
