@@ -6,6 +6,8 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [6.2.0] - 2026-10-10
+
 ### Added
 
 - **Roslyn Diagnostic Analyzers bundled into NexJob** (issue #456): `NexJob.Analyzers` introduces compile-time Roslyn diagnostic rules bundled directly inside the core `NexJob` package under `analyzers/dotnet/cs/NexJob.Analyzers.dll`. Configured at `Info` severity to ensure backward compatibility and zero build breakages on upgrades. IDEs automatically flag:
