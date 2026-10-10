@@ -281,5 +281,24 @@ NexJob ships with built-in compile-time Roslyn Diagnostic Analyzers bundled dire
 | **NXJ006** | Info | Reliability | **Avoid fire-and-forget tasks in job execution**: Flags discarded or unawaited tasks (`Task.Run(...)`) inside `ExecuteAsync`. Jobs must be fully awaited; fire-and-forget escapes dispatcher lifecycle tracking. |
 | **NXJ007** | Info | Design | **Avoid direct service instantiation inside job**: Flags direct instantiation of services, repositories, `DbContext`, or `HttpClient` within `ExecuteAsync`, enforcing proper constructor dependency injection. |
 
+### Severity and `.editorconfig` Configuration
+
+By default, all NexJob analyzer rules are configured with **`Info`** severity. This ensures suggestions and guidance appear seamlessly in IDEs (Visual Studio, JetBrains Rider, VS Code) without breaking existing project builds or CI pipelines under `TreatWarningsAsErrors = true`.
+
+You can easily elevate or suppress individual rules or entire categories using your project's `.editorconfig`:
+
+```ini
+[*.cs]
+# Elevate all NexJob reliability or design rules to warning (breaks build under TreatWarningsAsErrors)
+dotnet_analyzer_diagnostic.category-Reliability.severity = warning
+dotnet_analyzer_diagnostic.category-Design.severity = warning
+
+# Elevate a specific rule
+dotnet_diagnostic.NXJ001.severity = warning
+
+# Suppress / disable a specific rule
+dotnet_diagnostic.NXJ005.severity = none
+```
+
 
 
