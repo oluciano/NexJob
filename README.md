@@ -13,8 +13,9 @@ A node that dies, a deploy in the middle of a job, an upgrade from the previous 
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg?style=flat-square)](LICENSE)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/oluciano/NexJob/badge)](https://scorecard.dev/viewer/?uri=github.com/oluciano/NexJob)
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/15362/badge)](https://www.bestpractices.dev/projects/15362)
+[![CodeQL](https://github.com/oluciano/NexJob/actions/workflows/codeql.yml/badge.svg?branch=develop)](https://github.com/oluciano/NexJob/security/code-scanning)
 
-<sub>The Scorecard and Best Practices badges rate the repository's security and engineering practices (pinned actions, least-privilege tokens, dependency updates, documented process). The Best Practices badge is self-declared. Neither says anything about throughput or behaviour under failure.</sub>
+<sub>The Scorecard, Best Practices and CodeQL badges rate the repository's security and engineering practices (pinned actions, least-privilege tokens, dependency updates, documented process, static analysis). The Best Practices badge is self-declared; the CodeQL badge says the analysis ran on the default branch, and the open alerts are in the [Security tab](https://github.com/oluciano/NexJob/security/code-scanning). None of them says anything about throughput or behaviour under failure.</sub>
 
 <br/>
 
