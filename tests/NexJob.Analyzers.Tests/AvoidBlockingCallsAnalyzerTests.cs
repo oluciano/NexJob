@@ -26,6 +26,7 @@ public sealed class GoodJob : IJob
         await VerifyCS.VerifyAnalyzerAsync(testCode);
     }
 
+    // Behavior changed in v6.2.0: lock was removed (valid for short critical sections), GetAwaiter().GetResult() and WaitAll/WaitAny added, severity changed to Info
     [Fact]
     public async Task N2_Negative_JobCallingResultOrWaitOrGetResult_ReportsDiagnostic()
     {
