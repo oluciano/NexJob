@@ -18,19 +18,12 @@ public sealed class AvoidBlockingCallsAnalyzer : DiagnosticAnalyzer
     /// </summary>
     public const string DiagnosticId = "NXJ001";
 
-    private const string Title = "Avoid blocking calls in job execution";
-    private const string MessageFormat = "Avoid blocking call '{0}' in background job execution; use await instead";
-    private const string Description = "Background jobs must be fully asynchronous to avoid thread pool starvation.";
-
-    private static readonly DiagnosticDescriptor Rule = new(
+    private static readonly DiagnosticDescriptor Rule = AnalyzerHelper.CreateDescriptor(
         DiagnosticId,
-        Title,
-        MessageFormat,
+        "Avoid blocking calls in job execution",
+        "Avoid blocking call '{0}' in background job execution; use await instead",
         "Reliability",
-        DiagnosticSeverity.Info,
-        isEnabledByDefault: true,
-        description: Description,
-        helpLinkUri: AnalyzerHelper.HelpBaseUrl);
+        "Background jobs must be fully asynchronous to avoid thread pool starvation.");
 
     /// <inheritdoc/>
     public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics => ImmutableArray.Create(Rule);
@@ -69,12 +62,12 @@ public sealed class AvoidBlockingCallsAnalyzer : DiagnosticAnalyzer
             return;
         }
 
-        if (!AnalyzerHelper.IsInsideJobMethod(invocation, context.SemanticModel))
+        if (!AnalyzerHelper.IsInsideJobMethod(invocation, context.SemanticModel, context.CancellationToken))
         {
             return;
         }
 
-        var symbol = context.SemanticModel.GetSymbolInfo(invocation).Symbol as IMethodSymbol;
+        var symbol = context.SemanticModel.GetSymbolInfo(invocation, context.CancellationToken).Symbol as IMethodSymbol;
         if (symbol == null || symbol.ContainingType == null)
         {
             return;
@@ -118,12 +111,12 @@ public sealed class AvoidBlockingCallsAnalyzer : DiagnosticAnalyzer
             return;
         }
 
-        if (!AnalyzerHelper.IsInsideJobMethod(memberAccess, context.SemanticModel))
+        if (!AnalyzerHelper.IsInsideJobMethod(memberAccess, context.SemanticModel, context.CancellationToken))
         {
             return;
         }
 
-        var symbol = context.SemanticModel.GetSymbolInfo(memberAccess).Symbol as IPropertySymbol;
+        var symbol = context.SemanticModel.GetSymbolInfo(memberAccess, context.CancellationToken).Symbol as IPropertySymbol;
         if (symbol == null || symbol.ContainingType == null)
         {
             return;

@@ -18,19 +18,12 @@ public sealed class AvoidStaticMutableStateAnalyzer : DiagnosticAnalyzer
     /// </summary>
     public const string DiagnosticId = "NXJ005";
 
-    private const string Title = "Avoid static mutable state in job classes";
-    private const string MessageFormat = "Member '{0}' is static and mutable; job state must remain isolated across worker instances";
-    private const string Description = "Background jobs run concurrently across multiple workers and nodes. Static mutable state causes race conditions and cross-job pollution.";
-
-    private static readonly DiagnosticDescriptor Rule = new(
+    private static readonly DiagnosticDescriptor Rule = AnalyzerHelper.CreateDescriptor(
         DiagnosticId,
-        Title,
-        MessageFormat,
+        "Avoid static mutable state in job classes",
+        "Member '{0}' is static and mutable; job state must remain isolated across worker instances",
         "Reliability",
-        DiagnosticSeverity.Info,
-        isEnabledByDefault: true,
-        description: Description,
-        helpLinkUri: AnalyzerHelper.HelpBaseUrl);
+        "Background jobs run concurrently across multiple workers and nodes. Static mutable state causes race conditions and cross-job pollution.");
 
     /// <inheritdoc/>
     public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics => ImmutableArray.Create(Rule);
@@ -66,13 +59,13 @@ public sealed class AvoidStaticMutableStateAnalyzer : DiagnosticAnalyzer
             return;
         }
 
-        var typeSymbol = context.SemanticModel.GetDeclaredSymbol(typeDeclaration);
+        var typeSymbol = context.SemanticModel.GetDeclaredSymbol(typeDeclaration, context.CancellationToken);
         if (!AnalyzerHelper.ImplementsIJob(typeSymbol))
         {
             return;
         }
 
-        var typeInfo = context.SemanticModel.GetTypeInfo(fieldDeclaration.Declaration.Type).Type;
+        var typeInfo = context.SemanticModel.GetTypeInfo(fieldDeclaration.Declaration.Type, context.CancellationToken).Type;
         var isMutableCollection = typeInfo != null && IsMutableCollectionType(typeInfo.ToDisplayString());
 
         // Flag if not readonly OR if it is a mutable collection (even if readonly, contents are mutable)
@@ -94,7 +87,7 @@ public sealed class AvoidStaticMutableStateAnalyzer : DiagnosticAnalyzer
             return;
         }
 
-        var propertySymbol = context.SemanticModel.GetDeclaredSymbol(propertyDeclaration);
+        var propertySymbol = context.SemanticModel.GetDeclaredSymbol(propertyDeclaration, context.CancellationToken);
         if (propertySymbol == null || !propertySymbol.IsStatic)
         {
             return;
@@ -114,7 +107,7 @@ public sealed class AvoidStaticMutableStateAnalyzer : DiagnosticAnalyzer
             return;
         }
 
-        var typeSymbol = context.SemanticModel.GetDeclaredSymbol(typeDeclaration);
+        var typeSymbol = context.SemanticModel.GetDeclaredSymbol(typeDeclaration, context.CancellationToken);
         if (!AnalyzerHelper.ImplementsIJob(typeSymbol))
         {
             return;

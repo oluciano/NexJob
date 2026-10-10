@@ -18,19 +18,12 @@ public sealed class JobClassStructureAnalyzer : DiagnosticAnalyzer
     /// </summary>
     public const string DiagnosticId = "NXJ003";
 
-    private const string Title = "Job class must be public and instantiable";
-    private const string MessageFormat = "Job '{0}' must be a public, non-abstract class or record with a public constructor";
-    private const string Description = "NexJob instantiates jobs via dependency injection, which requires public non-abstract classes or records.";
-
-    private static readonly DiagnosticDescriptor Rule = new(
+    private static readonly DiagnosticDescriptor Rule = AnalyzerHelper.CreateDescriptor(
         DiagnosticId,
-        Title,
-        MessageFormat,
+        "Job class must be public and instantiable",
+        "Job '{0}' must be a public, non-abstract class or record with a public constructor",
         "Design",
-        DiagnosticSeverity.Info,
-        isEnabledByDefault: true,
-        description: Description,
-        helpLinkUri: AnalyzerHelper.HelpBaseUrl);
+        "NexJob instantiates jobs via dependency injection, which requires public non-abstract classes or records.");
 
     /// <inheritdoc/>
     public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics => ImmutableArray.Create(Rule);
@@ -51,7 +44,7 @@ public sealed class JobClassStructureAnalyzer : DiagnosticAnalyzer
             return;
         }
 
-        var typeSymbol = context.SemanticModel.GetDeclaredSymbol(typeDeclaration);
+        var typeSymbol = context.SemanticModel.GetDeclaredSymbol(typeDeclaration, context.CancellationToken);
         if (typeSymbol == null || !AnalyzerHelper.ImplementsIJob(typeSymbol))
         {
             return;

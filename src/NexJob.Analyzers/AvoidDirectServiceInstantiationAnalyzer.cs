@@ -18,19 +18,12 @@ public sealed class AvoidDirectServiceInstantiationAnalyzer : DiagnosticAnalyzer
     /// </summary>
     public const string DiagnosticId = "NXJ007";
 
-    private const string Title = "Avoid direct service instantiation inside job";
-    private const string MessageFormat = "Do not directly instantiate '{0}' inside job execution; inject dependencies via the job constructor";
-    private const string Description = "Background jobs run inside a scoped dependency injection context. Direct instantiation bypasses DI lifetimes, mocking, and scope disposal.";
-
-    private static readonly DiagnosticDescriptor Rule = new(
+    private static readonly DiagnosticDescriptor Rule = AnalyzerHelper.CreateDescriptor(
         DiagnosticId,
-        Title,
-        MessageFormat,
+        "Avoid direct service instantiation inside job",
+        "Do not directly instantiate '{0}' inside job execution; inject dependencies via the job constructor",
         "Design",
-        DiagnosticSeverity.Info,
-        isEnabledByDefault: true,
-        description: Description,
-        helpLinkUri: AnalyzerHelper.HelpBaseUrl);
+        "Background jobs run inside a scoped dependency injection context. Direct instantiation bypasses DI lifetimes, mocking, and scope disposal.");
 
     /// <inheritdoc/>
     public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics => ImmutableArray.Create(Rule);
@@ -51,12 +44,12 @@ public sealed class AvoidDirectServiceInstantiationAnalyzer : DiagnosticAnalyzer
             return;
         }
 
-        if (!AnalyzerHelper.IsInsideJobMethod(creation, context.SemanticModel))
+        if (!AnalyzerHelper.IsInsideJobMethod(creation, context.SemanticModel, context.CancellationToken))
         {
             return;
         }
 
-        var typeInfo = context.SemanticModel.GetTypeInfo(creation).Type;
+        var typeInfo = context.SemanticModel.GetTypeInfo(creation, context.CancellationToken).Type;
         if (typeInfo == null)
         {
             return;

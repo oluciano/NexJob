@@ -18,19 +18,12 @@ public sealed class AvoidDateTimeNowAnalyzer : DiagnosticAnalyzer
     /// </summary>
     public const string DiagnosticId = "NXJ002";
 
-    private const string Title = "Avoid DateTime.Now in job execution";
-    private const string MessageFormat = "Avoid '{0}' in background jobs; use DateTime.UtcNow or context timestamp instead";
-    private const string Description = "Background jobs should use UtcNow to avoid timezone drift and DST issues across clusters.";
-
-    private static readonly DiagnosticDescriptor Rule = new(
+    private static readonly DiagnosticDescriptor Rule = AnalyzerHelper.CreateDescriptor(
         DiagnosticId,
-        Title,
-        MessageFormat,
+        "Avoid DateTime.Now in job execution",
+        "Avoid '{0}' in background jobs; use DateTime.UtcNow or context timestamp instead",
         "Reliability",
-        DiagnosticSeverity.Info,
-        isEnabledByDefault: true,
-        description: Description,
-        helpLinkUri: AnalyzerHelper.HelpBaseUrl);
+        "Background jobs should use UtcNow to avoid timezone drift and DST issues across clusters.");
 
     /// <inheritdoc/>
     public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics => ImmutableArray.Create(Rule);
@@ -58,12 +51,12 @@ public sealed class AvoidDateTimeNowAnalyzer : DiagnosticAnalyzer
             return;
         }
 
-        if (!AnalyzerHelper.IsInsideJobMethod(memberAccess, context.SemanticModel))
+        if (!AnalyzerHelper.IsInsideJobMethod(memberAccess, context.SemanticModel, context.CancellationToken))
         {
             return;
         }
 
-        var symbol = context.SemanticModel.GetSymbolInfo(memberAccess).Symbol as IPropertySymbol;
+        var symbol = context.SemanticModel.GetSymbolInfo(memberAccess, context.CancellationToken).Symbol as IPropertySymbol;
         if (symbol == null || symbol.ContainingType == null)
         {
             return;

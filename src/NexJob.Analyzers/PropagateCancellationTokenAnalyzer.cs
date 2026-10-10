@@ -19,19 +19,12 @@ public sealed class PropagateCancellationTokenAnalyzer : DiagnosticAnalyzer
     /// </summary>
     public const string DiagnosticId = "NXJ004";
 
-    private const string Title = "Propagate CancellationToken in job execution";
-    private const string MessageFormat = "Call '{0}' should propagate the available CancellationToken";
-    private const string Description = "Background jobs should pass the execution CancellationToken to support graceful shutdown and timeouts.";
-
-    private static readonly DiagnosticDescriptor Rule = new(
+    private static readonly DiagnosticDescriptor Rule = AnalyzerHelper.CreateDescriptor(
         DiagnosticId,
-        Title,
-        MessageFormat,
+        "Propagate CancellationToken in job execution",
+        "Call '{0}' should propagate the available CancellationToken",
         "Reliability",
-        DiagnosticSeverity.Info,
-        isEnabledByDefault: true,
-        description: Description,
-        helpLinkUri: AnalyzerHelper.HelpBaseUrl);
+        "Background jobs should pass the execution CancellationToken to support graceful shutdown and timeouts.");
 
     /// <inheritdoc/>
     public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics => ImmutableArray.Create(Rule);
@@ -52,12 +45,12 @@ public sealed class PropagateCancellationTokenAnalyzer : DiagnosticAnalyzer
             return;
         }
 
-        if (!AnalyzerHelper.IsInsideJobMethod(invocation, context.SemanticModel))
+        if (!AnalyzerHelper.IsInsideJobMethod(invocation, context.SemanticModel, context.CancellationToken))
         {
             return;
         }
 
-        var methodSymbol = context.SemanticModel.GetSymbolInfo(invocation).Symbol as IMethodSymbol;
+        var methodSymbol = context.SemanticModel.GetSymbolInfo(invocation, context.CancellationToken).Symbol as IMethodSymbol;
         if (methodSymbol == null)
         {
             return;

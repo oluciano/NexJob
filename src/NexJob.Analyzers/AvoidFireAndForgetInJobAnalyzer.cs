@@ -18,19 +18,12 @@ public sealed class AvoidFireAndForgetInJobAnalyzer : DiagnosticAnalyzer
     /// </summary>
     public const string DiagnosticId = "NXJ006";
 
-    private const string Title = "Avoid fire-and-forget tasks in job execution";
-    private const string MessageFormat = "Do not fire-and-forget '{0}' inside a background job; await the task or enqueue a job continuation";
-    private const string Description = "Background jobs must be fully awaited. Fire-and-forget tasks escape the execution lifecycle, deadline tracking, and error handling of NexJob.";
-
-    private static readonly DiagnosticDescriptor Rule = new(
+    private static readonly DiagnosticDescriptor Rule = AnalyzerHelper.CreateDescriptor(
         DiagnosticId,
-        Title,
-        MessageFormat,
+        "Avoid fire-and-forget tasks in job execution",
+        "Do not fire-and-forget '{0}' inside a background job; await the task or enqueue a job continuation",
         "Reliability",
-        DiagnosticSeverity.Info,
-        isEnabledByDefault: true,
-        description: Description,
-        helpLinkUri: AnalyzerHelper.HelpBaseUrl);
+        "Background jobs must be fully awaited. Fire-and-forget tasks escape the execution lifecycle, deadline tracking, and error handling of NexJob.");
 
     /// <inheritdoc/>
     public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics => ImmutableArray.Create(Rule);
@@ -84,12 +77,12 @@ public sealed class AvoidFireAndForgetInJobAnalyzer : DiagnosticAnalyzer
 
     private static void CheckInvocation(InvocationExpressionSyntax invocation, SyntaxNodeAnalysisContext context)
     {
-        if (!AnalyzerHelper.IsInsideJobMethod(invocation, context.SemanticModel))
+        if (!AnalyzerHelper.IsInsideJobMethod(invocation, context.SemanticModel, context.CancellationToken))
         {
             return;
         }
 
-        var methodSymbol = context.SemanticModel.GetSymbolInfo(invocation).Symbol as IMethodSymbol;
+        var methodSymbol = context.SemanticModel.GetSymbolInfo(invocation, context.CancellationToken).Symbol as IMethodSymbol;
         if (methodSymbol == null)
         {
             return;
