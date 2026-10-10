@@ -8,6 +8,10 @@ on:
         required: false
         default: "1"
 
+# Least privilege: the token can only read; a job that needs more asks for it itself.
+permissions:
+  contents: read
+
 jobs:
   stress-test:
     name: Production Stress Test
@@ -41,10 +45,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Setup .NET 8
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
         with:
           dotnet-version: '8.0.x'
 
@@ -64,7 +68,7 @@ jobs:
 
       - name: Upload Test Results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: stress-test-results
           path: tests/NexJob.StressTests/TestResults/stress-results.trx
