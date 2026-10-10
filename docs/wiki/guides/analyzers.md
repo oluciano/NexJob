@@ -352,7 +352,7 @@ When setting `deadlineAfter`, a failing job without an explicit `maxAttempts` li
     // Retries indefinitely until the 1-hour deadline runs out
     await scheduler.EnqueueAsync<SyncJob>(
         deadlineAfter: TimeSpan.FromHours(1),
-        ct: ct);
+        cancellationToken: cancellationToken);
     ```
 
 === "Correct"
@@ -361,7 +361,7 @@ When setting `deadlineAfter`, a failing job without an explicit `maxAttempts` li
     await scheduler.EnqueueAsync<SyncJob>(
         maxAttempts: 3,
         deadlineAfter: TimeSpan.FromHours(1),
-        ct: ct);
+        cancellationToken: cancellationToken);
     ```
 
 ---
@@ -382,15 +382,17 @@ In distributed systems, message triggers, network retries, and producer replays 
 === "Wrong"
     ```csharp
     // Can enqueue duplicate records if the HTTP request or message is retried
-    await scheduler.EnqueueAsync<ChargeCustomerJob>(input, ct: ct);
+    await scheduler.EnqueueAsync<ChargeCustomerJob, ChargePayload>(
+        input,
+        cancellationToken: cancellationToken);
     ```
 
 === "Correct"
     ```csharp
-    await scheduler.EnqueueAsync<ChargeCustomerJob>(
+    await scheduler.EnqueueAsync<ChargeCustomerJob, ChargePayload>(
         input,
         idempotencyKey: $"payment-{input.PaymentId}",
-        ct: ct);
+        cancellationToken: cancellationToken);
     ```
 
 ---
@@ -417,7 +419,7 @@ Directly scheduling the same job type from inside its own `ExecuteAsync` method 
         {
             await PollAsync(ct);
             // Infinite recursive loop
-            await _scheduler.EnqueueAsync<PollingJob>(ct: ct);
+            await _scheduler.EnqueueAsync<PollingJob>(cancellationToken: ct);
         }
     }
     ```
@@ -449,15 +451,17 @@ In multi-service setups where different services share the same database with di
 === "Wrong"
     ```csharp
     // Omitting queue targets producer's default queue, consumer may not listen to it
-    await scheduler.EnqueueAsync<ExternalProcessingJob>(input, ct: ct);
+    await scheduler.EnqueueAsync<ExternalProcessingJob, JobPayload>(
+        input,
+        cancellationToken: cancellationToken);
     ```
 
 === "Correct"
     ```csharp
-    await scheduler.EnqueueAsync<ExternalProcessingJob>(
+    await scheduler.EnqueueAsync<ExternalProcessingJob, JobPayload>(
         input,
         queue: "processing-service",
-        ct: ct);
+        cancellationToken: cancellationToken);
     ```
 
 ---
