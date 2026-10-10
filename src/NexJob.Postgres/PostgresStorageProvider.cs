@@ -26,6 +26,35 @@ public sealed class PostgresStorageProvider : IStorageProvider, IOrphanedJobRepo
              @Status, @IdempotencyKey, @Attempts, @MaxAttempts, @CreatedAt, @ScheduledAt, @ParentJobId, @RecurringJobId, @Tags, @ExpiresAt)
         """;
 
+    // Claims up to @maxBatchSize jobs: queues in the order given, then priority, then age. Each queue is read
+    // through idx_nexjob_jobs_fetch (queue, priority, status, created_at) with its own ordered LIMIT and the
+    // results are merged in queue order. Sorting by array_position(@queues, queue) over every Enqueued row cannot
+    // use that index, so its cost grew with the size of the backlog (#412).
+    private const string ClaimSql =
+        """
+        UPDATE nexjob_jobs
+        SET status                = 'Processing',
+            processing_started_at = NOW(),
+            heartbeat_at          = NOW(),
+            attempts              = attempts + 1
+        WHERE id IN (
+            SELECT j.id
+            FROM unnest(@queues) WITH ORDINALITY AS q(name, ord)
+            CROSS JOIN LATERAL (
+                SELECT id, priority, created_at
+                FROM nexjob_jobs
+                WHERE status = 'Enqueued'
+                  AND queue = q.name
+                ORDER BY priority ASC, created_at ASC
+                LIMIT @maxBatchSize
+                FOR UPDATE SKIP LOCKED
+            ) AS j
+            ORDER BY q.ord, j.priority, j.created_at
+            LIMIT @maxBatchSize
+        )
+        RETURNING *
+        """;
+
     private static readonly string[] ActiveStatusNames = ["Enqueued", "Processing", "Scheduled", "AwaitingContinuation"];
 
     private readonly NpgsqlDataSource _dataSource;
@@ -185,27 +214,7 @@ public sealed class PostgresStorageProvider : IStorageProvider, IOrphanedJobRepo
             """, transaction: tx);
 
         var row = await conn.QuerySingleOrDefaultAsync<JobRow>(
-            """
-            UPDATE nexjob_jobs
-            SET status                = 'Processing',
-                processing_started_at = NOW(),
-                heartbeat_at          = NOW(),
-                attempts              = attempts + 1
-            WHERE id = (
-                SELECT id FROM nexjob_jobs
-                WHERE status = 'Enqueued'
-                  AND queue = ANY(@queues)
-                ORDER BY
-                    array_position(@queues, queue),
-                    priority ASC,
-                    created_at ASC
-                LIMIT 1
-                FOR UPDATE SKIP LOCKED
-            )
-            RETURNING *
-            """,
-            new { queues = queues.ToArray() },
-            transaction: tx);
+            ClaimSql, new { queues = queues.ToArray(), maxBatchSize = 1 }, transaction: tx);
 
         await tx.CommitAsync(cancellationToken);
         return row?.ToRecord();
@@ -239,27 +248,7 @@ public sealed class PostgresStorageProvider : IStorageProvider, IOrphanedJobRepo
             """, transaction: tx);
 
         var rows = await conn.QueryAsync<JobRow>(
-            """
-            UPDATE nexjob_jobs
-            SET status                = 'Processing',
-                processing_started_at = NOW(),
-                heartbeat_at          = NOW(),
-                attempts              = attempts + 1
-            WHERE id IN (
-                SELECT id FROM nexjob_jobs
-                WHERE status = 'Enqueued'
-                  AND queue = ANY(@queues)
-                ORDER BY
-                    array_position(@queues, queue),
-                    priority ASC,
-                    created_at ASC
-                LIMIT @maxBatchSize
-                FOR UPDATE SKIP LOCKED
-            )
-            RETURNING *
-            """,
-            new { queues = queues.ToArray(), maxBatchSize },
-            transaction: tx);
+            ClaimSql, new { queues = queues.ToArray(), maxBatchSize }, transaction: tx);
 
         await tx.CommitAsync(cancellationToken);
         return rows.Select(r => r.ToRecord()).ToList();
