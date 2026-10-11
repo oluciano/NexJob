@@ -100,7 +100,8 @@ public sealed class NexJobOptions
 
     /// <summary>
     /// Maximum time to wait for active jobs to complete during graceful shutdown.
-    /// Jobs still running after this timeout are left for the orphan watcher to requeue.
+    /// Jobs still running after this timeout are cancelled and requeued without using an attempt; the host waits up to
+    /// 5 more seconds for that commit. A job that ignores cancellation is left for the orphan watcher.
     /// Defaults to 30 seconds.
     /// </summary>
     public TimeSpan ShutdownTimeout { get; set; } = TimeSpan.FromSeconds(30);

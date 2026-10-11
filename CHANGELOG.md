@@ -8,6 +8,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A job cancelled when the shutdown drain ends is now back in the queue, with its attempt refunded, before `StopAsync` returns. Before, the requeue was committed after `StopAsync` returned, so a process that exited right away left the job `Processing` until the orphan watcher recovered it. `StopAsync` waits at most 5 more seconds; a job that ignores cancellation is still left to the orphan watcher (issue #476).
 - A continuation now starts right after its parent succeeds. The executor signals the wake-up channel after a successful commit, on both the direct and the batch-acknowledgment path. Before, the promoted child waited for the next poll (15 s with the default `PollingInterval`) (issue #495).
 - `ContinueWithAsync` now releases the child at once when its parent has already succeeded, on every provider. Before, a continuation registered after the parent finished stayed `AwaitingContinuation` forever. A parent that failed or is still running behaves as before (issue #471).
 - `AddNexJobRedis` now throws an `InvalidOperationException` when it connects to a Redis Cluster, instead of starting a host that fetches nothing. Redis Cluster is not supported, because the Lua scripts touch keys they do not declare (issue #479).
