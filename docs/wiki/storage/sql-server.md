@@ -55,7 +55,7 @@ builder.Services.AddNexJob(options =>
 `UseDashboardReadReplica` overrides only the `IDashboardStorage` registration with a separate provider instance pointed at the replica (it does not run migrations). Enqueueing, fetching and the worker coordination continue through the primary connection.
 
 !!! note "Requeue and delete use the primary"
-    `IJobControlService.RequeueJobAsync` and `DeleteJobAsync` write to the primary, not to the replica, and the orphan watcher reads a failed job from the primary before it calls the dead-letter handler. The replica serves only the dashboard's read queries. This was checked on PostgreSQL; SQL Server uses the same registration but was not run against a real secondary.
+    `IJobControlService.RequeueJobAsync` and `DeleteJobAsync` write to the primary, not to the replica, and the orphan watcher reads a failed job from the primary before it calls the dead-letter handler. The replica serves only the dashboard's read queries. This was checked with a `db_datareader` login on the same database; a real readable secondary was not tried.
 
 !!! tip
     On Azure SQL, the read-scale endpoint is selected by appending `ApplicationIntent=ReadOnly` to the connection string (a Microsoft feature; not tried with NexJob here).
