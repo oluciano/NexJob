@@ -40,6 +40,7 @@ public sealed class JobExecutorTests
             _throttleRegistry,
             _options,
             Enumerable.Empty<IJobExecutionFilter>(),
+            new JobWakeUpChannel(),
             NullLogger<JobExecutor>.Instance);
 
         _hardenedSut = new JobExecutor(
@@ -50,6 +51,7 @@ public sealed class JobExecutorTests
             _hardenedThrottleregistry,
             _hardenedOptions,
             Enumerable.Empty<IJobExecutionFilter>(),
+            new JobWakeUpChannel(),
             NullLogger<JobExecutor>.Instance);
     }
 
@@ -179,6 +181,7 @@ public sealed class JobExecutorTests
             _throttleRegistry,
             _options,
             new[] { filter.Object },
+            new JobWakeUpChannel(),
             NullLogger<JobExecutor>.Instance);
 
         // Act
@@ -206,6 +209,7 @@ public sealed class JobExecutorTests
             _throttleRegistry,
             _options,
             new[] { filter.Object },
+            new JobWakeUpChannel(),
             NullLogger<JobExecutor>.Instance);
 
         // Act
@@ -466,6 +470,7 @@ public sealed class JobExecutorTests
             _throttleRegistry,
             _options,
             Enumerable.Empty<IJobExecutionFilter>(),
+            new JobWakeUpChannel(),
             logger);
 
     // ── 3N: ILogger.BeginScope enrichment ────────────────────────────────────
@@ -671,6 +676,7 @@ public sealed class JobExecutorTests
             _hardenedThrottleregistry,
             _hardenedOptions,
             new[] { filterMock.Object },
+            new JobWakeUpChannel(),
             NullLogger<JobExecutor>.Instance);
 
         _ = SetupSuccessfulInvoker(job);

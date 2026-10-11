@@ -8,6 +8,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A continuation now starts right after its parent succeeds. The executor signals the wake-up channel after a successful commit, on both the direct and the batch-acknowledgment path. Before, the promoted child waited for the next poll (15 s with the default `PollingInterval`) (issue #495).
 - `ContinueWithAsync` now releases the child at once when its parent has already succeeded, on every provider. Before, a continuation registered after the parent finished stayed `AwaitingContinuation` forever. A parent that failed or is still running behaves as before (issue #471).
 - `AddNexJobRedis` now throws an `InvalidOperationException` when it connects to a Redis Cluster, instead of starting a host that fetches nothing. Redis Cluster is not supported, because the Lua scripts touch keys they do not declare (issue #479).
 - An execution window with an unknown time zone now stops the start with an `InvalidOperationException` that names the queue and the id, instead of ending the dispatch loop on the first poll. If the zone cannot be read later, only that queue is closed and the error is logged once; the dashboard Settings page no longer fails for it (issue #472).

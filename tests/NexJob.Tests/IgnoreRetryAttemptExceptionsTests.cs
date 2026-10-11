@@ -113,6 +113,7 @@ public sealed class IgnoreRetryAttemptExceptionsTests
             new ThrottleRegistry(),
             _options,
             Enumerable.Empty<IJobExecutionFilter>(),
+            new JobWakeUpChannel(),
             NullLogger<JobExecutor>.Instance);
 
         await sut.ExecuteJobAsync(job);
