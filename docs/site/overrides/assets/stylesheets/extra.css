@@ -27,24 +27,34 @@
 html { font-size: 112.5%; }
 @media screen and (min-width: 100em) { html { font-size: 112.5%; } }
 @media screen and (min-width: 125em) { html { font-size: 118.75%; } }
-.md-grid { max-width: 72rem; }
+.md-grid { max-width: 80rem; }
 .md-typeset { line-height: 1.65; }
 
-/* Left menu: group labels as small caps, clear active item */
+/* Left menu: each group is a chapter. A heading with a rule above it, and its
+   pages indented under a guide line so inside and outside are obvious. */
+.md-nav--primary > .md-nav__list > .md-nav__item--section {
+  margin-top: 1.1rem;
+  padding-top: 0.7rem;
+  border-top: 1px solid var(--md-default-fg-color--lightest);
+}
 .md-nav--primary > .md-nav__list > .md-nav__item--section > .md-nav__link {
-  font-size: 0.64rem;
+  font-size: 0.66rem;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--md-default-fg-color--light);
-  margin-top: 1.4rem;
+  color: var(--md-accent-fg-color);
+  margin-bottom: 0.2rem;
+}
+.md-nav--primary > .md-nav__list > .md-nav__item--section > .md-nav > .md-nav__list {
+  margin-left: 0.6rem;
+  border-left: 1px solid var(--md-default-fg-color--lighter);
 }
 .md-nav--primary .md-nav__link { padding: 0.15rem 0.6rem; }
 .md-nav--primary .md-nav__link--active {
   font-weight: 600;
   color: var(--md-accent-fg-color);
   border-left: 2px solid var(--md-accent-fg-color);
-  margin-left: -2px;
+  margin-left: -1px;
 }
 
 /* Right table of contents: same treatment for the active heading */
