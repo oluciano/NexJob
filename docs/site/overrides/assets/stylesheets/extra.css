@@ -23,9 +23,12 @@
 .md-typeset h2 { font-weight: 600; margin-top: 2.4rem; }
 .md-typeset h3 { font-weight: 600; }
 
-/* Reading column: ~72 characters per line */
-.md-content__inner { max-width: 46rem; }
-.md-typeset { line-height: 1.7; }
+/* Smaller type and a wider page: Material's default root size is 20px on wide screens */
+html { font-size: 112.5%; }
+@media screen and (min-width: 100em) { html { font-size: 112.5%; } }
+@media screen and (min-width: 125em) { html { font-size: 118.75%; } }
+.md-grid { max-width: 82rem; }
+.md-typeset { line-height: 1.65; }
 
 /* Left menu: group labels as small caps, clear active item */
 .md-nav--primary > .md-nav__list > .md-nav__item--section > .md-nav__link {
