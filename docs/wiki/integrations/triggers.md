@@ -293,6 +293,26 @@ NexJob maintains a centralized, thread-safe `IListenerRegistry` that tracks the 
 
 All registered triggers and their live states are visible in the dashboard at the `/listeners` route and summarized in the **Cluster Pipeline Topology Map** on the overview page.
 
+### Reporting from your own listener
+
+A background service of yours can show up on the same page. `IListenerRegistry` is registered by `AddNexJob()`, so inject it, register the listener once and update its status as the connection changes:
+
+```csharp
+registry.Register(new ListenerRegistration(
+    Id: "billing-events",
+    Broker: "MyBroker",
+    Endpoint: "mybroker://billing",
+    TargetJobType: nameof(ProcessBillingEventJob),
+    JobTag: "trigger:mybroker",       // optional
+    ConsumerGroup: "billing-workers")); // optional
+
+registry.UpdateStatus("billing-events", ListenerStatus.Listening);
+// later, on a connection loss:
+registry.UpdateStatus("billing-events", ListenerStatus.Reconnecting, "connection reset");
+```
+
+`Get(id)` and `GetAll()` return a snapshot with the status, the description, and when the listener started and last changed state. The registry only reports status: it does not consume messages or enqueue jobs.
+
 ## Try it
 
 The [`NexJob.Sample.CloudTriggers`](https://github.com/oluciano/NexJob/tree/develop/samples/NexJob.Sample.CloudTriggers) sample wires AWS SQS, Azure Service Bus, Google Pub/Sub and Salesforce triggers, with `/simulate/*` endpoints to produce messages without the real services.

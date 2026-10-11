@@ -93,6 +93,7 @@ nav:
       - SQL Server: storage/sql-server.md
       - Redis: storage/redis.md
       - MongoDB: storage/mongodb.md
+      - Writing a provider: storage/custom-provider.md
   - Integrations:
       - Dashboard: integrations/dashboard.md
       - OpenTelemetry: integrations/opentelemetry.md
