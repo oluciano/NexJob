@@ -1,7 +1,7 @@
 ---
 title: "NexJob Frequently Asked Questions: Complete Answers"
 sidebarTitle: "FAQ"
-description: "Answers to common questions about NexJob: storage choices, multi-instance deployments, job ordering, performance, and Hangfire migration."
+description: "Answers to common questions about NexJob: storage choices, multi-instance deployments, job ordering and performance."
 ---
 
 These answers describe verified behavior as of v5.6.1 and later.
@@ -206,7 +206,7 @@ These answers describe verified behavior as of v5.6.1 and later.
     - **OpenTelemetry first.** Distributed trace propagation, structured log scopes, and OTEL-compatible metrics are built into the core.
     - **Storage choice.** NexJob supports PostgreSQL, SQL Server, MongoDB, Redis, and InMemory out of the box, with a clean `IStorageProvider` interface for custom backends.
 
-    For the trade-offs and what each library costs, see [Why NexJob?](../introduction.md#why-nexjob). For a step-by-step guide to migrating a Hangfire application, see the [Migration guide](../reference/migration.md).
+    See [Why NexJob?](../introduction.md#why-nexjob) for what NexJob provides.
 
 
 ???+ "What does a broker trigger do with a non-JSON message body?"

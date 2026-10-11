@@ -8,49 +8,77 @@ NexJob is a reliable, open-source background job processing library for .NET 8. 
 
 ## Why NexJob?
 
-Hangfire is the established choice for background jobs in .NET, and it is free for commercial use: `Hangfire.SqlServer` and `Hangfire.InMemory` are open source, and only the Redis provider (`Hangfire.Pro.Redis`) needs a paid Pro subscription. NexJob makes different trade-offs:
+NexJob is for jobs that **must run, fail safely and leave a trace**.
 
 - **Five storage providers, none behind a paid tier:** PostgreSQL, SQL Server, Redis, MongoDB and in-memory, with the same test contract on all of them ([how we test](reference/how-we-test.md)).
 - **Failure is a first-class case.** [Deadlines](concepts/scheduling.md#deadlines), [dead-letter handling](concepts/retries-and-dead-letter.md), crash recovery and a table of [what each failure costs a job](concepts/delivery-guarantees.md) are part of the core library.
 - **Built-in dashboard and OpenTelemetry**, with no extra package to find or license.
 - **Near-zero dispatch latency** on the node that enqueues, through an in-process wake-up channel.
 
-NexJob is a young library with a focused scope, and it is not a drop-in replacement for Hangfire. The [Migration guide](reference/migration.md) covers moving an existing application.
+NexJob is a young library with a focused scope.
 
 ### Benchmark numbers
 
-All measurements are per individual enqueue operation on .NET 8 (BenchmarkDotNet v0.14, RyuJIT AVX2, in-memory storage baseline):
+Measured per individual enqueue operation on .NET 8 (BenchmarkDotNet v0.14, RyuJIT AVX2, in-memory storage baseline):
 
-| Metric | NexJob | Hangfire |
-|---|---|---|
-| Latency (mean) | **13.35 µs** | 35.95 µs — 2.7× slower |
-| Memory allocated | **2.10 KB** | 11.20 KB — 5.3× more (NexJob allocates 81% less) |
-| GC Gen0 (per 1 k ops) | **0.06** | 0.85 — 14× more collections |
-| GC Gen1 (per 1 k ops) | **0.00** | 0.18 — non-zero Gen1 cost |
+| Metric | NexJob |
+|---|---|
+| Latency (mean) | **13.35 µs** |
+| Memory allocated | **2.10 KB** |
+| GC Gen0 (per 1 k ops) | **0.06** |
+| GC Gen1 (per 1 k ops) | **0.00** |
 
-These are enqueue-only numbers on in-memory storage, not end-to-end throughput.
+These are enqueue-only numbers on in-memory storage, not end-to-end throughput. The benchmark project is in the repository (`benchmarks/NexJob.Benchmarks`), so you can run it against your own setup.
 
 ## Packages
 
-Install only what you need. The core package ships with InMemory storage and the full dispatcher — every other package is optional.
+Install only what you need. The core package ships with in-memory storage and the full dispatcher; every other package is optional and adds one capability.
 
-| Package | Description |
+### Core
+
+| Package | What it is |
 |---|---|
-| `NexJob` | Core library: dispatcher, scheduler, InMemory storage, retries, deadlines |
-| `NexJob.Postgres` | PostgreSQL storage provider |
-| `NexJob.SqlServer` | SQL Server storage provider |
-| `NexJob.Redis` | Redis storage provider |
-| `NexJob.MongoDB` | MongoDB storage provider |
-| `NexJob.Dashboard` | Embedded ASP.NET Core dashboard middleware |
-| `NexJob.Dashboard.Standalone` | Embedded HTTP dashboard server for Worker Services |
-| `NexJob.OpenTelemetry` | OpenTelemetry SDK instrumentation (traces and metrics) |
-| `NexJob.Trigger.AzureServiceBus` | Azure Service Bus trigger |
-| `NexJob.Trigger.AwsSqs` | AWS SQS trigger |
-| `NexJob.RabbitMQ` | RabbitMQ trigger and resilient outbox producer |
-| `NexJob.Kafka` | Apache Kafka trigger and resilient outbox producer |
-| `NexJob.Trigger.GooglePubSub` | Google Cloud Pub/Sub trigger |
-| `NexJob.Trigger.Salesforce` | Salesforce Pub/Sub API trigger (gRPC and Avro) |
-| `NexJob.Trigger.SalesforceStreaming` | Salesforce Streaming API trigger (CometD and Bayeux) |
+| `NexJob` | The library: dispatcher, scheduler, retries, deadlines, in-memory storage and the [Roslyn analyzers](guides/analyzers.md). Every application needs it. |
+
+### Storage providers
+
+Pick one. Without any of these, jobs live in memory and are lost when the process stops. See [Storage Providers](storage/overview.md).
+
+| Package | Backend |
+|---|---|
+| `NexJob.Postgres` | PostgreSQL |
+| `NexJob.SqlServer` | SQL Server |
+| `NexJob.Redis` | Redis (also offers opt-in [distributed throttle](guides/throttling.md#distributed-throttling-with-redis)) |
+| `NexJob.MongoDB` | MongoDB |
+
+### Dashboard
+
+Pick the one that matches your host. See [Dashboard](integrations/dashboard.md).
+
+| Package | Host |
+|---|---|
+| `NexJob.Dashboard` | ASP.NET Core: mounts the dashboard as middleware |
+| `NexJob.Dashboard.Standalone` | Worker Service or console app: runs an embedded HTTP server |
+
+### Observability
+
+| Package | What it adds |
+|---|---|
+| `NexJob.OpenTelemetry` | Traces and metrics through the OpenTelemetry SDK. See [OpenTelemetry](integrations/opentelemetry.md). |
+
+### Triggers and outbox
+
+A trigger turns messages from a broker into jobs. The two outbox packages also publish events from your application in a transaction-safe way. See [External Triggers](integrations/triggers.md).
+
+| Package | Broker | Trigger | Outbox |
+|---|---|---|---|
+| `NexJob.RabbitMQ` | RabbitMQ | yes | yes |
+| `NexJob.Kafka` | Apache Kafka | yes | yes |
+| `NexJob.Trigger.AzureServiceBus` | Azure Service Bus | yes | |
+| `NexJob.Trigger.AwsSqs` | AWS SQS | yes | |
+| `NexJob.Trigger.GooglePubSub` | Google Cloud Pub/Sub | yes | |
+| `NexJob.Trigger.Salesforce` | Salesforce Pub/Sub API (gRPC and Avro) | yes | |
+| `NexJob.Trigger.SalesforceStreaming` | Salesforce Streaming API (CometD and Bayeux) | yes | |
 
 ## Key features
 
@@ -116,3 +144,4 @@ Install only what you need. The core package ships with InMemory storage and the
 
 - [Quick Start](quickstart.md) — install NexJob and run your first job in under 5 minutes
 - [Mental Model](mental-model.md) — understand storage-first design, the job state machine, and crash recovery before writing production jobs
+- [Migration guide](reference/migration.md) — breaking changes and what to update when you upgrade between NexJob versions
