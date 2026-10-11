@@ -1,7 +1,7 @@
 ---
 title: "NexJob Frequently Asked Questions: Complete Answers"
 sidebarTitle: "FAQ"
-description: "Answers to common questions about NexJob: storage choices, multi-instance deployments, job ordering, performance, and Hangfire migration."
+description: "Answers to common questions about NexJob: storage choices, multi-instance deployments, job ordering and performance."
 ---
 
 These answers describe verified behavior as of v5.6.1 and later.
@@ -197,16 +197,16 @@ These answers describe verified behavior as of v5.6.1 and later.
 ## Comparison with Hangfire
 
 ???+ "How does NexJob differ from Hangfire?"
-    NexJob is designed for high-throughput, cloud-native .NET workloads. Key differences:
+    NexJob is designed for high-throughput, cloud-native .NET workloads. What it provides:
 
-    - **Performance.** NexJob's enqueue latency benchmarks at ~13 µs with ~2 KB allocation vs Hangfire's ~36 µs and ~11 KB (measured on .NET 8 RyuJIT). Batch fetching and batch acknowledgment further reduce DB roundtrips.
-    - **At-least-once semantics are explicit.** NexJob documents that jobs may run more than once and guides you toward idempotency rather than attempting false exactly-once guarantees.
-    - **Built-in broker triggers.** NexJob includes native trigger packages for Kafka, RabbitMQ, Azure Service Bus, AWS SQS, Google Pub/Sub, and Salesforce — no third-party glue required.
-    - **Queue circuit breaker.** A per-queue circuit breaker with progressive backoff is built into the core, not an add-on.
-    - **OpenTelemetry first.** Distributed trace propagation, structured log scopes, and OTEL-compatible metrics are built into the core, not added through community middleware.
+    - **Performance.** NexJob's enqueue latency benchmarks at ~13 µs with ~2 KB allocation vs Hangfire's ~36 µs and ~11 KB (enqueue only, measured on .NET 8 RyuJIT with in-memory storage). Batch fetching and batch acknowledgment further reduce DB roundtrips.
+    - **At-least-once semantics are explicit.** NexJob documents that jobs may run more than once and guides you toward [idempotency](../concepts/idempotency.md).
+    - **Built-in broker triggers.** NexJob includes native trigger packages for Kafka, RabbitMQ, Azure Service Bus, AWS SQS, Google Pub/Sub, and Salesforce, each as its own package.
+    - **Queue circuit breaker.** A per-queue circuit breaker with progressive backoff is built into the core.
+    - **OpenTelemetry first.** Distributed trace propagation, structured log scopes, and OTEL-compatible metrics are built into the core.
     - **Storage choice.** NexJob supports PostgreSQL, SQL Server, MongoDB, Redis, and InMemory out of the box, with a clean `IStorageProvider` interface for custom backends.
 
-    For a step-by-step guide to migrating a Hangfire application, see the [Migration guide](../reference/migration.md).
+    See [Why NexJob?](../introduction.md#why-nexjob) for what NexJob provides.
 
 
 ???+ "What does a broker trigger do with a non-JSON message body?"

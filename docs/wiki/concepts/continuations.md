@@ -6,7 +6,7 @@ description: "Use NexJob continuations to chain background jobs so child jobs ru
 
 Continuations let you express sequential dependencies between jobs without writing orchestration logic inside a single large job. You enqueue a parent job, then register one or more child jobs that should run after the parent completes successfully. NexJob handles the transition automatically — when the parent reaches `Succeeded`, every waiting child moves to `Enqueued` and is picked up by the dispatcher.
 
-## Basic Usage
+## Basic usage
 
 Enqueue the parent job, capture the returned `JobId`, and pass it to `ContinueWithAsync`:
 
@@ -23,9 +23,9 @@ await scheduler.ContinueWithAsync<SendConfirmationJob, ConfirmationInput>(
     cancellationToken: ct);
 ```
 
-The child job is stored with status `AwaitingContinuation`. As soon as the parent transitions to `Succeeded`, NexJob automatically changes the child's status to `Enqueued`.
+The child job is stored with status `AwaitingContinuation`, and its `ParentJobId` points to the parent (see the [`JobRecord` reference](../reference/job-record.md)). As soon as the parent transitions to `Succeeded`, NexJob automatically changes the child's status to `Enqueued`.
 
-## Multiple Continuations from One Parent
+## Multiple continuations from one parent
 
 One parent can have any number of children. All of them are released in parallel when the parent succeeds:
 
@@ -40,7 +40,7 @@ await scheduler.ContinueWithAsync<UpdateMetricsJob>(parentJobId, cancellationTok
 await scheduler.ContinueWithAsync<CleanupTempFilesJob>(parentJobId, cancellationToken: ct);
 ```
 
-## Sequential Chains
+## Sequential chains
 
 Build a strict pipeline by using the `JobId` returned by each `ContinueWithAsync` call as the parent for the next step:
 
@@ -59,7 +59,7 @@ var step3 = await scheduler.ContinueWithAsync<PublishResultJob>(
 
 Execution order: `FetchDataJob` → `ProcessDataJob` → `PublishResultJob`. Each step waits for the previous one to succeed before running.
 
-## What Happens When a Parent Fails
+## What happens when a parent fails
 
 If the parent job exhausts all its retries and transitions to `Failed`, the child jobs remain in `AwaitingContinuation` indefinitely. They will **never execute automatically**.
 
@@ -71,7 +71,7 @@ To handle this safely:
 
 ### 1. Give the parent sufficient retries
 
-Use the `[Retry]` attribute or the global `MaxAttempts` setting to give the parent job enough attempts to overcome transient failures. See [Retries & Dead Letter](../concepts/retries-and-dead-letter.md).
+Use the `[Retry]` attribute or the global `MaxAttempts` setting to give the parent job enough attempts to overcome transient failures. See [Retries](retries.md).
 
 ### 2. Register a dead-letter handler on the parent
 
@@ -99,11 +99,11 @@ public sealed class PaymentDeadLetterHandler : IDeadLetterHandler<ProcessPayment
 
 
 
-## Trace Correlation
+## Trace correlation
 
 NexJob captures the W3C `traceparent` that is active **at the time you call `ContinueWithAsync`** — that is, the ambient `Activity` in your calling code, not the parent job's execution span. When you enqueue the parent and its continuations in the same request handler, all jobs in the chain share the same trace ID, making the complete multi-step workflow visible as a single trace in your APM tool.
 
-## When to Use Continuations
+## When to use continuations
 
 <div class="grid cards" markdown>
   -   **Use continuations when**
@@ -120,7 +120,7 @@ NexJob captures the W3C `traceparent` that is active **at the time you call `Con
 
 </div>
 
-## Common Use Cases
+## Common use cases
 
 - **Order fulfillment pipeline:** `ProcessPaymentJob` → `ReserveInventoryJob` → `SendConfirmationEmailJob`
 - **Data import workflow:** `ImportDataJob` → (`ValidateDataJob`, `UpdateMetricsJob`, `NotifyUsersJob`) in parallel

@@ -23,7 +23,7 @@ NexJob does not send notifications itself. It exposes the **signals**, and you c
 
 ## Recipe: post to Slack
 
-A dead-letter forwarder is called by the dispatcher for **every** job that exhausts its attempts, whatever its type, and a job that fails because its node crashed on the last attempt reaches it too (with an [`OrphanedJobException`](../concepts/retries-and-dead-letter.md#when-the-node-dies)). Register it once.
+A dead-letter forwarder is called by the dispatcher for **every** job that exhausts its attempts, whatever its type, and a job that fails because its node crashed on the last attempt reaches it too (with an [`OrphanedJobException`](../concepts/dead-letter.md#when-the-node-dies)). Register it once.
 
 The forwarder runs **inside the worker slot that was running the job**, so it must not wait for the network. The recipe below only puts the message in a bounded queue and returns; a background service sends it.
 
@@ -134,6 +134,6 @@ If you already run Grafana or Alertmanager, you can alert without any code. Expo
 
 ## See also
 
-- [Retries & Dead Letter](../concepts/retries-and-dead-letter.md): handlers, forwarders and what an exhausted job looks like.
+- [Dead-letter handling](../concepts/dead-letter.md) and [forwarding](../concepts/dead-letter-forwarding.md): handlers, forwarders and what an exhausted job looks like.
 - [OpenTelemetry](../integrations/opentelemetry.md): the full list of metrics.
 - [Dashboard](../integrations/dashboard.md): the Queues and Failed / DLQ views.

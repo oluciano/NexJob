@@ -87,6 +87,25 @@ services.AddNexJob(opt => opt.DistributedThrottleTtl = TimeSpan.FromHours(4));
     `AddNexJobDistributedThrottle()` requires an `IDatabase` instance in the DI container. `AddNexJobRedis()` registers one automatically. If you use a different storage provider, register the Redis `IDatabase` yourself. If Redis becomes unavailable at runtime, NexJob degrades gracefully to per-process throttling.
 
 
+### Writing your own store
+
+`IDistributedThrottleStore` is the seam behind this feature. When a store is registered in the container, `[Throttle]` limits are enforced across nodes through it; when none is registered, they stay per process. Redis is one implementation, and you can register another:
+
+```csharp
+services.AddSingleton<IDistributedThrottleStore, MyThrottleStore>();
+services.AddNexJob();
+```
+
+The interface has two methods:
+
+- `TryAcquireAsync(resource, maxConcurrent, ct)` returns `true` when a slot was taken and `false` when the global limit is already reached. It should answer at once and not wait for a slot.
+- `ReleaseAsync(resource, ct)` gives the slot back. NexJob calls it when the job finishes, whether it succeeded or failed.
+
+Two things your store has to handle itself:
+
+- **A node that dies while it holds a slot.** The interface has no heartbeat, so the store must give such slots back on its own. The Redis store does it by having each holder refresh an expiry and reclaiming a slot that was not refreshed for three `HeartbeatInterval` periods.
+- **Failures.** If the store throws, NexJob logs a warning and enforces the limit locally for that acquisition, so a store outage degrades to per-process throttling instead of stopping jobs.
+
 ## How Waiting Works
 
 A throttled job that cannot acquire a slot first waits briefly. During that wait it stays in `Processing`, keeps its worker slot and keeps sending heartbeats, and NexJob retries the slot acquisition about every 500 ms. This keeps short contention cheap: no storage writes and no change in ordering.

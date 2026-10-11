@@ -83,7 +83,7 @@ A job library is judged on the worst day: a node that dies, a deploy in the midd
 
 | You need | NexJob gives you |
 |---|---|
-| **Jobs that retry and then stop** | Global and per-job [retries](https://oluciano.github.io/NexJob/concepts/retries-and-dead-letter/), `maxAttempts` per enqueue, [dead-letter handlers and forwarders](https://oluciano.github.io/NexJob/concepts/retries-and-dead-letter/), failures that skip retries, [`[ExecutionTimeout]`](https://oluciano.github.io/NexJob/concepts/retries-and-dead-letter/#execution-timeout) |
+| **Jobs that retry and then stop** | Global and per-job [retries](https://oluciano.github.io/NexJob/concepts/retries/), `maxAttempts` per enqueue, [dead-letter handlers and forwarders](https://oluciano.github.io/NexJob/concepts/dead-letter/), failures that skip retries, [`[ExecutionTimeout]`](https://oluciano.github.io/NexJob/concepts/retries/#execution-timeout) |
 | **No zombie jobs** | [Deadlines](https://oluciano.github.io/NexJob/concepts/scheduling/#deadlines), [crash recovery](https://oluciano.github.io/NexJob/concepts/delivery-guarantees/) by heartbeat, `DuplicatePolicy` [idempotency](https://oluciano.github.io/NexJob/concepts/idempotency/) |
 | **Protect a dependency** | [Queue circuit breaker](https://oluciano.github.io/NexJob/guides/circuit-breaker/), [`[Throttle]`](https://oluciano.github.io/NexJob/guides/throttling/) per resource (cluster-wide with Redis), [execution windows](https://oluciano.github.io/NexJob/guides/execution-windows/) |
 | **Several services, one database** | [Queue isolation by default](https://oluciano.github.io/NexJob/concepts/queues/#the-default-queue) (`{prefix}.default` per application), [multi-service guide](https://oluciano.github.io/NexJob/guides/multi-service/) |
@@ -164,7 +164,7 @@ Runnable examples for the web, worker, storage and broker scenarios are in [`sam
 
 ## Benchmarks
 
-Hangfire is the usual reference for .NET background jobs, so it is the comparison here. NexJob is not a drop-in replacement for it: if you need calendar-based scheduling, distributed execution across untrusted networks or a large plugin ecosystem, Hangfire is the better choice.
+Hangfire is the usual reference for .NET background jobs, so it is the comparison here.
 
 The figures below measure the cost of **enqueueing** one job, not processing throughput. Measured per individual enqueue operation on .NET 8 (BenchmarkDotNet v0.14, RyuJIT AVX2, in-memory storage baseline):
 

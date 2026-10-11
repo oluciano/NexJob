@@ -36,6 +36,9 @@ theme:
     - search.highlight
     - content.code.copy
 
+extra_css:
+  - assets/stylesheets/extra.css
+
 markdown_extensions:
   - admonition
   - pymdownx.details
@@ -58,13 +61,19 @@ nav:
       - Live Playground: playground.md
   - Core Concepts:
       - Job Types: concepts/job-types.md
+      - Job payloads: concepts/job-payloads.md
       - Scheduling: concepts/scheduling.md
       - Recurring Jobs: concepts/recurring-jobs.md
-      - Retries & Dead Letter: concepts/retries-and-dead-letter.md
+      - Failure handling:
+          - Retries and dead letter: concepts/retries-and-dead-letter.md
+          - Retries: concepts/retries.md
+          - Dead-letter handling: concepts/dead-letter.md
+          - Dead-letter forwarding: concepts/dead-letter-forwarding.md
       - Delivery Guarantees: concepts/delivery-guarantees.md
       - Continuations: concepts/continuations.md
       - Idempotency: concepts/idempotency.md
       - Queues: concepts/queues.md
+      - Default queue and prefix: concepts/default-queue.md
   - Guides:
       - Throttling: guides/throttling.md
       - Circuit Breaker: guides/circuit-breaker.md
@@ -84,6 +93,7 @@ nav:
       - SQL Server: storage/sql-server.md
       - Redis: storage/redis.md
       - MongoDB: storage/mongodb.md
+      - Writing a provider: storage/custom-provider.md
   - Integrations:
       - Dashboard: integrations/dashboard.md
       - OpenTelemetry: integrations/opentelemetry.md
@@ -92,6 +102,7 @@ nav:
       - RabbitMQ: integrations/rabbitmq.md
   - Reference:
       - Configuration: reference/configuration.md
+      - JobRecord: reference/job-record.md
       - Troubleshooting: reference/troubleshooting.md
       - FAQ: reference/faq.md
       - Migration: reference/migration.md

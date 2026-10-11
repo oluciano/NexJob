@@ -82,5 +82,5 @@ The `NexJob.Sample.Reliability` sample trips a circuit with `POST /circuit/trip`
 ## See also
 
 - [Throttling](../guides/throttling.md): steady-state concurrency limits, which work together with the breaker.
-- [Retries & Dead Letter](../concepts/retries-and-dead-letter.md): what happens to one job that keeps failing.
+- [Retries](../concepts/retries.md): what happens to one job that keeps failing.
 - [Runtime Control](../guides/runtime-control.md): reset a circuit from code.

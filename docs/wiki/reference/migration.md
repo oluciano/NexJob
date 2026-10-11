@@ -28,7 +28,7 @@ No schema migration. The change that reaches everyone who enqueues without namin
 
 - **Stored jobs keep running.** Every host also polls the legacy `default` queue; no row is renamed. Recurring jobs already stored with queue `default` keep firing into it.
 - **New jobs go to the new queue.** The dashboard, the queue metric tags and any query by queue name show `{prefix}.default` for them. Update dashboards and alerts that filter on `default`.
-- **Services that shared `default` on purpose stop seeing each other's jobs.** A producer's jobs go to its own `{prefix}.default`. Name the queue on both sides, or see [the default queue](../concepts/queues.md#the-default-queue).
+- **Services that shared `default` on purpose stop seeing each other's jobs.** A producer's jobs go to its own `{prefix}.default`. Name the queue on both sides, or see [the default queue](../concepts/default-queue.md).
 - **Set the prefix yourself in production.** A derived prefix changes when the assembly is renamed and jobs stay in the old queue. The host logs a warning while the prefix is derived.
 - **Rolling deploy.** A node still on v5 enqueues and polls `default`; a v6 node drains it, so nothing is lost. Jobs enqueued by v6 nodes into `{prefix}.default` are not seen by v5 nodes until they are upgraded.
 - **Configuration keyed by `"default"`** (`ConfigureQueue`, pause, circuit breaker, execution window) applies to the prefixed queue **and** to the legacy `default` that is still drained.
@@ -75,7 +75,7 @@ For a class with `[Retry(n)]`, the `MaxAttempts` stored on a new job, and `IJobC
 
 There is no new stored format. While old and new nodes run together, an old node ignores a per-job `maxAttempts` and applies the class's `[Retry]`, and it does not know `IgnoreRetryAttemptExceptions`, `[ExecutionTimeout]` or `DaysOfWeek`. Everything else is compatible. Upgrade one node first, watch the failed and dead-letter counts, then the rest. To roll back, return to v5.8.0: nothing stored needs to be undone.
 
-New and opt-in, with no action needed: [`[ExecutionTimeout]`](../concepts/retries-and-dead-letter.md#execution-timeout), [`IgnoreRetryAttemptExceptions`](../concepts/retries-and-dead-letter.md#failures-that-should-not-be-retried), [per-job `maxAttempts`](../concepts/retries-and-dead-letter.md#per-job-attempt-limit), and [`DaysOfWeek`](../guides/execution-windows.md#only-on-some-days) (the default is every day).
+New and opt-in, with no action needed: [`[ExecutionTimeout]`](../concepts/retries.md#execution-timeout), [`IgnoreRetryAttemptExceptions`](../concepts/retries.md#failures-that-should-not-be-retried), [per-job `maxAttempts`](../concepts/retries.md#per-job-attempt-limit), and [`DaysOfWeek`](../guides/execution-windows.md#only-on-some-days) (the default is every day).
 
 ## v5.7.0 → v5.8.0
 
@@ -488,51 +488,6 @@ await context.ReportProgressAsync(50, "Halfway done", ct);
 
 ---
 
-## Schema Migration for Job Payloads
+## Schema migration for job payloads
 
-When your job input type changes, existing queued jobs may carry payloads that no longer match the current type. NexJob handles this automatically with `IJobMigration`.
-
-
-
-#### Define the migration
-
-```csharp
-// Old input (v1)
-public sealed record SendEmailInputV1(string To, string Subject);
-
-// New input (v2)
-public sealed record SendEmailInputV2(string To, string Subject, string ReplyTo);
-
-// Migration from v1 to v2
-public sealed class SendEmailV1ToV2 : IJobMigration<SendEmailInputV1, SendEmailInputV2>
-{
-    public SendEmailInputV2 Migrate(SendEmailInputV1 old) =>
-        new(old.To, old.Subject, ReplyTo: "noreply@example.com");
-}
-```
-
-
-#### Register the migration
-
-```csharp
-builder.Services.AddJobMigration<SendEmailInputV1, SendEmailInputV2, SendEmailV1ToV2>();
-```
-
-
-#### Declare the schema version on the job class
-
-```csharp
-[SchemaVersion(2)]
-public sealed class SendEmailJob : IJob<SendEmailInputV2>
-{
-    public async Task ExecuteAsync(SendEmailInputV2 input, CancellationToken ct)
-    {
-        // input is always v2 — old v1 payloads are migrated automatically
-    }
-}
-```
-
-
-
-
-When the dispatcher fetches a job with a mismatched schema version, it deserializes the stored payload as the old type, runs the migration, and passes the new type to the job. No manual data migration is required.
+Changing a job's input type while jobs are queued is covered in [Job payloads](../concepts/job-payloads.md): `[SchemaVersion]`, `IJobMigration` and `AddJobMigration`.
