@@ -6,9 +6,9 @@ description: "Production guidelines for NexJob: graceful shutdown, idempotency, 
 
 Running NexJob reliably in production requires a small set of deliberate decisions at design time: keeping jobs focused and idempotent, choosing retry policies that match your failure modes, isolating workloads by queue, and configuring graceful shutdown so worker restarts never lose work. This page collects those guidelines in one place.
 
-## Job Design
+## Job design
 
-### Keep Jobs Small and Focused
+### Keep jobs small and focused
 
 Each job should do one thing. If your job fetches data, transforms it, calls three APIs, and sends two emails, split it into multiple jobs connected with continuations.
 
@@ -22,7 +22,7 @@ public sealed class ChargePaymentJob   : IJob<ChargeInput>      { ... }
 public sealed class SendConfirmationJob : IJob<ConfirmationInput> { ... }
 ```
 
-### Make Jobs Idempotent
+### Make jobs idempotent
 
 NexJob can retry or re-execute jobs due to failures, orphan recovery, or manual requeue. Design every job so running it twice with the same input produces the same result.
 
@@ -40,7 +40,7 @@ public sealed class ChargeCardJob : IJob<ChargeInput>
 }
 ```
 
-### Use Minimal Input
+### Use minimal input
 
 Pass only what the job needs. Avoid embedding full entity objects in job payloads — pass IDs and fetch inside the job instead.
 
@@ -52,7 +52,7 @@ public sealed record ProcessOrderInput(Order FullOrder);
 public sealed record ProcessOrderInput(Guid OrderId);
 ```
 
-## Retry Configuration
+## Retry configuration
 
 Match your retry policy to the kind of failure you expect. A policy suited for a transient network blip is wrong for a validation error that will never self-heal.
 
@@ -61,9 +61,9 @@ Match your retry policy to the kind of failure you expect. A policy suited for a
 | Transient network error | 3 – 5 | Exponential, 30 s – 5 min | Usually resolves quickly |
 | External API rate limit | 5 – 10 | Exponential, 1 min – 1 hr | May need to wait for a window reset |
 | Database deadlock | 2 – 3 | Short, 1 – 5 s | Resolves on the next transaction |
-| Validation error | 0 | N/A | Retrying bad input never helps |
+| Validation error | 0 | N/A | Retrying bad input never helps. Use `[Retry(0)]`, or list the exception in [`IgnoreRetryAttemptExceptions`](../concepts/retries.md#failures-that-should-not-be-retried) |
 
-### Set Deadlines for Time-Sensitive Jobs
+### Set deadlines for time-sensitive jobs
 
 If a job is useless after a certain point — a promotional email, a real-time notification — set a `deadlineAfter` so NexJob discards it rather than delivering it late.
 
@@ -72,7 +72,7 @@ await scheduler.EnqueueAsync<SendPromoEmailJob>(
     deadlineAfter: TimeSpan.FromMinutes(10));
 ```
 
-## Queue Design and Workload Isolation
+## Queue design and workload isolation
 
 Separate workloads into dedicated queues and deploy independent worker pools for each tier. This prevents a spike in one workload from starving another.
 
@@ -86,7 +86,7 @@ options.Queues = new[] { "heavy-compute" };
 options.Workers = 5;
 ```
 
-### Throttle Jobs That Call External Services
+### Throttle jobs that call external services
 
 Apply `[Throttle]` to any job that calls an external API or shared resource to prevent overwhelming it during high-concurrency bursts.
 
@@ -95,51 +95,26 @@ Apply `[Throttle]` to any job that calls an external API or shared resource to p
 public sealed class ChargeCardJob : IJob<ChargeInput> { ... }
 ```
 
-### Protect Queues from Downstream Outages with Circuit Breakers
+### Protect queues from downstream outages with circuit breakers
 
 When an external service goes down, retries can pile up and hammer it further. Enable the queue circuit breaker to pause a queue automatically and ramp traffic back up gradually when the service recovers.
 
-See the [Circuit Breaker guide](../guides/circuit-breaker.md) for the states, selective exceptions and how to reset it.
+See the [Circuit Breaker guide](../guides/circuit-breaker.md) for the states, the defaults, which failures count and how to reset it. A recovery ramp (`RecoveryConcurrency`, 2 by default) keeps a service that is still fragile from being hit with the full load as soon as it comes back.
 
-```csharp
-builder.Services.AddNexJob(options =>
-{
-    options.ConfigureQueue("payments", queue =>
-    {
-        queue.EnableCircuitBreaker(cb =>
-        {
-            cb.ConsecutiveFailuresThreshold = 5;
-            cb.OpenDuration = TimeSpan.FromSeconds(30);
-            cb.BackoffMultiplier = 2.0;
-            cb.MaxOpenDuration = TimeSpan.FromMinutes(10);
-            cb.RecoveryDuration = TimeSpan.FromMinutes(2);
-            cb.RecoveryConcurrency = 2;  // anti-thundering-herd ramp-up
-
-            cb.BreakOnTransientHttpErrors(includeAuthErrors: true);
-            cb.BreakOn<TimeoutException>();
-        });
-    });
-});
-```
-
-!!! tip
-    `RecoveryConcurrency = 2` means only 2 jobs run concurrently during the recovery window. This gentle ramp-up prevents you from crashing a service that is still fragile right after coming back online.
-
-
-### Multi-Service Architectures
+### Multi-service architectures
 
 In environments where multiple services share a database cluster:
 
-- Set `QueuePrefix` explicitly in each service so its default queue (`{prefix}.default`) survives renames and refactors; the dashboard of a standalone host needs the same value. See [the default queue](../concepts/queues.md#the-default-queue).
-- Run a dedicated dashboard container with `DisableWorkers = true` so operational monitoring does not consume worker threads or take lock slots from backend workers.
+- Set `QueuePrefix` explicitly in each service so its default queue (`{prefix}.default`) survives renames and refactors; the dashboard of a standalone host needs the same value. See [the default queue and prefix](../concepts/default-queue.md).
+- Run a dedicated dashboard container with `DisableWorkers = true` so it never takes worker slots from the services.
 - Scope the dashboard to relevant queues with `options.Queues = ["serviceA-queue"]` so each team sees only their own jobs.
 - NexJob handles foreign job types safely by rolling back attempt counts and deferring via `ForeignJobRetryDelay` rather than dead-lettering them. See the [Multi-Service guide](../guides/multi-service.md).
 
-## Storage Selection and Connection Pool Sizing
+## Storage selection and connection pool sizing
 
 Use persistent storage (Postgres, SQL Server, MongoDB, or Redis) in production. InMemory storage loses all jobs on restart and is suitable only for tests and local development.
 
-### Size the Database Connection Pool
+### Size the database connection pool
 
 Each worker node needs roughly `Workers + 5` database connections. Set the connection pool maximum to `Workers + 10` and multiply by your node count before you scale out.
 
@@ -159,7 +134,7 @@ Each worker node needs roughly `Workers + 5` database connections. Set the conne
     Undersizing the connection pool causes timeouts under load. Oversizing it exhausts database server resources. Start with `Workers + 10` and adjust based on observed connection wait times.
 
 
-### Control Storage Growth with Retention Policies
+### Control storage growth with retention policies
 
 In high-throughput environments, successful job rows accumulate quickly. Use the `[Retention]` attribute to control this.
 
@@ -175,7 +150,7 @@ public sealed class HeavyReportGenerationJob : IJob<LargeReportInput> { ... }
 
 | Strategy | Effect | Auditability |
 |---|---|---|
-| Default (none) | Row retained until the retention service runs | Full record and payload intact |
+| Default (none) | Row retained until the retention service removes it: 7 days for `Succeeded`, 30 days for `Failed` and 7 days for `Expired` by default (`RetentionSucceeded`, `RetentionFailed`, `RetentionExpired`) | Full record and payload intact |
 | `PurgeOnSuccess = true` | Row deleted immediately on success | Succeeded jobs vanish from `/jobs`; lifetime stats preserved in `/catalog` |
 | `TrimPayloadOnSuccess = true` | Payload cleared, row kept | State, duration, queue, and logs preserved; payload stripped |
 
@@ -183,11 +158,11 @@ public sealed class HeavyReportGenerationJob : IJob<LargeReportInput> { ... }
     `PurgeOnSuccess = true` only applies on success. A failing job always follows your normal retry policy and dead-letter retention so operators can diagnose and requeue it.
 
 
-## Graceful Shutdown
+## Graceful shutdown
 
 When the host stops, NexJob immediately stops fetching new jobs and waits up to `ShutdownTimeout` for running jobs to finish. Jobs still running after the timeout are cancelled via the `CancellationToken` passed to `ExecuteAsync`.
 
-A job cancelled by shutdown is **not** treated as a failure: it is requeued immediately, its attempt counter is not incremented, and it is never sent to a dead-letter handler.
+A job cancelled by shutdown is **not** treated as a failure: NexJob requeues it without incrementing its attempt counter (see the warning below), and it is never sent to a dead-letter handler.
 
 ```csharp
 // HostOptions.ShutdownTimeout must exceed NexJobOptions.ShutdownTimeout
@@ -198,13 +173,16 @@ builder.Services.AddNexJob(o =>
     o.ShutdownTimeout = TimeSpan.FromSeconds(30));
 ```
 
+!!! warning "A job that outlives the drain may not be requeued before the process exits"
+    The requeue of a job that is cancelled when the drain ends is committed **after** `StopAsync` has returned. If the process exits right away, which is what a deploy does, that commit can be lost: on PostgreSQL the job stayed `Processing` with its attempt used in 3 of 3 runs, and only the orphan watcher recovered it, after `HeartbeatTimeout`. A job that finishes within the drain is not affected. Give `ShutdownTimeout` room for your longest job, or split long jobs and save [checkpoints](../guides/job-context.md#progress-checkpoints-for-long-running-jobs). Tracked in [#476](https://github.com/oluciano/NexJob/issues/476).
+
 !!! warning
     The .NET host defaults to a 30-second shutdown timeout (5 seconds on older project templates). If NexJob's `ShutdownTimeout` equals the host's, the host can kill the process before the drain finishes. Always set `HostOptions.ShutdownTimeout` to at least `NexJobOptions.ShutdownTimeout + 10 seconds`.
 
 
 Write cancellable jobs — honour the `CancellationToken` throughout your async calls so jobs can be interrupted quickly and requeued rather than being abandoned to the orphan watcher.
 
-## Monitoring and Alerting
+## Monitoring and alerting
 
 Enable OpenTelemetry from day one. NexJob emits traces and metrics for every job execution and queue depth change. To be notified when a job fails for good, see the [Alerts guide](../guides/alerts.md).
 
@@ -216,7 +194,7 @@ Set up alerts on:
 
 Check the dashboard regularly for queue depth trends, failed job error patterns, and orphaned jobs (which indicate worker crashes).
 
-## Production Checklist
+## Production checklist
 
 
 ### Persistent storage
@@ -265,9 +243,9 @@ Configure OpenTelemetry, enable the dashboard with authorization, and set up ale
 
 ### Health check
 
-Register `NexJobHealthCheck` and include it in your `/healthz` endpoint.
+Add it with `services.AddHealthChecks().AddNexJob()` and include it in your `/healthz` endpoint. It reports whether storage is reachable.
 
-## Roslyn Diagnostic Analyzers
+## Roslyn diagnostic analyzers
 
 NexJob ships with built-in compile-time Roslyn Diagnostic Analyzers bundled directly in the core `NexJob` package (`analyzers/dotnet/cs/NexJob.Analyzers.dll`). Installing `NexJob` automatically activates real-time guardrails in your IDE (Visual Studio, JetBrains Rider, VS Code) to detect common job-authoring pitfalls (blocking calls, unawaited tasks, swallowed exceptions, and missing cancellation tokens) as you type.
 
