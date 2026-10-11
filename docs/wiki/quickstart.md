@@ -4,211 +4,108 @@ sidebarTitle: "Quick Start"
 description: "Install NexJob, define your first job, and enqueue it in a .NET 8 project. Covers ASP.NET Core and Worker Service setups with runnable samples."
 ---
 
-NexJob needs three things to run: a package reference, a service registration, and a job class. This guide walks you through each step, shows you both ASP.NET Core and Worker Service setups, and links you to runnable reference samples in the repository so you can inspect real, working projects immediately.
+NexJob needs three things to run: a package reference, a service registration, and a job class. In about five minutes you will have a job running in your own project.
 
+## Before you start
+
+You need the [.NET 8 SDK](https://dotnet.microsoft.com/download) and a project to add NexJob to. For a new one, `dotnet new worker -n MyJobs` creates a Worker Service, and `dotnet new web -n MyJobs` creates an ASP.NET Core app.
+
+## Your first job
 
 ### 1. Install the package
-
-Add the core NexJob package to your .NET 8 project:
 
 ```bash
 dotnet add package NexJob
 ```
 
-The core package includes the dispatcher, scheduler, and an InMemory storage provider that is ready to use with no further configuration. For production workloads, add one of the persistent storage providers:
+The core package includes the dispatcher, the scheduler and an InMemory storage provider, ready to use with no further configuration.
 
-```bash
-# PostgreSQL
-dotnet add package NexJob.Postgres
+### 2. Register the services
 
-# SQL Server
-dotnet add package NexJob.SqlServer
+Call `AddNexJob()` once, then scan your assembly so NexJob can discover your job classes.
 
-# Redis
-dotnet add package NexJob.Redis
+=== "Worker Service"
 
-# MongoDB
-dotnet add package NexJob.MongoDB
-```
+    ```csharp
+    // Program.cs
+    using NexJob;
 
-### 2. Register services in Program.cs
+    var host = Host.CreateDefaultBuilder(args)
+        .ConfigureServices(services =>
+        {
+            services.AddNexJob();
+            services.AddNexJobJobs(typeof(Program).Assembly);
+        })
+        .Build();
 
-Call `AddNexJob()` and scan your assembly so NexJob can discover your job classes via dependency injection.
+    await host.StartAsync();
 
-**InMemory (default — great for development and testing):**
+    // Step 4 goes here
 
-```csharp
-using NexJob;
+    await host.WaitForShutdownAsync();
+    ```
 
-var builder = WebApplication.CreateBuilder(args);
+=== "ASP.NET Core"
 
-builder.Services.AddNexJob()
-               .AddNexJobJobs(typeof(Program).Assembly);
+    ```csharp
+    // Program.cs
+    using NexJob;
 
-var app = builder.Build();
-app.Run();
-```
+    var builder = WebApplication.CreateBuilder(args);
 
-**PostgreSQL (persistent storage for production):**
+    builder.Services.AddNexJob()
+                    .AddNexJobJobs(typeof(Program).Assembly);
 
-Register the storage provider **before** calling `AddNexJob()` so it replaces the InMemory default:
+    var app = builder.Build();
 
-```csharp
-using NexJob;
-using NexJob.Postgres;
+    // Step 4 goes here
 
-var builder = WebApplication.CreateBuilder(args);
-
-builder.Services.AddNexJobPostgres(
-    "Host=localhost;Database=nexjob;Username=postgres;Password=secret");
-
-builder.Services.AddNexJob(options =>
-{
-    options.Workers = 20;
-    options.MaxAttempts = 5;
-})
-.AddNexJobJobs(typeof(Program).Assembly);
-
-var app = builder.Build();
-app.Run();
-```
+    app.Run();
+    ```
 
 !!! tip
     Call `AddNexJob()` exactly once. Calling it multiple times registers duplicate background services and causes undefined behavior.
 
 ### 3. Define a job
 
-Implement `IJob` for parameterless work or `IJob<T>` when the job needs structured input. Both interfaces support constructor injection — NexJob resolves your dependencies from the DI container automatically.
-
-**Parameterless job (`IJob`):**
-
-```csharp
-public sealed class SendWelcomeEmailJob : IJob
-{
-    private readonly IEmailService _email;
-
-    public SendWelcomeEmailJob(IEmailService email) => _email = email;
-
-    public async Task ExecuteAsync(CancellationToken ct)
-    {
-        await _email.SendAsync("user@example.com", "Welcome!", ct);
-    }
-}
-```
-
-**Job with typed input (`IJob<T>`):**
-
-```csharp
-public sealed class SendWelcomeEmailJob : IJob<SendWelcomeEmailInput>
-{
-    private readonly IEmailService _email;
-
-    public SendWelcomeEmailJob(IEmailService email) => _email = email;
-
-    public async Task ExecuteAsync(SendWelcomeEmailInput input, CancellationToken ct)
-    {
-        await _email.SendAsync(input.Email, "Welcome!", ct);
-    }
-}
-
-public sealed record SendWelcomeEmailInput(string Email, string UserName);
-```
-
-Use a `record` for the input type — it serializes cleanly and is immutable by default.
-
-### 4. Enqueue the job
-
-Resolve `IScheduler` from DI and call `EnqueueAsync`. The dispatcher picks up the job immediately on the same process via the wake-up channel.
-
-```csharp
-var scheduler = app.Services.GetRequiredService<IScheduler>();
-
-// Parameterless job
-await scheduler.EnqueueAsync<SendWelcomeEmailJob>(cancellationToken: ct);
-
-// Job with input
-await scheduler.EnqueueAsync<SendWelcomeEmailJob, SendWelcomeEmailInput>(
-    new SendWelcomeEmailInput("user@example.com", "Jane"),
-    cancellationToken: ct);
-```
-
-You can also set a deadline so the job expires automatically if the worker is too busy to start it in time:
-
-```csharp
-await scheduler.EnqueueAsync<SendWelcomeEmailJob, SendWelcomeEmailInput>(
-    new SendWelcomeEmailInput("user@example.com", "Jane"),
-    deadlineAfter: TimeSpan.FromMinutes(5),
-    cancellationToken: ct);
-```
-
-!!! note
-    The deadline is checked **before** execution begins, not during. A job enqueued with `deadlineAfter: TimeSpan.FromMinutes(5)` that has not started within 5 minutes is marked `Expired` and never executes.
-
-### 5. Run the application
-
-Start your application as normal:
-
-```bash
-dotnet run
-```
-
-NexJob starts the dispatcher as a hosted `BackgroundService`. Once the job is enqueued, you will see output like:
-
-```text
-Hello at 2026-04-08T12:00:00Z
-```
-
-The dispatcher runs on the same process — no separate worker process or sidecar required.
-
-
-
-## Full minimal example (Worker Service)
-
-The following is a complete, self-contained Worker Service that enqueues one job and waits for shutdown. No ASP.NET Core, no HTTP pipeline — just the job host.
-
-```csharp
-// Program.cs
-using NexJob;
-
-var host = Host.CreateDefaultBuilder(args)
-    .ConfigureServices(services =>
-    {
-        services.AddNexJob();
-        services.AddNexJobJobs(typeof(Program).Assembly);
-    })
-    .Build();
-
-await host.StartAsync();
-
-var scheduler = host.Services.GetRequiredService<IScheduler>();
-await scheduler.EnqueueAsync<HelloJob>();
-
-await host.WaitForShutdownAsync();
-```
+Implement `IJob` for work that needs no input. NexJob resolves the job from the DI container, so constructor injection works.
 
 ```csharp
 // HelloJob.cs
 public sealed class HelloJob : IJob
 {
-    public async Task ExecuteAsync(CancellationToken ct)
+    public Task ExecuteAsync(CancellationToken ct)
     {
-        Console.WriteLine($"Hello at {DateTimeOffset.UtcNow}");
-        await Task.CompletedTask;
+        Console.WriteLine($"Hello at {DateTimeOffset.UtcNow:O}");
+        return Task.CompletedTask;
     }
 }
 ```
 
-Run it:
+### 4. Enqueue the job
+
+Resolve `IScheduler` from DI and call `EnqueueAsync`. The dispatcher picks the job up right away in the same process, through the wake-up channel.
+
+```csharp
+var scheduler = host.Services.GetRequiredService<IScheduler>();   // Worker Service
+// var scheduler = app.Services.GetRequiredService<IScheduler>(); // ASP.NET Core
+
+await scheduler.EnqueueAsync<HelloJob>();
+```
+
+### 5. Run it
 
 ```bash
 dotnet run
 ```
 
-Expected output:
+You will see the job's output in the console:
 
 ```text
-Hello at 2026-04-08T12:00:00Z
+Hello at 2026-10-11T13:05:29.7182279+00:00
 ```
+
+The dispatcher runs as a hosted `BackgroundService` in your own process. There is no separate worker process or sidecar.
 
 ## Runnable reference samples
 
