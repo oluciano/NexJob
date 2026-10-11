@@ -17,6 +17,7 @@ No schema migration, no stored format changes and no public API removed. Two beh
 **Rolling upgrade.** No stored data changes, so v6.0.0 and v6.1.0 nodes can run together: both fetch the same jobs in the same order. The only difference while mixed is the case-sensitivity of breaker and `ConfigureQueue` matching on upgraded nodes.
 
 **Rollout and rollback.**
+
 - **Roll out:** upgrade one node and watch the startup log for the queue-name case warning and for Salesforce validation errors; then upgrade the rest.
 - **Roll back:** go back to 6.0.0; there is no schema migration to undo.
 
@@ -41,6 +42,7 @@ No schema migration. The change that reaches everyone who enqueues without namin
 - **Dashboard queue scope** (`DashboardOptions.Queues`): `default` also covers `{prefix}.default`, nothing to change. A standalone dashboard needs the same `NexJob:QueuePrefix` as the workers.
 
 **Rollout and rollback.**
+
 - **Roll out:** set `QueuePrefix` explicitly first, upgrade one node, and watch the dashboard **Queues** page: new jobs appear in `{prefix}.default` and the legacy `default` empties. Then upgrade the rest. Nodes of both versions can run together (see [Multi-Service](../guides/multi-service.md)); every job runs once.
 - **Roll back:** nothing is migrated, so going back to 5.10.0 is safe for the data. Jobs that v6 nodes enqueued stay in `{prefix}.default` and a v5 node does not read that queue: they wait until a v6 node (or the same prefix) is back, and the dashboard flags the queue as unattended with the `QueuePrefix` to set. To run them on v5 meanwhile, re-enqueue them with a named queue that the v5 nodes poll.
 
