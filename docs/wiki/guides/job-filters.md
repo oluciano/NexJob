@@ -30,8 +30,8 @@ Call `await next(ct)` to invoke the rest of the pipeline. Everything before that
 |---|---|---|
 | `Job` | `JobRecord` | The full job record: type name, serialised input, attempt count, queue, tags, and all metadata. |
 | `Services` | `IServiceProvider` | The DI scope for this job execution. Resolve scoped services from here inside your filter. |
-| `Succeeded` | `bool` | Set by NexJob only **after the whole pipeline has finished**, so it is still `false` inside a filter. Do not use it there; use `try/catch` instead (see [#475](https://github.com/oluciano/NexJob/issues/475)). |
-| `Exception` | `Exception?` | Same: set after the pipeline has finished, so it is `null` inside a filter. Catch the exception around `next` instead. |
+| `Succeeded` | `bool` | `false` until `next` returns; after `await next(ct)` it is `true` when the job and the filters below this one completed without throwing. |
+| `Exception` | `Exception?` | The exception the job or a filter below this one threw. `await next(ct)` rethrows it, so read it in a `catch` or `finally`, where it is set before the exception reaches you. |
 
 ## Registering a filter
 
@@ -42,8 +42,8 @@ services.AddTransient<IJobExecutionFilter, LoggingFilter>();
 services.AddTransient<IJobExecutionFilter, TracingFilter>();
 ```
 
-!!! warning "One instance serves every job"
-    NexJob creates each filter **once**, when the job executor is built, and uses that instance for every job, on every worker, at the same time. A filter registered as `Transient` is still created once (checked with four jobs and one filter). So write filters that keep no per-job state in fields and are safe to call concurrently, and do not inject scoped services into the constructor. To reach scoped services, resolve them from `context.Services`, which is the DI scope of the job being run.
+!!! note "A filter follows the lifetime it was registered with"
+    NexJob resolves the filters from the DI scope of each job. A `Transient` or `Scoped` filter is built once per job, so it can hold per-job state and take scoped services in its constructor. A `Singleton` filter is one instance shared by every job and every worker at the same time, so it must be safe to call concurrently. `context.Services` is the same scope.
 
 !!! note
     If a filter throws, the exception propagates through the pipeline and is treated as a job failure: the normal retry and dead-letter flow applies.
