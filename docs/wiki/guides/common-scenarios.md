@@ -47,6 +47,7 @@ The following scenarios cover the most common patterns you will encounter when i
 
     **Notes:**
     - Route email jobs to a dedicated `"emails"` queue so a spike in email volume does not slow down other workloads.
+    - The order insert and the enqueue are two separate operations: `IScheduler` has no overload that joins your database transaction. If the process dies between them, the order exists and the email job does not. If that matters, mark the order (for example `ConfirmationQueued = false`) and let a [recurring job](../concepts/recurring-jobs.md) enqueue the confirmation for orders still unmarked.
     - Add `[Throttle("email-service", maxConcurrent: 10)]` to the job class if your email provider enforces concurrency limits.
 
 
@@ -103,6 +104,7 @@ The following scenarios cover the most common patterns you will encounter when i
 
     **Notes:**
     - The `idempotencyKey` prevents duplicate jobs if the client retries the upload request.
+    - The job can run on **any** node that polls the `"imports"` queue, so `path` must be reachable from all of them (shared storage or an object store), not a folder on the node that received the upload.
     - For very large files, inject `IJobContext` and call `ReportProgressAsync` inside the processing loop so the dashboard shows live progress.
 
 
@@ -221,7 +223,7 @@ The following scenarios cover the most common patterns you will encounter when i
     ```
 
     **Notes:**
-    - `DuplicatePolicy.RejectAlways` raises `DuplicateJobException` even while the first job is still active. Use `DuplicatePolicy.RejectIfActive` if you want to allow re-enqueueing after the first job completes.
+    - `DuplicatePolicy.RejectAlways` raises `DuplicateJobException` only once the earlier job has **finished** (`Succeeded`, `Failed` or `Expired`). While the first job is still active, NexJob returns its existing job id with no exception, whatever the policy. The policies are `AllowAfterFailed` (the default), `RejectIfFailed` and `RejectAlways`; to allow a new job after the first one has finished, keep the default. See [Idempotency](../concepts/idempotency.md).
     - Consider also adding an idempotency check inside `ProcessAsync` as a defence-in-depth measure.
 
 
@@ -299,7 +301,7 @@ The following scenarios cover the most common patterns you will encounter when i
         options.Workers = 30;
         options.PollingInterval = TimeSpan.FromMilliseconds(20);
 
-        // Cut database commit round-trips by 90 %+ with async batch acknowledgment
+        // Acknowledge completed jobs in asynchronous batches to reduce database writes (off by default)
         options.EnableBatchAcknowledgment = true;
     })
     .AddKafkaTrigger(opt =>
