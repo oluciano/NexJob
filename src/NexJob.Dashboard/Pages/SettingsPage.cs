@@ -221,7 +221,13 @@ internal sealed class SettingsPage : ComponentBase
         {
             var isPaused = Options.IsQueuePaused(q, Runtime.PausedQueues);
             var windowSetting = Options.SettingsFor(q);
-            var inWindow = windowSetting?.ExecutionWindow?.IsWithinWindow(now) ?? true;
+            var inWindow = true;
+            if (windowSetting?.ExecutionWindow is { } windowToCheck)
+            {
+                // A zone that cannot be read counts as closed, the way the dispatcher treats it.
+                inWindow = windowToCheck.TryIsWithinWindow(now, out var within) && within;
+            }
+
             var windowSummary = windowSetting?.ExecutionWindow is { } window
                 ? $"<div style=\"font-size:12px;color:var(--text-secondary)\">{System.Web.HttpUtility.HtmlEncode(Helpers.DescribeExecutionWindow(window))}</div>"
                 : string.Empty;

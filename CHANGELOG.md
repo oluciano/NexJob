@@ -8,6 +8,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- An execution window with an unknown time zone now stops the start with an `InvalidOperationException` that names the queue and the id, instead of ending the dispatch loop on the first poll. If the zone cannot be read later, only that queue is closed and the error is logged once; the dashboard Settings page no longer fails for it (issue #472).
 - With `UseDashboardReadReplica`, `IJobControlService.RequeueJobAsync` and `DeleteJobAsync` now write to the primary instead of the replica, and the orphan watcher reads a failed job from the primary so a lagging replica cannot skip its dead-letter handler (issue #478).
 - `RequeueJobAsync` only acts on `Failed`, `Expired` and `Scheduled` jobs on every provider. A succeeded job no longer runs again and a running job is no longer started a second time (issue #473).
 
