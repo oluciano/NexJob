@@ -29,6 +29,7 @@ public sealed class ExecutionTimeoutTests
         _throttleRegistry,
         _options,
         Enumerable.Empty<IJobExecutionFilter>(),
+        new JobWakeUpChannel(),
         NullLogger<JobExecutor>.Instance);
 
     // ─── N1: positive ──────────────────────────────────────────────────────
@@ -117,6 +118,7 @@ public sealed class ExecutionTimeoutTests
             _throttleRegistry,
             _options,
             new IJobExecutionFilter[] { filter },
+            new JobWakeUpChannel(),
             NullLogger<JobExecutor>.Instance);
         _retryPolicy.Setup(x => x.ComputeRetryAt(job, It.IsAny<Exception>())).Returns(DateTimeOffset.UtcNow.AddMinutes(1));
         SetupInvoker(job, (_, ct) => Task.Delay(TimeSpan.FromSeconds(3), ct), new ExecutionTimeoutAttribute("00:00:00.150"));

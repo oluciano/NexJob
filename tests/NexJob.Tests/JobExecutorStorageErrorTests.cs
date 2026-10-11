@@ -154,6 +154,7 @@ public sealed class JobExecutorStorageErrorTests
             new ThrottleRegistry(),
             new NexJobOptions { HeartbeatInterval = heartbeatInterval },
             Enumerable.Empty<IJobExecutionFilter>(),
+            new JobWakeUpChannel(),
             NullLogger<JobExecutor>.Instance)
         {
             CommitRetryDelays = FastRetries,
