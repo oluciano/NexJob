@@ -6,7 +6,7 @@ description: "Pause a NexJob queue automatically when a downstream service is do
 
 `[Throttle]` governs steady-state concurrency. The **queue circuit breaker** handles severe downstream outages — it pauses an entire queue when consecutive failures reach a threshold, lets a canary job probe recovery, and gradually ramps concurrency back up to prevent thundering herds.
 
-Configure it per queue with `ConfigureQueue`:
+Configure it per queue with `ConfigureQueue`. The values below are an example; the defaults are listed after it.
 
 ```csharp
 builder.Services.AddNexJob(options =>
@@ -22,7 +22,7 @@ builder.Services.AddNexJob(options =>
             cb.RecoveryDuration = TimeSpan.FromMinutes(2);
             cb.RecoveryConcurrency = 2;                   // anti-thundering-herd ramp-up
 
-            // Trip on 5xx, timeouts, 429, 401, and network drops
+            // Trip on network failures, 5xx, 408, 429 and 401
             cb.BreakOnTransientHttpErrors(includeAuthErrors: true);
             cb.BreakOn<TimeoutException>();
         });
@@ -30,7 +30,23 @@ builder.Services.AddNexJob(options =>
 });
 ```
 
-## Circuit States
+| Option | Default | Meaning |
+|---|---|---|
+| `ConsecutiveFailuresThreshold` | `5` | Failures in a row that open the circuit. |
+| `OpenDuration` | 1 minute | The first cooldown before a canary job is tried. |
+| `BackoffMultiplier` | `2.0` | Multiplies the cooldown each time the canary fails. |
+| `MaxOpenDuration` | 15 minutes | Upper bound for the cooldown. |
+| `RecoveryConcurrency` | `2` | Concurrency allowed while recovering. |
+| `RecoveryDuration` | 2 minutes | How long the recovery ramp lasts before the circuit closes. |
+
+## Which failures count
+
+- **Without any rule, every exception counts.** `BreakOn<T>()` and `BreakOnTransientHttpErrors()` narrow that down. A failure counts if **any** rule matches it. A failure that matches none is ignored: it does not count towards the threshold.
+- **A success resets the count.** The threshold is about failures in a row.
+- **`BreakOnTransientHttpErrors()` matches `HttpRequestException` only**, and counts: a network-level failure (no status code, such as DNS, a refused connection or a TLS failure), any `5xx`, `408` and `429`, and `401` unless you pass `includeAuthErrors: false`. Other `4xx` codes (`400`, `403`, `404`, `422` and so on) do not trip the circuit.
+- **Timeouts that do not arrive as `HttpRequestException`** (for example a `TimeoutException`) need their own rule, such as `cb.BreakOn<TimeoutException>()`.
+
+## Circuit states
 
 <div class="grid cards" markdown>
   -   **Closed**
@@ -40,7 +56,7 @@ builder.Services.AddNexJob(options =>
 
   -   **Open**
 
-    Consecutive failures exceeded the threshold. The queue is paused and jobs accumulate in storage without burning retries. Exponential backoff multiplies the cooldown on repeated probe failures.
+    Consecutive failures exceeded the threshold. The queue is paused and jobs accumulate in storage without burning retries. If the canary fails, the circuit opens again with a longer cooldown: `OpenDuration × BackoffMultiplier^(failed canaries)`, never above `MaxOpenDuration`.
 
 
   -   **Half-Open**
@@ -50,11 +66,11 @@ builder.Services.AddNexJob(options =>
 
   -   **Recovering**
 
-    Canary succeeded. Concurrency is capped at `RecoveryConcurrency` for `RecoveryDuration` to let the downstream service stabilise before full throughput resumes.
+    Canary succeeded. Concurrency is capped at `RecoveryConcurrency` for `RecoveryDuration`, then the circuit closes and full throughput resumes.
 
 </div>
 
-## Programmatic Control
+## Programmatic control
 
 You can reset the circuit breaker from code — useful when you receive a recovery webhook from the downstream provider:
 
@@ -73,6 +89,7 @@ The dashboard at `/queues` also shows circuit state visually and exposes a **Res
 ## Seeing it
 
 - The dashboard **Queues** page shows the circuit state of each queue and has a **Reset Circuit** button. See [Dashboard](../integrations/dashboard.md#dashboard-pages).
+- Each transition is logged at `Information` level, for example `circuit transitioned Open -> HalfOpen`.
 - There is **no metric** for the circuit state yet. To be told when it opens, alert on jobs piling up in the queue (`nexjob.queue.depth`); see [Alerts](../guides/alerts.md).
 
 ## Try it
