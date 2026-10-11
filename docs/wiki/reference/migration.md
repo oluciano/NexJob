@@ -6,6 +6,24 @@ description: "Step-by-step migration guides for NexJob major version upgrades, i
 
 This page covers every breaking change between NexJob releases and tells you exactly what to update in your code. Schema migrations for PostgreSQL and SQL Server apply automatically at startup. Follow the steps in order for each version jump you're crossing.
 
+## v6.2.0 → v6.2.1
+
+No schema migration, no stored format change and no public API removed. Seven fixes ship; these change what you can observe:
+
+- **`RequeueJobAsync` only acts on `Failed`, `Expired` and `Scheduled` jobs.** Requeueing a succeeded or a running job is now a no-op on every provider (it used to run the job again, or start it a second time).
+- **`AddNexJobRedis` throws on Redis Cluster.** It used to start a host that fetched nothing. Use a single-node or replicated Redis; Cluster is not supported.
+- **An execution window with an unknown time zone stops the start** with an `InvalidOperationException` naming the queue. Use an IANA id such as `UTC` or `America/Sao_Paulo`; on a minimal container image install `tzdata`.
+- **`StopAsync` can take up to 5 seconds longer.** After the drain, it waits for the cancelled jobs to commit their requeue. Keep `HostOptions.ShutdownTimeout` at `ShutdownTimeout + 10 seconds`.
+- **A promoted continuation starts at once**, and one registered after its parent succeeded is released. The price is one extra empty fetch per completed job while the dispatcher is idle.
+- **With `UseDashboardReadReplica`**, `RequeueJobAsync` and `DeleteJobAsync` write to the primary.
+
+**Rolling upgrade.** No stored data changes, so 6.2.0 and 6.2.1 nodes can run together. A 6.2.0 node simply keeps the old behaviour for the items above.
+
+**Rollout and rollback.**
+
+- **Roll out:** upgrade one node and watch the shutdown time of a deploy and the startup log for time-zone or Redis Cluster errors.
+- **Roll back:** go back to 6.2.0; there is no schema migration to undo.
+
 ## v6.0.0 → v6.1.0
 
 No schema migration, no stored format changes and no public API removed. Two behaviour changes can need an action; the fetch improvement needs none.

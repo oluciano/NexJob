@@ -15,6 +15,13 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - An execution window with an unknown time zone now stops the start with an `InvalidOperationException` that names the queue and the id, instead of ending the dispatch loop on the first poll. If the zone cannot be read later, only that queue is closed and the error is logged once; the dashboard Settings page no longer fails for it (issue #472).
 - With `UseDashboardReadReplica`, `IJobControlService.RequeueJobAsync` and `DeleteJobAsync` now write to the primary instead of the replica, and the orphan watcher reads a failed job from the primary so a lagging replica cannot skip its dead-letter handler (issue #478).
 - `RequeueJobAsync` only acts on `Failed`, `Expired` and `Scheduled` jobs on every provider. A succeeded job no longer runs again and a running job is no longer started a second time (issue #473).
+- `ArgumentOutOfRangeException` thrown by `ExecutionTimeoutAttribute`, `JobContext` and `NexJobOptions` now carries the real parameter name in `ParamName` and in the message (PR #490).
+
+### Dependencies
+
+- `Google.Cloud.PubSub.V1` 3.18.0 to 3.39.0 (`NexJob.Trigger.GooglePubSub`). The subscriber now stops with `StopAsync(new ShutdownOptions(), ct)`, whose default mode is `WaitForProcessing` (PR #490).
+- `Azure.Messaging.ServiceBus` 7.18.2 to 7.20.1 (`NexJob.Trigger.AzureServiceBus`). 7.21.0 is deliberately skipped: it needs `Microsoft.Extensions.*` 10.x, which would force every net8 consumer onto 10.x packages (PR #490, issue #439).
+
 
 ## [6.2.0] - 2026-10-10
 
