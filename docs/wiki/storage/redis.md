@@ -1,10 +1,10 @@
 ---
-title: "NexJob Redis Storage: Ultra-Low Latency Job Dispatch"
+title: "NexJob Redis Storage: Sorted Sets, Lua Scripts and Distributed Throttle"
 sidebarTitle: "Redis"
-description: "Use NexJob.Redis to store NexJob jobs in Redis for ultra-low latency scheduling with atomic Lua scripts, a job index, and distributed throttle support."
+description: "Use NexJob.Redis to store NexJob jobs in Redis: sorted sets, atomic Lua scripts, a job index, batch acknowledgment and cluster-wide throttling. Tried on standalone Redis, not on Redis Cluster."
 ---
 
-NexJob's Redis provider delivers the lowest dispatch latency of all available backends. It stores jobs in sorted sets for priority ordering, uses server-side Lua scripts for atomic state transitions and vectorized batch operations, and maintains a dedicated sorted-set job index so dashboard queries never have to scan the full keyspace. Choose Redis when your workload demands sub-millisecond scheduling, ephemeral high-frequency jobs, or cluster-wide rate limiting across multiple worker nodes.
+NexJob's Redis provider stores jobs in sorted sets, uses server-side Lua scripts for atomic state transitions and for fetching and acknowledging jobs in batches, and keeps a sorted-set job index so dashboard queries do not scan the whole keyspace. Choose Redis for ephemeral high-frequency jobs or for cluster-wide rate limiting across worker nodes. It was tried on a standalone Redis and does **not** work on Redis Cluster; see below.
 
 ## Install
 
@@ -53,12 +53,17 @@ builder.Services.AddNexJob();
 
 ## Use cases
 
-Redis is the right choice when:
+Redis is a good fit when:
 
-- **Latency matters most.** Redis dispatches jobs in microseconds. If your application needs near-real-time job pickup with minimal scheduling overhead, Redis outperforms relational backends.
-- **Jobs are ephemeral.** Short-lived, fire-and-forget jobs that do not require long-term persistence or relational queries are a natural fit for Redis's in-memory model.
-- **You need cluster-wide throttling.** The `[Throttle]` attribute, backed by the Redis distributed throttle store, enforces rate limits across every worker node and container in your cluster.
-- **You process high-frequency event streams.** Batch fetching via server-side Lua scripts allows a single round trip to claim a full worker-capacity batch, making Redis excellent for Kafka or RabbitMQ ingestion pipelines.
+- **Jobs are ephemeral.** Short-lived, fire-and-forget jobs that do not need long-term history or relational queries fit Redis's in-memory model.
+- **You need cluster-wide throttling.** The `[Throttle]` attribute, backed by the Redis distributed throttle store, enforces limits across every worker node.
+- **You process high-frequency event streams.** Fetching a worker-capacity batch and acknowledging completions each take one script call, which suits Kafka or RabbitMQ ingestion pipelines.
+
+Redis does not change how fast a job starts on the node that enqueued it (that goes through the in-process wake-up channel on every provider), or how long a job enqueued by another node waits (up to the `PollingInterval`). No storage-latency measurement is published for the providers, so compare them on your own workload.
+
+## Redis Cluster is not supported
+
+`NexJob.Redis` fails on a Redis Cluster: its Lua scripts touch keys they do not declare, and Redis rejects that in cluster mode (`ERR Script attempted to access a non local key in a cluster node`). Tried on a healthy 3-node cluster: no job ran, while the same program on a standalone Redis ran all of them. Use a standalone Redis. A primary with replicas, a cluster with replicas and managed cluster-mode services were not tried. Tracked in [#479](https://github.com/oluciano/NexJob/issues/479).
 
 ## Distributed throttling
 
@@ -75,7 +80,7 @@ Without `AddNexJobDistributedThrottle()`, `[Throttle]` limits are enforced per-p
 
 ## High-throughput batch processing
 
-For extreme ingestion workloads — for example, consuming tens of thousands of messages from Kafka or RabbitMQ — enable batch processing. Workers claim a full capacity-batch of jobs in a single server-side Lua script round trip and acknowledge completions in a single vectorized batch call.
+For extreme ingestion workloads — for example, consuming tens of thousands of messages from Kafka or RabbitMQ — enable batch processing. Workers claim a full capacity-batch of jobs in a single server-side Lua script round trip and acknowledge completions with a single script call for the whole batch.
 
 ```csharp
 builder.Services.AddNexJobRedis("localhost:6379,abortConnect=false");
@@ -86,14 +91,14 @@ builder.Services.AddNexJob(options =>
     options.Workers         = 30;
     options.PollingInterval = TimeSpan.FromMilliseconds(20);
 
-    // Commit successful jobs in asynchronous batches via a vectorized Lua acknowledgment script
+    // Commit successful jobs in asynchronous batches with one Lua call (off by default)
     options.EnableBatchAcknowledgment = true;
 });
 ```
 
 ## Job index reconciliation
 
-NexJob maintains a sorted-set job index alongside the main job keys. This index powers dashboard lists, metrics, and retention without scanning the entire keyspace. The index is updated atomically on every job state transition; if it ever drifts out of sync (for example after a manual Redis operation), NexJob reconciles it automatically on the next startup.
+NexJob maintains a sorted-set job index alongside the main job keys. This index powers dashboard lists, metrics, and retention without scanning the entire keyspace. The index is updated atomically on every job state transition. NexJob also rebuilds it from the job hashes at most once an hour, by one node at a time, so a drift (for example after a manual Redis operation, or a node on an older version that does not write the index) is repaired without a restart.
 
 ## Connection string format
 
@@ -105,7 +110,6 @@ The connection string follows `StackExchange.Redis` configuration syntax. Common
 | `abortConnect=false` | `localhost:6379,abortConnect=false` | Retry connection on startup instead of throwing |
 | Password | `localhost:6379,password=secret` | Authenticate with Redis AUTH |
 | SSL | `redis.example.com:6380,ssl=true` | TLS-encrypted connection |
-| Cluster | `node1:6379,node2:6379,node3:6379` | Connect to a Redis Cluster |
 
 !!! warning
     Redis is an in-memory store by default. If your Redis instance restarts without persistence configured, **all pending and queued jobs are lost**. For production use, enable either RDB snapshots or AOF (append-only file) persistence in your Redis configuration (`save` or `appendonly yes`). Verify that your Redis persistence settings match your tolerance for data loss.
