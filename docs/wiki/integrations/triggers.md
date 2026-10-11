@@ -13,7 +13,7 @@ NexJob triggers bridge external message brokers and your background job pipeline
 |---|---|---|---|---|
 | **Kafka** | Yes | `kafka:{topic}:{partition}:{offset}` | header `nexjob.job_type`, or `JobType` | Transient: retried in place with a growing pause (1 s up to 30 s) without consuming the next record. Permanent: copied to the dead-letter topic if one is configured, otherwise skipped with an error log. |
 | **RabbitMQ** | Yes | `MessageId` (none when blank) | header `nexjob.job_type`, or `JobType` | Transient: `nack` with requeue after 1 s. Permanent: `nack` without requeue. |
-| **Azure Service Bus** | No | `MessageId` | application property `nexjob.job_type`, or `JobType` | Transient: the message is abandoned and redelivered. Permanent: dead-lettered. |
+| [**Azure Service Bus**](azure-service-bus.md) | No | `MessageId` | application property `nexjob.job_type`, or `JobType` | Transient: the message is abandoned and redelivered. Permanent: dead-lettered. |
 | **AWS SQS** | No | `MessageId` | only the `JobName` option | Any failure: the visibility timeout is reset to 0, so the message returns at once. A redrive policy on the queue is what parks it. |
 | **Google Pub/Sub** | No | message ID | attribute `nexjob.job_type`, or `JobType` | Transient: `Nack`. Permanent: `Nack` after 2 s, so a dead-letter policy on the subscription can park it. |
 | **Salesforce Pub/Sub API** | No | event id (replay id as hex) | the `JobType` option, else the built-in `SalesforceEventJob` | The event is logged and, when `DeadLetterQueue` is set, copied there as a job. Its replay id is not committed. |
@@ -102,41 +102,6 @@ Every trigger enqueues with `DuplicatePolicy.AllowAfterFailed` (see [Idempotency
 
 Each broker can be registered in two equivalent ways: on the service collection (`services.AddNexJob{Broker}Trigger<TJob>(...)`, and `AddSalesforceTrigger` for Salesforce) or chained on the builder returned by `AddNexJob()` (`AddNexJob().Add{Broker}Trigger<TJob>(...)`). The tabs below show whichever form each package's own examples use.
 
-
-=== "Azure Service Bus"
-
-    #### Install the package
-
-    ```bash
-    dotnet add package NexJob.Trigger.AzureServiceBus
-    ```
-
-    #### Register the trigger
-
-    Use the generic overload to bind all messages on a queue or topic to a single job type:
-
-    ```csharp
-    using NexJob.Trigger.AzureServiceBus;
-
-    builder.Services.AddNexJobAzureServiceBusTrigger<ProcessOrderJob>(options =>
-    {
-        options.ConnectionString = "Endpoint=sb://...";
-        options.QueueOrTopicName = "orders";
-    });
-    ```
-
-    To route messages to different job types based on the `nexjob.job_type` application property, omit the generic argument:
-
-    ```csharp
-    builder.Services.AddNexJobAzureServiceBusTrigger(options =>
-    {
-        options.ConnectionString = "Endpoint=sb://...";
-        options.QueueOrTopicName = "my-topic";
-        options.SubscriptionName = "my-sub"; // required for topics
-    });
-    ```
-
-    The idempotency key is the Service Bus `MessageId`. Transient failures abandon the message so it is redelivered; `MaxDeliveryCount` on the entity controls when it is dead-lettered. Permanent failures (unresolvable job type) dead-letter the message immediately.
 
 === "AWS SQS"
 
