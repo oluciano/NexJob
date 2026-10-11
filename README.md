@@ -128,63 +128,15 @@ All packages share one version number.
 
 ## Dashboard
 
-The dashboard provides real-time operational visibility into your background jobs, worker nodes, and message broker listeners — with zero external dependencies.
-
-🎮 **Try it live:** [nexjob-playground.fly.dev](https://nexjob-playground.fly.dev/) (interactive scenario simulator: burst jobs, outages, retries, and dead-letters).
+Real-time visibility into jobs, worker nodes and broker listeners, with no extra infrastructure.
 
 [![NexJob Live Broker Listeners & Event Triggers](docs/assets/dashboard-listeners.png)](docs/assets/dashboard-listeners.png)
 
-- Live cluster status, `Ctrl + K` job search, and a topology map from triggers to queues to worker nodes.
-- Event listeners page for the connected brokers, and a job catalog with error rates and deep links to history.
-- Streaming logs and progress bars (SSE), and five themes (`DefaultTheme = "semi-dark"`, `"blue-theme"`, `"dark"`, `"light"`, `"bordered"`).
-- Opt-in scenario simulator (`EnablePlayground = true`, off by default) to try burst loads and failures without writing scripts.
+- Live cluster status, `Ctrl + K` job search and a topology map from triggers to queues to worker nodes.
+- Streaming logs (SSE), progress bars and five themes.
+- Opt-in scenario simulator (`EnablePlayground = true`, off by default) to try burst loads and failures without scripts.
 
-### ASP.NET Core Web App
-
-Install package:
-```bash
-dotnet add package NexJob.Dashboard
-```
-
-Configure in `Program.cs`:
-```csharp
-using NexJob;
-using NexJob.Dashboard;
-
-var builder = WebApplication.CreateBuilder(args);
-
-// Register NexJob (InMemory storage by default, or your chosen provider)
-builder.Services.AddNexJob();
-
-var app = builder.Build();
-
-// Mount dashboard at /dashboard
-app.UseNexJobDashboard("/dashboard");
-
-app.Run();
-```
-
-### Worker Service (Standalone)
-
-For Worker Services or console applications without ASP.NET Core:
-```bash
-dotnet add package NexJob.Dashboard.Standalone
-```
-
-Configure in `Program.cs`:
-```csharp
-using NexJob.Dashboard.Standalone;
-
-builder.Services.AddNexJob();
-
-// Starts an embedded HTTP server at http://localhost:5005/dashboard
-builder.Services.AddNexJobStandaloneDashboard(options =>
-{
-    options.Port = 5005;
-    // options.DefaultTheme = "semi-dark";
-    // options.EnablePlayground = true; // enable scenario drawer in dev/staging
-});
-```
+Setup for ASP.NET Core and for Worker Services: [Dashboard guide](https://oluciano.github.io/NexJob/integrations/dashboard/).
 
 ---
 
