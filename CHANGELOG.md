@@ -6,6 +6,8 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [6.2.1] - 2026-10-11
+
 ### Fixed
 
 - A job cancelled when the shutdown drain ends is now back in the queue, with its attempt refunded, before `StopAsync` returns. Before, the requeue was committed after `StopAsync` returned, so a process that exited right away left the job `Processing` until the orphan watcher recovered it. `StopAsync` waits at most 5 more seconds; a job that ignores cancellation is still left to the orphan watcher (issue #476).
