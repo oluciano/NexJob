@@ -69,6 +69,44 @@ public sealed class BatchAckContinuationEndToEndTests
         await host.StopAsync();
     }
 
+    /// <summary>N1 (issue #495): a promoted child runs well before the polling interval, with batch acknowledgment on and off.</summary>
+    /// <param name="batchAck">Whether batch acknowledgment is enabled.</param>
+    /// <returns>A task.</returns>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Continuation_RunsBeforePollingInterval_AfterParentSucceeds(bool batchAck)
+    {
+        var childRan = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var gate = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var host = Host.CreateDefaultBuilder()
+            .ConfigureServices(services =>
+            {
+                services.AddNexJob(opt =>
+                {
+                    opt.PollingInterval = TimeSpan.FromSeconds(30);
+                    opt.EnableBatchAcknowledgment = batchAck;
+                });
+                services.AddTransient(_ => new GatedParentJob(gate));
+                services.AddTransient(_ => new ChildJob(childRan));
+            })
+            .Build();
+        await host.StartAsync();
+        var scheduler = host.Services.GetRequiredService<IScheduler>();
+
+        var parentId = await scheduler.EnqueueAsync<GatedParentJob>();
+        await scheduler.ContinueWithAsync<ChildJob>(parentId);
+        gate.SetResult(true);
+
+        (await childRan.Task.WaitAsync(TimeSpan.FromSeconds(5))).Should().BeTrue();
+        await host.StopAsync();
+    }
+
+    private sealed class GatedParentJob(TaskCompletionSource<bool> gate) : IJob
+    {
+        public async Task ExecuteAsync(CancellationToken cancellationToken) => await gate.Task.WaitAsync(cancellationToken);
+    }
+
     private sealed class ParentJob : IJob
     {
         public Task ExecuteAsync(CancellationToken cancellationToken) => Task.CompletedTask;
