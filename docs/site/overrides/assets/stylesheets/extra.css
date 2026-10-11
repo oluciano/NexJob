@@ -23,10 +23,9 @@
 .md-typeset h2 { font-weight: 600; margin-top: 2.4rem; }
 .md-typeset h3 { font-weight: 600; }
 
-/* Smaller type and a wider page: Material's default root size is 20px on wide screens */
-html { font-size: 112.5%; }
-@media screen and (min-width: 100em) { html { font-size: 112.5%; } }
-@media screen and (min-width: 125em) { html { font-size: 118.75%; } }
+/* Smaller type and a wider page: Material's default root size is 20px on wide screens; this is 17px */
+html { font-size: 106.25%; }
+@media screen and (min-width: 125em) { html { font-size: 112.5%; } }
 .md-grid { max-width: 80rem; }
 .md-typeset { line-height: 1.65; }
 
@@ -74,3 +73,8 @@ html { font-size: 112.5%; }
   border-color: var(--md-accent-fg-color);
   transform: translateY(-2px);
 }
+
+/* Tables and callouts at the same size as the body text (Material shrinks them to 0.64rem) */
+.md-typeset table:not([class]) { font-size: 1em; }
+.md-typeset .admonition,
+.md-typeset details { font-size: 1em; }

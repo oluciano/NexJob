@@ -111,7 +111,7 @@ Steps 5 and 6 are committed atomically. You will never see a job stuck in `Proce
 
 A worker crash leaves jobs in `Processing` with a stale `HeartbeatAt`. NexJob finds them by that heartbeat (`HeartbeatTimeout`, 5 minutes by default) and requeues them. The attempt that was running **is spent**, so a job that keeps killing its node eventually runs out of attempts and goes to dead-letter. [Delivery Guarantees](concepts/delivery-guarantees.md) has the full table of what each failure costs a job.
 
-**Graceful shutdown is not a crash.** The dispatcher stops fetching, waits up to `ShutdownTimeout` for running jobs to finish, and requeues the ones the shutdown token cancelled, **without consuming an attempt**.
+**Graceful shutdown is not a crash.** The dispatcher stops fetching, waits up to `ShutdownTimeout` for running jobs to finish, and requeues the ones the shutdown token cancelled, **without consuming an attempt** (if the process exits right after the drain, that requeue can be lost; see [#476](https://github.com/oluciano/NexJob/issues/476)).
 
 !!! warning
     NexJob provides **at-least-once delivery**. A job can execute more than once if the worker crashes after `ExecuteAsync` completes but before the result is persisted to storage. Design your job logic to be idempotent — the same input should always produce the same observable outcome with no harmful side effects on repetition. See the [Idempotency](concepts/idempotency.md) page for patterns and `DuplicatePolicy` options.

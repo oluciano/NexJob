@@ -1,3 +1,9 @@
+---
+title: "NexJob Roslyn Analyzers: Rules NXJ001 to NXJ019"
+sidebarTitle: "Roslyn Analyzers"
+description: "The compile-time analyzers bundled in the NexJob package: what each rule NXJ001 to NXJ019 flags, its default severity, examples, and how to configure them in .editorconfig."
+---
+
 # Roslyn Diagnostic Analyzers
 
 NexJob ships with built-in compile-time Roslyn Diagnostic Analyzers bundled directly in the core `NexJob` package (`analyzers/dotnet/cs/NexJob.Analyzers.dll`). Installing `NexJob` automatically activates real-time guardrails in your IDE (Visual Studio, JetBrains Rider, VS Code) without requiring any extra package installation or setup.
@@ -11,6 +17,7 @@ The analyzers act as guardrails against common background job authoring bugs tha
 All NexJob analyzer rules default to **`Info`** severity (and specific rules such as `NXJ011` and `NXJ016` are opt-in, disabled by default).
 
 Because default severity is `Info`:
+
 - Diagnostics appear as suggestions in IDEs.
 - Builds in the terminal or CI under `TreatWarningsAsErrors = true` do **not** fail by default.
 
@@ -343,13 +350,13 @@ Jobs execute inside a dedicated scoped dependency injection container. Instantia
 **Category:** Reliability  
 **Default Severity:** Info  
 
-When setting `deadlineAfter`, a failing job without an explicit `maxAttempts` limit may retry continuously in tight succession until the deadline expires. Providing an explicit `maxAttempts` bounds the total number of retries, saving resources and surfacing persistent failures to the dead-letter queue faster.
+When you set `deadlineAfter` without an explicit `maxAttempts`, the job uses the global attempt limit (10 by default) and keeps retrying, with growing delays, until it runs out of attempts or its deadline passes. A job whose deadline passes before an attempt starts ends as `Expired`: it never runs again and no dead-letter handler is called. Providing an explicit `maxAttempts` makes the limit part of the call, so a persistent failure ends as `Failed` (and reaches your dead-letter handler) instead of waiting for the deadline.
 
 #### Example
 
 === "Wrong"
     ```csharp
-    // Retries indefinitely until the 1-hour deadline runs out
+    // Uses the global attempt limit and may end as Expired instead of Failed
     await scheduler.EnqueueAsync<SyncJob>(
         deadlineAfter: TimeSpan.FromHours(1),
         cancellationToken: cancellationToken);
@@ -441,7 +448,7 @@ Directly scheduling the same job type from inside its own `ExecuteAsync` method 
 **Category:** Reliability  
 **Default Severity:** Info (Opt-in)  
 
-In multi-service setups where different services share the same database with distinct `QueuePrefix` configurations, enqueuing without an explicit `queue` parameter places the job in the producer's default queue. Consumer worker services polling a different prefixed queue will never pick it up.
+In multi-service setups where different services share the same database with distinct `QueuePrefix` configurations, enqueuing without an explicit `queue` parameter places the job in the producer's default queue. Consumer worker services polling a different prefixed queue will never pick it up. See [the default queue and prefix](../concepts/default-queue.md).
 
 !!! note
     NXJ016 is disabled by default. Enable it in multi-service distributed architectures via `.editorconfig`.
@@ -473,6 +480,7 @@ In multi-service setups where different services share the same database with di
 **Default Severity:** Info  
 
 Catching general exceptions (`catch (Exception)` or untyped `catch`) inside `IJob.ExecuteAsync` without rethrowing them causes the job to finish as succeeded in NexJob storage. When this happens:
+
 - The job is marked as `Succeeded`.
 - Configured retry policies never trigger.
 - The failure never reaches dead-letter handlers or alerts.
@@ -586,9 +594,12 @@ If your job uses an internal per-call timeout via a linked `CancellationTokenSou
 NexJob validates job attributes lazily at runtime when the job is first executed by a worker. Supplying invalid compile-time constants (such as negative retry attempts, non-positive concurrency limits, or invalid timeout strings) causes runtime `ArgumentOutOfRangeException` or `FormatException`. NXJ019 catches these configuration errors directly at compile time.
 
 Validated attributes include:
+
 - `[Retry(attempts)]`: `attempts` must be `>= 0`.
-- `[Throttle(maxConcurrent, resource)]`: `maxConcurrent` must be `>= 1` and `resource` must not be null or whitespace.
+- `[Throttle(resource, maxConcurrent)]`: `resource` must not be null or whitespace and `maxConcurrent` must be `>= 1`.
 - `[ExecutionTimeout(timeSpanString)]`: must be a valid, positive `TimeSpan`.
+
+The `[Retry]` properties `InitialDelay` and `MaxDelay` are not checked by this rule: they are parsed with `TimeSpan.Parse` when a retry delay is computed, so a malformed string only fails then.
 
 #### Example
 
@@ -596,7 +607,7 @@ Validated attributes include:
     ```csharp
     // Invalid: negative retry attempts, zero concurrency, negative timeout
     [Retry(-1)]
-    [Throttle(0, "api")]
+    [Throttle("api", 0)]
     [ExecutionTimeout("-00:10:00")]
     public sealed class OrderJob : IJob
     {
@@ -607,7 +618,7 @@ Validated attributes include:
 === "Correct"
     ```csharp
     [Retry(3)]
-    [Throttle(5, "api")]
+    [Throttle("api", 5)]
     [ExecutionTimeout("00:10:00")]
     public sealed class OrderJob : IJob
     {

@@ -15,7 +15,7 @@ builder.Services.AddNexJob(options =>
         {
             StartTime = new TimeOnly(22, 0),   // 10 PM
             EndTime   = new TimeOnly(6, 0),    // 6 AM (crosses midnight)
-            TimeZone  = "America/New_York",    // IANA or Windows timezone ID
+            TimeZone  = "America/New_York",    // IANA or Windows time zone id (default: "UTC")
         };
     });
 });
@@ -24,10 +24,15 @@ builder.Services.AddNexJob(options =>
 `ExecutionWindowSettings` handles windows that cross midnight automatically — set `StartTime` after `EndTime` to define an overnight window (e.g. 22:00 – 06:00).
 
 !!! note
-    `ExecutionWindow` only controls when a queue's workers fetch jobs. Throttling with `[Throttle]` and circuit breakers apply independently within those windows.
+    `ExecutionWindow` only controls when a queue's workers fetch jobs. A job that is already running when the window closes is not interrupted. Throttling with `[Throttle]` and circuit breakers apply independently within the window.
+
+The window is checked on every polling cycle. The start and the end time are both inside the window, and `TimeZone` defaults to `UTC`.
+
+!!! warning "Check the time zone id"
+    An unknown `TimeZone` is not validated when you configure it. It throws a `TimeZoneNotFoundException` on the first polling cycle and, because nothing handles it, the host stops, **including the queues that have no window**. On Linux the zone ids come from the image, so make sure it has time zone data (the sample `Dockerfile` installs `tzdata`). This is tracked in [#472](https://github.com/oluciano/NexJob/issues/472).
 
 
-## Only on Some Days
+## Only on some days
 
 Add `DaysOfWeek` to limit the window to certain days, for example partner syncs and reports on business days:
 

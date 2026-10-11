@@ -11,9 +11,10 @@ These answers describe verified behavior as of v5.6.1 and later.
 ???+ "If my app restarts or a node dies mid-job, what happens?"
     It depends on how the process stops.
 
-    **Graceful stop (`SIGTERM`, deploy restart):** the host stops fetching new jobs and waits up to `ShutdownTimeout` (default 30 s) for running jobs to finish. A job interrupted by shutdown is **requeued immediately without consuming an attempt** and is never dead-lettered because of a shutdown.
+    **Graceful stop (`SIGTERM`, deploy restart):** the host stops fetching new jobs and waits up to `ShutdownTimeout` (default 30 s) for running jobs to finish. A job interrupted by shutdown is **requeued without consuming an attempt** and is never dead-lettered because of a shutdown. If the process exits right after the drain, that requeue can be lost and the orphan watcher recovers the job later ([#476](https://github.com/oluciano/NexJob/issues/476)).
 
     **Crash (`kill -9`, node lost):** the job stays `Processing`. NexJob detects the stale heartbeat and requeues the job:
+
     1. Workers refresh their heartbeat every `HeartbeatInterval` (default 30 s).
     2. A background watcher looks for `Processing` jobs with a heartbeat older than `HeartbeatTimeout` (default 5 min) and requeues them.
     3. If the job already consumed all its attempts, it becomes `Failed` instead of `Enqueued`.
@@ -151,6 +152,7 @@ These answers describe verified behavior as of v5.6.1 and later.
     | **Circuit breaker** | Is the destination down? Should I stop sending? | A whole queue | After repeated failures |
 
     Quick rules:
+
     - One job fails, others are fine → **retry**.
     - Every job in the queue fails at once → **circuit breaker**.
     - The destination accepts only N concurrent calls → **throttle**.
