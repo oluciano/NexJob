@@ -107,6 +107,87 @@ Hello at 2026-10-11T13:05:29.7182279+00:00
 
 The dispatcher runs as a hosted `BackgroundService` in your own process. There is no separate worker process or sidecar.
 
+## Going further
+
+### A job with typed input
+
+Implement `IJob<T>` when the job needs structured input, and use a `record` for the input: it serializes cleanly and is immutable. The job below sends an e-mail through a service you register in DI (here a stand-in that writes to the console).
+
+```csharp
+public interface IEmailService
+{
+    Task SendAsync(string to, string subject, CancellationToken ct);
+}
+
+public sealed class ConsoleEmailService : IEmailService
+{
+    public Task SendAsync(string to, string subject, CancellationToken ct)
+    {
+        Console.WriteLine($"To: {to} | {subject}");
+        return Task.CompletedTask;
+    }
+}
+
+public sealed class SendWelcomeEmailJob : IJob<SendWelcomeEmailInput>
+{
+    private readonly IEmailService _email;
+
+    public SendWelcomeEmailJob(IEmailService email) => _email = email;
+
+    public async Task ExecuteAsync(SendWelcomeEmailInput input, CancellationToken ct)
+        => await _email.SendAsync(input.Email, $"Welcome, {input.UserName}!", ct);
+}
+
+public sealed record SendWelcomeEmailInput(string Email, string UserName);
+```
+
+Register the service next to `AddNexJob()` (`services.AddSingleton<IEmailService, ConsoleEmailService>();`) and enqueue with the input:
+
+```csharp
+await scheduler.EnqueueAsync<SendWelcomeEmailJob, SendWelcomeEmailInput>(
+    new SendWelcomeEmailInput("user@example.com", "Jane"));
+```
+
+### Expire a job that starts too late
+
+Set a deadline and the job expires on its own if the workers are too busy to start it in time:
+
+```csharp
+await scheduler.EnqueueAsync<SendWelcomeEmailJob, SendWelcomeEmailInput>(
+    new SendWelcomeEmailInput("user@example.com", "Jane"),
+    deadlineAfter: TimeSpan.FromMinutes(5));
+```
+
+!!! note
+    The deadline is checked **before** execution begins, not during. A job enqueued with `deadlineAfter: TimeSpan.FromMinutes(5)` that has not started within 5 minutes is marked `Expired` and never executes.
+
+### Keep jobs across restarts
+
+InMemory storage is for development and tests: jobs are lost when the process stops. For production, add a persistent provider:
+
+```bash
+dotnet add package NexJob.Postgres    # or NexJob.SqlServer, NexJob.Redis, NexJob.MongoDB
+```
+
+Register the provider **before** `AddNexJob()` so it replaces the InMemory default:
+
+```csharp
+using NexJob;
+using NexJob.Postgres;
+
+builder.Services.AddNexJobPostgres(
+    "Host=localhost;Database=nexjob;Username=postgres;Password=secret");
+
+builder.Services.AddNexJob(options =>
+{
+    options.Workers = 20;
+    options.MaxAttempts = 5;
+})
+.AddNexJobJobs(typeof(Program).Assembly);
+```
+
+See [Storage Providers](storage/overview.md) for the other databases.
+
 ## Runnable reference samples
 
 The repository ships with ready-to-run reference architectures covering every NexJob capability. Clone the repo and `dotnet run` any sample directly.
