@@ -8,11 +8,7 @@ description: "Try NexJob in your browser on the live playground: trigger order b
 
 Experience NexJob directly in your browser without spinning up local databases or installing any packages.
 
-<div style="text-align: center; margin: 2rem 0;">
-  <a href="https://nexjob-playground.fly.dev/" target="_blank" rel="noopener noreferrer" class="md-button md-button--primary" style="font-size: 1.1rem; padding: 0.8rem 2rem;">
-    🎮 Launch Live Playground
-  </a>
-</div>
+[🎮 Launch Live Playground](https://nexjob-playground.fly.dev/){ .md-button .md-button--primary target="_blank" rel="noopener noreferrer" }
 
 The playground is a live deployment of the **NexJob Standalone Dashboard** running on [Fly.io](https://nexjob-playground.fly.dev/), with a Scenarios drawer that enqueues real jobs so you can watch them move through the dashboard.
 
@@ -50,79 +46,21 @@ Each scenario is a `POST` to `{pathPrefix}/api/scenarios/{scenario}` on the dash
 
 ---
 
-## Enabling Playground in Local Development
+## Enabling the playground in your own app
 
-For security and operational integrity, the scenario simulator is **disabled by default** (`EnablePlayground = false`). When it is disabled, the Scenarios button is hidden and the scenario endpoint is not served.
+The scenario simulator is **disabled by default** (`EnablePlayground = false`). While it is disabled, the Scenarios button is hidden and the scenario endpoint is not served. Opt in for local development or staging:
 
-You can opt in during local development or staging:
+```csharp
+options.EnablePlayground = builder.Environment.IsDevelopment();
+```
 
-=== "ASP.NET Core Web App"
-
-    ```csharp
-    using NexJob;
-    using NexJob.Dashboard;
-
-    var builder = WebApplication.CreateBuilder(args);
-
-    builder.Services.AddNexJob();
-
-    var app = builder.Build();
-
-    app.UseNexJobDashboard("/dashboard", options =>
-    {
-        // Opt in to the interactive scenarios drawer (dev/staging only)
-        options.EnablePlayground = app.Environment.IsDevelopment();
-        options.DefaultTheme = "semi-dark";
-    });
-
-    app.Run();
-    ```
-
-=== "Worker Service / Standalone"
-
-    ```csharp
-    using NexJob;
-    using NexJob.Dashboard.Standalone;
-
-    var builder = Host.CreateApplicationBuilder(args);
-
-    builder.Services.AddNexJob();
-
-    builder.Services.AddNexJobStandaloneDashboard(options =>
-    {
-        options.Port = 5005;
-        options.EnablePlayground = builder.Environment.IsDevelopment();
-        options.DefaultTheme = "semi-dark";
-    });
-
-    var host = builder.Build();
-    host.Run();
-    ```
-
-`DefaultTheme` sets the theme used when the browser has no stored preference: `blue-theme` (default), `semi-dark`, `dark`, `light` or `bordered-theme`. See [Dashboard configuration options](integrations/dashboard.md#configuration-options).
+Set it inside the dashboard options of either host (`UseNexJobDashboard` for ASP.NET Core, `AddNexJobStandaloneDashboard` for a Worker Service). The full setup, the themes and every other option are in the [Dashboard guide](integrations/dashboard.md#configuration-options).
 
 ---
 
-## Deploying Your Own Playground
+## Deploying your own playground
 
-You can containerize and deploy your own playground instance using Docker and cloud platforms like Fly.io. This Dockerfile publishes the `NexJob.Sample.WorkerService` sample from the NexJob repository:
-
-```dockerfile
-FROM mcr.microsoft.com/dotnet/sdk:8.0-alpine AS build
-WORKDIR /src
-COPY . .
-RUN dotnet publish samples/NexJob.Sample.WorkerService -c Release -o /app/publish
-
-FROM mcr.microsoft.com/dotnet/runtime:8.0-alpine
-WORKDIR /app
-RUN apk add --no-cache tzdata icu-libs
-COPY --chown=$APP_UID:$APP_UID --from=build /app/publish .
-USER $APP_UID
-ENV PORT=8080
-ENV NexJob__Dashboard__LocalhostOnly=false
-EXPOSE 8080
-ENTRYPOINT ["dotnet", "NexJob.Sample.WorkerService.dll"]
-```
+The live site is the repository's own [`Dockerfile`](https://github.com/oluciano/NexJob/blob/develop/Dockerfile), which publishes the `NexJob.Sample.WorkerService` sample, with its Fly.io settings in [`deploy/fly.toml`](https://github.com/oluciano/NexJob/blob/develop/deploy/fly.toml). Use them as they are, or as a starting point for another platform. The image sets `NexJob__Dashboard__LocalhostOnly=false` so the dashboard is reachable from outside the container.
 
 !!! warning
 
