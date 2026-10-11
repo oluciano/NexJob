@@ -274,14 +274,7 @@ internal sealed class DefaultScheduler : IScheduler
         var job = JobRecordFactory.Build<TJob, TInput>(input, _options, queue, JobPriority.Normal, idempotencyKey: null,
             status: JobStatus.AwaitingContinuation, scheduledAt: null, tags: null, expiresAt: null, traceParent: null, parentJobId: parentJobId);
 
-        using var activity = NexJobActivitySource.StartEnqueue(typeof(TJob).FullName ?? typeof(TJob).Name, job.Queue);
-        return await CommitEnqueueAsync(
-            job,
-            DuplicatePolicy.AllowAfterFailed,
-            typeof(TJob).Name,
-            a => a?.SetTag("nexjob.parent_job_id", parentJobId.Value.ToString()),
-            new[] { new KeyValuePair<string, object?>("nexjob.continuation", "true") },
-            cancellationToken).ConfigureAwait(false);
+        return await CommitContinuationAsync(job, typeof(TJob), parentJobId, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -296,14 +289,7 @@ internal sealed class DefaultScheduler : IScheduler
         var job = JobRecordFactory.Build<TJob>(_options, queue, JobPriority.Normal, idempotencyKey: null,
             status: JobStatus.AwaitingContinuation, scheduledAt: null, tags: null, expiresAt: null, traceParent: null, parentJobId: parentJobId);
 
-        using var activity = NexJobActivitySource.StartEnqueue(typeof(TJob).FullName ?? typeof(TJob).Name, job.Queue);
-        return await CommitEnqueueAsync(
-            job,
-            DuplicatePolicy.AllowAfterFailed,
-            typeof(TJob).Name,
-            a => a?.SetTag("nexjob.parent_job_id", parentJobId.Value.ToString()),
-            new[] { new KeyValuePair<string, object?>("nexjob.continuation", "true") },
-            cancellationToken).ConfigureAwait(false);
+        return await CommitContinuationAsync(job, typeof(TJob), parentJobId, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -432,6 +418,30 @@ internal sealed class DefaultScheduler : IScheduler
             a => a?.SetTag("nexjob.delay_seconds", delay.TotalSeconds),
             new[] { new KeyValuePair<string, object?>("nexjob.scheduled", "true") },
             cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<JobId> CommitContinuationAsync(JobRecord job, Type jobType, JobId parentJobId, CancellationToken ct)
+    {
+        using var activity = NexJobActivitySource.StartEnqueue(jobType.FullName ?? jobType.Name, job.Queue);
+        var childId = await CommitEnqueueAsync(
+            job,
+            DuplicatePolicy.AllowAfterFailed,
+            jobType.Name,
+            a => a?.SetTag("nexjob.parent_job_id", parentJobId.Value.ToString()),
+            new[] { new KeyValuePair<string, object?>("nexjob.continuation", "true") },
+            ct).ConfigureAwait(false);
+
+        // The parent releases its children only when it commits success. A child registered after that moment
+        // would stay AwaitingContinuation forever, so read the parent after the child is stored: either the parent
+        // commit sees the child, or this read sees the parent Succeeded (EnqueueContinuationsAsync is idempotent).
+        var parent = await _dashboardStorage.GetJobByIdAsync(parentJobId, ct).ConfigureAwait(false);
+        if (parent?.Status == JobStatus.Succeeded)
+        {
+            await _jobStorage.EnqueueContinuationsAsync(parentJobId, ct).ConfigureAwait(false);
+            _wakeUp.Signal();
+        }
+
+        return childId;
     }
 
     private async Task<JobId> CommitEnqueueAsync(

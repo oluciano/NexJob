@@ -818,6 +818,39 @@ public abstract class StorageProviderTestsBase
     }
 
     [Fact]
+    public async Task ContinueWithAsync_ParentAlreadySucceeded_ReleasesTheChild()
+    {
+        var (job, recurring, dashboard, _) = await CreateStorageAsync();
+        var scheduler = new Internal.DefaultScheduler(job, recurring, dashboard, new NexJobOptions(), new Internal.JobWakeUpChannel());
+        var parentId = await scheduler.EnqueueAsync<ContinuationStubJob>();
+        var parent = await job.FetchNextAsync([(await dashboard.GetJobByIdAsync(parentId))!.Queue]);
+        parent!.Id.Should().Be(parentId);
+        await job.CommitJobResultAsync(parentId, new JobExecutionResult { Succeeded = true, Logs = [] });
+
+        var childId = await scheduler.ContinueWithAsync<ContinuationStubJob>(parentId);
+
+        (await dashboard.GetJobByIdAsync(childId))!.Status.Should().Be(JobStatus.Enqueued, "the parent had already succeeded");
+    }
+
+    [Fact]
+    public async Task ContinueWithAsync_ParentStillProcessing_KeepsTheChildAwaiting()
+    {
+        var (job, recurring, dashboard, _) = await CreateStorageAsync();
+        var scheduler = new Internal.DefaultScheduler(job, recurring, dashboard, new NexJobOptions(), new Internal.JobWakeUpChannel());
+        var parentId = await scheduler.EnqueueAsync<ContinuationStubJob>();
+        await job.FetchNextAsync([(await dashboard.GetJobByIdAsync(parentId))!.Queue]);
+
+        var childId = await scheduler.ContinueWithAsync<ContinuationStubJob>(parentId);
+
+        (await dashboard.GetJobByIdAsync(childId))!.Status.Should().Be(JobStatus.AwaitingContinuation);
+    }
+
+    private sealed class ContinuationStubJob : IJob
+    {
+        public Task ExecuteAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    }
+
+    [Fact]
     public async Task AcknowledgeBatchAsync_ReleasesChildrenOfEveryParent_AndIgnoresParentsWithoutChildren()
     {
         var (storage, _, _, _) = await CreateStorageAsync();
