@@ -203,4 +203,4 @@ A job created from a consumed message that exhausts its retries stays **only ins
 });
 ```
 
-Only the body is forwarded, the job stays `Failed` in NexJob, and only jobs of this trigger are forwarded. Details and limits: [Forwarding a dead-lettered job](https://github.com/oluciano/NexJob/blob/main/docs/wiki/concepts/retries-and-dead-letter.md#forwarding-a-dead-lettered-job).
+Only the body is forwarded, the job stays `Failed` in NexJob, and only jobs of this trigger are forwarded. Details and limits: [Dead-letter forwarding](https://github.com/oluciano/NexJob/blob/main/docs/wiki/concepts/dead-letter-forwarding.md).

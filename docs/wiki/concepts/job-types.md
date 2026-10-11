@@ -137,6 +137,6 @@ Every non-abstract class that implements `IJob` or `IJob<TInput>` is registered 
 
 ## Related
 
-- **A job that keeps failing:** [Retries and dead-letter](retries-and-dead-letter.md) covers the retry policy and `IDeadLetterHandler<TJob>`.
+- **A job that keeps failing:** [Retries](retries.md) covers the retry policy and [dead-letter handling](dead-letter.md) covers `IDeadLetterHandler<TJob>`.
 - **Behavior around every job:** [Job filters](../guides/job-filters.md) wrap each execution with logging, tenant injection or timing.
 - **Enqueueing and timing:** [Scheduling](scheduling.md) covers `EnqueueAsync`, delays, priority and deadlines.

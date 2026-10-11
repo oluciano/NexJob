@@ -20,10 +20,10 @@ NexJob does **not** promise exactly-once execution, and it does not promise orde
 
 | Event | The job | Attempt | Dead-letter handler and forwarders |
 | --- | --- | --- | --- |
-| The job throws and has attempts left | Rescheduled at `RetryAt`, per the [retry policy](../concepts/retries-and-dead-letter.md) | Used | No |
+| The job throws and has attempts left | Rescheduled at `RetryAt`, per the [retry policy](retries.md) | Used | No |
 | The job throws on its last attempt | `Failed` | Used | **Called** with the exception |
-| The job throws an exception listed in [`IgnoreRetryAttemptExceptions`](../concepts/retries-and-dead-letter.md#failures-that-should-not-be-retried) (v5.9.0) | `Failed` at once, even with attempts left | Used | **Called** with the exception |
-| It runs longer than its [`[ExecutionTimeout]`](../concepts/retries-and-dead-letter.md#execution-timeout) (v5.9.0) | Its token is cancelled and the run fails with a `TimeoutException`; then rescheduled like any failure. A job that ignores its token keeps its worker slot | Used | **Called** on the last attempt |
+| The job throws an exception listed in [`IgnoreRetryAttemptExceptions`](retries.md#failures-that-should-not-be-retried) (v5.9.0) | `Failed` at once, even with attempts left | Used | **Called** with the exception |
+| It runs longer than its [`[ExecutionTimeout]`](retries.md#execution-timeout) (v5.9.0) | Its token is cancelled and the run fails with a `TimeoutException`; then rescheduled like any failure. A job that ignores its token keeps its worker slot | Used | **Called** on the last attempt |
 | The node running it dies (crash, kill, lost machine) | Stays `Processing` until its heartbeat is older than `HeartbeatTimeout` (default 5 minutes; the check runs every `HeartbeatTimeout`, so recovery takes between 5 and about 10 minutes), then goes back to `Enqueued` | **Used**: the attempt that was running may have partly run | No |
 | The node dies on the job's last attempt | `Failed` | Used | **Called** with an `OrphanedJobException` (v5.8.0) |
 | The job succeeds but its result cannot be saved | The save is retried a few times. If it still fails the job stays `Processing` and is treated like a crashed node: run again by the orphan watcher, or `Failed` (and dead-lettered) if it had no attempts left | Used | Only if no attempts were left |
@@ -40,7 +40,7 @@ NexJob does **not** promise exactly-once execution, and it does not promise orde
 | A dead-letter handler or forwarder throws | The job stays `Failed`; the error is logged | n/a | Swallowed, other forwarders still run |
 
 !!! note
-    A job that fails on its last attempt and a job whose node died on its last attempt both reach your `IDeadLetterHandler<TJob>` and every `IDeadLetterForwarder`. The second one receives an `OrphanedJobException`, because the job never reported an error of its own. See [When the node dies](../concepts/retries-and-dead-letter.md#when-the-node-dies).
+    A job that fails on its last attempt and a job whose node died on its last attempt both reach your `IDeadLetterHandler<TJob>` and every `IDeadLetterForwarder`. The second one receives an `OrphanedJobException`, because the job never reported an error of its own. See [When the node dies](dead-letter.md#when-the-node-dies).
 
 
 ## Where to see it
@@ -63,7 +63,8 @@ NexJob does **not** promise exactly-once execution, and it does not promise orde
 
 ## See also
 
-- [Retries & Dead Letter](../concepts/retries-and-dead-letter.md)
+- [Retries](retries.md)
+- [Dead-letter handling](dead-letter.md)
 - [Mental Model](../mental-model.md#crash-recovery)
 - [Troubleshooting](../reference/troubleshooting.md)
 - [How NexJob is Tested](../reference/how-we-test.md): which of these rows are checked against real databases.

@@ -174,7 +174,7 @@ NexJob is designed to surface diagnostic information through structured logs, me
 
     **Check 3: Job was orphaned, not failed by a retry**
 
-    If an orphaned job has consumed all its attempts, it is marked `Failed` with the message `"Orphaned execution exceeded maximum attempts."`. From v5.8.0 the dead-letter handler and the `IDeadLetterForwarder`s **are** called for it, with an `OrphanedJobException` (on the built-in providers; a custom storage that does not implement `IOrphanedJobReporter` still fails the job without calling them). If the handler did not run, look in the logs for the warning `... stopped sending heartbeats and no attempts were left`. See [When the node dies](../concepts/retries-and-dead-letter.md#when-the-node-dies).
+    If an orphaned job has consumed all its attempts, it is marked `Failed` with the message `"Orphaned execution exceeded maximum attempts."`. From v5.8.0 the dead-letter handler and the `IDeadLetterForwarder`s **are** called for it, with an `OrphanedJobException` (on the built-in providers; a custom storage that does not implement `IOrphanedJobReporter` still fails the job without calling them). If the handler did not run, look in the logs for the warning `... stopped sending heartbeats and no attempts were left`. See [When the node dies](../concepts/dead-letter.md#when-the-node-dies).
 
 
 ???+ "Dashboard not loading or showing no data"

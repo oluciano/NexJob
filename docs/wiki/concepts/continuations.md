@@ -71,7 +71,7 @@ To handle this safely:
 
 ### 1. Give the parent sufficient retries
 
-Use the `[Retry]` attribute or the global `MaxAttempts` setting to give the parent job enough attempts to overcome transient failures. See [Retries & Dead Letter](../concepts/retries-and-dead-letter.md).
+Use the `[Retry]` attribute or the global `MaxAttempts` setting to give the parent job enough attempts to overcome transient failures. See [Retries](retries.md).
 
 ### 2. Register a dead-letter handler on the parent
 

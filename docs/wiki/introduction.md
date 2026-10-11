@@ -11,7 +11,7 @@ NexJob is a reliable, open-source background job processing library for .NET 8. 
 NexJob is for jobs that **must run, fail safely and leave a trace**.
 
 - **Five storage providers, none behind a paid tier:** PostgreSQL, SQL Server, Redis, MongoDB and in-memory, with the same test contract on all of them ([how we test](reference/how-we-test.md)).
-- **Failure is a first-class case.** [Deadlines](concepts/scheduling.md#deadlines), [dead-letter handling](concepts/retries-and-dead-letter.md), crash recovery and a table of [what each failure costs a job](concepts/delivery-guarantees.md) are part of the core library.
+- **Failure is a first-class case.** [Deadlines](concepts/scheduling.md#deadlines), [dead-letter handling](concepts/dead-letter.md), crash recovery and a table of [what each failure costs a job](concepts/delivery-guarantees.md) are part of the core library.
 - **Built-in dashboard and OpenTelemetry**, with no extra package to find or license.
 - **Near-zero dispatch latency** on the node that enqueues, through an in-process wake-up channel.
 
@@ -93,11 +93,11 @@ A trigger turns messages from a broker into jobs. The two outbox packages also p
 
 ### Stay reliable
 
-- [**Predictable retries**](concepts/retries-and-dead-letter.md) — configurable global delay policy plus per-job `[Retry]` attribute with exponential backoff
-- [**Failures that should not be retried**](concepts/retries-and-dead-letter.md#failures-that-should-not-be-retried) — list exception types such as `ArgumentException` and the job goes straight to dead-letter instead of burning attempts
-- [**Per-job attempt limit**](concepts/retries-and-dead-letter.md#per-job-attempt-limit) — pass `maxAttempts` when enqueuing, so the same job type can fail fast for one caller and retry longer for another
-- [**Execution timeout**](concepts/retries-and-dead-letter.md#execution-timeout) — `[ExecutionTimeout]` cancels a job's token after a limit and treats it as a normal failure (opt-in, cooperative)
-- [**Dead-letter handlers and forwarders**](concepts/retries-and-dead-letter.md) — an `IDeadLetterHandler<T>` runs when all retries are exhausted, and an `IDeadLetterForwarder` sees every such job, which is the hook for [alerts](guides/alerts.md)
+- [**Predictable retries**](concepts/retries.md) — configurable global delay policy plus per-job `[Retry]` attribute with exponential backoff
+- [**Failures that should not be retried**](concepts/retries.md#failures-that-should-not-be-retried) — list exception types such as `ArgumentException` and the job goes straight to dead-letter instead of burning attempts
+- [**Per-job attempt limit**](concepts/retries.md#per-job-attempt-limit) — pass `maxAttempts` when enqueuing, so the same job type can fail fast for one caller and retry longer for another
+- [**Execution timeout**](concepts/retries.md#execution-timeout) — `[ExecutionTimeout]` cancels a job's token after a limit and treats it as a normal failure (opt-in, cooperative)
+- [**Dead-letter handlers and forwarders**](concepts/dead-letter.md) — an `IDeadLetterHandler<T>` runs when all retries are exhausted, and an `IDeadLetterForwarder` sees every such job, which is the hook for [alerts](guides/alerts.md)
 - [**Crash recovery**](concepts/delivery-guarantees.md) — a job left behind by a node that died is found by its stale heartbeat and run again, or dead-lettered if it had no attempts left
 - [**Deadline enforcement**](concepts/scheduling.md#deadlines) — jobs expire before execution if `deadlineAfter` has elapsed; no zombie jobs
 - [**Idempotency**](concepts/idempotency.md) — `DuplicatePolicy` controls re-enqueue behavior for jobs with the same idempotency key
