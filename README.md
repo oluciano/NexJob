@@ -239,20 +239,9 @@ Benchmarks can be parameterized by payload size (`PayloadBytes: 0, 1024, 10240`)
 
 Found a bug or have an idea? [Open an issue](https://github.com/oluciano/NexJob/issues) after searching the existing ones. To send code, read [CONTRIBUTING.md](.github/CONTRIBUTING.md): branch from `develop`, open the pull request against `develop`, build with zero warnings, and cover the change with tests (positive, negative and invalid input). Vulnerabilities go through the private channel in [SECURITY.md](.github/SECURITY.md), not a public issue.
 
-## Recent releases
+## Releases
 
-```
-v6.1.0  ✅ The PostgreSQL and SQL Server fetch uses the index (no longer reads the backlog); queue names match exactly;
-           Salesforce `AuthEndpoint` and `InstanceUrl` must be https; supply-chain hardening (Scorecard, CodeQL)
-v6.0.0  ✅ The default queue is isolated per application (`{prefix}.default`) with a drain of the legacy `default`;
-           orphaned-queue hint and recurring id collision warning in the dashboard; `Workers = 0` and
-           `DisableWorkers` really run a host without job execution
-v5.10.0 ✅ `EnvironmentName` badge on the dashboard, a dashboard layout that fits phones
-v5.9.0  ✅ `[ExecutionTimeout]`, per-job `maxAttempts`, `IgnoreRetryAttemptExceptions`, `DaysOfWeek` on execution windows
-v5.8.0  ✅ `deadlineAfter` enforced on every database provider, `IDeadLetterForwarder`, new guides
-```
-
-The full history is in the [CHANGELOG](CHANGELOG.md). Security issues: see [SECURITY.md](.github/SECURITY.md).
+The history is in the [GitHub releases](https://github.com/oluciano/NexJob/releases) and the [CHANGELOG](CHANGELOG.md). Security issues: see [SECURITY.md](.github/SECURITY.md).
 
 ---
 
