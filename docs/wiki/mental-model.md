@@ -54,7 +54,7 @@ Every job moves through a well-defined set of states. All transitions are persis
 | State | Meaning |
 |---|---|
 | `Enqueued` | Ready for immediate execution — the dispatcher will pick this up on its next cycle |
-| `Scheduled` | Will execute at a future time stored in `ScheduledAt` |
+| `Scheduled` | Waiting for a future time: `ScheduledAt` for a job you scheduled, `RetryAt` for a job waiting for its next attempt |
 | `Processing` | Currently running on a worker; tracked with a `HeartbeatAt` timestamp |
 | `Succeeded` | Completed successfully — terminal |
 | `Failed` | All retry attempts exhausted — terminal; dead-letter handler runs at this point |
@@ -66,7 +66,7 @@ Every job moves through a well-defined set of states. All transitions are persis
 
 `Succeeded`, `Failed`, `Expired`, and `Deleted` are terminal. A job in a terminal state will not execute again unless you explicitly re-enqueue it (subject to your configured `DuplicatePolicy`).
 
-There is no separate "retried" or "dead-letter" status in the state machine. A retry is simply the job back in `Scheduled` with a future `RetryAt` timestamp. A job whose attempts are exhausted moves directly to `Failed`.
+There is no separate "retried" or "dead-letter" status in the state machine. A retry is simply the job back in `Scheduled`, with `RetryAt` set to the next attempt. A job whose attempts are exhausted moves directly to `Failed`.
 
 ## Wake-up channel vs polling
 
@@ -76,7 +76,7 @@ The dispatcher uses two mechanisms to discover new jobs. Understanding which one
 
 When you call `EnqueueAsync` **from the same process** where the dispatcher is running, NexJob sends a signal through a bounded in-memory channel (capacity = 1). The dispatcher detects this signal and immediately fetches the newly enqueued job without waiting for the next polling interval.
 
-- **Latency:** Near-zero (under 1 ms)
+- **Latency:** Near-zero in practice, because the dispatcher is signalled instead of waiting for the next poll. The test suite does not assert a number (see [How We Test](reference/how-we-test.md))
 - **Scope:** Local process only
 - **Behavior:** Multiple rapid signals collapse into one; the channel never blocks the caller
 
@@ -92,50 +92,34 @@ If no wake-up signal arrives within the configured `PollingInterval` (default: 1
 
 ## Deadline behavior
 
-Pass `deadlineAfter` to `EnqueueAsync` to set an absolute expiry. NexJob stores this as `ExpiresAt` on the job record.
-
-```csharp
-// This job is marked Expired if the dispatcher does not start it within 5 minutes
-await scheduler.EnqueueAsync<SendEmailJob>(
-    deadlineAfter: TimeSpan.FromMinutes(5));
-```
-
-**Critical:** The deadline is checked **before execution begins**, not during execution. If a job's `ExpiresAt` has passed when the dispatcher fetches it, the job is marked `Expired` and never runs — even if only a millisecond has elapsed past the deadline.
-
-Set `deadlineAfter` based on your actual business requirement. A tight deadline on a busy queue will expire jobs silently if workers are saturated. If you have no hard time constraint, omit the parameter entirely.
+`deadlineAfter` stores an absolute `ExpiresAt` on the job. It is checked **before execution begins**, never during: a job that is fetched after `ExpiresAt` is marked `Expired` and does not run, even by a millisecond. A tight deadline on a busy queue expires jobs silently, so set it from a real business requirement, or omit it. See [Scheduling](concepts/scheduling.md#deadlines).
 
 ## Execution pipeline
 
 When the dispatcher picks up a job, it runs through the following steps in order:
 
-1. **Expiration check** — If `UtcNow > ExpiresAt`, mark the job `Expired` and stop. Nothing else runs.
-2. **Schema migration** — If the job carries a `[SchemaVersion]` attribute and the stored payload version differs, migrate the payload before deserialization.
-3. **DI resolution** — Create a scoped DI container, resolve the job class, and inject all dependencies.
-4. **Throttle acquisition** — If the job carries a `[Throttle]` attribute, wait to acquire the semaphore before proceeding.
-5. **Execution** — Call `ExecuteAsync` with a `CancellationToken` wired to the shutdown signal.
-6. **Success path** — Persist the `Succeeded` result atomically, then enqueue any registered continuations.
-7. **Failure path** — Record the attempt, evaluate the retry policy, and either reschedule the job (back to `Scheduled` with a future `RetryAt`) or mark it `Failed` and invoke the dead-letter handler.
+1. **Expiration check**: if `UtcNow > ExpiresAt`, mark the job `Expired` and stop. Nothing else runs.
+2. **Preparation**: create a scoped DI container, migrate the payload if the job carries a `[SchemaVersion]` attribute and the stored version differs, and resolve the job class with its dependencies.
+3. **Throttle acquisition**: if the job carries `[Throttle]`, wait for a slot. If the resource stays saturated for a few seconds, the job goes back to the queue about a second later and the attempt is **refunded**, so it never counts toward `MaxAttempts`.
+4. **Filters and execution**: pass through the registered [`IJobExecutionFilter`](guides/job-filters.md) chain, then call `ExecuteAsync` with a `CancellationToken` wired to the shutdown signal (and to `[ExecutionTimeout]`, if set).
+5. **Success path**: persist the `Succeeded` result atomically, then enqueue any registered continuations.
+6. **Failure path**: record the attempt, evaluate the retry policy, and either reschedule the job (back to `Scheduled` with a future `RetryAt`) or mark it `Failed` and invoke the dead-letter handler.
 
-Steps 6 and 7 are committed atomically. You will never see a job stuck in `Processing` after a clean shutdown.
+Steps 5 and 6 are committed atomically. You will never see a job stuck in `Processing` after a clean shutdown.
 
 ## Crash recovery
 
-A worker crash leaves one or more jobs stuck in `Processing` with a stale `HeartbeatAt` timestamp. NexJob handles this automatically:
+A worker crash leaves jobs in `Processing` with a stale `HeartbeatAt`. NexJob finds them by that heartbeat (`HeartbeatTimeout`, 5 minutes by default) and requeues them. The attempt that was running **is spent**, so a job that keeps killing its node eventually runs out of attempts and goes to dead-letter. [Delivery Guarantees](concepts/delivery-guarantees.md) has the full table of what each failure costs a job.
 
-1. A background watcher service scans storage periodically for jobs where `UtcNow - HeartbeatAt > HeartbeatTimeout` (default: 5 minutes).
-2. Orphaned jobs are re-enqueued automatically. The attempt that was running when the node died **is spent** (the job may have partly run), so a job that keeps killing its node eventually runs out of attempts.
-3. If an orphaned job has already used all of its configured attempts, it is marked `Failed` instead of being requeued indefinitely, and its dead-letter handler and forwarders are called with an `OrphanedJobException` (see [Retries & Dead Letter](concepts/retries-and-dead-letter.md#when-the-node-dies)).
-4. A fresh dispatcher instance picks up the re-enqueued jobs on its next cycle.
-
-**Graceful shutdown is not a crash.** When the host shuts down cleanly, the dispatcher stops accepting new jobs, waits up to `ShutdownTimeout` for running jobs to finish, and re-enqueues any job that is cancelled by the shutdown token — **without consuming an attempt**.
+**Graceful shutdown is not a crash.** The dispatcher stops fetching, waits up to `ShutdownTimeout` for running jobs to finish, and requeues the ones the shutdown token cancelled, **without consuming an attempt**.
 
 !!! warning
     NexJob provides **at-least-once delivery**. A job can execute more than once if the worker crashes after `ExecuteAsync` completes but before the result is persisted to storage. Design your job logic to be idempotent — the same input should always produce the same observable outcome with no harmful side effects on repetition. See the [Idempotency](concepts/idempotency.md) page for patterns and `DuplicatePolicy` options.
 
 
-## Broker Queues vs NexJob Queues
+## Broker queues vs NexJob queues
 
-A NexJob queue is not a message broker queue (RabbitMQ, Kafka, AWS SQS). A broker queue transports messages between services; a NexJob queue is a persistent partition in your storage database that governs execution. Broker triggers consume from the broker and enqueue into a NexJob queue. See [Queues](concepts/queues.md#broker-queues-vs-nexjob-queues) for the full comparison.
+A NexJob queue is a partition in your storage database that governs execution, not a message-broker queue. Broker triggers consume from the broker and enqueue into a NexJob queue. See [Queues](concepts/queues.md#broker-queues-vs-nexjob-queues).
 
 ## Next steps
 
