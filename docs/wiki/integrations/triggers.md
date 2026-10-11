@@ -16,8 +16,8 @@ NexJob triggers bridge external message brokers and your background job pipeline
 | [**Azure Service Bus**](azure-service-bus.md) | No | `MessageId` | application property `nexjob.job_type`, or `JobType` | Transient: the message is abandoned and redelivered. Permanent: dead-lettered. |
 | [**AWS SQS**](aws-sqs.md) | No | `MessageId` | only the `JobName` option | Any failure: the visibility timeout is reset to 0, so the message returns at once. A redrive policy on the queue is what parks it. |
 | [**Google Pub/Sub**](google-pubsub.md) | No | message ID | attribute `nexjob.job_type`, or `JobType` | Transient: `Nack`. Permanent: `Nack` after 2 s, so a dead-letter policy on the subscription can park it. |
-| **Salesforce Pub/Sub API** | No | event id (replay id as hex) | the `JobType` option, else the built-in `SalesforceEventJob` | The event is logged and, when `DeadLetterQueue` is set, copied there as a job. Its replay id is not committed. |
-| **Salesforce Streaming API** | No | `{channel}:{eventId}` | the `JobType` option, else the built-in `SalesforceStreamingEventJob` | The same as the Pub/Sub API trigger. |
+| [**Salesforce Pub/Sub API**](salesforce.md) | No | event id (replay id as hex) | the `JobType` option, else the built-in `SalesforceEventJob` | The event is logged and, when `DeadLetterQueue` is set, copied there as a job. Its replay id is not committed. |
+| [**Salesforce Streaming API**](salesforce-streaming.md) | No | `{channel}:{eventId}` | the `JobType` option, else the built-in `SalesforceStreamingEventJob` | The same as the Pub/Sub API trigger. |
 
 The Salesforce Streaming trigger does not read a trace header from the event; the others do (see [broker guarantees](#broker-guarantees)). Kafka and RabbitMQ can also **publish** messages from your application through a resilient outbox producer (the "Publishes" column); the other brokers only consume. Each broker has its own page with the options, the defaults and how it fails.
 
@@ -33,6 +33,8 @@ The Salesforce Streaming trigger does not read a trace header from the event; th
 | Google Pub/Sub | `NexJob.Trigger.GooglePubSub` |
 | Salesforce Pub/Sub API | `NexJob.Trigger.Salesforce` |
 | Salesforce Streaming API | `NexJob.Trigger.SalesforceStreaming` |
+
+Each broker can be registered in two equivalent ways: on the service collection (`services.AddNexJob{Broker}Trigger<TJob>(...)`, and `AddSalesforceTrigger` or `AddSalesforceStreamingTrigger` for Salesforce) or chained on the builder returned by `AddNexJob()` (`AddNexJob().Add{Broker}Trigger<TJob>(...)`).
 
 ---
 
@@ -91,116 +93,10 @@ Most triggers resolve which job to run using the same three-step precedence:
 | Azure Service Bus | `MessageId` |
 | Google Pub/Sub | Message ID |
 | AWS SQS | Message ID |
-| Salesforce Pub/Sub API | Event ID (Replay ID as hex; timestamp when absent) |
+| Salesforce Pub/Sub API | Event ID (the Replay ID as hex when the event has none) |
 | Salesforce Streaming API | `{channel}:{eventId}` (or `{channel}:{replayId}` when absent) |
 
 Every trigger enqueues with `DuplicatePolicy.AllowAfterFailed` (see [Idempotency](../concepts/idempotency.md#duplicatepolicy)), so the key deduplicates only against **active** jobs. A message redelivered after its job has finished, for example a Kafka offset replayed after a consumer group reset, or an SQS message redelivered after a slow acknowledgment, creates a new job. Checked with the same key and the same policy: while the first job was active the second call returned the same job, and after it finished it created another, so the job ran twice. Treat triggers as at-least-once and make the jobs idempotent.
-
----
-
-## Supported triggers
-
-Each broker can be registered in two equivalent ways: on the service collection (`services.AddNexJob{Broker}Trigger<TJob>(...)`, and `AddSalesforceTrigger` for Salesforce) or chained on the builder returned by `AddNexJob()` (`AddNexJob().Add{Broker}Trigger<TJob>(...)`). The tabs below show whichever form each package's own examples use.
-
-
-=== "Salesforce Pub/Sub API"
-
-    #### Install the package
-
-    ```bash
-    dotnet add package NexJob.Trigger.Salesforce
-    ```
-
-    #### Register the trigger
-
-    The Salesforce Pub/Sub trigger consumes Change Data Capture (CDC) events and custom Platform Events over bidirectional gRPC streams. It decodes Apache Avro binary payloads to JSON automatically:
-
-    ```csharp
-    using NexJob.Trigger.Salesforce;
-
-    // Use the built-in SalesforceEventJob handler
-    builder.Services.AddNexJob()
-        .AddSalesforceTrigger(options =>
-        {
-            options.Topic = "/data/ChangeEvents";
-            options.ClientId = "3MVG9...";
-            options.ClientSecret = "secret...";
-            options.TargetQueue = "salesforce-events";
-            options.ReplayPreset = SalesforceReplayPreset.Latest;
-            options.FallbackPolicy = ReplayFallbackPolicy.ResetToLatest;
-        });
-
-    // Or bind to a strongly typed custom job
-    builder.Services.AddNexJob()
-        .AddSalesforceTrigger<ProcessAccountChangeJob>(options =>
-        {
-            options.Topic = "/data/AccountChangeEvent";
-            options.ClientId = "3MVG9...";
-            options.ClientSecret = "secret...";
-        });
-    ```
-
-    Key capabilities:
-
-    - **Bi-directional gRPC streaming** using the official Salesforce Pub/Sub API protobufs with flow control.
-    - **Apache Avro decoding** with in-memory schema caching via `ISalesforceSchemaService`.
-    - **Replay ID checkpointing** via `IReplayIdStore` (atomic file-based or in-memory).
-    - **Resilient fallback policies**: `FailFast`, `ResetToLatest`, and `ResetToEarliest` for expired offsets.
-    - **OAuth2 token caching** with automatic refresh ahead of expiration.
-
-=== "Salesforce Streaming API"
-
-    #### Install the package
-
-    ```bash
-    dotnet add package NexJob.Trigger.SalesforceStreaming
-    ```
-
-    #### Register the trigger
-
-    The Salesforce Streaming trigger consumes PushTopic events, CDC, and Platform Events over HTTP long-polling using the CometD/Bayeux protocol. Use this for legacy environments without gRPC/HTTP2:
-
-    ```csharp
-    using NexJob.Trigger.SalesforceStreaming;
-
-    // Use the built-in SalesforceStreamingEventJob handler
-    builder.Services.AddNexJob()
-        .AddSalesforceStreamingTrigger(options =>
-        {
-            options.Channel = "/data/Order__ChangeEvent";
-            options.Authentication.AuthType = SalesforceStreamingAuthType.OAuth2ClientCredentials;
-            options.Authentication.AuthEndpoint = "https://login.salesforce.com/services/oauth2/token";
-            options.Authentication.ClientId = "3MVG9...";
-            options.Authentication.ClientSecret = "secret...";
-            options.TargetQueue = "salesforce-events";
-            options.ReplayPreset = SalesforceStreamingReplayPreset.Latest;
-        });
-
-    // Bind to a custom job with username/password auth
-    builder.Services.AddNexJob()
-        .AddSalesforceStreamingTrigger<ProcessSalesforceOrderJob>(options =>
-        {
-            options.Channel = "/topic/InvoiceUpdates";
-            options.Authentication.AuthType = SalesforceStreamingAuthType.OAuth2UsernamePassword;
-            options.Authentication.ClientId = "3MVG9...";
-            options.Authentication.ClientSecret = "secret...";
-            options.Authentication.Username = "integration@company.com";
-            options.Authentication.Password = "Password123";
-            options.Authentication.SecurityToken = "TokenXYZ";
-            options.DeadLetterQueue = "salesforce-dlq";
-        });
-    ```
-
-    Key capabilities:
-
-    - **CometD/Bayeux protocol** with replay extension and graceful disconnect.
-    - **Multi-auth**: OAuth 2.0 Username-Password, OAuth 2.0 Client Credentials, and direct Session ID / Bearer token.
-    - **Replay ID checkpointing** via `IStreamingReplayIdStore` (file-based or in-memory).
-    - **Session expiry resilience**: automatic token invalidation and re-handshake on `403::Unknown client`.
-    - **Exponential backoff** reconnection loop with configurable delays and multipliers.
-
-
-
 
 ---
 

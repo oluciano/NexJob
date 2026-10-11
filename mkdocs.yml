@@ -104,6 +104,8 @@ nav:
       - Azure Service Bus: integrations/azure-service-bus.md
       - AWS SQS: integrations/aws-sqs.md
       - Google Pub/Sub: integrations/google-pubsub.md
+      - Salesforce Pub/Sub API: integrations/salesforce.md
+      - Salesforce Streaming API: integrations/salesforce-streaming.md
   - Reference:
       - Configuration: reference/configuration.md
       - JobRecord: reference/job-record.md
