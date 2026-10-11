@@ -275,13 +275,16 @@ internal sealed class DefaultScheduler : IScheduler
             status: JobStatus.AwaitingContinuation, scheduledAt: null, tags: null, expiresAt: null, traceParent: null, parentJobId: parentJobId);
 
         using var activity = NexJobActivitySource.StartEnqueue(typeof(TJob).FullName ?? typeof(TJob).Name, job.Queue);
-        return await CommitEnqueueAsync(
+        var childId = await CommitEnqueueAsync(
             job,
             DuplicatePolicy.AllowAfterFailed,
             typeof(TJob).Name,
             a => a?.SetTag("nexjob.parent_job_id", parentJobId.Value.ToString()),
             new[] { new KeyValuePair<string, object?>("nexjob.continuation", "true") },
             cancellationToken).ConfigureAwait(false);
+
+        await ReleaseIfParentSucceededAsync(parentJobId, cancellationToken).ConfigureAwait(false);
+        return childId;
     }
 
     /// <inheritdoc/>
@@ -297,13 +300,16 @@ internal sealed class DefaultScheduler : IScheduler
             status: JobStatus.AwaitingContinuation, scheduledAt: null, tags: null, expiresAt: null, traceParent: null, parentJobId: parentJobId);
 
         using var activity = NexJobActivitySource.StartEnqueue(typeof(TJob).FullName ?? typeof(TJob).Name, job.Queue);
-        return await CommitEnqueueAsync(
+        var childId = await CommitEnqueueAsync(
             job,
             DuplicatePolicy.AllowAfterFailed,
             typeof(TJob).Name,
             a => a?.SetTag("nexjob.parent_job_id", parentJobId.Value.ToString()),
             new[] { new KeyValuePair<string, object?>("nexjob.continuation", "true") },
             cancellationToken).ConfigureAwait(false);
+
+        await ReleaseIfParentSucceededAsync(parentJobId, cancellationToken).ConfigureAwait(false);
+        return childId;
     }
 
     /// <inheritdoc/>
@@ -432,6 +438,21 @@ internal sealed class DefaultScheduler : IScheduler
             a => a?.SetTag("nexjob.delay_seconds", delay.TotalSeconds),
             new[] { new KeyValuePair<string, object?>("nexjob.scheduled", "true") },
             cancellationToken).ConfigureAwait(false);
+    }
+
+    // The parent releases its children only when it commits success. A child registered after that moment
+    // would stay AwaitingContinuation forever, so read the parent after the child is stored: either the parent
+    // commit sees the child, or this read sees the parent Succeeded (EnqueueContinuationsAsync is idempotent).
+    private async Task ReleaseIfParentSucceededAsync(JobId parentJobId, CancellationToken ct)
+    {
+        var parent = await _dashboardStorage.GetJobByIdAsync(parentJobId, ct).ConfigureAwait(false);
+        if (parent?.Status != JobStatus.Succeeded)
+        {
+            return;
+        }
+
+        await _jobStorage.EnqueueContinuationsAsync(parentJobId, ct).ConfigureAwait(false);
+        _wakeUp.Signal();
     }
 
     private async Task<JobId> CommitEnqueueAsync(
