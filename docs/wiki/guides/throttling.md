@@ -6,7 +6,7 @@ description: "Use NexJob's [Throttle] attribute to limit concurrent job executio
 
 NexJob's `[Throttle]` attribute lets you cap how many instances of a job run at the same time against a named resource — protecting downstream APIs, connection pools, and memory-intensive operations from being overwhelmed. Apply it to any job class and NexJob enforces the limit automatically, without any changes to your job logic.
 
-## Basic Usage
+## Basic usage
 
 Decorate your job class with `[Throttle]`, passing a resource name and the maximum number of concurrent executions you want to allow.
 
@@ -23,7 +23,9 @@ public sealed class ChargeCardJob : IJob<ChargeInput>
 
 The resource name is a logical key — any job that shares the same name competes for the same pool of slots. This lets unrelated job types share a single limit against the same downstream system.
 
-## Multiple Throttle Attributes on One Job
+`maxConcurrent` must be at least `1` and the resource name cannot be blank: the attribute throws otherwise, and the NexJob analyzers flag it at compile time. The attribute is inherited, so a class that derives from a throttled job is throttled too.
+
+## Multiple throttle attributes on one job
 
 You can stack multiple `[Throttle]` attributes on a single job. Every declared semaphore must be acquired before the job begins executing.
 
@@ -40,10 +42,10 @@ public sealed class ProcessOrderJob : IJob<OrderInput>
 ```
 
 !!! warning
-    Slots are acquired **one at a time, in declaration order**. If `ProcessOrderJob` holds a `payment-gateway` slot and waits for an `email-service` slot, while another job type holds an `email-service` slot and waits for `payment-gateway`, the two jobs deadlock. Prevent this by declaring the same resources in the same order on every job type.
+    Slots are acquired **one at a time**, in the order the attributes are read from the class. That is normally the order you wrote them, but .NET does not guarantee it. If two job types need the same two resources in opposite orders, each can hold the slot the other is waiting for. They do not block each other forever: the waiting time is shared by all the attributes of a job (see [How waiting works](#how-waiting-works)), and when it runs out the job releases every slot it holds and goes back to the queue. To avoid the delay, declare the same resources in the same order on every job type.
 
 
-## Per-Process vs. Cluster-Wide Scope
+## Per-process vs. cluster-wide scope
 
 By default, `[Throttle]` is enforced **per worker process** using an in-memory semaphore. In a multi-node deployment the effective cluster-wide limit is `maxConcurrent × numberOfNodes`.
 
@@ -57,7 +59,7 @@ If you need a true global cap regardless of how many nodes are running, enable d
 
 The resource name is global to the throttle store: two applications that use the same store and the same resource name share one limit, which is what you want for an external quota and a surprise for two unrelated resources that happen to share a name. Choose names that do not collide, for example `billing-api` instead of `api`. Without the distributed store the limit is local to each process and names cannot collide.
 
-### Distributed Throttling with Redis
+### Distributed throttling with Redis
 
 Install the `NexJob.Redis` package and call `AddNexJobDistributedThrottle()` when registering NexJob services.
 
@@ -73,9 +75,9 @@ With distributed throttling enabled, `[Throttle("api", maxConcurrent: 5)]` allow
 
 Each running job holds a slot and its node continuously refreshes that slot while the job runs. If a node crashes, its slots are reclaimed automatically after three `HeartbeatInterval` periods — 90 seconds with the default settings — rather than being lost for an hour.
 
-#### Configuring Slot TTL
+#### Configuring the slot TTL
 
-`DistributedThrottleTtl` is the maximum time a single job may hold a slot. Set it higher than your longest-running job to avoid premature slot release.
+`DistributedThrottleTtl` is the maximum time a single job may hold a slot (1 hour by default). Set it higher than your longest-running job to avoid premature slot release.
 
 ```csharp
 services.AddNexJobRedis("localhost:6379");
@@ -106,11 +108,11 @@ Two things your store has to handle itself:
 - **A node that dies while it holds a slot.** The interface has no heartbeat, so the store must give such slots back on its own. The Redis store does it by having each holder refresh an expiry and reclaiming a slot that was not refreshed for three `HeartbeatInterval` periods.
 - **Failures.** If the store throws, NexJob logs a warning and enforces the limit locally for that acquisition, so a store outage degrades to per-process throttling instead of stopping jobs.
 
-## How Waiting Works
+## How waiting works
 
-A throttled job that cannot acquire a slot first waits briefly. During that wait it stays in `Processing`, keeps its worker slot and keeps sending heartbeats, and NexJob retries the slot acquisition about every 500 ms. This keeps short contention cheap: no storage writes and no change in ordering.
+A throttled job that cannot acquire a slot first waits briefly. During that wait it stays in `Processing`, keeps its worker slot and keeps sending heartbeats, and NexJob keeps retrying the acquisition every fraction of a second. This keeps short contention cheap: no storage writes and no change in ordering.
 
-If no slot frees up within about **5 seconds**, the job is **returned to the queue** and its worker slot is released. It is scheduled again roughly a second later (with a little jitter) and tries again. Being returned this way does **not** count as an attempt: it never consumes `MaxAttempts`, never triggers a retry policy and never sends the job to dead-letter. It is also not a failure, so no failure metric is recorded.
+If no slot frees up within about **5 seconds** (one budget for all the `[Throttle]` attributes of the job, not 5 seconds each), the job is **returned to the queue** and its worker slot is released. It is scheduled again roughly a second later (with a little jitter) and tries again. Being returned this way does **not** count as an attempt: it never consumes `MaxAttempts`, never triggers a retry policy and never sends the job to dead-letter. It is also not a failure, so no failure metric is recorded.
 
 You can see it happen in two places:
 
@@ -125,7 +127,7 @@ You can see it happen in two places:
     Isolating heavily throttled jobs in their own queue, with a worker pool sized for it, is still the best way to keep a slow downstream system from competing with the rest of your workload. The 5 second limit is not configurable.
 
 
-## When to Use Throttling
+## When to use throttling
 
 | Scenario | Suggested resource name |
 | --- | --- |
@@ -135,14 +137,14 @@ You can see it happen in two places:
 | Memory-intensive operations | `"heavy-compute"` |
 | Third-party webhook delivery | `"webhook-sender"` |
 
-## Related: Circuit Breaker and Execution Windows
+## Related: circuit breaker and execution windows
 
-Two queue-level controls used to live on this page and now have their own pages:
+Two queue-level controls have their own pages:
 
 - [Circuit Breaker](../guides/circuit-breaker.md): pauses a queue automatically during a downstream outage.
 - [Execution Windows](../guides/execution-windows.md): restricts a queue to a time window, such as nights only.
 
-## Common Throttle Patterns
+## Common throttle patterns
 
 ???+ "Stripe / payment gateway"
     ```csharp
