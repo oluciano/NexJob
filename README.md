@@ -3,43 +3,32 @@
 # NexJob
 
 **Background jobs for .NET that survive the worst day.**<br/>
-A node that dies, a deploy in the middle of a job, an upgrade from the previous version.
+Retries, dead-letter handling, deadlines and a built-in dashboard.<br/>
+PostgreSQL · SQL Server · Redis · MongoDB · in-memory.
 
-📖 **Documentation: [oluciano.github.io/NexJob](https://oluciano.github.io/NexJob/)** &nbsp;|&nbsp; 🎮 **Live Demo: [nexjob-playground.fly.dev](https://nexjob-playground.fly.dev/)**
+📖 **Documentation: [oluciano.github.io/NexJob](https://oluciano.github.io/NexJob/)** &nbsp;|&nbsp; 🎮 **Live Demo: [nexjob-playground.fly.dev](https://nexjob-playground.fly.dev/)** &nbsp;|&nbsp; 📦 **[NuGet](https://www.nuget.org/packages/NexJob)**
 
 [![NuGet](https://img.shields.io/nuget/v/NexJob.svg?style=flat-square&color=512bd4&label=nuget)](https://www.nuget.org/packages/NexJob)
 [![NuGet Downloads](https://img.shields.io/nuget/dt/NexJob?style=flat-square&color=512bd4)](https://www.nuget.org/packages/NexJob)
 [![Build](https://img.shields.io/github/actions/workflow/status/oluciano/NexJob/ci.yml?style=flat-square)](https://github.com/oluciano/NexJob/actions)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg?style=flat-square)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg?style=flat-square)](LICENSE)<br/>
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/oluciano/NexJob/badge)](https://scorecard.dev/viewer/?uri=github.com/oluciano/NexJob)
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/15362/badge)](https://www.bestpractices.dev/projects/15362)
 [![CodeQL](https://github.com/oluciano/NexJob/actions/workflows/codeql.yml/badge.svg?branch=develop)](https://github.com/oluciano/NexJob/security/code-scanning)
-
-<sub>The Scorecard, Best Practices and CodeQL badges rate the repository's security and engineering practices (pinned actions, least-privilege tokens, dependency updates, documented process, static analysis). The Best Practices badge is self-declared; the CodeQL badge says the analysis ran on the default branch, and the open alerts are in the [Security tab](https://github.com/oluciano/NexJob/security/code-scanning). None of them says anything about throughput or behaviour under failure.</sub>
-
-<br/>
 
 [![A job fails three times and reaches the dead-letter queue](docs/assets/dead-letter.gif)](https://nexjob-playground.fly.dev/)
 
 <sub>A job fails three times and lands in the dead-letter queue with its error, ready to requeue. The two others succeed.</sub>
 
+```bash
+dotnet add package NexJob
+```
+
 </div>
 
 ---
 
-## What is NexJob?
-
-A background job library for .NET 8 with five storage providers (PostgreSQL, SQL Server, Redis, MongoDB, in-memory), retries, dead-letter handling, deadlines and a built-in dashboard.
-
-It is built for jobs that **must run, fail safely and leave a trace**: every failure has a documented cost (see [Delivery guarantees](https://oluciano.github.io/NexJob/concepts/delivery-guarantees/)), and the behaviour is tested against real databases, not only mocks.
-
----
-
 ## Quick Start
-
-```bash
-dotnet add package NexJob
-```
 
 ```csharp
 // Program.cs: register NexJob (in-memory storage by default) and scan for jobs
@@ -78,13 +67,15 @@ To use a database instead of memory, see the [storage providers](https://olucian
 
 ## Why you can trust it
 
-A job library is judged on the worst day. This is what the test suite proves ([the full page](https://oluciano.github.io/NexJob/reference/how-we-test/)):
+A job library is judged on the worst day: a node that dies, a deploy in the middle of a job, an upgrade from the previous version. Every failure has a documented cost (see [Delivery guarantees](https://oluciano.github.io/NexJob/concepts/delivery-guarantees/)). This is what the test suite proves ([the full page](https://oluciano.github.io/NexJob/reference/how-we-test/)):
 
 - **The same tests on every provider.** One contract suite runs on InMemory, PostgreSQL, SQL Server, Redis and MongoDB.
 - **Several nodes, one database.** Reliability scenarios run many workers and nodes on the four databases: each job runs once, no job is lost under concurrent enqueue, and a job left behind by a dead node is recovered and runs once.
 - **A killed process.** On SQL Server a node runs in its own process and is killed in the middle of a job.
 - **Upgrades.** A storage filled by the previous version opens with the new one, with its history and orphans intact.
 - **An honest list of gaps.** The process kill is tested on SQL Server only, and wake-up latency is not asserted. The list is in the page above.
+
+<sub>The Scorecard, Best Practices and CodeQL badges rate the repository's security and engineering practices (pinned actions, least-privilege tokens, dependency updates, documented process, static analysis). The Best Practices badge is self-declared; the CodeQL badge says the analysis ran on the default branch, and the open alerts are in the [Security tab](https://github.com/oluciano/NexJob/security/code-scanning). None of them says anything about throughput or behaviour under failure.</sub>
 
 ---
 
