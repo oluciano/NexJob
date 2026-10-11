@@ -31,7 +31,8 @@
 
   <!-- Analyzers applied to every project in the solution -->
   <ItemGroup>
-    <AdditionalFiles Include="$(MSBuildThisFileDirectory)BannedSymbols.txt" />
+    <AdditionalFiles Include="$(MSBuildThisFileDirectory)build/BannedSymbols.txt" />
+    <AdditionalFiles Include="$(MSBuildThisFileDirectory)build/stylecop.json" />
     <PackageReference Include="Microsoft.CodeAnalysis.NetAnalyzers" Version="8.0.0">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>

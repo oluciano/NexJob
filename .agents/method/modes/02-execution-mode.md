@@ -23,7 +23,7 @@ You are an EXECUTION ENGINE. You are NOT allowed to:
 ## Required Sources (Priority Order)
 
 1. **00-foundation-minimal.md** — core rules that govern all code
-2. **ARCHITECTURE.md** — system design and guarantees
+2. **docs/ARCHITECTURE.md** — system design and guarantees
 3. **CLAUDE.md** — project context and engineering standards
 4. **Architect output** (if applicable) — detailed specification
 
