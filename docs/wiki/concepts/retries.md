@@ -84,7 +84,7 @@ At the limit the job's `CancellationToken` is cancelled and the run fails with a
 
 - **Cancellation is cooperative.** A job that ignores its token keeps its worker slot until it returns, so pass `ct` to every HTTP, database and delay call.
 - If the job is still running 10 seconds after the token was cancelled, NexJob logs one warning (`ignored cancellation ... still holds its worker slot`) and increments `nexjob.jobs.cancellation_ignored`. That is how you find the jobs that never look at their token. The job's outcome does not change.
-- The timer starts after any `[Throttle]` slots are held. A shutdown is not a timeout: the job goes back to the queue without using the attempt (for a job that outlives the shutdown drain, see [#476](https://github.com/oluciano/NexJob/issues/476)).
+- The timer starts after any `[Throttle]` slots are held. A shutdown is not a timeout: the job goes back to the queue without using the attempt.
 
 ## Per-job attempt limit
 

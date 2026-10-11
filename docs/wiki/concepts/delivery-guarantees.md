@@ -37,7 +37,7 @@ The columns are the same in all three tables: what happens to the job, whether t
 
 | Event | The job | Attempt | Dead-letter handler and forwarders |
 | --- | --- | --- | --- |
-| The host shuts down cleanly while it runs | Put back in the queue. If the process exits right after the drain, the job can stay `Processing` and be recovered by the orphan watcher instead ([#476](https://github.com/oluciano/NexJob/issues/476)) | **Not used** when it is put back; used if the watcher recovers it | No |
+| The host shuts down cleanly while it runs | Put back in the queue before `StopAsync` returns (up to 5 s after the drain). A job that ignores its cancellation token stays `Processing` and is recovered by the orphan watcher instead | **Not used** when it is put back; used if the watcher recovers it | No |
 | The job type is not available in this process (another service's job) | Deferred by `ForeignJobRetryDelay` (default 5 s) so the owning service can take it | **Not used** | No |
 | A `[Throttle]` slot is not free within about 5 seconds | Returned to the queue; it can run in a different order than it was enqueued | **Not used** | No |
 | Its queue is paused | Waits in `Enqueued`. Pausing takes effect on each node's next polling cycle, and a job already fetched by a cycle in flight still runs | Not used | No |

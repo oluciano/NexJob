@@ -13,6 +13,7 @@ namespace NexJob.Internal;
 /// </summary>
 internal sealed class JobDispatcherService : BackgroundService
 {
+    private static readonly TimeSpan RequeueGrace = TimeSpan.FromSeconds(5);
     private readonly IJobStorage _storage;
     private readonly IJobExecutor _executor;
     private readonly IRuntimeSettingsStore _runtimeStore;
@@ -75,7 +76,7 @@ internal sealed class JobDispatcherService : BackgroundService
         if (_activeJobCount > 0)
         {
             _logger.LogWarning(
-                "Shutdown timeout reached. {Count} job(s) still active — they will be requeued by the orphan watcher.",
+                "Shutdown timeout reached. {Count} job(s) still active — they are cancelled and requeued, or left to the orphan watcher if they ignore cancellation.",
                 _activeJobCount);
         }
         else
@@ -84,6 +85,22 @@ internal sealed class JobDispatcherService : BackgroundService
         }
 
         await base.StopAsync(cancellationToken).ConfigureAwait(false);
+
+        // base.StopAsync cancels the running jobs, but their requeue commit happens after it returns. A process that
+        // exits right after StopAsync would lose it, so wait (bounded) for the jobs to hand control back.
+        using var graceCts = new CancellationTokenSource(RequeueGrace);
+        using var graceLinked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, graceCts.Token);
+        while (_activeJobCount > 0 && !graceLinked.Token.IsCancellationRequested)
+        {
+            try
+            {
+                await Task.Delay(25, graceLinked.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+        }
     }
 
     /// <inheritdoc/>

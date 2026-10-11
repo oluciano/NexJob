@@ -173,8 +173,7 @@ builder.Services.AddNexJob(o =>
     o.ShutdownTimeout = TimeSpan.FromSeconds(30));
 ```
 
-!!! warning "A job that outlives the drain may not be requeued before the process exits"
-    The requeue of a job that is cancelled when the drain ends is committed **after** `StopAsync` has returned. If the process exits right away, which is what a deploy does, that commit can be lost: on PostgreSQL the job stayed `Processing` with its attempt used in 3 of 3 runs, and only the orphan watcher recovered it, after `HeartbeatTimeout`. A job that finishes within the drain is not affected. Give `ShutdownTimeout` room for your longest job, or split long jobs and save [checkpoints](../guides/job-context.md#progress-checkpoints-for-long-running-jobs). Tracked in [#476](https://github.com/oluciano/NexJob/issues/476).
+When the drain ends, the jobs still running are cancelled and `StopAsync` waits up to 5 more seconds for them to commit their requeue, so the job is back in the queue with its attempt refunded before the process exits. A job that ignores its cancellation token cannot be requeued in that time and is recovered by the orphan watcher after `HeartbeatTimeout` instead. Give `ShutdownTimeout` room for your longest job, or split long jobs and save [checkpoints](../guides/job-context.md#progress-checkpoints-for-long-running-jobs).
 
 !!! warning
     The .NET host defaults to a 30-second shutdown timeout (5 seconds on older project templates). If NexJob's `ShutdownTimeout` equals the host's, the host can kill the process before the drain finishes. Always set `HostOptions.ShutdownTimeout` to at least `NexJobOptions.ShutdownTimeout + 10 seconds`.
