@@ -190,22 +190,15 @@ See [Storage Providers](storage/overview.md) for the other databases.
 
 ## Runnable reference samples
 
-The repository ships with ready-to-run reference architectures covering every NexJob capability. Clone the repo and `dotnet run` any sample directly.
+Clone the repository and `dotnet run` any sample. Three good starting points:
 
 | Sample | Focus | Port |
 |---|---|---|
 | [`NexJob.Sample.MinimalApi`](https://github.com/oluciano/NexJob/tree/develop/samples/NexJob.Sample.MinimalApi) | Dashboard, dead-letter handler, deadline enforcement | 5001 |
-| [`NexJob.Sample.WebApi`](https://github.com/oluciano/NexJob/tree/develop/samples/NexJob.Sample.WebApi) | PostgreSQL storage, REST endpoints, `.http` test files | 5002 |
-| [`NexJob.Sample.WorkerService`](https://github.com/oluciano/NexJob/tree/develop/samples/NexJob.Sample.WorkerService) | Headless worker with standalone embedded dashboard | 5005 |
-| [`NexJob.Sample.ConfiguredRecurring`](https://github.com/oluciano/NexJob/tree/develop/samples/NexJob.Sample.ConfiguredRecurring) | Recurring jobs declared in `appsettings.json` | 5004 |
-| [`NexJob.Sample.RabbitMQ`](https://github.com/oluciano/NexJob/tree/develop/samples/NexJob.Sample.RabbitMQ) | Resilient outbox producer + trigger consumer | 5009 |
-| [`NexJob.Sample.Kafka`](https://github.com/oluciano/NexJob/tree/develop/samples/NexJob.Sample.Kafka) | Partitioned outbox publishing + consumer trigger | 5010 |
+| [`NexJob.Sample.WorkerService`](https://github.com/oluciano/NexJob/tree/develop/samples/NexJob.Sample.WorkerService) | Headless worker with the standalone embedded dashboard | 5005 |
 | [`NexJob.Sample.Reliability`](https://github.com/oluciano/NexJob/tree/develop/samples/NexJob.Sample.Reliability) | Retry, checkpoint, deadline, dead-letter, circuit breaker, job control, health | 5011 |
-| [`NexJob.Sample.Providers`](https://github.com/oluciano/NexJob/tree/develop/samples/NexJob.Sample.Providers) | The same app on PostgreSQL, SQL Server, Redis, MongoDB or InMemory | 5012 |
-| [`NexJob.Sample.Storage`](https://github.com/oluciano/NexJob/tree/develop/samples/NexJob.Sample.Storage) | PostgreSQL read replica, distributed throttle, OTel | 5007 |
-| [`NexJob.Sample.CloudTriggers`](https://github.com/oluciano/NexJob/tree/develop/samples/NexJob.Sample.CloudTriggers) | AWS SQS, Azure Service Bus, GCP Pub/Sub, Salesforce | 5008 |
 
-A full local test stack (PostgreSQL 16, Redis 7, RabbitMQ 3.13, Kafka KRaft, SQL Server 2022 and MongoDB 7) is provided in [`samples/docker-compose.yml`](https://github.com/oluciano/NexJob/tree/develop/samples/docker-compose.yml).
+The [samples folder](https://github.com/oluciano/NexJob/tree/develop/samples) has the rest (PostgreSQL, RabbitMQ, Kafka, cloud triggers, recurring jobs and more) and a [`docker-compose.yml`](https://github.com/oluciano/NexJob/tree/develop/samples/docker-compose.yml) with a local test stack for PostgreSQL, Redis, RabbitMQ, Kafka, SQL Server and MongoDB.
 
 ## Next steps
 
@@ -225,5 +218,13 @@ A full local test stack (PostgreSQL 16, Redis 7, RabbitMQ 3.13, Kafka KRaft, SQL
   -   [**Retries & Dead Letter**](concepts/retries-and-dead-letter.md)
 
     Configure exponential backoff and handle exhausted retries gracefully.
+
+  -   [**Dashboard**](integrations/dashboard.md)
+
+    See your jobs, nodes and failures in real time, in ASP.NET Core or a Worker Service.
+
+  -   [**Delivery Guarantees**](concepts/delivery-guarantees.md)
+
+    What each failure costs a job: crashes, shutdown, throttling, pauses and deadlines.
 
 </div>
