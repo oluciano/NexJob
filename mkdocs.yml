@@ -102,6 +102,7 @@ nav:
       - Kafka: integrations/kafka.md
       - RabbitMQ: integrations/rabbitmq.md
       - Azure Service Bus: integrations/azure-service-bus.md
+      - AWS SQS: integrations/aws-sqs.md
   - Reference:
       - Configuration: reference/configuration.md
       - JobRecord: reference/job-record.md

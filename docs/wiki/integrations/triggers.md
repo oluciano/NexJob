@@ -14,7 +14,7 @@ NexJob triggers bridge external message brokers and your background job pipeline
 | **Kafka** | Yes | `kafka:{topic}:{partition}:{offset}` | header `nexjob.job_type`, or `JobType` | Transient: retried in place with a growing pause (1 s up to 30 s) without consuming the next record. Permanent: copied to the dead-letter topic if one is configured, otherwise skipped with an error log. |
 | **RabbitMQ** | Yes | `MessageId` (none when blank) | header `nexjob.job_type`, or `JobType` | Transient: `nack` with requeue after 1 s. Permanent: `nack` without requeue. |
 | [**Azure Service Bus**](azure-service-bus.md) | No | `MessageId` | application property `nexjob.job_type`, or `JobType` | Transient: the message is abandoned and redelivered. Permanent: dead-lettered. |
-| **AWS SQS** | No | `MessageId` | only the `JobName` option | Any failure: the visibility timeout is reset to 0, so the message returns at once. A redrive policy on the queue is what parks it. |
+| [**AWS SQS**](aws-sqs.md) | No | `MessageId` | only the `JobName` option | Any failure: the visibility timeout is reset to 0, so the message returns at once. A redrive policy on the queue is what parks it. |
 | **Google Pub/Sub** | No | message ID | attribute `nexjob.job_type`, or `JobType` | Transient: `Nack`. Permanent: `Nack` after 2 s, so a dead-letter policy on the subscription can park it. |
 | **Salesforce Pub/Sub API** | No | event id (replay id as hex) | the `JobType` option, else the built-in `SalesforceEventJob` | The event is logged and, when `DeadLetterQueue` is set, copied there as a job. Its replay id is not committed. |
 | **Salesforce Streaming API** | No | `{channel}:{eventId}` | the `JobType` option, else the built-in `SalesforceStreamingEventJob` | The same as the Pub/Sub API trigger. |
@@ -102,37 +102,6 @@ Every trigger enqueues with `DuplicatePolicy.AllowAfterFailed` (see [Idempotency
 
 Each broker can be registered in two equivalent ways: on the service collection (`services.AddNexJob{Broker}Trigger<TJob>(...)`, and `AddSalesforceTrigger` for Salesforce) or chained on the builder returned by `AddNexJob()` (`AddNexJob().Add{Broker}Trigger<TJob>(...)`). The tabs below show whichever form each package's own examples use.
 
-
-=== "AWS SQS"
-
-    #### Install the package
-
-    ```bash
-    dotnet add package NexJob.Trigger.AwsSqs
-    ```
-
-    #### Register the trigger
-
-    SQS message attributes are not read for the job type — you must configure it explicitly:
-
-    ```csharp
-    using NexJob.Trigger.AwsSqs;
-
-    // Preferred: generic overload binds queue to one job type
-    builder.Services.AddNexJobAwsSqsTrigger<ProcessOrderJob>(options =>
-    {
-        options.QueueUrl = "https://sqs.us-east-1.amazonaws.com/123456789/my-queue";
-    });
-
-    // Equivalent explicit form:
-    // builder.Services.AddNexJobAwsSqsTrigger(options =>
-    // {
-    //     options.QueueUrl = "https://sqs.us-east-1.amazonaws.com/123456789/my-queue";
-    //     options.JobName = typeof(ProcessOrderJob).AssemblyQualifiedName!;
-    // });
-    ```
-
-    The idempotency key is the SQS message ID. Unacknowledged messages become visible again after the queue's visibility timeout, so transient failures are retried automatically by SQS.
 
 === "Google Pub/Sub"
 
