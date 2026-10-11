@@ -6,7 +6,7 @@ body:
     attributes:
       value: |
         Use this template to propose a new storage provider or to volunteer to implement one.
-        Read [CONTRIBUTING.md](../../CONTRIBUTING.md) before starting — storage providers must
+        Read [CONTRIBUTING.md](../CONTRIBUTING.md) before starting — storage providers must
         implement the full `IStorageProvider` contract and pass `StorageProviderTestsBase`.
 
   - type: input

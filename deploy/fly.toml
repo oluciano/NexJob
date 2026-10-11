@@ -7,7 +7,7 @@ app = 'nexjob-playground'
 primary_region = 'gru'
 
 [build]
-  dockerfile = 'Dockerfile'
+  dockerfile = '../Dockerfile'
 
 [http_service]
   internal_port = 8080

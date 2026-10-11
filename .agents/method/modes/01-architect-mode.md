@@ -7,7 +7,7 @@
 ## Approach
 
 1. **Analyze the request** — understand the problem and constraints
-2. **Check architecture** — verify alignment with ARCHITECTURE.md
+2. **Check architecture** — verify alignment with docs/ARCHITECTURE.md
 3. **Design the solution** — specify classes, methods, and flow
 4. **Validate invariants** — ensure compliance with foundation rules
 5. **Output plan** — precise, unambiguous, executable

@@ -15,7 +15,7 @@ csharp_prefer_braces = true:warning
 # ── StyleCop: rules that conflict with this project's established conventions ──
 
 # SA1309 — field names must not begin with underscore.
-# Our convention is _camelCase for private fields (see CONTRIBUTING.md).
+# Our convention is _camelCase for private fields (see .github/CONTRIBUTING.md).
 dotnet_diagnostic.SA1309.severity = none
 # SX1309 is the complementary rule that REQUIRES the underscore prefix (StyleCop.Analyzers.Unstable).
 dotnet_diagnostic.SX1309.severity = none
