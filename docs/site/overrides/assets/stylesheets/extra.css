@@ -27,7 +27,7 @@
 html { font-size: 112.5%; }
 @media screen and (min-width: 100em) { html { font-size: 112.5%; } }
 @media screen and (min-width: 125em) { html { font-size: 118.75%; } }
-.md-grid { max-width: 82rem; }
+.md-grid { max-width: 72rem; }
 .md-typeset { line-height: 1.65; }
 
 /* Left menu: group labels as small caps, clear active item */
