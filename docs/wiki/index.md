@@ -4,7 +4,7 @@ sidebarTitle: "Home"
 description: "NexJob is a lightweight .NET background job scheduler with built-in retries, deadlines, real-time dashboard, and zero paid add-ons."
 ---
 
-NexJob is a background job library for .NET 8 built for jobs that **must run, fail safely and leave a trace**: retries, dead-letter handling, deadlines and a built-in dashboard, on five storage providers (PostgreSQL, SQL Server, Redis, MongoDB and in-memory) with no paid tier. Enqueue runs 2.7× faster than Hangfire with 81% less memory allocated per operation ([the numbers](introduction.md#benchmark-numbers)).
+NexJob is a background job library for .NET 8 built for jobs that **must run, fail safely and leave a trace**: retries, dead-letter handling, deadlines and a built-in dashboard, on five storage providers (PostgreSQL, SQL Server, Redis, MongoDB and in-memory) with no paid tier. Enqueue is fast and light on memory ([the numbers](introduction.md#benchmark-numbers)).
 
 ```bash
 dotnet add package NexJob
