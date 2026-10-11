@@ -206,6 +206,7 @@ Most triggers resolve which job to run using the same three-step precedence:
     ```
 
     Key capabilities:
+
     - **Bi-directional gRPC streaming** using the official Salesforce Pub/Sub API protobufs with flow control.
     - **Apache Avro decoding** with in-memory schema caching via `ISalesforceSchemaService`.
     - **Replay ID checkpointing** via `IReplayIdStore` (atomic file-based or in-memory).
@@ -256,6 +257,7 @@ Most triggers resolve which job to run using the same three-step precedence:
     ```
 
     Key capabilities:
+
     - **CometD/Bayeux protocol** with replay extension and graceful disconnect.
     - **Multi-auth**: OAuth 2.0 Username-Password, OAuth 2.0 Client Credentials, and direct Session ID / Bearer token.
     - **Replay ID checkpointing** via `IStreamingReplayIdStore` (file-based or in-memory).
