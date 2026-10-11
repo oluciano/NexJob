@@ -6,11 +6,11 @@ description: "Schedule recurring background jobs in NexJob using cron expression
 
 Recurring jobs in NexJob run on a cron schedule. Each time the schedule fires, NexJob creates a new `JobRecord` — recurring jobs are schedules, not persistent long-running processes. This means every firing gets its own lifecycle, its own retry budget, and its own dead-letter handling, completely independent of the previous firing.
 
-## Code-Based Registration
+## Code-based registration
 
 The most common way to register recurring jobs is inside `AddNexJob` at startup. These registrations are applied on every application start.
 
-### Basic Recurring Job
+### Basic recurring job
 
 ```csharp
 builder.Services.AddNexJob(options =>
@@ -22,7 +22,7 @@ builder.Services.AddNexJob(options =>
 });
 ```
 
-### With Typed Input
+### With typed input
 
 Pass an input value to a job that implements `IJob<TInput>`:
 
@@ -36,7 +36,7 @@ builder.Services.AddNexJob(options =>
 });
 ```
 
-### With a Time Zone
+### With a time zone
 
 Evaluate the cron expression in a specific time zone instead of UTC:
 
@@ -50,7 +50,7 @@ builder.Services.AddNexJob(options =>
 });
 ```
 
-### With a Dedicated Queue
+### With a dedicated queue
 
 Route recurring job firings to a specific queue:
 
@@ -63,6 +63,8 @@ builder.Services.AddNexJob(options =>
         queue: "compute");
 });
 ```
+
+`AddRecurringJob` also takes `enabled: false`: the schedule is registered, but the scheduler skips it at every firing.
 
 !!! tip
     Use [crontab.guru](https://crontab.guru) to validate and understand your cron expressions before deploying. NexJob supports standard 5-field cron expressions as well as 6-field expressions with a seconds field.
@@ -125,16 +127,16 @@ Give every recurring job an id that belongs to one application, for example `bil
 
 At startup NexJob checks the ids it registers from configuration against the stored ones. When an id already belongs to a job of another type it logs a warning with both types and queues and increments the counter `nexjob.recurring.id_collisions` (tag `recurring_job_id`); the registration itself still goes ahead. Recurring jobs registered from code with `RecurringAsync` are not checked. See [Alerts](../guides/alerts.md) for alerting on the counter.
 
-### Behavior on Application Restart
+### Behavior on application restart
 
 The configuration is applied on **every** start:
 
 - If you change `Cron`, `Queue`, `Input`, or `TimeZoneId`, the stored schedule is updated after the next restart.
-- Changes made via the dashboard (pausing a job, overriding a cron) are preserved and are **not** overwritten by the configuration file.
+- What an operator changes in the dashboard (pausing a job, overriding the cron, deleting it) is preserved and is **not** overwritten by the configuration file.
 - A newly registered (or re-applied) job fires at its **next cron occurrence** — it does not fire immediately on startup.
 - An invalid `Cron` or unknown `TimeZoneId` causes that single entry to fail registration. The error is logged and the remaining entries are processed normally.
 
-## Concurrency Policy
+## Concurrency policy
 
 Control what happens when a new cron firing occurs while the previous instance of the same job is still executing.
 
@@ -160,9 +162,9 @@ builder.Services.AddNexJob(options =>
 | `SkipIfRunning` (default) | Uses idempotency key `recurring:{id}` — skips the new firing if a previous instance is still active |
 | `AllowConcurrent` | No deduplication — every firing creates a new `JobRecord` regardless of running instances |
 
-## Updating and Removing Recurring Jobs
+## Updating and removing recurring jobs
 
-### Update at Runtime
+### Update at runtime
 
 Call `RecurringAsync` on `IScheduler` to create or update a schedule at runtime without restarting the application:
 
@@ -173,7 +175,7 @@ await scheduler.RecurringAsync<CleanupOldLogsJob>(
     cancellationToken: ct);
 ```
 
-### Remove a Schedule
+### Remove a schedule
 
 ```csharp
 await scheduler.RemoveRecurringAsync("cleanup-daily", ct);
@@ -181,33 +183,15 @@ await scheduler.RemoveRecurringAsync("cleanup-daily", ct);
 
 Removing a schedule deletes the recurring definition only. Any `JobRecord` instances that were already created from previous firings are not affected.
 
-## How the Scheduler Works
+## How the scheduler works
 
 Understanding the firing mechanism helps you reason about timing and multi-node deployments:
 
-
-### Periodic poll
-
-NexJob polls the recurring job table every `PollingInterval` (default: 15 seconds).
-
-### Find due schedules
-
-It identifies any recurring jobs where `NextExecution <= UtcNow`.
-
-### Acquire distributed lock
-
-A distributed lock is acquired before firing to prevent duplicate `JobRecord` creation across multiple nodes or workers.
-
-### Create and enqueue
-
-A new `JobRecord` is created and placed in the configured queue with the `Enqueued` status.
-
-### Calculate next execution
-
-The `NextExecution` timestamp is recalculated from the cron expression and time zone, ready for the next poll.
-
-
-
+1. **Periodic poll.** NexJob polls the recurring job table every `PollingInterval` (default: 15 seconds).
+2. **Find due schedules.** It selects the recurring jobs where `NextExecution <= UtcNow`.
+3. **Acquire a distributed lock.** The lock is taken before firing, so several nodes or workers never create the same `JobRecord` twice.
+4. **Create and enqueue.** A new `JobRecord` is created in the configured queue with the `Enqueued` status.
+5. **Calculate the next execution.** `NextExecution` is recalculated from the cron expression and time zone, ready for the next poll.
 
 Each fired `JobRecord` is fully independent: if one firing fails, its retries and dead-letter handling operate in isolation, and the next scheduled firing is unaffected.
 
