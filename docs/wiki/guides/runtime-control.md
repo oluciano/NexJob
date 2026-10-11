@@ -28,7 +28,10 @@ public sealed class MaintenanceService(IJobControlService control)
     - **Pausing is shared by every node** that uses the same storage, because it is stored with the runtime settings.
     - **Deleting a running job does not stop it.** The job finishes, its result is discarded, and the deleted job never comes back. Deleting a job that is still waiting means it will never be fetched.
     - **Requeueing** a failed job resets its attempts to zero, so it gets a full set of attempts again.
+    - **An id that does not exist is ignored** by `RequeueJobAsync` and `DeleteJobAsync`: no exception, nothing happens.
 
+!!! note "Requeue only acts on three states"
+    `RequeueJobAsync` re-enqueues a job that is `Failed`, `Expired` or `Scheduled` (the last is what **Run Now** uses). A job in any other state, such as `Processing` or `Succeeded`, is left untouched, and so is an unknown id: no exception, nothing happens. Read the job's status afterwards if you need to know whether it was requeued.
 
 Other available methods: `RequeueJobAsync`, `ResetQueueCircuitAsync`.
 
@@ -38,7 +41,7 @@ Other available methods: `RequeueJobAsync`, `ResetQueueCircuitAsync`.
 | --- | --- | --- |
 | `PauseQueueAsync(queue)` | Workers skip the queue from their next polling cycle. Running jobs are not interrupted. | **Queues** |
 | `ResumeQueueAsync(queue)` | Workers fetch from the queue again. | **Queues** |
-| `RequeueJobAsync(id)` | A failed (dead-letter) job goes back to `Enqueued` with its attempts reset to 0. | **Failed / DLQ** |
+| `RequeueJobAsync(id)` | The job goes back to `Enqueued` with its attempts reset to 0. Acts only on `Failed`, `Expired` and `Scheduled` jobs; see the note above. | **Failed / DLQ** |
 | `DeleteJobAsync(id)` | The job and its logs are removed. A job that is running finishes, and its result is discarded. | **Jobs**, **Failed / DLQ** |
 | `ResetQueueCircuitAsync(queue)` | The circuit breaker of the queue closes and its counters reset. | **Queues**, **Reset Circuit** |
 

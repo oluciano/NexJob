@@ -6,7 +6,7 @@ description: "Test NexJob background jobs with unit tests using mock schedulers 
 
 NexJob jobs are plain .NET classes, which makes them straightforward to test at multiple layers. Unit tests call `ExecuteAsync` directly with fakes for dependencies. Integration tests spin up a real host with InMemory storage and verify that the full enqueue-dispatch-execute path works correctly. Use both layers together to get fast feedback on business logic and confidence in end-to-end behaviour.
 
-## Testing Layers
+## Testing layers
 
 | Layer | What it tests | Storage | Speed |
 |---|---|---|---|
@@ -15,7 +15,7 @@ NexJob jobs are plain .NET classes, which makes them straightforward to test at 
 | **Integration (real DB)** | Storage provider contracts | Docker / Testcontainers | Slower |
 | **Reliability** | Crash recovery, race conditions | Real storage under stress | Slow |
 
-## Unit Testing a Job
+## Unit testing a job
 
 Test job logic directly by instantiating the class and calling `ExecuteAsync`. Inject fakes or mocks for every dependency.
 
@@ -41,7 +41,7 @@ public sealed class SendWelcomeEmailJobTests
 
 Unit tests run without any NexJob infrastructure — no host, no scheduler, no storage. They are the fastest way to verify business logic and cover edge cases.
 
-## Integration Testing with InMemory Storage
+## Integration testing with in-memory storage
 
 The dispatcher, recurring scheduler, and registered recurring jobs are **hosted services** — they only run inside a started host. Build a real host, start it, then wait on a `TaskCompletionSource` that the job signals when it finishes. Never sleep for a fixed duration; always use `WaitAsync(timeout)` so tests fail fast if something goes wrong.
 
@@ -89,7 +89,7 @@ public sealed class TestJob(TaskCompletionSource<bool> executed) : IJob
     `AddNexJob()` returns a `NexJobBuilder`, not an `IServiceCollection`. Register your own services on `services` directly, not by chaining onto `AddNexJob()`. Register jobs one by one with `AddTransient<TJob>()` or scan an assembly with `AddNexJobJobs(assembly)`.
 
 
-## Testing Jobs with Input
+## Testing jobs with input
 
 ```csharp
 [Fact]
@@ -130,7 +130,7 @@ public sealed class ProcessorJob(TaskCompletionSource<int> received) : IJob<Proc
 }
 ```
 
-## Testing Retries
+## Testing retries
 
 The default retry delay is 16 seconds or more — far too long for a test. Override `RetryDelayFactory` to make retries near-instant.
 
@@ -182,7 +182,7 @@ public sealed class FlakyJob(IJobContext context, TaskCompletionSource<int> succ
     Use `IJobContext.Attempt` to count attempts — never a field on the job class. Jobs are transient services, so every attempt creates a new instance and instance fields reset.
 
 
-## Testing Dead-Letter Handlers
+## Testing dead-letter handlers
 
 ```csharp
 [Fact]
@@ -239,7 +239,7 @@ public sealed class TestDeadLetterHandler : IDeadLetterHandler<FailingJob>
 }
 ```
 
-## Testing Recurring Jobs
+## Testing recurring jobs
 
 Recurring jobs registered with `options.AddRecurringJob` are created by a hosted service on startup. Start the host before inspecting storage.
 
@@ -258,10 +258,18 @@ public async Task RecurringJob_IsRegisteredOnStartup()
         .Build();
 
     await host.StartAsync();
-    await Task.Delay(500); // allow the registration hosted service to run
 
+    // The registration hosted service runs on startup: wait for the state, not for a fixed time.
     var storage = host.Services.GetRequiredService<IStorageProvider>();
-    var recurring = await storage.GetRecurringJobsAsync();
+    var deadline = DateTime.UtcNow.AddSeconds(5);
+    IReadOnlyList<RecurringJobRecord> recurring;
+    do
+    {
+        recurring = await storage.GetRecurringJobsAsync();
+        if (recurring.Any(r => r.RecurringJobId == "test-recurring")) break;
+        await Task.Delay(25);
+    }
+    while (DateTime.UtcNow < deadline);
 
     Assert.Contains(recurring, r => r.RecurringJobId == "test-recurring");
 
@@ -269,7 +277,7 @@ public async Task RecurringJob_IsRegisteredOnStartup()
 }
 ```
 
-## Testing Continuations
+## Testing continuations
 
 ```csharp
 [Fact]
@@ -314,6 +322,9 @@ public sealed class ChildJob(TaskCompletionSource<bool> childRan) : IJob
     }
 }
 ```
+
+!!! warning "Register the child before the parent can finish"
+    The test passes because `ContinueWithAsync` is called right after `EnqueueAsync`, before the parent has finished (this example passed 40 runs out of 40). A child registered **after** its parent succeeded is never released ([#471](https://github.com/oluciano/NexJob/issues/471)), so a test that does work between the two calls can hang. To make the order deterministic, have the parent wait on a gate your test opens after it registers the child, as NexJob's own reliability tests do.
 
 ## Tips
 

@@ -6,15 +6,15 @@ description: "Use idempotency keys and DuplicatePolicy in NexJob to prevent dupl
 
 NexJob delivers jobs at-least-once. Under normal conditions a job runs exactly once, but several real-world events can cause it to execute more than once: a worker crash followed by orphan recovery, a retry after a partially-completed external call, a manual requeue from the dashboard, or simply calling `EnqueueAsync` twice with the same intent. Idempotency keys let NexJob deduplicate at the enqueue level, and `DuplicatePolicy` gives you precise control over what happens after a job has already reached a terminal state.
 
-## Why Idempotency Matters
+## Why idempotency matters
 
 Consider an order payment job that charges a card. If the job throws after the charge succeeds but before it marks the order as paid, NexJob retries it. Without an idempotency mechanism, the card is charged twice. The same problem arises if your application calls `EnqueueAsync` in a retry loop or if a load balancer delivers the same HTTP request twice.
 
 Idempotency keys address the **enqueue** side — preventing two separate `JobRecord` entries for the same logical operation while one is still active. For the **execution** side, your job must also be internally idempotent (check before acting, use the payment provider's own idempotency key, etc.).
 
-## Providing an Idempotency Key
+## Providing an idempotency key
 
-Pass `idempotencyKey` to any `EnqueueAsync` call. NexJob returns the existing `JobId` if a matching active job is found, and creates a new one otherwise.
+Pass `idempotencyKey` to an `EnqueueAsync` call. NexJob returns the existing `JobId` if a matching active job is found, and creates a new one otherwise.
 
 ```csharp
 await scheduler.EnqueueAsync<ProcessPaymentJob, PaymentInput>(
@@ -23,11 +23,13 @@ await scheduler.EnqueueAsync<ProcessPaymentJob, PaymentInput>(
     cancellationToken: ct);
 ```
 
-### Deduplication Rules for Active Jobs
+`ScheduleAsync` and `ScheduleAtAsync` also take an `idempotencyKey`, but they always use `DuplicatePolicy.AllowAfterFailed`; only `EnqueueAsync` lets you choose the policy. Continuations (`ContinueWithAsync`) take no key.
+
+### Deduplication rules for active jobs
 
 Jobs with the same `idempotencyKey` in any **active state** are always deduplicated — no matter which `DuplicatePolicy` you choose:
 
-| Active State | Behavior |
+| Active state | Behavior |
 |---|---|
 | `Enqueued` | Returns the existing `JobId` — no new job created |
 | `Processing` | Returns the existing `JobId` — no new job created |
@@ -36,7 +38,7 @@ Jobs with the same `idempotencyKey` in any **active state** are always deduplica
 
 For jobs in **terminal states** (`Succeeded`, `Failed`, `Expired`), the behavior is controlled by `DuplicatePolicy`.
 
-## DuplicatePolicy
+## `DuplicatePolicy`
 
 `DuplicatePolicy` controls what happens when you enqueue a job using an `idempotencyKey` that matches a job already in a terminal state.
 
@@ -48,11 +50,11 @@ await scheduler.EnqueueAsync<ProcessPaymentJob, PaymentInput>(
     cancellationToken: ct);
 ```
 
-### AllowAfterFailed (Default)
+### `AllowAfterFailed` (default)
 
 Re-enqueue is allowed once an existing job with the same key has reached any terminal state. Only active jobs are deduplicated.
 
-| Existing Terminal State | Behavior |
+| Existing terminal state | Behavior |
 |---|---|
 | `Succeeded` | ✅ Allowed — creates a new job |
 | `Failed` | ✅ Allowed — creates a new job |
@@ -64,11 +66,11 @@ Re-enqueue is allowed once an existing job with the same key has reached any ter
 
 **When to use:** Recurring work, webhook delivery, or any operation that is safe to repeat after its previous attempt has finished.
 
-### RejectIfFailed
+### `RejectIfFailed`
 
 Re-enqueue is rejected if the existing job reached the `Failed` terminal state. Re-enqueue is allowed after `Succeeded` or `Expired`.
 
-| Existing Terminal State | Behavior |
+| Existing terminal state | Behavior |
 |---|---|
 | `Succeeded` | ✅ Allowed — creates a new job |
 | `Failed` | ❌ Rejected — throws `DuplicateJobException` |
@@ -76,11 +78,11 @@ Re-enqueue is rejected if the existing job reached the `Failed` terminal state. 
 
 **When to use:** Jobs that must be manually reviewed and cleared after failure before a retry is permitted — for example, a financial reconciliation that needs human sign-off.
 
-### RejectAlways
+### `RejectAlways`
 
 Re-enqueue is rejected if the existing job is in any terminal state. Use this for one-time operations where re-execution is never acceptable.
 
-| Existing Terminal State | Behavior |
+| Existing terminal state | Behavior |
 |---|---|
 | `Succeeded` | ❌ Rejected — throws `DuplicateJobException` |
 | `Failed` | ❌ Rejected — throws `DuplicateJobException` |
@@ -88,7 +90,7 @@ Re-enqueue is rejected if the existing job is in any terminal state. Use this fo
 
 **When to use:** Legal notices, one-time account provisioning, or any operation where running it more than once would cause unacceptable consequences regardless of the previous outcome.
 
-## Handling DuplicateJobException
+## Handling `DuplicateJobException`
 
 `DuplicateJobException` is thrown (from `NexJob.Exceptions`) when an enqueue is rejected by policy. It exposes the existing job's ID and the policy that rejected the request:
 
@@ -112,7 +114,7 @@ catch (DuplicateJobException ex)
 }
 ```
 
-## Real-World Examples
+## Real-world examples
 
 
 === "Payment Processing"
@@ -155,7 +157,7 @@ catch (DuplicateJobException ex)
 
 
 
-## Making Jobs Idempotent Internally
+## Making jobs idempotent internally
 
 Idempotency keys guard against duplicate enqueue, but the job itself must also handle being called more than once. The standard pattern is to check whether the external effect already happened before acting:
 
@@ -178,11 +180,11 @@ public sealed class ChargeCardJob : IJob<PaymentInput>
 }
 ```
 
-## Best Practices for Choosing a Key
+## Best practices for choosing a key
 
 !!! note
     - **Use a natural business identifier** as your key: `$"payment-{orderId}"`, `$"welcome-{userId}"`, `$"invoice-{invoiceId}"`. This makes deduplication semantics obvious to future readers.
-      - **Keep keys stable** — if the key changes between retries (e.g. it includes a timestamp), deduplication will not work.
-      - **Scope keys to the operation** — a key that is too broad (e.g. just the user ID) may block legitimate duplicate jobs for different operations on the same entity.
-      - **Remember key lifetime** — the guarantee holds only while the job record exists in storage. Once the record is purged by the retention policy, the same key can be reused.
+    - **Keep keys stable** — if the key changes between retries (e.g. it includes a timestamp), deduplication will not work.
+    - **Scope keys to the operation** — a key that is too broad (e.g. just the user ID) may block legitimate duplicate jobs for different operations on the same entity.
+    - **Remember key lifetime** — the guarantee holds only while the job record exists in storage. Once the record is purged by the retention policy, the same key can be reused.
 

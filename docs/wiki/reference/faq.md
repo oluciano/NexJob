@@ -1,7 +1,7 @@
 ---
 title: "NexJob Frequently Asked Questions: Complete Answers"
 sidebarTitle: "FAQ"
-description: "Answers to common questions about NexJob: storage choices, multi-instance deployments, job ordering, performance, and Hangfire migration."
+description: "Answers to common questions about NexJob: storage choices, multi-instance deployments, job ordering and performance."
 ---
 
 These answers describe verified behavior as of v5.6.1 and later.
@@ -11,9 +11,10 @@ These answers describe verified behavior as of v5.6.1 and later.
 ???+ "If my app restarts or a node dies mid-job, what happens?"
     It depends on how the process stops.
 
-    **Graceful stop (`SIGTERM`, deploy restart):** the host stops fetching new jobs and waits up to `ShutdownTimeout` (default 30 s) for running jobs to finish. A job interrupted by shutdown is **requeued immediately without consuming an attempt** and is never dead-lettered because of a shutdown.
+    **Graceful stop (`SIGTERM`, deploy restart):** the host stops fetching new jobs and waits up to `ShutdownTimeout` (default 30 s) for running jobs to finish. A job interrupted by shutdown is **requeued without consuming an attempt** and is never dead-lettered because of a shutdown. The requeue is committed before `StopAsync` returns; only a job that ignores its cancellation token is left to the orphan watcher.
 
     **Crash (`kill -9`, node lost):** the job stays `Processing`. NexJob detects the stale heartbeat and requeues the job:
+
     1. Workers refresh their heartbeat every `HeartbeatInterval` (default 30 s).
     2. A background watcher looks for `Processing` jobs with a heartbeat older than `HeartbeatTimeout` (default 5 min) and requeues them.
     3. If the job already consumed all its attempts, it becomes `Failed` instead of `Enqueued`.
@@ -151,6 +152,7 @@ These answers describe verified behavior as of v5.6.1 and later.
     | **Circuit breaker** | Is the destination down? Should I stop sending? | A whole queue | After repeated failures |
 
     Quick rules:
+
     - One job fails, others are fine → **retry**.
     - Every job in the queue fails at once → **circuit breaker**.
     - The destination accepts only N concurrent calls → **throttle**.
@@ -197,16 +199,16 @@ These answers describe verified behavior as of v5.6.1 and later.
 ## Comparison with Hangfire
 
 ???+ "How does NexJob differ from Hangfire?"
-    NexJob is designed for high-throughput, cloud-native .NET workloads. Key differences:
+    NexJob is designed for high-throughput, cloud-native .NET workloads. What it provides:
 
-    - **Performance.** NexJob's enqueue latency benchmarks at ~13 µs with ~2 KB allocation vs Hangfire's ~36 µs and ~11 KB (measured on .NET 8 RyuJIT). Batch fetching and batch acknowledgment further reduce DB roundtrips.
-    - **At-least-once semantics are explicit.** NexJob documents that jobs may run more than once and guides you toward idempotency rather than attempting false exactly-once guarantees.
-    - **Built-in broker triggers.** NexJob includes native trigger packages for Kafka, RabbitMQ, Azure Service Bus, AWS SQS, Google Pub/Sub, and Salesforce — no third-party glue required.
-    - **Queue circuit breaker.** A per-queue circuit breaker with progressive backoff is built into the core, not an add-on.
-    - **OpenTelemetry first.** Distributed trace propagation, structured log scopes, and OTEL-compatible metrics are built into the core, not added through community middleware.
+    - **Performance.** NexJob's enqueue latency benchmarks at ~13 µs with ~2 KB allocation vs Hangfire's ~36 µs and ~11 KB (enqueue only, measured on .NET 8 RyuJIT with in-memory storage). Batch fetching and batch acknowledgment further reduce DB roundtrips.
+    - **At-least-once semantics are explicit.** NexJob documents that jobs may run more than once and guides you toward [idempotency](../concepts/idempotency.md).
+    - **Built-in broker triggers.** NexJob includes native trigger packages for Kafka, RabbitMQ, Azure Service Bus, AWS SQS, Google Pub/Sub, and Salesforce, each as its own package.
+    - **Queue circuit breaker.** A per-queue circuit breaker with progressive backoff is built into the core.
+    - **OpenTelemetry first.** Distributed trace propagation, structured log scopes, and OTEL-compatible metrics are built into the core.
     - **Storage choice.** NexJob supports PostgreSQL, SQL Server, MongoDB, Redis, and InMemory out of the box, with a clean `IStorageProvider` interface for custom backends.
 
-    For a step-by-step guide to migrating a Hangfire application, see the [Migration guide](../reference/migration.md).
+    See [Why NexJob?](../introduction.md#why-nexjob) for what NexJob provides.
 
 
 ???+ "What does a broker trigger do with a non-JSON message body?"

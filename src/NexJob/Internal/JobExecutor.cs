@@ -24,6 +24,7 @@ internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
     private readonly NexJobOptions _options;
     private readonly ILogger<JobExecutor> _logger;
     private readonly IReadOnlyList<IJobExecutionFilter> _filters;
+    private readonly JobWakeUpChannel _wakeUp;
     private readonly Channel<JobId> _ackChannel;
     private readonly CancellationTokenSource _ackCts;
     private readonly Task _ackFlusherTask;
@@ -38,6 +39,7 @@ internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
     /// <param name="throttleRegistry">The throttle registry.</param>
     /// <param name="options">The nex job options.</param>
     /// <param name="filters">The filters.</param>
+    /// <param name="wakeUp">The wake-up channel signalled after a successful commit, so promoted continuations are fetched without waiting a poll.</param>
     /// <param name="logger">The logger.</param>
     public JobExecutor(
         IJobStorage storage,
@@ -47,8 +49,10 @@ internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
         ThrottleRegistry throttleRegistry,
         NexJobOptions options,
         IEnumerable<IJobExecutionFilter> filters,
+        JobWakeUpChannel wakeUp,
         ILogger<JobExecutor> logger)
     {
+        _wakeUp = wakeUp;
         _storage = storage;
         _invokerFactory = invokerFactory;
         _retryPolicy = retryPolicy;
@@ -293,6 +297,7 @@ internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
             try
             {
                 await _storage.CommitJobResultAsync(job.Id, result, CancellationToken.None).ConfigureAwait(false);
+                _wakeUp.Signal();
                 _logger.LogDebug("Job {JobId} completed successfully", job.Id);
                 return;
             }
@@ -554,6 +559,7 @@ internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
                     if (buffer.Count > 0)
                     {
                         await _storage.AcknowledgeBatchAsync(buffer, CancellationToken.None).ConfigureAwait(false);
+                        _wakeUp.Signal();
                         buffer.Clear();
                     }
                 }

@@ -4,7 +4,7 @@ sidebarTitle: "PostgreSQL"
 description: "Use NexJob.Postgres to store jobs in PostgreSQL with ACID guarantees, FOR UPDATE SKIP LOCKED, dashboard read replica support, and batch processing."
 ---
 
-NexJob's PostgreSQL provider persists all job state in your existing PostgreSQL database using battle-tested relational primitives: `FOR UPDATE SKIP LOCKED` for contention-free worker dispatch, advisory locks for distributed coordination, and native array operations for vectorized batch acknowledgment. It is the recommended choice when your stack already uses PostgreSQL and you need full ACID guarantees across job operations.
+NexJob's PostgreSQL provider persists all job state in your existing PostgreSQL database using plain relational primitives: `FOR UPDATE SKIP LOCKED` so workers on many nodes never claim the same job, an advisory lock so only one node migrates the schema at a time, and `WHERE id = ANY(@ids)` to acknowledge a batch of jobs in one statement. It is the recommended choice when your stack already uses PostgreSQL and you need full ACID guarantees across job operations.
 
 ## Install
 
@@ -68,34 +68,35 @@ builder.Services.AddNexJob(options =>
 .UseDashboardReadReplica(readReplicaConnectionString);
 ```
 
-`UseDashboardReadReplica` overrides only the `IDashboardStorage` registration with a separate provider instance pointed at the replica. All writes and worker coordination continue through the primary. The replica must share the same schema as the primary.
+`UseDashboardReadReplica` overrides only the `IDashboardStorage` registration with a separate provider instance pointed at the replica. Enqueueing, fetching and the worker coordination continue through the primary, and the replica must share the same schema. It never runs migrations.
+
+!!! note "Requeue and delete use the primary"
+    `IJobControlService.RequeueJobAsync` and `DeleteJobAsync` write to the primary, not to the replica, and the orphan watcher reads a failed job from the primary before it calls the dead-letter handler. The replica serves only the dashboard's read queries, so a replica that lags never hides a job from those actions.
 
 !!! tip
-    This pattern works with any PostgreSQL-compatible read replica: native streaming replicas, AWS RDS read replicas, Azure Database for PostgreSQL replicas, or Citus mirror nodes.
+    The replica only has to be a PostgreSQL database with the same schema that the connection string can read. The tests behind this page used a read-only role on the primary database (see the next section); a streaming or managed replica was not tried.
 
 
 ## Storage segregation
 
-If you need different connection strings for job operations and dashboard queries — for example, separate credentials with different permissions — replace the default `IDashboardStorage` registration directly:
+If you want the dashboard to connect with a **different credential**, for example one that can only read, point `UseDashboardReadReplica` at the same database with that credential:
 
 ```csharp
-using NexJob.Postgres;
-using NexJob.Storage;
-
 builder.Services.AddNexJobPostgres(
-    builder.Configuration.GetConnectionString("NexJobWorker")!);  // read-write
+    builder.Configuration.GetConnectionString("NexJobWorker")!);   // read-write
 
-// Override only dashboard storage with a read-only credential
-builder.Services.AddSingleton<IDashboardStorage>(_ =>
-    new PostgresStorageProvider(
-        builder.Configuration.GetConnectionString("NexJobReadOnly")!));
-
-builder.Services.AddNexJob();
+builder.Services.AddNexJob()
+    .UseDashboardReadReplica(builder.Configuration.GetConnectionString("NexJobReadOnly")!);
 ```
+
+The read-only role needs `CONNECT` on the database, `USAGE` on the schema and `SELECT` on the NexJob tables (checked: `GetMetricsAsync` works with exactly these). The same limit as above applies to requeue and delete.
+
+!!! warning "Do not build the provider from a connection string for this"
+    `new PostgresStorageProvider(connectionString)` applies the schema migrations in its constructor, and the migrator runs `CREATE TABLE IF NOT EXISTS`, which needs the `CREATE` privilege on the schema even when the tables already exist. With a read-only credential it fails at startup with `permission denied for schema public`. The `NpgsqlDataSource` constructor and `UseDashboardReadReplica` do not migrate.
 
 ## High-throughput batch processing
 
-For workloads that push hundreds of thousands of jobs per minute, enable batch acknowledgment together with a short polling interval. Workers dynamically fetch a batch of jobs sized to the number of idle worker slots in a single `FOR UPDATE SKIP LOCKED` query, and commit successful completions in asynchronous batches using `WHERE id = ANY(@ids)` — eliminating per-job WAL transaction flushes.
+For workloads that push hundreds of thousands of jobs per minute, enable batch acknowledgment together with a short polling interval. Workers dynamically fetch a batch of jobs sized to the number of idle worker slots in a single `FOR UPDATE SKIP LOCKED` query, and commit successful completions in asynchronous batches using `WHERE id = ANY(@ids)`, one statement for many jobs instead of one commit per job.
 
 ```csharp
 builder.Services.AddNexJobPostgres(connectionString);
@@ -106,7 +107,7 @@ builder.Services.AddNexJob(options =>
     options.Workers         = 30;
     options.PollingInterval = TimeSpan.FromMilliseconds(20);
 
-    // Commit successful jobs in asynchronous batches, eliminating per-job WAL flushes
+    // Commit successful jobs in asynchronous batches (off by default)
     options.EnableBatchAcknowledgment = true;
 });
 ```

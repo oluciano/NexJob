@@ -29,7 +29,7 @@ public sealed class LongRunningJob : IJob
 }
 ```
 
-## Available Properties
+## Available properties
 
 | Property | Type | Description |
 |---|---|---|
@@ -40,9 +40,11 @@ public sealed class LongRunningJob : IJob
 | `RecurringJobId` | `string?` | The recurring job definition ID, or `null` if the job was enqueued directly. |
 | `Tags` | `IReadOnlyList<string>` | Tags attached to this job at enqueue time. |
 
-## Reporting Progress
+## Reporting progress
 
 Call `ReportProgressAsync` to push a progress update to the storage layer. The dashboard reflects updates in real time via SSE.
+
+`percent` must be between `0` and `100`: any other value throws an `ArgumentOutOfRangeException`, which fails the job, so clamp a computed percentage before you pass it.
 
 ```csharp
 public sealed class DataImportJob : IJob<ImportInput>
@@ -72,7 +74,7 @@ public sealed class DataImportJob : IJob<ImportInput>
 }
 ```
 
-### Progress Extension Methods
+### Progress extension methods
 
 NexJob ships convenience extensions that wire up progress reporting to collection iteration automatically.
 
@@ -102,13 +104,13 @@ NexJob ships convenience extensions that wire up progress reporting to collectio
 
 
 
-## Progress Checkpoints for Long-Running Jobs
+## Progress checkpoints for long-running jobs
 
 For batch processing, data migrations, and multi-step workflows, use checkpoints to persist exactly how far the job has progressed. If the job is interrupted — by a worker restart, a transient crash, or a retry after failure — it resumes from the last checkpoint rather than starting over.
 
-### Saving a Checkpoint
+### Saving a checkpoint
 
-Call `SaveCheckpointAsync<TState>` with your state object. NexJob serialises it and persists it atomically alongside the progress update.
+Call `SaveCheckpointAsync<TState>` with your state object. NexJob serialises it with `System.Text.Json` and persists it atomically alongside the progress update. `TState` must be a reference type (a `class` or a `record`), and `percent`, when you pass it, has the same `0` to `100` limit.
 
 ```csharp
 public sealed class LargeDataSyncJob : IJob
@@ -159,16 +161,19 @@ public sealed class LargeDataSyncJob : IJob
 public record SyncCheckpoint(long LastProcessedId, int TotalBatches);
 ```
 
-### Resuming from a Checkpoint
+### Resuming from a checkpoint
 
 Call `GetCheckpoint<TState>()` at the start of `ExecuteAsync`. It returns `null` on the first attempt (no checkpoint saved yet) and the deserialised state object on subsequent attempts.
+
+!!! warning
+    `GetCheckpoint` also returns `null` when the saved checkpoint cannot be deserialised into `TState`, and it raises no error. If you change the shape of the state type while jobs are in flight, a retried job silently starts over. Keep checkpoint types backward compatible, or add a version field you can check.
 
 ```csharp
 var state = _context.GetCheckpoint<SyncCheckpoint>()
             ?? new SyncCheckpoint(LastProcessedId: 0, TotalBatches: 0);
 ```
 
-### Checkpoint Lifecycle
+### Checkpoint lifecycle
 
 <div class="grid cards" markdown>
   -   **Persists across retries**
@@ -185,7 +190,7 @@ var state = _context.GetCheckpoint<SyncCheckpoint>()
 
 </div>
 
-## Detecting Retries
+## Detecting retries
 
 Use `Attempt` to branch logic on retries — for example to skip expensive setup steps you already completed:
 
@@ -205,7 +210,7 @@ public async Task ExecuteAsync(CancellationToken ct)
     Jobs are transient services, so each attempt creates a new instance. Do not track attempt state in instance fields — use `IJobContext.Attempt` or a checkpoint instead.
 
 
-## Using `IJobContext` from Other Services
+## Using `IJobContext` from other services
 
 Because `IJobContext` is scoped, any service resolved inside the same job scope can inject it directly:
 
@@ -220,7 +225,7 @@ public sealed class AuditTrail(IJobContext context)
     Resolving `IJobContext` outside a job execution — from a web request, a singleton, or a hosted service — throws `InvalidOperationException: "IJobContext is only available during job execution"`. If a service must work both inside and outside jobs, pass the values it needs explicitly, or read them from the structured logging scope NexJob opens around every execution (`NexJob.JobId`, `NexJob.JobType`, `NexJob.Queue`, `NexJob.Attempt`).
 
 
-## When to Use `IJobContext`
+## When to use `IJobContext`
 
 <div class="grid cards" markdown>
   -   **Use it when you need to**

@@ -1,0 +1,80 @@
+/* Readability layer on top of Material. Plain CSS, no template changes. */
+
+/* Header: quiet surface instead of a saturated purple bar */
+.md-header {
+  background-color: var(--md-default-bg-color);
+  color: var(--md-default-fg-color);
+  box-shadow: none;
+  border-bottom: 1px solid var(--md-default-fg-color--lightest);
+}
+.md-header__button.md-logo img,
+.md-header__button.md-logo svg { fill: var(--md-accent-fg-color); }
+.md-search__input { background-color: var(--md-code-bg-color); color: var(--md-default-fg-color); }
+.md-search__input::placeholder,
+.md-search__icon { color: var(--md-default-fg-color--light); }
+
+/* Page title: heavier, darker, tighter (Material's default is a thin grey) */
+.md-typeset h1 {
+  font-weight: 700;
+  color: var(--md-default-fg-color);
+  letter-spacing: -0.01em;
+  margin-bottom: 1.2rem;
+}
+.md-typeset h2 { font-weight: 600; margin-top: 2.4rem; }
+.md-typeset h3 { font-weight: 600; }
+
+/* Smaller type and a wider page: Material's default root size is 20px on wide screens; this is 17px */
+html { font-size: 106.25%; }
+@media screen and (min-width: 125em) { html { font-size: 112.5%; } }
+.md-grid { max-width: 80rem; }
+.md-typeset { line-height: 1.65; }
+
+/* Left menu: each group is a chapter. A heading with a rule above it, and its
+   pages indented under a guide line so inside and outside are obvious. */
+.md-nav--primary > .md-nav__list > .md-nav__item--section {
+  margin-top: 1.1rem;
+  padding-top: 0.7rem;
+  border-top: 1px solid var(--md-default-fg-color--lightest);
+}
+.md-nav--primary > .md-nav__list > .md-nav__item--section > .md-nav__link {
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--md-accent-fg-color);
+  margin-bottom: 0.2rem;
+}
+.md-nav--primary > .md-nav__list > .md-nav__item--section > .md-nav > .md-nav__list {
+  margin-left: 0.6rem;
+  border-left: 1px solid var(--md-default-fg-color--lighter);
+}
+.md-nav--primary .md-nav__link { padding: 0.15rem 0.6rem; }
+.md-nav--primary .md-nav__link--active {
+  font-weight: 600;
+  color: var(--md-accent-fg-color);
+  border-left: 2px solid var(--md-accent-fg-color);
+  margin-left: -1px;
+}
+
+/* Right table of contents: same treatment for the active heading */
+.md-nav--secondary .md-nav__link--active {
+  font-weight: 600;
+  color: var(--md-accent-fg-color);
+}
+
+/* Home cards: lift on hover so the primary paths read as actions */
+.md-typeset .grid.cards > ul > li,
+.md-typeset .grid > .card {
+  border-radius: 0.5rem;
+  transition: border-color 0.15s, transform 0.15s;
+}
+.md-typeset .grid.cards > ul > li:hover,
+.md-typeset .grid > .card:hover {
+  border-color: var(--md-accent-fg-color);
+  transform: translateY(-2px);
+}
+
+/* Tables and callouts at the same size as the body text (Material shrinks them to 0.64rem) */
+.md-typeset table:not([class]) { font-size: 1em; }
+.md-typeset .admonition,
+.md-typeset details { font-size: 1em; }

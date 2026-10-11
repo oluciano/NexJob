@@ -11,7 +11,7 @@ The NexJob Dashboard gives you a real-time window into every aspect of your back
 <div class="grid cards" markdown>
   -   **Maxton Design System**
 
-    64px top header with a responsive collapsible sidebar, a live cluster health indicator (`HEALTHY`, `DEGRADED`, `INCIDENT`), and `Ctrl+K` keyboard-shortcut search.
+    64px top header with a responsive collapsible sidebar, a live cluster health indicator (`HEALTHY`, `DEGRADED`, `INCIDENT`), and `Ctrl+K` (`Cmd+K` on macOS) keyboard-shortcut search.
 
   -   **Environment Badge**
 
@@ -156,10 +156,8 @@ Choose the package that matches your application type:
 
 
 
-        !!! note
-        The standalone dashboard listens on **loopback only** by default (`LocalhostOnly = true`). Inside a container this makes the dashboard unreachable through a published port. Set `LocalhostOnly = false` to listen on all interfaces — but also register an `IDashboardAuthorizationHandler` (see below) or restrict the port with a firewall or network policy. Anyone who can reach an exposed port can read job payloads and invoke actions such as pausing queues or requeuing jobs. NexJob logs a startup warning when `LocalhostOnly = false` and no authorization handler is registered.
-
-
+    !!! warning
+        The standalone dashboard listens on **loopback only** by default (`LocalhostOnly = true`). Inside a container this makes the dashboard unreachable through a published port. Set `LocalhostOnly = false` to listen on all interfaces, but also register an `IDashboardAuthorizationHandler` (see below) or restrict the port with a firewall or network policy. Anyone who can reach an exposed port can read job payloads and invoke actions such as pausing queues or requeuing jobs. NexJob logs a startup warning when `LocalhostOnly = false` and no authorization handler is registered.
 
 ---
 
@@ -174,7 +172,7 @@ Choose the package that matches your application type:
 | `DefaultTheme` | `string` | `"blue-theme"` | Default UI theme applied when no user preference is cached in `localStorage` (`"blue-theme"`, `"semi-dark"`, `"dark"`, `"light"`, `"bordered-theme"`). |
 | `EnablePlayground` | `bool` | `false` | Enables the interactive Scenarios drawer and simulator API (`/api/scenarios/*`). Keep `false` in production. See [Live Playground](../playground.md). |
 | `MetricsCacheTtl` | `TimeSpan` | `TimeSpan.FromSeconds(3)` | How long the dashboard caches aggregated metric results before re-querying storage. Set to `TimeSpan.Zero` to disable caching. |
-| `Queues` | `IReadOnlyList<string>?` | `null` (all queues) | Scope the dashboard to a subset of queues. Navigation counters, queue cards, and default job queries are filtered to these queues only. `default` also covers the application's prefixed default queue; see [the default queue](../concepts/queues.md#the-default-queue). |
+| `Queues` | `IReadOnlyList<string>?` | `null` (all queues) | Scope the dashboard to a subset of queues. Navigation counters, queue cards, and default job queries are filtered to these queues only. `default` also covers the application's prefixed default queue; see [the default queue](../concepts/default-queue.md). |
 
 ### `StandaloneDashboardOptions` (Worker Service)
 
@@ -189,7 +187,7 @@ Choose the package that matches your application type:
 | `LocalhostOnly` | `bool` | `true` | When `true`, the server binds to `127.0.0.1` only. Set `false` to listen on all interfaces. |
 | `PollIntervalSeconds` | `int` | `3` | How often the dashboard front-end polls for updated metrics. |
 | `DisableWorkers` | `bool` | `false` | When `true`, sets `Workers = 0` on this host before any service starts — useful for a dedicated ops dashboard that should not process jobs (see [`DisableWorkers`](../reference/configuration.md)). |
-| `Queues` | `IReadOnlyList<string>?` | `null` (all queues) | Scope the dashboard to a subset of queues, as for `DashboardOptions.Queues`: `default` also covers the application's `{prefix}.default`, and a standalone dashboard needs the same `NexJob:QueuePrefix` as the workers (see [the default queue](../concepts/queues.md#the-default-queue)). |
+| `Queues` | `IReadOnlyList<string>?` | `null` (all queues) | Scope the dashboard to a subset of queues, as for `DashboardOptions.Queues`: `default` also covers the application's `{prefix}.default`, and a standalone dashboard needs the same `NexJob:QueuePrefix` as the workers (see [the default queue](../concepts/default-queue.md)). |
 
 ---
 
@@ -282,7 +280,7 @@ builder.Services.AddSingleton<IDashboardAuthorizationHandler, BasicAuthDashboard
 
   -   **/queues**
 
-    Per-queue depth, active worker count, and pause/resume controls. Queues with enqueued jobs but no active workers show a `⚠️ NO WORKERS` warning badge that links to the Servers page; its tooltip and the Servers banner list the queues the live nodes poll and, for a queue named `X.default`, suggest `QueuePrefix = X` (see [the default queue](../concepts/queues.md#the-default-queue)). Queues with a [circuit breaker](../guides/circuit-breaker.md) show the current circuit state and a **Reset Circuit** button.
+    Per-queue depth, active worker count, and pause/resume controls. Queues with enqueued jobs but no active workers show a `⚠️ NO WORKERS` warning badge that links to the Servers page; its tooltip and the Servers banner list the queues the live nodes poll and, for a queue named `X.default`, suggest `QueuePrefix = X` (see [the default queue](../concepts/default-queue.md)). Queues with a [circuit breaker](../guides/circuit-breaker.md) show the current circuit state and a **Reset Circuit** button.
 
   -   **/failed**
 
@@ -305,6 +303,9 @@ builder.Services.AddSingleton<IDashboardAuthorizationHandler, BasicAuthDashboard
     View and override runtime settings (polling interval, retention periods) without redeployment. Overrides survive restarts and are shared across all nodes. Read-only clusters reject mutating actions.
 
 </div>
+
+!!! note "Dashboard actions and a read replica"
+    **Run Now**, **Requeue** and **Delete** go through `IJobControlService`, which writes to the primary storage even when the host uses `UseDashboardReadReplica`. The replica only serves the dashboard's read queries. Pause, resume and the recurring-job actions use other storage.
 
 ---
 

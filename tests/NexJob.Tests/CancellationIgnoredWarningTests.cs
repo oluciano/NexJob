@@ -151,6 +151,7 @@ public sealed class CancellationIgnoredWarningTests
             new ThrottleRegistry(),
             _options,
             Enumerable.Empty<IJobExecutionFilter>(),
+            new JobWakeUpChannel(),
             factory.CreateLogger<JobExecutor>());
     }
 

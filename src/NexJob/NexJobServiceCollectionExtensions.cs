@@ -2,6 +2,7 @@ using System.Reflection;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using NexJob.Configuration;
 using NexJob.Internal;
@@ -183,11 +184,23 @@ public static class NexJobServiceCollectionExtensions
         services.AddSingleton<ILoggerProvider>(sp => sp.GetRequiredService<JobCaptureLoggerProvider>());
         services.TryAddSingleton<IQueueCircuitBreakerManager, DefaultQueueCircuitBreakerManager>();
         services.AddSingleton<IJobExecutionFilter, QueueCircuitBreakerFilter>();
-        services.AddSingleton<IJobControlService, DefaultJobControlService>();
+
+        // Operator actions write and the orphan watcher decides on fresh state, so both talk to the primary
+        // (IStorageProvider), never to a read replica that replaced IDashboardStorage.
+        services.AddSingleton<IJobControlService>(sp => new DefaultJobControlService(
+            sp.GetRequiredService<IStorageProvider>(),
+            sp.GetRequiredService<IRuntimeSettingsStore>(),
+            sp.GetService<IQueueCircuitBreakerManager>(),
+            sp.GetService<NexJobOptions>()));
         services.AddHostedService<JobDispatcherService>();
         services.AddHostedService<RecurringJobSchedulerService>();
         services.AddHostedService<ServerHeartbeatService>();
-        services.AddHostedService<OrphanedJobWatcherService>();
+        services.AddSingleton<IHostedService>(sp => new OrphanedJobWatcherService(
+            sp.GetRequiredService<IJobStorage>(),
+            sp.GetRequiredService<IStorageProvider>(),
+            sp.GetService<IDeadLetterDispatcher>(),
+            sp.GetRequiredService<NexJobOptions>(),
+            sp.GetRequiredService<ILogger<OrphanedJobWatcherService>>()));
         services.AddHostedService<JobRetentionService>();
         services.AddSingleton<RecurringJobRegistrar>();
         services.AddHostedService(provider =>

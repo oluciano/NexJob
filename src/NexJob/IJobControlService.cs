@@ -7,7 +7,8 @@ namespace NexJob;
 public interface IJobControlService
 {
     /// <summary>
-    /// Re-enqueues a failed (dead-letter) job. Resets attempt count to 0.
+    /// Re-enqueues a <c>Failed</c>, <c>Expired</c> or <c>Scheduled</c> job and resets its attempt count to 0.
+    /// A job in any other state (running, succeeded, already enqueued) and an unknown id are left untouched.
     /// </summary>
     /// <param name="id">The unique identifier of the job.</param>
     /// <param name="ct">Token to cancel the operation.</param>

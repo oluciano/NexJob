@@ -6,7 +6,7 @@ description: "Implement IJobExecutionFilter in NexJob to add cross-cutting behav
 
 Job execution filters let you wrap every job execution with cross-cutting logic — structured logging, distributed tracing, tenant injection, audit trails, or custom authorization — without touching your job classes. Filters form a middleware pipeline: each filter calls the `next` delegate to pass control to the next filter or, at the end of the chain, to the job itself.
 
-## The `IJobExecutionFilter` Interface
+## The `IJobExecutionFilter` interface
 
 Implement `IJobExecutionFilter` to create a filter. The interface has a single method:
 
@@ -20,9 +20,9 @@ public interface IJobExecutionFilter
 }
 ```
 
-Call `await next(ct)` to invoke the rest of the pipeline. Everything before that call runs before the job; everything after runs once the job (and any downstream filters) have completed or failed.
+Call `await next(ct)` to invoke the rest of the pipeline. Everything before that call runs before the job. Everything after it runs **only if the job and the downstream filters did not throw**: when the job throws, the exception passes through `next` and out of your filter. To react to a failure, or to run code in both cases, wrap `next` in `try/catch/finally`.
 
-## `JobExecutingContext` Properties
+## `JobExecutingContext` properties
 
 `JobExecutingContext` gives your filter access to the job record and the current execution scope.
 
@@ -30,25 +30,31 @@ Call `await next(ct)` to invoke the rest of the pipeline. Everything before that
 |---|---|---|
 | `Job` | `JobRecord` | The full job record: type name, serialised input, attempt count, queue, tags, and all metadata. |
 | `Services` | `IServiceProvider` | The DI scope for this job execution. Resolve scoped services from here inside your filter. |
-| `Succeeded` | `bool` | `true` when the job completed without throwing. Available **after** you call `await next(ct)`. |
-| `Exception` | `Exception?` | The exception thrown by the job or a downstream filter, or `null` on success. Available **after** you call `await next(ct)`. |
+| `Succeeded` | `bool` | Set by NexJob only **after the whole pipeline has finished**, so it is still `false` inside a filter. Do not use it there; use `try/catch` instead (see [#475](https://github.com/oluciano/NexJob/issues/475)). |
+| `Exception` | `Exception?` | Same: set after the pipeline has finished, so it is `null` inside a filter. Catch the exception around `next` instead. |
 
-## Registering a Filter
+## Registering a filter
 
-Register your filter as a transient or scoped service implementing `IJobExecutionFilter`. NexJob discovers every registered implementation and runs them in registration order.
+Register your filter as a service implementing `IJobExecutionFilter`. NexJob discovers every registered implementation and runs them in registration order.
 
 ```csharp
 services.AddTransient<IJobExecutionFilter, LoggingFilter>();
 services.AddTransient<IJobExecutionFilter, TracingFilter>();
 ```
 
+!!! warning "One instance serves every job"
+    NexJob creates each filter **once**, when the job executor is built, and uses that instance for every job, on every worker, at the same time. A filter registered as `Transient` is still created once (checked with four jobs and one filter). So write filters that keep no per-job state in fields and are safe to call concurrently, and do not inject scoped services into the constructor. To reach scoped services, resolve them from `context.Services`, which is the DI scope of the job being run.
+
 !!! note
-    Filters are resolved from the job's DI scope, so scoped services are available inside them. If a filter throws, the exception propagates through the pipeline and is treated as a job failure — the normal retry and dead-letter flow applies.
+    If a filter throws, the exception propagates through the pipeline and is treated as a job failure: the normal retry and dead-letter flow applies.
+
+!!! warning "A filter that does not call `next` skips the job"
+    The job does not run, and NexJob stores it as `Succeeded`. That is the same result you get if a filter catches the job's exception and does not rethrow it. Use it deliberately.
 
 
-## Example: Structured Logging Filter
+## Example: structured logging filter
 
-The following filter logs the start of every job and then logs success or failure once the job completes.
+The following filter logs the start of every job and then logs success or failure.
 
 ```csharp
 public sealed class LoggingFilter : IJobExecutionFilter
@@ -67,18 +73,15 @@ public sealed class LoggingFilter : IJobExecutionFilter
             context.Job.JobType,
             context.Job.Attempts);
 
-        await next(ct);
-
-        if (context.Succeeded)
+        try
         {
+            await next(ct);
             _logger.LogInformation("Job {JobType} succeeded", context.Job.JobType);
         }
-        else
+        catch (Exception ex)
         {
-            _logger.LogWarning(
-                "Job {JobType} failed: {Error}",
-                context.Job.JobType,
-                context.Exception?.Message);
+            _logger.LogWarning(ex, "Job {JobType} failed", context.Job.JobType);
+            throw; // let NexJob handle the retry or the dead-letter
         }
     }
 }
@@ -91,7 +94,7 @@ builder.Services.AddTransient<IJobExecutionFilter, LoggingFilter>();
 builder.Services.AddNexJob();
 ```
 
-## Example: Tenant Injection Filter
+## Example: tenant injection filter
 
 Filters can resolve scoped services from `context.Services` to inject request-scoped state into the job's execution environment.
 
@@ -117,9 +120,9 @@ public sealed class TenantFilter : IJobExecutionFilter
 }
 ```
 
-## Example: Execution Timing Filter
+## Example: execution timing filter
 
-Measure and record how long each job takes, including recording failures separately.
+Measure and record how long each job takes, recording failures separately. The `finally` block runs whether the job succeeded or threw.
 
 ```csharp
 public sealed class TimingFilter : IJobExecutionFilter
@@ -134,20 +137,27 @@ public sealed class TimingFilter : IJobExecutionFilter
         CancellationToken ct)
     {
         var stopwatch = Stopwatch.StartNew();
+        var succeeded = false;
 
-        await next(ct);
+        try
+        {
+            await next(ct);
+            succeeded = true;
+        }
+        finally
+        {
+            stopwatch.Stop();
 
-        stopwatch.Stop();
-
-        _metrics.RecordJobDuration(
-            jobType: context.Job.JobType,
-            elapsed: stopwatch.Elapsed,
-            succeeded: context.Succeeded);
+            _metrics.RecordJobDuration(
+                jobType: context.Job.JobType,
+                elapsed: stopwatch.Elapsed,
+                succeeded: succeeded);
+        }
     }
 }
 ```
 
-## Order of Execution
+## Order of execution
 
 Filters execute in the order they are registered. Given the following registration:
 
@@ -157,7 +167,7 @@ services.AddTransient<IJobExecutionFilter, TenantFilter>();     // registered se
 services.AddTransient<IJobExecutionFilter, TimingFilter>();     // registered third
 ```
 
-The execution flow is:
+The execution flow for a job that succeeds is:
 
 
 ### LoggingFilter (before)
@@ -191,9 +201,9 @@ Logs success or failure.
 
 
 
-## Handling Exceptions in Filters
+## Handling exceptions in filters
 
-If you want to observe an exception without suppressing it, inspect `context.Exception` after calling `await next(ct)` — but do not catch inside the filter unless you intend to swallow the error.
+To observe an exception without suppressing it, catch it around `next` and rethrow it. If you do not rethrow, the job counts as having succeeded.
 
 ```csharp
 public async Task OnExecutingAsync(
@@ -201,21 +211,23 @@ public async Task OnExecutingAsync(
     JobExecutionDelegate next,
     CancellationToken ct)
 {
-    await next(ct);   // exception propagates to here if the job throws
-
-    if (context.Exception is not null)
+    try
     {
-        // Observe and re-throw or record, then let NexJob handle retries
-        _alerting.NotifyFailure(context.Job.JobType, context.Exception);
+        await next(ct);
+    }
+    catch (Exception ex)
+    {
+        _alerting.NotifyFailure(context.Job.JobType, ex);
+        throw; // rethrow, and NexJob handles retries and dead-letter
     }
 }
 ```
 
 !!! warning
-    If a filter throws its own exception (rather than re-throwing the original), that exception replaces the original and is treated as the job failure. Only throw deliberately from a filter when you intend to override the job's result.
+    If a filter throws its own exception (rather than rethrowing the original), that exception replaces the original and is treated as the job failure. Only throw deliberately from a filter when you intend to override the job's result.
 
 
-## When to Use Filters
+## When to use filters
 
 <div class="grid cards" markdown>
   -   **Use filters for**

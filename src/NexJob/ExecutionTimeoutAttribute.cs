@@ -39,7 +39,11 @@ public sealed class ExecutionTimeoutAttribute : Attribute
             throw new ArgumentException($"'{timeout}' is not a valid TimeSpan.", nameof(timeout));
         }
 
-        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(parsed, TimeSpan.Zero);
+        if (parsed <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(timeout), timeout, "The timeout must be greater than zero.");
+        }
+
         Timeout = parsed;
     }
 

@@ -1140,6 +1140,12 @@ public sealed class RedisStorageProvider : IStorageProvider, IOrphanedJobReporte
         }
 
         var dict = ParseHash(hash);
+        var status = dict.GetValueOrDefault("status", string.Empty);
+        if (status is not ("Failed" or "Expired" or "Scheduled"))
+        {
+            return;
+        }
+
         var queue = dict.GetValueOrDefault("queue", "default");
         var createdAtStr = dict.GetValueOrDefault("createdAt", DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture));
         var createdAt = DateTimeOffset.TryParse(createdAtStr, CultureInfo.InvariantCulture,

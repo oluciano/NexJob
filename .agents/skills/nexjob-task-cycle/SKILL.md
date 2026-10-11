@@ -276,7 +276,7 @@ Every task that introduces or modifies public options, defaults, architecture be
    - If a new feature or behavior was added to a package, update the corresponding `src/<Package>/README.md` or root `README.md`.
 2. **Wiki Pages (`docs/wiki/*.md`):**
    - **Configuration:** If new options or settings were introduced, update `docs/wiki/reference/configuration.md`.
-   - **Execution & Retry:** If retry/failure/dead-letter mechanics changed, update `docs/wiki/concepts/retries-and-dead-letter.md`.
+   - **Execution & Retry:** If retry/failure/dead-letter mechanics changed, update `docs/wiki/concepts/retries.md`, `dead-letter.md` or `dead-letter-forwarding.md` (`retries-and-dead-letter.md` is the overview).
    - **Architecture & Best Practices:** If deployment topology, queue isolation, or ops hosting guidelines were impacted, update `docs/wiki/guides/best-practices.md`.
    - **Dashboard & Monitoring:** If dashboard options, UI scoping, or telemetry changed, update `docs/wiki/integrations/dashboard.md` and `docs/wiki/integrations/opentelemetry.md`.
    - **Failure semantics:** If what a failure costs a job changed (attempts used or given back, shutdown, throttle, pause, deadline, crash recovery, dead-letter calls), update `docs/wiki/concepts/delivery-guarantees.md`. It is the one table that lists them; a change that is not there makes the wiki wrong.

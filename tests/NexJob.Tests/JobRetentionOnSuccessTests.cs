@@ -35,6 +35,7 @@ public sealed class JobRetentionOnSuccessTests
             _throttleRegistry,
             _options,
             Enumerable.Empty<IJobExecutionFilter>(),
+            new JobWakeUpChannel(),
             NullLogger<JobExecutor>.Instance);
     }
 

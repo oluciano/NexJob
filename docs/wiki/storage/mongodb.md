@@ -4,7 +4,7 @@ sidebarTitle: "MongoDB"
 description: "Use NexJob.MongoDB to store NexJob background jobs in MongoDB with atomic operations, automatic index creation, and flexible document storage."
 ---
 
-NexJob's MongoDB provider stores job state as documents, using `FindOneAndUpdate` for atomic state transitions, `UpdateManyAsync` for vectorized batch acknowledgment, and dedicated atomic collections for distributed recurring job locks. If MongoDB is already part of your application stack, this provider lets NexJob share your infrastructure without adding a relational database dependency.
+NexJob's MongoDB provider stores job state as documents, using `FindOneAndUpdate` to claim jobs atomically, one `UpdateManyAsync` to acknowledge a batch, and a separate collection (`nexjob_recurring_locks`) for the recurring job locks. If MongoDB is already part of your application stack, this provider lets NexJob share your infrastructure without adding a relational database dependency.
 
 ## Install
 
@@ -54,19 +54,20 @@ builder.Services.AddNexJobMongoDB(database);
 builder.Services.AddNexJob();
 ```
 
-## Index creation
+## Collections and indexes
 
-NexJob creates the indexes it needs on first startup. These indexes cover:
+NexJob uses four collections: `nexjob_jobs`, `nexjob_recurring_jobs`, `nexjob_recurring_locks` and `nexjob_servers`. It creates the indexes it needs on first startup:
 
-- **Job state and queue** — for efficient worker dequeue queries
-- **Scheduled time** — for future-scheduled and delayed job dispatch
-- **Recurring job locks** — for distributed lease coordination across nodes
+- **Jobs:** queue + status + priority + creation time (the fetch query); status + heartbeat (orphan recovery); status + scheduled time + retry time (scheduled and retried jobs); the idempotency key and the parent job id (both sparse).
+- **Recurring jobs:** the next execution time.
+- **Recurring locks:** a TTL index, so a lock left by a crashed node expires on its own.
+- **Servers:** a TTL index on the heartbeat (one hour), so nodes that stopped reporting disappear.
 
-Because index creation is idempotent, restarting multiple nodes simultaneously is safe.
+Creating an index that already exists is a no-op, so restarting several nodes at once is safe.
 
 ## High-throughput batch processing
 
-For heavy workloads, enable batch processing so workers claim a full capacity-batch of jobs in a single `FindOneAndUpdate` pass and acknowledge completions using `UpdateManyAsync` with an `$in` filter over a batch of IDs.
+For heavy workloads, enable batch processing. Workers claim up to as many jobs as they have idle slots, each with its own atomic `FindOneAndUpdate` (the provider claims one document at a time), and acknowledge completions with one `UpdateManyAsync` and an `$in` filter over a batch of ids.
 
 ```csharp
 builder.Services.AddNexJobMongoDB(
@@ -79,14 +80,14 @@ builder.Services.AddNexJob(options =>
     options.Workers         = 30;
     options.PollingInterval = TimeSpan.FromMilliseconds(20);
 
-    // Commit successful jobs in asynchronous batches via UpdateManyAsync ($in: [ids])
+    // Commit successful jobs in asynchronous batches with one UpdateManyAsync (off by default)
     options.EnableBatchAcknowledgment = true;
 });
 ```
 
 ## DateTimeOffset serialization
 
-NexJob scopes its `DateTimeOffset`-as-string serialization to its own documents only — it no longer registers a global BSON serializer. All dates in NexJob documents are stored as ISO 8601 strings at `+00:00` (UTC), ensuring correct scheduling comparisons regardless of the caller's local offset.
+From v5.6, NexJob scopes its `DateTimeOffset`-as-string serialization to its own documents only; versions before 5.6 registered a global BSON serializer. All dates in NexJob documents are stored as ISO 8601 strings at `+00:00` (UTC), ensuring correct scheduling comparisons regardless of the caller's local offset.
 
 ```csharp
 // If your application previously relied on NexJob's global DateTimeOffset serializer,
@@ -104,21 +105,18 @@ builder.Services.AddNexJobMongoDB(
 
 ## Connection pool sizing
 
-MongoDB's connection pool is controlled via the `maxPoolSize` query parameter in the connection string. Each NexJob node needs approximately `Workers + 5` connections.
+MongoDB's connection pool is controlled via the `maxPoolSize` query parameter in the connection string. The `Workers + 5` rule the SQL providers log at startup was not measured for MongoDB; start from `Workers + 10` and check your pool wait times.
 
 ```
 mongodb://host:27017/nexjob?maxPoolSize=40
 ```
 
-!!! tip
-    Unlike relational providers, MongoDB does not have a separate pool per operation type. One pool serves all NexJob storage calls — workers, the recurring scheduler, heartbeats, and retention all share the same pool.
-
+One pool serves every NexJob storage call: workers, the recurring scheduler, heartbeats and retention.
 
 ## Use cases
 
 MongoDB is the right choice when:
 
 - **MongoDB is already in your stack.** Reusing existing infrastructure avoids adding an extra database to operate, monitor, and back up.
-- **Your job payloads are document-shaped.** MongoDB's flexible schema means rich, nested job arguments serialize naturally without extra mapping.
-- **You need distributed workers without SQL.** MongoDB's atomic `FindOneAndUpdate` provides safe concurrency guarantees across horizontally scaled worker nodes.
-- **You want automatic schema management.** Collections and indexes are created on startup — no DBA involvement required for initial setup or when new collections are added in future NexJob versions.
+- **You need distributed workers without SQL.** `FindOneAndUpdate` is atomic per document, so several worker nodes never claim the same job (covered by the multi-node reliability scenarios on MongoDB).
+- **You want automatic schema management.** Collections and indexes are created on startup, with no setup scripts.

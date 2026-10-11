@@ -13,6 +13,7 @@ namespace NexJob.Internal;
 /// </summary>
 internal sealed class JobDispatcherService : BackgroundService
 {
+    private static readonly TimeSpan RequeueGrace = TimeSpan.FromSeconds(5);
     private readonly IJobStorage _storage;
     private readonly IJobExecutor _executor;
     private readonly IRuntimeSettingsStore _runtimeStore;
@@ -20,6 +21,7 @@ internal sealed class JobDispatcherService : BackgroundService
     private readonly JobWakeUpChannel _wakeUp;
     private readonly IQueueCircuitBreakerManager? _circuitBreakerManager;
     private readonly ILogger<JobDispatcherService> _logger;
+    private readonly HashSet<string> _unreadableWindowLogged = new(StringComparer.Ordinal);
     private IReadOnlyList<string> _polledQueues = [];
     private readonly CancellationTokenSource _stopFetching = new();
     private SemaphoreSlim? _workerSlots;
@@ -74,7 +76,7 @@ internal sealed class JobDispatcherService : BackgroundService
         if (_activeJobCount > 0)
         {
             _logger.LogWarning(
-                "Shutdown timeout reached. {Count} job(s) still active — they will be requeued by the orphan watcher.",
+                "Shutdown timeout reached. {Count} job(s) still active — they are cancelled and requeued, or left to the orphan watcher if they ignore cancellation.",
                 _activeJobCount);
         }
         else
@@ -83,6 +85,22 @@ internal sealed class JobDispatcherService : BackgroundService
         }
 
         await base.StopAsync(cancellationToken).ConfigureAwait(false);
+
+        // base.StopAsync cancels the running jobs, but their requeue commit happens after it returns. A process that
+        // exits right after StopAsync would lose it, so wait (bounded) for the jobs to hand control back.
+        using var graceCts = new CancellationTokenSource(RequeueGrace);
+        using var graceLinked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, graceCts.Token);
+        while (_activeJobCount > 0 && !graceLinked.Token.IsCancellationRequested)
+        {
+            try
+            {
+                await Task.Delay(25, graceLinked.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+        }
     }
 
     /// <inheritdoc/>
@@ -136,6 +154,15 @@ internal sealed class JobDispatcherService : BackgroundService
         {
             _logger.LogInformation("Workers = 0: this host does not fetch or execute jobs.");
             return;
+        }
+
+        foreach (var q in _polledQueues)
+        {
+            if (_options.SettingsFor(q)?.ExecutionWindow is { } window && !window.TryIsWithinWindow(DateTimeOffset.UtcNow, out _))
+            {
+                throw new InvalidOperationException(
+                    $"The execution window of queue '{q}' uses the time zone '{window.TimeZone}', which this machine does not know. Use an IANA id such as 'America/Sao_Paulo' or 'UTC' (on a minimal container image, install the tzdata package).");
+            }
         }
 
         // Outlives ExecuteAsync: jobs still draining during shutdown release their slot after the loop exits.
@@ -282,10 +309,26 @@ internal sealed class JobDispatcherService : BackgroundService
             }
 
             var settings = _options.SettingsFor(q);
-            if (settings?.ExecutionWindow is not null && !settings.ExecutionWindow.IsWithinWindow(now))
+            if (settings?.ExecutionWindow is { } window)
             {
-                _logger.LogDebug("Queue '{Queue}' skipped — outside execution window", q);
-                continue;
+                if (!window.TryIsWithinWindow(now, out var within))
+                {
+                    if (_unreadableWindowLogged.Add(q))
+                    {
+                        _logger.LogError(
+                            "Queue '{Queue}' is closed: its execution window uses the time zone '{TimeZone}', which cannot be read. The other queues keep running.",
+                            q,
+                            window.TimeZone);
+                    }
+
+                    continue;
+                }
+
+                if (!within)
+                {
+                    _logger.LogDebug("Queue '{Queue}' skipped — outside execution window", q);
+                    continue;
+                }
             }
 
             if (_circuitBreakerManager is not null)

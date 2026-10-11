@@ -61,7 +61,7 @@ Review the whole documentation in batches, one area at a time, so the context st
 | Area | Wiki pages | Code |
 | --- | --- | --- |
 | Queues and recurring | `concepts/queues.md`, `concepts/recurring-jobs.md`, `concepts/scheduling.md`, `guides/multi-service.md`, `guides/runtime-control.md`, `guides/execution-windows.md` | `src/NexJob/Internal` (dispatcher, scheduler, registrar, `QueueNames`), `NexJobOptions` |
-| Retry, dead letter, guarantees | `concepts/retries-and-dead-letter.md`, `concepts/delivery-guarantees.md`, `concepts/idempotency.md`, `concepts/continuations.md`, `guides/circuit-breaker.md`, `guides/throttling.md` | `JobExecutor`, retry policy, dead-letter dispatcher, throttle registry, circuit breaker |
+| Retry, dead letter, guarantees | `concepts/retries-and-dead-letter.md`, `concepts/retries.md`, `concepts/dead-letter.md`, `concepts/dead-letter-forwarding.md`, `concepts/delivery-guarantees.md`, `concepts/idempotency.md`, `concepts/continuations.md`, `guides/circuit-breaker.md`, `guides/throttling.md` | `JobExecutor`, retry policy, dead-letter dispatcher, throttle registry, circuit breaker |
 | Jobs and context | `concepts/job-types.md`, `guides/job-context.md`, `guides/job-filters.md`, `guides/best-practices.md`, `guides/common-scenarios.md`, `guides/writing-tests.md` | public interfaces and attributes in `src/NexJob` |
 | Storage | `storage/*.md`, `reference/configuration.md` (storage parts) | `src/NexJob.Postgres`, `SqlServer`, `MongoDB`, `Redis` |
 | Dashboard | `integrations/dashboard.md`, `playground.md` | `src/NexJob.Dashboard*` |

@@ -632,6 +632,11 @@ internal sealed class InMemoryStorageProvider : IStorageProvider, IOrphanedJobRe
 
         lock (job)
         {
+            if (job.Status is not (JobStatus.Failed or JobStatus.Expired or JobStatus.Scheduled))
+            {
+                return Task.CompletedTask;
+            }
+
             job.Status = JobStatus.Enqueued;
             job.Attempts = 0;
             job.RetryAt = null;

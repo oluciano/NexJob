@@ -271,7 +271,7 @@ Each step uses **only the context it needs**, minimizing token usage across the 
 - Making architectural decisions
 
 **Don't use when:**
-- Asking questions (use ARCHITECTURE.md directly)
+- Asking questions (use docs/ARCHITECTURE.md directly)
 - Reading existing code
 - General project research
 

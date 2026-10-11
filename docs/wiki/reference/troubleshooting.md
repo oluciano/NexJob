@@ -29,7 +29,7 @@ NexJob is designed to surface diagnostic information through structured logs, me
 
     **Check 2 — Queue name mismatch**
 
-    The dispatcher only processes queues listed in `options.Queues`. If you enqueued a job on `"emails"` but your options only list `"default"`, the job sits untouched. A job enqueued without a queue is stored in the [default queue](../concepts/queues.md#the-default-queue), `{prefix}.default`; the dashboard shows that name, not `default`.
+    The dispatcher only processes queues listed in `options.Queues`. If you enqueued a job on `"emails"` but your options only list `"default"`, the job sits untouched. A job enqueued without a queue is stored in the [default queue](../concepts/default-queue.md), `{prefix}.default`; the dashboard shows that name, not `default`.
 
     Verify the job's queue name matches your configuration:
 
@@ -62,7 +62,7 @@ NexJob is designed to surface diagnostic information through structured logs, me
 
     **Check 7 — The queue prefix changed**
 
-    If the entry assembly was renamed (or `QueuePrefix` changed), jobs stay in the old `{oldprefix}.default` and no node reads it. The dashboard **Servers** page flags the queue as unattended and names the `QueuePrefix` that brings it back. Set `QueuePrefix` explicitly so the name survives renames: see [the default queue](../concepts/queues.md#the-default-queue).
+    If the entry assembly was renamed (or `QueuePrefix` changed), jobs stay in the old `{oldprefix}.default` and no node reads it. The dashboard **Servers** page flags the queue as unattended and names the `QueuePrefix` that brings it back. Set `QueuePrefix` explicitly so the name survives renames: see [the default queue](../concepts/default-queue.md).
 
 
 ???+ "Jobs stuck in Processing (orphaned jobs)"
@@ -174,7 +174,7 @@ NexJob is designed to surface diagnostic information through structured logs, me
 
     **Check 3: Job was orphaned, not failed by a retry**
 
-    If an orphaned job has consumed all its attempts, it is marked `Failed` with the message `"Orphaned execution exceeded maximum attempts."`. From v5.8.0 the dead-letter handler and the `IDeadLetterForwarder`s **are** called for it, with an `OrphanedJobException` (on the built-in providers; a custom storage that does not implement `IOrphanedJobReporter` still fails the job without calling them). If the handler did not run, look in the logs for the warning `... stopped sending heartbeats and no attempts were left`. See [When the node dies](../concepts/retries-and-dead-letter.md#when-the-node-dies).
+    If an orphaned job has consumed all its attempts, it is marked `Failed` with the message `"Orphaned execution exceeded maximum attempts."`. From v5.8.0 the dead-letter handler and the `IDeadLetterForwarder`s **are** called for it, with an `OrphanedJobException` (on the built-in providers; a custom storage that does not implement `IOrphanedJobReporter` still fails the job without calling them). If the handler did not run, look in the logs for the warning `... stopped sending heartbeats and no attempts were left`. See [When the node dies](../concepts/dead-letter.md#when-the-node-dies).
 
 
 ???+ "Dashboard not loading or showing no data"

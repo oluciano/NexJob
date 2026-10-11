@@ -146,6 +146,7 @@ public sealed class ThrottleSpinAndReleaseTests
             registry,
             new NexJobOptions { HeartbeatInterval = TimeSpan.FromMinutes(5) },
             Enumerable.Empty<IJobExecutionFilter>(),
+            new JobWakeUpChannel(),
             NullLogger<JobExecutor>.Instance);
     }
 }

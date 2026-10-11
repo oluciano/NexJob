@@ -136,5 +136,5 @@ await scheduler.EnqueueAsync<SendEmailJob, SendEmailInput>(
 ## Explore Further
 
 * Read [README.md](../../README.md) for full feature list
-* Check [ARCHITECTURE.md](../../ARCHITECTURE.md) for design details
+* Check [ARCHITECTURE.md](../../docs/ARCHITECTURE.md) for design details
 * See other samples in [samples/](../) directory

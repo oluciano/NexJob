@@ -23,9 +23,9 @@ NexJob does not send notifications itself. It exposes the **signals**, and you c
 
 ## Recipe: post to Slack
 
-A dead-letter forwarder is called by the dispatcher for **every** job that exhausts its attempts, whatever its type, and a job that fails because its node crashed on the last attempt reaches it too (with an [`OrphanedJobException`](../concepts/retries-and-dead-letter.md#when-the-node-dies)). Register it once.
+A dead-letter forwarder is called by the dispatcher for **every** job that exhausts its attempts, whatever its type, and a job that fails because its node crashed on the last attempt reaches it too (with an [`OrphanedJobException`](../concepts/dead-letter.md#when-the-node-dies)). Register it once.
 
-The forwarder runs **inside the worker slot that was running the job**, so it must not wait for the network. The recipe below only puts the message in a bounded queue and returns; a background service sends it.
+The forwarder runs **inside the worker slot that was running the job**, so it must not wait for the network. (For a job whose node died, it runs in the orphan watcher of the node that found the job instead, which is also a background loop you do not want to hold.) The recipe below only puts the message in a bounded queue and returns; a background service sends it.
 
 ```csharp
 using System.Net.Http.Json;
@@ -116,6 +116,7 @@ To use Teams, Discord, e-mail or PagerDuty, keep the forwarder and the queue, an
 - **Never send the job input.** `JobRecord.InputJson` can hold personal or secret data. The recipe sends only the type, queue, attempts, job id and a truncated error message, and the error message itself can contain data: trim it, or leave it out, if your exceptions carry it.
 - **Rate limiting is yours.** A failed dependency can dead-letter thousands of jobs in a minute. The bounded queue protects the process; to protect the channel, group the messages (for example "37 `ProcessPaymentJob` failed in the last minute") in the sender.
 - **Each node alerts for the jobs it dead-lettered.** With several nodes, an outage produces alerts from each of them. Group in the receiving tool, or alert from a metric (below).
+- **With several services on one database, a forwarder can see another service's jobs.** A job whose node died is dead-lettered by whichever node's watcher finds it, so a forwarder with `AppliesTo` returning `true` may report a crashed job of another service. Use `AppliesTo` (for example `failedJob.Queue`) to decide which jobs each service reports. See [Multi-Service](../guides/multi-service.md).
 - **An exception in the forwarder is logged and swallowed.** It never stops the job pipeline, but it also means a broken forwarder fails silently. Watch the counter `nexjob.dead_letter.forward_failed`.
 - **A host with `Workers = 0` reports 0 active and 0 total workers** (a dashboard-only host, see `DisableWorkers`). Do not alert on `nexjob.workers.active` at 0 for such hosts; alert on the queue depth, which is read from the storage.
 - **Put the webhook URL in a secret store.** Anyone with the URL can post to your channel.
@@ -134,6 +135,6 @@ If you already run Grafana or Alertmanager, you can alert without any code. Expo
 
 ## See also
 
-- [Retries & Dead Letter](../concepts/retries-and-dead-letter.md): handlers, forwarders and what an exhausted job looks like.
+- [Dead-letter handling](../concepts/dead-letter.md) and [forwarding](../concepts/dead-letter-forwarding.md): handlers, forwarders and what an exhausted job looks like.
 - [OpenTelemetry](../integrations/opentelemetry.md): the full list of metrics.
 - [Dashboard](../integrations/dashboard.md): the Queues and Failed / DLQ views.

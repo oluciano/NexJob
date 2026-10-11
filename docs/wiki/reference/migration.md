@@ -6,6 +6,24 @@ description: "Step-by-step migration guides for NexJob major version upgrades, i
 
 This page covers every breaking change between NexJob releases and tells you exactly what to update in your code. Schema migrations for PostgreSQL and SQL Server apply automatically at startup. Follow the steps in order for each version jump you're crossing.
 
+## v6.2.0 → v6.2.1
+
+No schema migration, no stored format change and no public API removed. Seven fixes ship; these change what you can observe:
+
+- **`RequeueJobAsync` only acts on `Failed`, `Expired` and `Scheduled` jobs.** Requeueing a succeeded or a running job is now a no-op on every provider (it used to run the job again, or start it a second time).
+- **`AddNexJobRedis` throws on Redis Cluster.** It used to start a host that fetched nothing. Use a single-node or replicated Redis; Cluster is not supported.
+- **An execution window with an unknown time zone stops the start** with an `InvalidOperationException` naming the queue. Use an IANA id such as `UTC` or `America/Sao_Paulo`; on a minimal container image install `tzdata`.
+- **`StopAsync` can take up to 5 seconds longer.** After the drain, it waits for the cancelled jobs to commit their requeue. Keep `HostOptions.ShutdownTimeout` at `ShutdownTimeout + 10 seconds`.
+- **A promoted continuation starts at once**, and one registered after its parent succeeded is released. The price is one extra empty fetch per completed job while the dispatcher is idle.
+- **With `UseDashboardReadReplica`**, `RequeueJobAsync` and `DeleteJobAsync` write to the primary.
+
+**Rolling upgrade.** No stored data changes, so 6.2.0 and 6.2.1 nodes can run together. A 6.2.0 node simply keeps the old behaviour for the items above.
+
+**Rollout and rollback.**
+
+- **Roll out:** upgrade one node and watch the shutdown time of a deploy and the startup log for time-zone or Redis Cluster errors.
+- **Roll back:** go back to 6.2.0; there is no schema migration to undo.
+
 ## v6.0.0 → v6.1.0
 
 No schema migration, no stored format changes and no public API removed. Two behaviour changes can need an action; the fetch improvement needs none.
@@ -17,6 +35,7 @@ No schema migration, no stored format changes and no public API removed. Two beh
 **Rolling upgrade.** No stored data changes, so v6.0.0 and v6.1.0 nodes can run together: both fetch the same jobs in the same order. The only difference while mixed is the case-sensitivity of breaker and `ConfigureQueue` matching on upgraded nodes.
 
 **Rollout and rollback.**
+
 - **Roll out:** upgrade one node and watch the startup log for the queue-name case warning and for Salesforce validation errors; then upgrade the rest.
 - **Roll back:** go back to 6.0.0; there is no schema migration to undo.
 
@@ -28,7 +47,7 @@ No schema migration. The change that reaches everyone who enqueues without namin
 
 - **Stored jobs keep running.** Every host also polls the legacy `default` queue; no row is renamed. Recurring jobs already stored with queue `default` keep firing into it.
 - **New jobs go to the new queue.** The dashboard, the queue metric tags and any query by queue name show `{prefix}.default` for them. Update dashboards and alerts that filter on `default`.
-- **Services that shared `default` on purpose stop seeing each other's jobs.** A producer's jobs go to its own `{prefix}.default`. Name the queue on both sides, or see [the default queue](../concepts/queues.md#the-default-queue).
+- **Services that shared `default` on purpose stop seeing each other's jobs.** A producer's jobs go to its own `{prefix}.default`. Name the queue on both sides, or see [the default queue](../concepts/default-queue.md).
 - **Set the prefix yourself in production.** A derived prefix changes when the assembly is renamed and jobs stay in the old queue. The host logs a warning while the prefix is derived.
 - **Rolling deploy.** A node still on v5 enqueues and polls `default`; a v6 node drains it, so nothing is lost. Jobs enqueued by v6 nodes into `{prefix}.default` are not seen by v5 nodes until they are upgraded.
 - **Configuration keyed by `"default"`** (`ConfigureQueue`, pause, circuit breaker, execution window) applies to the prefixed queue **and** to the legacy `default` that is still drained.
@@ -41,6 +60,7 @@ No schema migration. The change that reaches everyone who enqueues without namin
 - **Dashboard queue scope** (`DashboardOptions.Queues`): `default` also covers `{prefix}.default`, nothing to change. A standalone dashboard needs the same `NexJob:QueuePrefix` as the workers.
 
 **Rollout and rollback.**
+
 - **Roll out:** set `QueuePrefix` explicitly first, upgrade one node, and watch the dashboard **Queues** page: new jobs appear in `{prefix}.default` and the legacy `default` empties. Then upgrade the rest. Nodes of both versions can run together (see [Multi-Service](../guides/multi-service.md)); every job runs once.
 - **Roll back:** nothing is migrated, so going back to 5.10.0 is safe for the data. Jobs that v6 nodes enqueued stay in `{prefix}.default` and a v5 node does not read that queue: they wait until a v6 node (or the same prefix) is back, and the dashboard flags the queue as unattended with the `QueuePrefix` to set. To run them on v5 meanwhile, re-enqueue them with a named queue that the v5 nodes poll.
 
@@ -75,7 +95,7 @@ For a class with `[Retry(n)]`, the `MaxAttempts` stored on a new job, and `IJobC
 
 There is no new stored format. While old and new nodes run together, an old node ignores a per-job `maxAttempts` and applies the class's `[Retry]`, and it does not know `IgnoreRetryAttemptExceptions`, `[ExecutionTimeout]` or `DaysOfWeek`. Everything else is compatible. Upgrade one node first, watch the failed and dead-letter counts, then the rest. To roll back, return to v5.8.0: nothing stored needs to be undone.
 
-New and opt-in, with no action needed: [`[ExecutionTimeout]`](../concepts/retries-and-dead-letter.md#execution-timeout), [`IgnoreRetryAttemptExceptions`](../concepts/retries-and-dead-letter.md#failures-that-should-not-be-retried), [per-job `maxAttempts`](../concepts/retries-and-dead-letter.md#per-job-attempt-limit), and [`DaysOfWeek`](../guides/execution-windows.md#only-on-some-days) (the default is every day).
+New and opt-in, with no action needed: [`[ExecutionTimeout]`](../concepts/retries.md#execution-timeout), [`IgnoreRetryAttemptExceptions`](../concepts/retries.md#failures-that-should-not-be-retried), [per-job `maxAttempts`](../concepts/retries.md#per-job-attempt-limit), and [`DaysOfWeek`](../guides/execution-windows.md#only-on-some-days) (the default is every day).
 
 ## v5.7.0 → v5.8.0
 
@@ -488,51 +508,6 @@ await context.ReportProgressAsync(50, "Halfway done", ct);
 
 ---
 
-## Schema Migration for Job Payloads
+## Schema migration for job payloads
 
-When your job input type changes, existing queued jobs may carry payloads that no longer match the current type. NexJob handles this automatically with `IJobMigration`.
-
-
-
-#### Define the migration
-
-```csharp
-// Old input (v1)
-public sealed record SendEmailInputV1(string To, string Subject);
-
-// New input (v2)
-public sealed record SendEmailInputV2(string To, string Subject, string ReplyTo);
-
-// Migration from v1 to v2
-public sealed class SendEmailV1ToV2 : IJobMigration<SendEmailInputV1, SendEmailInputV2>
-{
-    public SendEmailInputV2 Migrate(SendEmailInputV1 old) =>
-        new(old.To, old.Subject, ReplyTo: "noreply@example.com");
-}
-```
-
-
-#### Register the migration
-
-```csharp
-builder.Services.AddJobMigration<SendEmailInputV1, SendEmailInputV2, SendEmailV1ToV2>();
-```
-
-
-#### Declare the schema version on the job class
-
-```csharp
-[SchemaVersion(2)]
-public sealed class SendEmailJob : IJob<SendEmailInputV2>
-{
-    public async Task ExecuteAsync(SendEmailInputV2 input, CancellationToken ct)
-    {
-        // input is always v2 — old v1 payloads are migrated automatically
-    }
-}
-```
-
-
-
-
-When the dispatcher fetches a job with a mismatched schema version, it deserializes the stored payload as the old type, runs the migration, and passes the new type to the job. No manual data migration is required.
+Changing a job's input type while jobs are queued is covered in [Job payloads](../concepts/job-payloads.md): `[SchemaVersion]`, `IJobMigration` and `AddJobMigration`.

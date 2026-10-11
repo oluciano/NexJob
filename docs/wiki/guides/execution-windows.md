@@ -15,7 +15,7 @@ builder.Services.AddNexJob(options =>
         {
             StartTime = new TimeOnly(22, 0),   // 10 PM
             EndTime   = new TimeOnly(6, 0),    // 6 AM (crosses midnight)
-            TimeZone  = "America/New_York",    // IANA or Windows timezone ID
+            TimeZone  = "America/New_York",    // IANA or Windows time zone id (default: "UTC")
         };
     });
 });
@@ -24,10 +24,15 @@ builder.Services.AddNexJob(options =>
 `ExecutionWindowSettings` handles windows that cross midnight automatically — set `StartTime` after `EndTime` to define an overnight window (e.g. 22:00 – 06:00).
 
 !!! note
-    `ExecutionWindow` only controls when a queue's workers fetch jobs. Throttling with `[Throttle]` and circuit breakers apply independently within those windows.
+    `ExecutionWindow` only controls when a queue's workers fetch jobs. A job that is already running when the window closes is not interrupted. Throttling with `[Throttle]` and circuit breakers apply independently within the window.
+
+The window is checked on every polling cycle. The start and the end time are both inside the window, and `TimeZone` defaults to `UTC`.
+
+!!! note "An unknown time zone stops the start"
+    When a host that runs workers starts, every queue's `TimeZone` is checked. An id the machine does not know (a typo, an empty value, or a minimal container image without time zone data) stops the start with an `InvalidOperationException` that names the queue and the id. Use an IANA id such as `America/Sao_Paulo`, or `UTC`. On Linux the ids come from the image, so it needs time zone data (the sample `Dockerfile` installs `tzdata`). If the zone becomes unreadable after the start, only that queue is closed, the error is logged once for it, and the other queues keep running. A host with `Workers = 0` does not evaluate windows and does not run this check.
 
 
-## Only on Some Days
+## Only on some days
 
 Add `DaysOfWeek` to limit the window to certain days, for example partner syncs and reports on business days:
 

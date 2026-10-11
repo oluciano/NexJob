@@ -203,6 +203,67 @@ public sealed class DefaultSchedulerTests
         child!.Status.Should().Be(JobStatus.AwaitingContinuation);
     }
 
+    [Fact]
+    public async Task ContinueWithAsync_ParentAlreadySucceeded_ChildIsReleasedAndWakesDispatcher()
+    {
+        var parentId = await _sut.EnqueueAsync<StubJob, string>("parent");
+        await _storage.FetchNextAsync(["app.default"]);
+        await _storage.AcknowledgeAsync(parentId);
+        await _wakeUp.WaitAsync(TimeSpan.FromMilliseconds(1), CancellationToken.None); // drain the enqueue signal
+
+        var childId = await _sut.ContinueWithAsync<StubJob, string>(parentId, "child");
+
+        (await _storage.GetJobByIdAsync(childId))!.Status.Should().Be(JobStatus.Enqueued);
+        var woken = await _wakeUp.WaitAsync(TimeSpan.FromSeconds(5), CancellationToken.None);
+        woken.Should().BeTrue("a released continuation must wake the dispatcher");
+    }
+
+    [Fact]
+    public async Task ContinueWithAsync_NoInput_ParentAlreadySucceeded_ChildIsReleased()
+    {
+        var parentId = await _sut.EnqueueAsync<StubNoInputJob>();
+        await _storage.FetchNextAsync(["app.default"]);
+        await _storage.AcknowledgeAsync(parentId);
+
+        var childId = await _sut.ContinueWithAsync<StubNoInputJob>(parentId);
+
+        (await _storage.GetJobByIdAsync(childId))!.Status.Should().Be(JobStatus.Enqueued);
+    }
+
+    [Fact]
+    public async Task ContinueWithAsync_ParentStillProcessing_ChildStaysAwaiting()
+    {
+        var parentId = await _sut.EnqueueAsync<StubJob, string>("parent");
+        await _storage.FetchNextAsync(["app.default"]);
+
+        var childId = await _sut.ContinueWithAsync<StubJob, string>(parentId, "child");
+
+        (await _storage.GetJobByIdAsync(childId))!.Status.Should().Be(JobStatus.AwaitingContinuation);
+    }
+
+    [Fact]
+    public async Task ContinueWithAsync_ParentAlreadyFailed_ChildStaysAwaiting()
+    {
+        var parentId = await _sut.EnqueueAsync<StubJob, string>("parent");
+        await _storage.FetchNextAsync(["app.default"]);
+        await _storage.CommitJobResultAsync(
+            parentId,
+            new JobExecutionResult { Succeeded = false, Logs = [], Exception = new InvalidOperationException("boom") });
+        (await _storage.GetJobByIdAsync(parentId))!.Status.Should().NotBe(JobStatus.Succeeded);
+
+        var childId = await _sut.ContinueWithAsync<StubJob, string>(parentId, "child");
+
+        (await _storage.GetJobByIdAsync(childId))!.Status.Should().Be(JobStatus.AwaitingContinuation);
+    }
+
+    [Fact]
+    public async Task ContinueWithAsync_UnknownParent_ChildStaysAwaitingWithoutThrowing()
+    {
+        var childId = await _sut.ContinueWithAsync<StubJob, string>(JobId.New(), "child");
+
+        (await _storage.GetJobByIdAsync(childId))!.Status.Should().Be(JobStatus.AwaitingContinuation);
+    }
+
     // ─── RemoveRecurringAsync ─────────────────────────────────────────────────
 
     [Fact]

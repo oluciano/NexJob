@@ -6,6 +6,25 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [6.2.1] - 2026-10-11
+
+### Fixed
+
+- A job cancelled when the shutdown drain ends is now back in the queue, with its attempt refunded, before `StopAsync` returns. Before, the requeue was committed after `StopAsync` returned, so a process that exited right away left the job `Processing` until the orphan watcher recovered it. `StopAsync` waits at most 5 more seconds; a job that ignores cancellation is still left to the orphan watcher (issue #476).
+- A continuation now starts right after its parent succeeds. The executor signals the wake-up channel after a successful commit, on both the direct and the batch-acknowledgment path. Before, the promoted child waited for the next poll (15 s with the default `PollingInterval`) (issue #495).
+- `ContinueWithAsync` now releases the child at once when its parent has already succeeded, on every provider. Before, a continuation registered after the parent finished stayed `AwaitingContinuation` forever. A parent that failed or is still running behaves as before (issue #471).
+- `AddNexJobRedis` now throws an `InvalidOperationException` when it connects to a Redis Cluster, instead of starting a host that fetches nothing. Redis Cluster is not supported, because the Lua scripts touch keys they do not declare (issue #479).
+- An execution window with an unknown time zone now stops the start with an `InvalidOperationException` that names the queue and the id, instead of ending the dispatch loop on the first poll. If the zone cannot be read later, only that queue is closed and the error is logged once; the dashboard Settings page no longer fails for it (issue #472).
+- With `UseDashboardReadReplica`, `IJobControlService.RequeueJobAsync` and `DeleteJobAsync` now write to the primary instead of the replica, and the orphan watcher reads a failed job from the primary so a lagging replica cannot skip its dead-letter handler (issue #478).
+- `RequeueJobAsync` only acts on `Failed`, `Expired` and `Scheduled` jobs on every provider. A succeeded job no longer runs again and a running job is no longer started a second time (issue #473).
+- `ArgumentOutOfRangeException` thrown by `ExecutionTimeoutAttribute`, `JobContext` and `NexJobOptions` now carries the real parameter name in `ParamName` and in the message (PR #490).
+
+### Dependencies
+
+- `Google.Cloud.PubSub.V1` 3.18.0 to 3.39.0 (`NexJob.Trigger.GooglePubSub`). The subscriber now stops with `StopAsync(new ShutdownOptions(), ct)`, whose default mode is `WaitForProcessing` (PR #490).
+- `Azure.Messaging.ServiceBus` 7.18.2 to 7.20.1 (`NexJob.Trigger.AzureServiceBus`). 7.21.0 is deliberately skipped: it needs `Microsoft.Extensions.*` 10.x, which would force every net8 consumer onto 10.x packages (PR #490, issue #439).
+
+
 ## [6.2.0] - 2026-10-10
 
 ### Added
@@ -836,6 +855,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### ⚠️ Reliability Hardening Phase (In Progress)
 The project has entered an official **Reliability Lock**. Development is focused exclusively on achieving 100% unit test coverage (line/branch) for all core components.
+
 - **Project Status:** Locked for new features.
 - **Guarantee:** No v3.0.0 final release until every core component is verified with an exhaustive Testing Matrix.
 - **Verification:** Mandatory 80% coverage floor enforced via CI, targeting 100% for critical paths.

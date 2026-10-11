@@ -6,7 +6,7 @@
 
 ## Architecture Reference
 
-See `ARCHITECTURE.md` for the authoritative system design.
+See `docs/ARCHITECTURE.md` for the authoritative system design.
 
 ---
 

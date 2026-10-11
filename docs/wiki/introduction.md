@@ -4,60 +4,81 @@ sidebarTitle: "Introduction"
 description: "NexJob is a free, open-source background job library for .NET 8 with predictable retries, deadline enforcement, and a built-in real-time dashboard."
 ---
 
-NexJob is a reliable, open-source background job processing library for .NET 8. It was built for developers who need jobs that **must run, fail safely, and leave a trace** — without paying for storage providers, wrestling with plugin ecosystems, or accepting silent failures. NexJob gives you predictable execution, built-in retries, deadline enforcement, dead-letter handling, and a real-time operational dashboard as first-class features from day one.
+NexJob is a reliable, open-source background job processing library for .NET 8. It was built for developers who need jobs that **must run, fail safely, and leave a trace** — without a paid tier, hidden complexity, or silent failures. NexJob gives you predictable execution, built-in retries, deadline enforcement, dead-letter handling, and a real-time operational dashboard as first-class features from day one.
 
 ## Why NexJob?
 
-If you have used Hangfire, you know the pain: free storage only covers InMemory, deadlines require a plugin, and observability is an afterthought. NexJob fixes all of that.
+NexJob is for jobs that **must run, fail safely and leave a trace**.
 
-| Feature | NexJob | Hangfire |
-|---|---|---|
-| Storage providers | 5 free (PostgreSQL, SQL Server, Redis, MongoDB, InMemory) | Free InMemory only; others require a paid license |
-| Deadline enforcement | Built-in (`deadlineAfter`) | Plugin required |
-| Dead-letter handling | Automatic after exhausted retries | Manual |
-| Dispatch latency | Near-zero (wake-up channel) | Polling-based |
-| Dashboard | Built-in, standalone UI | Built-in (Pro required for advanced features) |
-| OpenTelemetry | Built-in traces and metrics | Plugin required |
-| Concurrency throttling | `[Throttle]` attribute per resource | Queue-level limits only |
-| Ecosystem | Young library, focused scope | Mature ecosystem, many plugins |
-| Package size | ~50 KB | ~2 MB |
+- **Five storage providers, none behind a paid tier:** PostgreSQL, SQL Server, Redis, MongoDB and in-memory, with the same test contract on all of them ([how we test](reference/how-we-test.md)).
+- **Failure is a first-class case.** [Deadlines](concepts/scheduling.md#deadlines), [dead-letter handling](concepts/dead-letter.md), crash recovery and a table of [what each failure costs a job](concepts/delivery-guarantees.md) are part of the core library.
+- **Built-in dashboard and OpenTelemetry**, with no extra package to find or license.
+- **Near-zero dispatch latency** on the node that enqueues, through an in-process wake-up channel.
 
-NexJob is **not** a drop-in replacement for Hangfire. If you need calendar-based scheduling, distributed execution across untrusted networks, or a mature enterprise plugin ecosystem, Hangfire is the better fit. NexJob focuses on a tighter scope and delivers it with exceptional performance.
+NexJob is a young library with a focused scope.
 
 ### Benchmark numbers
 
-All measurements are per individual enqueue operation on .NET 8 (BenchmarkDotNet v0.14, RyuJIT AVX2, in-memory storage baseline):
+Measured per individual enqueue operation on .NET 8 (BenchmarkDotNet v0.14, RyuJIT AVX2, in-memory storage baseline):
 
-| Metric | NexJob | Hangfire |
-|---|---|---|
-| Latency (mean) | **13.35 µs** | 35.95 µs — 2.7× slower |
-| Memory allocated | **2.10 KB** | 11.20 KB — 81% more |
-| GC Gen0 (per 1 k ops) | **0.06** | 0.85 — 14× more collections |
-| GC Gen1 (per 1 k ops) | **0.00** | 0.18 — non-zero Gen1 cost |
+| Metric | NexJob |
+|---|---|
+| Latency (mean) | **13.35 µs** |
+| Memory allocated | **2.10 KB** |
+| GC Gen0 (per 1 k ops) | **0.06** |
+| GC Gen1 (per 1 k ops) | **0.00** |
 
-Hangfire's overhead comes from runtime LINQ expression-tree parsing and reflection during enqueue. NexJob avoids both.
+These are enqueue-only numbers on in-memory storage, not end-to-end throughput. The benchmark project is in the repository (`benchmarks/NexJob.Benchmarks`), so you can run it against your own setup.
 
 ## Packages
 
-Install only what you need. The core package ships with InMemory storage and the full dispatcher — every other package is optional.
+Install only what you need. The core package ships with in-memory storage and the full dispatcher; every other package is optional and adds one capability.
 
-| Package | Description |
+### Core
+
+| Package | What it is |
 |---|---|
-| `NexJob` | Core library: dispatcher, scheduler, InMemory storage, retries, deadlines |
-| `NexJob.Postgres` | PostgreSQL storage provider |
-| `NexJob.SqlServer` | SQL Server storage provider |
-| `NexJob.Redis` | Redis storage provider |
-| `NexJob.MongoDB` | MongoDB storage provider |
-| `NexJob.Dashboard` | Embedded ASP.NET Core dashboard middleware |
-| `NexJob.Dashboard.Standalone` | Embedded HTTP dashboard server for Worker Services |
-| `NexJob.OpenTelemetry` | OpenTelemetry SDK instrumentation (traces and metrics) |
-| `NexJob.Trigger.AzureServiceBus` | Azure Service Bus trigger |
-| `NexJob.Trigger.AwsSqs` | AWS SQS trigger |
-| `NexJob.RabbitMQ` | RabbitMQ trigger and resilient outbox producer |
-| `NexJob.Kafka` | Apache Kafka trigger and resilient outbox producer |
-| `NexJob.Trigger.GooglePubSub` | Google Cloud Pub/Sub trigger |
-| `NexJob.Trigger.Salesforce` | Salesforce Pub/Sub API trigger (gRPC and Avro) |
-| `NexJob.Trigger.SalesforceStreaming` | Salesforce Streaming API trigger (CometD and Bayeux) |
+| `NexJob` | The library: dispatcher, scheduler, retries, deadlines, in-memory storage and the [Roslyn analyzers](guides/analyzers.md). Every application needs it. |
+
+### Storage providers
+
+Pick one. Without any of these, jobs live in memory and are lost when the process stops. See [Storage Providers](storage/overview.md).
+
+| Package | Backend |
+|---|---|
+| `NexJob.Postgres` | PostgreSQL |
+| `NexJob.SqlServer` | SQL Server |
+| `NexJob.Redis` | Redis (also offers opt-in [distributed throttle](guides/throttling.md#distributed-throttling-with-redis)) |
+| `NexJob.MongoDB` | MongoDB |
+
+### Dashboard
+
+Pick the one that matches your host. See [Dashboard](integrations/dashboard.md).
+
+| Package | Host |
+|---|---|
+| `NexJob.Dashboard` | ASP.NET Core: mounts the dashboard as middleware |
+| `NexJob.Dashboard.Standalone` | Worker Service or console app: runs an embedded HTTP server |
+
+### Observability
+
+| Package | What it adds |
+|---|---|
+| `NexJob.OpenTelemetry` | Traces and metrics through the OpenTelemetry SDK. See [OpenTelemetry](integrations/opentelemetry.md). |
+
+### Triggers and outbox
+
+A trigger turns messages from a broker into jobs. The two outbox packages also publish events from your application in a transaction-safe way. See [External Triggers](integrations/triggers.md).
+
+| Package | Broker | Trigger | Outbox |
+|---|---|---|---|
+| `NexJob.RabbitMQ` | RabbitMQ | yes | yes |
+| `NexJob.Kafka` | Apache Kafka | yes | yes |
+| `NexJob.Trigger.AzureServiceBus` | Azure Service Bus | yes | |
+| `NexJob.Trigger.AwsSqs` | AWS SQS | yes | |
+| `NexJob.Trigger.GooglePubSub` | Google Cloud Pub/Sub | yes | |
+| `NexJob.Trigger.Salesforce` | Salesforce Pub/Sub API (gRPC and Avro) | yes | |
+| `NexJob.Trigger.SalesforceStreaming` | Salesforce Streaming API (CometD and Bayeux) | yes | |
 
 ## Key features
 
@@ -72,11 +93,11 @@ Install only what you need. The core package ships with InMemory storage and the
 
 ### Stay reliable
 
-- [**Predictable retries**](concepts/retries-and-dead-letter.md) — configurable global delay policy plus per-job `[Retry]` attribute with exponential backoff
-- [**Failures that should not be retried**](concepts/retries-and-dead-letter.md#failures-that-should-not-be-retried) — list exception types such as `ArgumentException` and the job goes straight to dead-letter instead of burning attempts
-- [**Per-job attempt limit**](concepts/retries-and-dead-letter.md#per-job-attempt-limit) — pass `maxAttempts` when enqueuing, so the same job type can fail fast for one caller and retry longer for another
-- [**Execution timeout**](concepts/retries-and-dead-letter.md#execution-timeout) — `[ExecutionTimeout]` cancels a job's token after a limit and treats it as a normal failure (opt-in, cooperative)
-- [**Dead-letter handlers and forwarders**](concepts/retries-and-dead-letter.md) — an `IDeadLetterHandler<T>` runs when all retries are exhausted, and an `IDeadLetterForwarder` sees every such job, which is the hook for [alerts](guides/alerts.md)
+- [**Predictable retries**](concepts/retries.md) — configurable global delay policy plus per-job `[Retry]` attribute with exponential backoff
+- [**Failures that should not be retried**](concepts/retries.md#failures-that-should-not-be-retried) — list exception types such as `ArgumentException` and the job goes straight to dead-letter instead of burning attempts
+- [**Per-job attempt limit**](concepts/retries.md#per-job-attempt-limit) — pass `maxAttempts` when enqueuing, so the same job type can fail fast for one caller and retry longer for another
+- [**Execution timeout**](concepts/retries.md#execution-timeout) — `[ExecutionTimeout]` cancels a job's token after a limit and treats it as a normal failure (opt-in, cooperative)
+- [**Dead-letter handlers and forwarders**](concepts/dead-letter.md) — an `IDeadLetterHandler<T>` runs when all retries are exhausted, and an `IDeadLetterForwarder` sees every such job, which is the hook for [alerts](guides/alerts.md)
 - [**Crash recovery**](concepts/delivery-guarantees.md) — a job left behind by a node that died is found by its stale heartbeat and run again, or dead-lettered if it had no attempts left
 - [**Deadline enforcement**](concepts/scheduling.md#deadlines) — jobs expire before execution if `deadlineAfter` has elapsed; no zombie jobs
 - [**Idempotency**](concepts/idempotency.md) — `DuplicatePolicy` controls re-enqueue behavior for jobs with the same idempotency key
@@ -123,3 +144,4 @@ Install only what you need. The core package ships with InMemory storage and the
 
 - [Quick Start](quickstart.md) — install NexJob and run your first job in under 5 minutes
 - [Mental Model](mental-model.md) — understand storage-first design, the job state machine, and crash recovery before writing production jobs
+- [Migration guide](reference/migration.md) — breaking changes and what to update when you upgrade between NexJob versions

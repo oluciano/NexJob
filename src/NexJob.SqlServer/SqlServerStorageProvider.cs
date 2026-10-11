@@ -845,7 +845,7 @@ public sealed class SqlServerStorageProvider : IStorageProvider, IOrphanedJobRep
                 UPDATE nexjob_jobs
                 SET status = 'Enqueued', attempts = 0, retry_at = NULL,
                     completed_at = NULL, exception_message = NULL, exception_stack_trace = NULL
-                WHERE id = @id
+                WHERE id = @id AND status IN ('Failed', 'Expired', 'Scheduled')
                 """,
                 new { id = id.Value });
         }
