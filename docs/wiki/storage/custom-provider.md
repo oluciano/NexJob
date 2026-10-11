@@ -44,16 +44,20 @@ These are the invariants the built-in providers keep, and the ones the dispatche
 - **Storage is the source of truth.** The dispatcher is stateless: every state change is written to storage, and nothing in memory overrides it.
 - **Fetching is atomic.** Two workers, on one node or on many, must never receive the same job. The built-in providers use `FOR UPDATE SKIP LOCKED` (PostgreSQL), `UPDLOCK, READPAST` (SQL Server), Lua scripts (Redis) and `FindOneAndUpdate` (MongoDB).
 - **`CommitJobResultAsync` is atomic and idempotent.** It records the final result of an execution in one step, and committing the same result twice must not change the outcome.
-- **Deduplication is atomic.** `EnqueueAsync` applies the [`DuplicatePolicy`](../concepts/idempotency.md) for an `IdempotencyKey` without a window where two jobs with the same key can both be created.
+- **Deduplication is atomic.** `EnqueueAsync` applies the [`DuplicatePolicy`](../concepts/idempotency.md) for an `IdempotencyKey` without a window where two jobs with the same key can both be created. It returns an `EnqueueResult(JobId, WasRejected)`: when an active job already holds the key it returns that job's id with `WasRejected = false`; when the policy rejects the new job it returns the existing id with `WasRejected = true`, and the scheduler turns that into a `DuplicateJobException`.
 - **Orphans are recoverable.** A job in `Processing` whose heartbeat is older than `HeartbeatTimeout` can be found and requeued.
+
+Every method is abstract except the four that have a default, marked below: `FetchBatchAsync`, `AcknowledgeBatchAsync` and `SaveCheckpointAsync` on `IJobStorage`, and `GetJobCatalogAsync` on `IDashboardStorage`. A provider that implements only the abstract ones runs, but without batch fetching, batch acknowledgment, checkpoints or the job catalog.
 
 ## `IJobStorage`
 
 | Method | What it does |
 |---|---|
 | `EnqueueAsync` | Stores a new job and applies the duplicate policy. |
-| `FetchNextAsync` | Takes the next available job from the given queues, by queue position, then priority, then creation time. See [fetch order](../concepts/queues.md#fetch-order-queue-first-then-priority). |
+| `FetchNextAsync` | Takes the next available job from the given queues (the list is in order of preference), by queue position, then priority, then creation time, and returns `null` when there is none. See [fetch order](../concepts/queues.md#fetch-order-queue-first-then-priority). |
+| `FetchBatchAsync` | Takes up to `maxBatchSize` jobs. **Has a default**: it calls `FetchNextAsync` repeatedly. The dispatcher calls this one, so override it to claim a batch in fewer round trips. |
 | `AcknowledgeAsync` | Marks a job as completed. |
+| `AcknowledgeBatchAsync` | Marks several jobs as completed. **Has a default**: it calls `AcknowledgeAsync` for each one. Used when `EnableBatchAcknowledgment` is on; override it to do the batch in one statement. |
 | `SetFailedAsync` | Marks a job as failed, possibly scheduling a retry. |
 | `SetExpiredAsync` | Marks a job as expired by its deadline. |
 | `UpdateHeartbeatAsync` | Refreshes the heartbeat of a running job. |
@@ -61,7 +65,7 @@ These are the invariants the built-in providers keep, and the ones the dispatche
 | `RequeueOrphanedJobsAsync` | Requeues jobs whose heartbeat is stale. |
 | `EnqueueContinuationsAsync` | Releases the children that wait for a parent. |
 | `ReportProgressAsync` | Stores progress for a running job. |
-| `SaveCheckpointAsync` | Stores a checkpoint and the progress that goes with it. |
+| `SaveCheckpointAsync` | Stores a checkpoint and the progress that goes with it. **The default does not store the checkpoint**: it only forwards the percentage to `ReportProgressAsync`. A provider that does not override it loses every checkpoint, and `GetCheckpoint` returns `null` after a retry. |
 | `PurgeJobsAsync` | Deletes terminal jobs according to the retention policy. |
 | `RegisterServerAsync`, `HeartbeatServerAsync`, `DeregisterServerAsync`, `GetActiveServersAsync` | The registry of worker nodes. |
 
@@ -84,8 +88,8 @@ These are the invariants the built-in providers keep, and the ones the dispatche
 |---|---|
 | `GetMetricsAsync`, `GetQueueMetricsAsync` | Global and per-queue counts and throughput. |
 | `GetJobsAsync`, `GetJobByIdAsync`, `GetJobsByTagAsync` | Reads jobs, with filters and paging. |
-| `GetJobCatalogAsync` | Aggregated job definitions and their execution metrics. |
-| `RequeueJobAsync` | Puts a failed job back in `Enqueued` and resets its attempts. |
+| `GetJobCatalogAsync` | Aggregated job definitions and their execution metrics. **The default returns an empty list**, so the dashboard's job catalog stays empty until you implement it. |
+| `RequeueJobAsync` | Puts a failed job back in `Enqueued` and resets its attempts. The built-in providers do not check the status first ([#473](https://github.com/oluciano/NexJob/issues/473)); a new provider should only accept a job that ended in `Failed`. |
 | `DeleteJobAsync` | Deletes a job and its logs. |
 | `SaveExecutionLogsAsync` | Stores the logs captured during an execution. |
 

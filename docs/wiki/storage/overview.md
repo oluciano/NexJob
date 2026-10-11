@@ -11,9 +11,9 @@ NexJob decouples job scheduling from persistence through a single `IStorageProvi
 | Provider | NuGet package | Recommended for | Key notes |
 |---|---|---|---|
 | **InMemory** | *(built-in)* | Development, unit tests | Zero dependencies; data lost on restart |
-| **PostgreSQL** | `NexJob.Postgres` | Production (relational) | Full ACID, `FOR UPDATE SKIP LOCKED`, read replica support, vectorized batch ack |
-| **SQL Server** | `NexJob.SqlServer` | Production (relational) | Full ACID, `UPDLOCK READPAST`, read replica support, vectorized batch ack |
-| **Redis** | `NexJob.Redis` | Production (high-throughput) | Microsecond dispatch, Lua-script batching, distributed throttle support |
+| **PostgreSQL** | `NexJob.Postgres` | Production (relational) | Full ACID, `FOR UPDATE SKIP LOCKED`, read replica support, batch acknowledgment in one statement |
+| **SQL Server** | `NexJob.SqlServer` | Production (relational) | Full ACID, `UPDLOCK READPAST`, read replica support, batch acknowledgment in one statement |
+| **Redis** | `NexJob.Redis` | Production (high-throughput) | Low-latency dispatch with sorted sets, Lua scripts, distributed throttle support |
 | **MongoDB** | `NexJob.MongoDB` | Production (document) | `FindOneAndUpdate` atomics, `UpdateManyAsync` batch ack, auto index creation |
 
 ## Storage interfaces
@@ -28,9 +28,9 @@ NexJob decouples job scheduling from persistence through a single `IStorageProvi
 
 For most applications, inject `IStorageProvider` to access all three concerns through one dependency. When you only need one aspect — for example, pointing dashboard reads at a read replica — override just `IDashboardStorage` without touching the others.
 
-### Optional capabilities for a custom provider
+### Writing your own provider
 
-A storage you write yourself implements the three interfaces above. One more contract is optional: `IOrphanedJobReporter`. Its `RequeueOrphanedJobsAndReportAsync` does what `RequeueOrphanedJobsAsync` does and returns the ids of the jobs it moved to `Failed` because they had no attempts left, so the orphan watcher can call the dead-letter handler and forwarders for them. A provider that does not implement it still works: those jobs become `Failed`, but nothing is called for them. A job must be reported by the call that moved it and by no other, so that several nodes never dead-letter the same job twice. See [Delivery Guarantees](../concepts/delivery-guarantees.md).
+A provider you write yourself implements these three interfaces, plus optionally `IOrphanedJobReporter`, which lets crashed jobs that ran out of attempts reach your dead-letter handlers. [Writing a provider](custom-provider.md) has the registration pattern and the rules a provider has to keep.
 
 ## Programmatic job control
 
@@ -57,15 +57,15 @@ builder.Services.AddNexJob(options => options.UseInMemory());
 <div class="grid cards" markdown>
   -   [**PostgreSQL**](../storage/postgresql.md)
 
-    Full ACID transactions, `FOR UPDATE SKIP LOCKED` concurrency, dashboard read replica support, and vectorized batch acknowledgment.
+    Full ACID transactions, `FOR UPDATE SKIP LOCKED` concurrency, dashboard read replica support, and batch acknowledgment in one statement.
 
   -   [**SQL Server**](../storage/sql-server.md)
 
-    Full ACID transactions, `UPDLOCK READPAST` row locking, Azure SQL read replica support, and vectorized batch acknowledgment.
+    Full ACID transactions, `UPDLOCK READPAST` row locking, dashboard read replica support, and batch acknowledgment in one statement.
 
   -   [**Redis**](../storage/redis.md)
 
-    Microsecond-latency dispatch, server-side Lua script batching, sorted-set priority queues, and cluster-wide distributed throttling.
+    Low-latency dispatch, server-side Lua scripts, sorted-set queues, and cluster-wide distributed throttling.
 
   -   [**MongoDB**](../storage/mongodb.md)
 
