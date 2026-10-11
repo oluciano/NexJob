@@ -531,6 +531,44 @@ public abstract class StorageProviderTestsBase
     }
 
     [Fact]
+    public async Task RequeueJobAsync_leaves_a_succeeded_job_untouched()
+    {
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
+        await storage.EnqueueAsync(MakeJob());
+        var fetched = (await storage.FetchNextAsync(["default"]))!;
+        await storage.CommitJobResultAsync(fetched.Id, new JobExecutionResult { Succeeded = true, Logs = [] });
+
+        await dashboard.RequeueJobAsync(fetched.Id);
+        var updated = await dashboard.GetJobByIdAsync(fetched.Id);
+
+        updated!.Status.Should().Be(JobStatus.Succeeded);
+    }
+
+    [Fact]
+    public async Task RequeueJobAsync_leaves_a_processing_job_untouched()
+    {
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
+        await storage.EnqueueAsync(MakeJob());
+        var fetched = (await storage.FetchNextAsync(["default"]))!;
+
+        await dashboard.RequeueJobAsync(fetched.Id);
+        var updated = await dashboard.GetJobByIdAsync(fetched.Id);
+
+        updated!.Status.Should().Be(JobStatus.Processing);
+        (await storage.FetchNextAsync(["default"])).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task RequeueJobAsync_ignores_an_unknown_job_id()
+    {
+        var (_, _, dashboard, _) = await CreateStorageAsync();
+
+        var act = () => dashboard.RequeueJobAsync(new JobId(Guid.NewGuid()));
+
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
     public async Task GetQueueMetricsAsync_returns_counts_per_queue()
     {
         var (storage, _, dashboard, _) = await CreateStorageAsync();
