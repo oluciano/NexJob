@@ -34,7 +34,7 @@ builder.Services.AddSalesforceTrigger<OrderEventJob>(options =>
 The builder form is `AddNexJob().AddSalesforceTrigger<OrderEventJob>(...)`. Keep the client id and secret in a secret store.
 
 !!! warning
-    `TargetQueue` defaults to `"salesforce-events"`, not `"default"`. A queue you name is polled only when it is in `NexJobOptions.Queues`. Checked: with the default `Queues`, the jobs were enqueued and no worker ever fetched them; once `salesforce-events` was listed, they were fetched. Either set `TargetQueue = "default"` or add the queue to `Queues`.
+    `TargetQueue` defaults to `"salesforce-events"`, not `"default"`. A queue you name is polled only when it is in `NexJobOptions.Queues`. Checked: with the default `Queues`, the jobs were enqueued and no worker ever fetched them; once `salesforce-events` was listed, they were fetched. Either set `TargetQueue = "default"` or add the queue to `Queues`. This default is tracked as [#482](https://github.com/oluciano/NexJob/issues/482).
 
 ## Authentication
 

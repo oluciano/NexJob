@@ -11,7 +11,7 @@ NexJob triggers bridge external message brokers and your background job pipeline
 
 | Broker | Publishes (outbox) | Idempotency key | The job type comes from | When the enqueue fails |
 |---|---|---|---|---|
-| **Kafka** | Yes | `kafka:{topic}:{partition}:{offset}` | header `nexjob.job_type`, or `JobType` | Transient: retried in place with a growing pause (1 s up to 30 s) without consuming the next record. Permanent: copied to the dead-letter topic if one is configured, otherwise skipped with an error log. |
+| [**Kafka**](kafka.md) | Yes | `kafka:{topic}:{partition}:{offset}` | header `nexjob.job_type`, or `JobType` | Transient: retried in place with a growing pause (1 s up to 30 s) without consuming the next record. Permanent: copied to the dead-letter topic if one is configured, otherwise skipped with an error log. |
 | **RabbitMQ** | Yes | `MessageId` (none when blank) | header `nexjob.job_type`, or `JobType` | Transient: `nack` with requeue after 1 s. Permanent: `nack` without requeue. |
 | [**Azure Service Bus**](azure-service-bus.md) | No | `MessageId` | application property `nexjob.job_type`, or `JobType` | Transient: the message is abandoned and redelivered. Permanent: dead-lettered. |
 | [**AWS SQS**](aws-sqs.md) | No | `MessageId` | only the `JobName` option | Any failure: the visibility timeout is reset to 0, so the message returns at once. A redrive policy on the queue is what parks it. |

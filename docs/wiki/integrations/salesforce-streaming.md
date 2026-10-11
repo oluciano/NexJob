@@ -43,7 +43,7 @@ public sealed class OrderEventJob : IJob<SalesforceStreamingEventInput>
 Without the generic argument the trigger enqueues the built-in `SalesforceStreamingEventJob`, which only logs the event: use it to check the connection. The registration is also available on the builder, as `AddNexJob().AddSalesforceStreamingTrigger<OrderEventJob>(...)`, and as `AddNexJobSalesforceStreamingTrigger` on the service collection. There is one job type per trigger.
 
 !!! warning
-    `TargetQueue` defaults to `"salesforce-streaming"`, not `"default"`. A queue you name is polled only when it is in `NexJobOptions.Queues`; otherwise the jobs wait and no worker takes them (checked with the Pub/Sub API trigger, whose default works the same way). Set `TargetQueue = "default"` or add the queue to `Queues`.
+    `TargetQueue` defaults to `"salesforce-streaming"`, not `"default"`. A queue you name is polled only when it is in `NexJobOptions.Queues`; otherwise the jobs wait and no worker takes them (checked with the Pub/Sub API trigger, whose default works the same way). Set `TargetQueue = "default"` or add the queue to `Queues`. This default is tracked as [#482](https://github.com/oluciano/NexJob/issues/482).
 
 ## Authentication
 
