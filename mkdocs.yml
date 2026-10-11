@@ -36,6 +36,9 @@ theme:
     - search.highlight
     - content.code.copy
 
+extra_css:
+  - assets/stylesheets/extra.css
+
 markdown_extensions:
   - admonition
   - pymdownx.details
