@@ -530,6 +530,84 @@ public sealed class JobDispatcherServiceTests
         (await storage.GetJobByIdAsync(legacy.Id))!.Status.Should().Be(JobStatus.Enqueued, "the window is closed for the default queue");
     }
 
+    /// <summary>N2 (#472): an unknown time zone in an execution window stops the start and names the queue and the id.</summary>
+    [Fact]
+    public async Task ExecutionWindow_WithUnknownTimeZone_FailsTheStartNamingTheQueueAndTheId()
+    {
+        using var host = BuildQueueHost(new LevelLogSink(), new TaskCompletionSource<bool>(), o =>
+        {
+            o.Queues = ["batch", "other"];
+            o.ConfigureQueue("batch", q => q.ExecutionWindow = AllDayWindow("Not/AZone"));
+        });
+
+        var act = () => host.StartAsync();
+
+        var error = await act.Should().ThrowAsync<InvalidOperationException>();
+        error.Which.Message.Should().Contain("batch").And.Contain("Not/AZone");
+    }
+
+    /// <summary>N3 (#472): an empty, blank or missing time zone is rejected at start like an unknown one.</summary>
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData(null)]
+    public async Task ExecutionWindow_WithEmptyBlankOrNullTimeZone_FailsTheStart(string? timeZone)
+    {
+        using var host = BuildQueueHost(new LevelLogSink(), new TaskCompletionSource<bool>(), o =>
+            o.ConfigureQueue("default", q => q.ExecutionWindow = AllDayWindow(timeZone!)));
+
+        var act = () => host.StartAsync();
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    /// <summary>N1 (#472): IANA and UTC ids still start, so the validation does not reject what worked.</summary>
+    [Theory]
+    [InlineData("UTC")]
+    [InlineData("America/Sao_Paulo")]
+    public async Task ExecutionWindow_WithAKnownTimeZone_StartsTheHost(string timeZone)
+    {
+        using var host = BuildQueueHost(new LevelLogSink(), new TaskCompletionSource<bool>(), o =>
+            o.ConfigureQueue("default", q => q.ExecutionWindow = AllDayWindow(timeZone)));
+
+        var act = () => host.StartAsync();
+
+        await act.Should().NotThrowAsync();
+        await host.StopAsync();
+    }
+
+    /// <summary>
+    /// N2 (#472): if the zone becomes unreadable after the start, only that queue is closed. The other queue keeps running,
+    /// and the error is logged once for the queue, not on every poll.
+    /// </summary>
+    [Fact]
+    public async Task ExecutionWindow_WhenTheTimeZoneBreaksAfterStart_ClosesOnlyThatQueueAndLogsOnce()
+    {
+        var sink = new LevelLogSink();
+        var ran = new TaskCompletionSource<bool>();
+        var window = AllDayWindow("UTC");
+        using var host = BuildQueueHost(sink, ran, o =>
+        {
+            o.Queues = ["batch", "other"];
+            o.ConfigureQueue("batch", q => q.ExecutionWindow = window);
+        });
+        var storage = (InMemoryStorageProvider)host.Services.GetRequiredService<NexJob.Storage.IStorageProvider>();
+        await host.StartAsync();
+        window.TimeZone = "Not/AZone";
+        var held = QuickRecord("batch");
+        await storage.EnqueueAsync(held);
+        await storage.EnqueueAsync(QuickRecord("other"));
+        await storage.EnqueueAsync(QuickRecord("other"));
+
+        await TestWait.SucceededAsync(storage, 2); // several polls ran after the zone broke
+        await TestWait.UntilAsync(() => Task.FromResult(sink.Entries.Any(e => e.Level == LogLevel.Error && e.Message.Contains("Not/AZone", StringComparison.Ordinal))));
+        await host.StopAsync();
+
+        (await storage.GetJobByIdAsync(held.Id))!.Status.Should().Be(JobStatus.Enqueued, "a queue whose window cannot be read stays closed");
+        sink.Entries.Count(e => e.Level == LogLevel.Error && e.Message.Contains("Not/AZone", StringComparison.Ordinal))
+            .Should().Be(1, "the error is logged once per queue, not on every poll");
+    }
+
     /// <summary>N1 (#404): Workers = 0 starts the host, says so, and leaves the job alone.</summary>
     [Fact]
     public async Task ZeroWorkers_HostStarts_AndDoesNotExecuteJobs()
@@ -551,6 +629,13 @@ public sealed class JobDispatcherServiceTests
         (await storage.GetJobByIdAsync(job.Id))!.Status.Should().Be(JobStatus.Enqueued);
         ran.Task.IsCompleted.Should().BeFalse();
     }
+
+    private static ExecutionWindowSettings AllDayWindow(string timeZone) => new()
+    {
+        StartTime = new TimeOnly(0, 0),
+        EndTime = new TimeOnly(23, 59),
+        TimeZone = timeZone,
+    };
 
     private static JobRecord QuickRecord(string queue) => new()
     {
