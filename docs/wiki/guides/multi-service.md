@@ -20,11 +20,11 @@ builder.Services.AddNexJob(options => options.Queues = ["inventory"]);
 
 Enqueue with the queue of the service that owns the job type (`queue: "billing"`). This is the recommended pattern.
 
-Jobs enqueued without a queue also stay apart: the default queue is `{prefix}.default`, one per application. See [the default queue](../concepts/queues.md#the-default-queue).
+Jobs enqueued without a queue also stay apart: the default queue is `{prefix}.default`, one per application. See [the default queue and prefix](../concepts/default-queue.md).
 
 ## Layer 2: foreign jobs are deferred, not failed
 
-If a service fetches a job whose type (or input type) it cannot load, the job is a **foreign job**. NexJob does not run it, does not use an attempt and does not dead-letter it. It returns the job to the queue after `ForeignJobRetryDelay` (default 5 seconds) so the owning service can take it. The host logs a warning (`references foreign type ... Deferring`) and the trace of the attempt carries `nexjob.foreign_job = true`.
+If a service fetches a job whose type (or input type) it cannot load, the job is a **foreign job**. NexJob does not run it, does not use an attempt and does not dead-letter it. It returns the job to the queue after `ForeignJobRetryDelay` (default 5 seconds) so the owning service can take it. The host logs a warning (`references foreign type ... Deferring`) and the trace of the attempt carries the tag `nexjob.foreign_job = true`.
 
 This is a safety net, not a design. If two services poll the **same** queue they keep handing each other's jobs back: nothing breaks, but fetches are wasted and execution is delayed. A foreign job that no running service owns waits in the queue, visible in the dashboard, until one of them is deployed.
 
@@ -43,10 +43,14 @@ Run one dashboard per team, limited to that team's queues, so the counters and l
 - **Pausing a queue** is stored in the database, so it applies to every node of every service that polls that queue. See [Runtime Control](../guides/runtime-control.md).
 - **Recurring jobs** are stored in the database. Give each recurring job an id and a queue that belong to one service; see [recurring job ids](../concepts/recurring-jobs.md#recurring-job-ids-are-global-to-the-database).
 - **Retention and the orphan watcher** run in every node. They act on the whole database, not only on the jobs of their own service.
+- **A crashed job's dead-letter handler can be skipped.** A job whose node died on its last attempt is dead-lettered by the node whose watcher finds it, and that node may belong to another service. If it cannot load the job type, the typed `IDeadLetterHandler<TJob>` is skipped, and the only trace is a `Debug` log line (`Cannot resolve job type ... handler skipped`). Global `IDeadLetterForwarder`s still run on that node. Until this is changed ([#474](https://github.com/oluciano/NexJob/issues/474)), register in every service the forwarders you cannot afford to miss, or [alert](../guides/alerts.md) on the `Failed` state instead of relying on one service's handler.
 
 ## Upgrading some services before others
 
-Services on different NexJob versions can share a database during a rolling upgrade, with the limits listed in the [migration guide](../reference/migration.md#v570-v580). From v5 to v6, nodes of both versions can run together and every job runs once, but jobs enqueued by a v6 node wait in `{prefix}.default` until a v6 node reads them (see [the v6.0.0 migration](../reference/migration.md#v5100-v600)) (for example, on MongoDB do not use `deadlineAfter` until every node runs v5.8).
+Services on different NexJob versions can share a database during a rolling upgrade. The limits of each step are in the [migration guide](../reference/migration.md). Two that matter here:
+
+- **v5.7 to v5.8.** On MongoDB, do not use `deadlineAfter` until every node runs v5.8, because a v5.7 node cannot read a job that carries a deadline. See [the rolling upgrade table](../reference/migration.md#rolling-upgrade-v57-and-v58-nodes-on-the-same-storage).
+- **v5 to v6.** Nodes of both versions can run together and every job runs once, but jobs enqueued by a v6 node wait in `{prefix}.default` until a v6 node reads them. See [the v6.0.0 migration](../reference/migration.md#v5100-v600).
 
 ## See also
 
