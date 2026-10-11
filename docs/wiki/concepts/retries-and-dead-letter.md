@@ -6,7 +6,9 @@ description: "Configure global and per-job retry policies with exponential backo
 
 NexJob automatically retries failed jobs using a configurable delay strategy. When a job exhausts its retry budget, it is marked as `Failed` and its dead-letter handler runs — giving you a chance to alert, compensate, or forward the failure before it goes silent. You control both layers: a global policy that applies to every job, and per-job overrides for jobs that need different behavior.
 
-## Global Retry Policy
+This page is about failures the job reports. For what a crash, a shutdown, a saturated throttle or a passed deadline does to a job, see [Delivery Guarantees](delivery-guarantees.md).
+
+## Global retry policy
 
 Set the default maximum number of attempts for all jobs in `AddNexJob`:
 
@@ -19,11 +21,11 @@ builder.Services.AddNexJob(options =>
 
 The default is **10 attempts** if you do not configure `MaxAttempts`.
 
-### Default Delay Between Attempts
+### Default delay between attempts
 
 Unless a job sets its own `InitialDelay` with `[Retry]`, NexJob computes the wait time using `options.RetryDelayFactory`. The built-in factory uses a polynomial curve with jitter: `attempt⁴ + 15` seconds plus a random 0–29 seconds multiplied by `(attempt + 1)`. This grows quickly — roughly 16 to 74 seconds after the first failure and 4.5 to 7 minutes after the fourth.
 
-## Per-Job Retry Override
+## Per-job retry override
 
 Apply the `[Retry]` attribute to a job class to override the global policy for that job only. When you set `InitialDelay`, NexJob uses exponential backoff with ±10% jitter instead of the global factory.
 
@@ -39,19 +41,19 @@ public sealed class ProcessPaymentJob : IJob<PaymentInput>
 }
 ```
 
-### Attribute Parameters
+### Attribute parameters
 
 | Parameter | Default | Description |
 |---|---|---|
 | `attempts` | Required | Total executions including the first run. `1` and `0` both mean no retry — the job is dead-lettered immediately on failure. |
 | `InitialDelay` | `null` | Delay before the first retry as a `TimeSpan` string, e.g. `"00:00:30"`. When omitted, the global `RetryDelayFactory` is used and `Multiplier`/`MaxDelay` are ignored. |
 | `Multiplier` | `2.0` | Exponential backoff multiplier. Delay = `InitialDelay × Multiplier^(retry − 1)`. |
-| `MaxDelay` | No cap | Upper bound on any single delay as a `TimeSpan` string, e.g. `"01:00:00"`. |
+| `MaxDelay` | No cap | Upper bound on any single delay as a `TimeSpan` string, e.g. `"01:00:00"`. It is applied before the jitter, so a delay can end up to 10% above it. |
 | `IgnoreRetryAttemptExceptions` | `null` | Exception types that must not be retried for this job. See [Failures that should not be retried](#failures-that-should-not-be-retried). |
 
 A random ±10% jitter is applied to every delay computed from `InitialDelay` to spread retry spikes across workers.
 
-### Immediate Dead-Letter on Failure
+### Immediate dead-letter on failure
 
 Set `attempts` to `0` (or `1`) to skip all retries and send the job straight to dead-letter on its first failure. Use this for jobs where retrying cannot fix the problem — such as those that validate input data:
 
@@ -66,7 +68,7 @@ public sealed class WebhookNotificationJob : IJob<WebhookInput>
 }
 ```
 
-## Execution Timeout
+## Execution timeout
 
 Apply `[ExecutionTimeout]` to a job class to cap how long it may run, or set `options.DefaultExecutionTimeout` for all jobs (`null` by default, so it is opt-in; the attribute wins).
 
@@ -84,7 +86,7 @@ At the limit the job's `CancellationToken` is cancelled and the run fails with a
 - If the job is still running 10 seconds after the token was cancelled, NexJob logs one warning (`ignored cancellation ... still holds its worker slot`) and increments `nexjob.jobs.cancellation_ignored`. That is how you find the jobs that never look at their token. The job's outcome does not change.
 - The timer starts after any `[Throttle]` slots are held. A shutdown is not a timeout: the job goes back to the queue without using the attempt.
 
-## Per-Job Attempt Limit
+## Per-job attempt limit
 
 The same job type can need different limits depending on who enqueues it: a 2FA e-mail is useless after one failed try, a monthly invoice is worth ten. Pass `maxAttempts` when you enqueue or schedule:
 
@@ -120,7 +122,7 @@ public sealed class ProcessPixJob : IJob<PixInput> { ... }
 - It also works for the [execution timeout](#execution-timeout): list `typeof(TimeoutException)` to dead-letter a job that hit its limit instead of retrying it.
 - Every entry must derive from `Exception`, or the attribute or the option throws `ArgumentException`.
 
-## Custom Retry Delay Factory
+## Custom retry delay factory
 
 Replace the built-in delay curve entirely by assigning a delegate to `options.RetryDelayFactory`. The delegate receives the number of attempts already made (1 after the first failure) and returns the `TimeSpan` to wait before the next attempt. This affects all jobs that do not set their own `InitialDelay`.
 
@@ -134,7 +136,7 @@ builder.Services.AddNexJob(options =>
 });
 ```
 
-## IDeadLetterHandler&lt;TJob&gt;
+## `IDeadLetterHandler<TJob>`
 
 Register a dead-letter handler to react when a job permanently fails. The handler runs in an isolated DI scope — exceptions are logged and swallowed, so a failing handler never crashes the dispatcher or prevents other jobs from running.
 
@@ -169,7 +171,7 @@ public sealed class PaymentDeadLetterHandler : IDeadLetterHandler<ProcessPayment
 builder.Services.AddTransient<IDeadLetterHandler<ProcessPaymentJob>, PaymentDeadLetterHandler>();
 ```
 
-### What the JobRecord Contains
+### What the `JobRecord` contains
 
 The `JobRecord` passed to your handler gives you everything you need to diagnose the failure or trigger compensation:
 
@@ -222,13 +224,13 @@ public Task HandleAsync(JobRecord failedJob, Exception lastException, Cancellati
 - **After the move.** The job is already `Failed` in storage when the handler runs. If the handler throws, or the node stops right then, the job stays `Failed` and the handler is not called again.
 - **Custom storage providers.** Dead-letter handling for crashed jobs needs the storage to implement `IOrphanedJobReporter`. A provider that does not still fails those jobs, without calling any handler.
 
-### Safety Guarantees
+### Safety guarantees
 
 !!! note
     - Dead-letter handlers are **optional**. Jobs without a registered handler are simply marked `Failed` and remain visible in the dashboard for manual requeue.
-      - Handlers run in an isolated DI scope. An exception thrown inside a handler is logged and swallowed — it never crashes the dispatcher.
-      - The `IDeadLetterHandler<TJob>` generic parameter is the **job type**, not the input type.
-      - Handlers work for both `IJob` and `IJob<TInput>` implementations.
+    - Handlers run in an isolated DI scope. An exception thrown inside a handler is logged and swallowed — it never crashes the dispatcher.
+    - The `IDeadLetterHandler<TJob>` generic parameter is the **job type**, not the input type.
+    - Handlers work for both `IJob` and `IJob<TInput>` implementations.
 
 
 ## Forwarding a dead-lettered job
@@ -281,8 +283,8 @@ What you get:
 
 !!! warning
     - Only the **body** is forwarded. The original key, headers and message properties are not stored with the job. The content type of a forwarded RabbitMQ message is `application/json`.
-      - A job requeued from the dashboard that is then processed again by the service reading the forwarded copy runs twice. Treat forwarded jobs as handled elsewhere, or make the consumer idempotent.
-      - `ExhaustedJobsTopic` is not `DeadLetterTopic`: the latter receives messages that could never become a job (unknown job type, malformed payload).
+    - A job requeued from the dashboard that is then processed again by the service reading the forwarded copy runs twice. Treat forwarded jobs as handled elsewhere, or make the consumer idempotent.
+    - `ExhaustedJobsTopic` is not `DeadLetterTopic`: the latter receives messages that could never become a job (unknown job type, malformed payload).
 
 
 ### Custom forwarding with `IDeadLetterForwarder`
@@ -307,7 +309,7 @@ The dispatcher counts forwards in `nexjob.dead_letter.forwarded` and failed ones
     To be **notified** when a job exhausts its attempts (Slack, Teams, e-mail, Grafana), see the [Alerts](../guides/alerts.md) guide.
 
 
-## Choosing the Right Strategy
+## Choosing the right strategy
 
 Use the table below to pick the right approach for common failure scenarios:
 
