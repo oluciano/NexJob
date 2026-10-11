@@ -46,6 +46,7 @@ The following scenarios cover the most common patterns you will encounter when i
     ```
 
     **Notes:**
+
     - Route email jobs to a dedicated `"emails"` queue so a spike in email volume does not slow down other workloads.
     - The order insert and the enqueue are two separate operations: `IScheduler` has no overload that joins your database transaction. If the process dies between them, the order exists and the email job does not. If that matters, mark the order (for example `ConfirmationQueued = false`) and let a [recurring job](../concepts/recurring-jobs.md) enqueue the confirmation for orders still unmarked.
     - Add `[Throttle("email-service", maxConcurrent: 10)]` to the job class if your email provider enforces concurrency limits.
@@ -103,6 +104,7 @@ The following scenarios cover the most common patterns you will encounter when i
     ```
 
     **Notes:**
+
     - The `idempotencyKey` prevents duplicate jobs if the client retries the upload request.
     - The job can run on **any** node that polls the `"imports"` queue, so `path` must be reachable from all of them (shared storage or an object store), not a folder on the node that received the upload.
     - For very large files, inject `IJobContext` and call `ReportProgressAsync` inside the processing loop so the dashboard shows live progress.
@@ -142,6 +144,7 @@ The following scenarios cover the most common patterns you will encounter when i
     | 5 | Dead-lettered |
 
     **Notes:**
+
     - Add a `[Throttle("webhook-sender", maxConcurrent: 20)]` attribute to cap outbound concurrency across all webhook jobs.
     - Register an `IDeadLetterHandler<WebhookDeliveryJob>` to notify your team or mark the subscription as suspended when all retries are exhausted.
 
@@ -178,6 +181,7 @@ The following scenarios cover the most common patterns you will encounter when i
     ```
 
     **Notes:**
+
     - In a multi-node deployment, NexJob uses a distributed lock to ensure the recurring job fires exactly once per scheduled interval — not once per node.
     - Route this job to a low-priority queue so it does not compete with user-facing work during off-peak processing hours.
 
@@ -223,6 +227,7 @@ The following scenarios cover the most common patterns you will encounter when i
     ```
 
     **Notes:**
+
     - `DuplicatePolicy.RejectAlways` raises `DuplicateJobException` only once the earlier job has **finished** (`Succeeded`, `Failed` or `Expired`). While the first job is still active, NexJob returns its existing job id with no exception, whatever the policy. The policies are `AllowAfterFailed` (the default), `RejectIfFailed` and `RejectAlways`; to allow a new job after the first one has finished, keep the default. See [Idempotency](../concepts/idempotency.md).
     - Consider also adding an idempotency check inside `ProcessAsync` as a defence-in-depth measure.
 
@@ -280,6 +285,7 @@ The following scenarios cover the most common patterns you will encounter when i
     ```
 
     **Notes:**
+
     - On success, NexJob automatically clears the saved checkpoint — no manual cleanup needed.
     - Combine with `[Throttle("legacy-api", maxConcurrent: 2)]` if the legacy system has concurrency restrictions.
 
@@ -313,6 +319,7 @@ The following scenarios cover the most common patterns you will encounter when i
     ```
 
     **Notes:**
+
     - Set `Workers` to match your processing capacity rather than defaulting to the minimum. Monitor p99 job duration and queue depth to tune the value.
     - Use the `[Retention(PurgeOnSuccess = true)]` attribute on high-frequency job classes to delete rows immediately on success and avoid table bloat.
 

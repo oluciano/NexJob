@@ -17,6 +17,7 @@ The analyzers act as guardrails against common background job authoring bugs tha
 All NexJob analyzer rules default to **`Info`** severity (and specific rules such as `NXJ011` and `NXJ016` are opt-in, disabled by default).
 
 Because default severity is `Info`:
+
 - Diagnostics appear as suggestions in IDEs.
 - Builds in the terminal or CI under `TreatWarningsAsErrors = true` do **not** fail by default.
 
@@ -479,6 +480,7 @@ In multi-service setups where different services share the same database with di
 **Default Severity:** Info  
 
 Catching general exceptions (`catch (Exception)` or untyped `catch`) inside `IJob.ExecuteAsync` without rethrowing them causes the job to finish as succeeded in NexJob storage. When this happens:
+
 - The job is marked as `Succeeded`.
 - Configured retry policies never trigger.
 - The failure never reaches dead-letter handlers or alerts.
