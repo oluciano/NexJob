@@ -1,60 +1,53 @@
 ---
 title: "NexJob RabbitMQ: Triggers and Reliable Outbox Producer"
 sidebarTitle: "RabbitMQ"
-description: "Use NexJob.RabbitMQ to consume RabbitMQ messages as NexJob job triggers and publish events reliably with the transactional outbox pattern."
+description: "Use NexJob.RabbitMQ to turn RabbitMQ messages into NexJob jobs and to publish messages through a durable outbox with publisher confirms, with its options, defaults and failure behavior."
 ---
 
-`NexJob.RabbitMQ` unifies two complementary capabilities into a single package: a **RabbitMQ Trigger** that transforms incoming queue messages into persisted background jobs, and a **Resilient Outbox Producer** that publishes messages to RabbitMQ exchanges through NexJob's storage layer — backed by Publisher Confirms — so messages survive broker outages and are retried automatically. Together they let you build reliable event-driven pipelines without managing broker reconnect loops or silent publish failures yourself.
+`NexJob.RabbitMQ` has two independent halves in one package:
 
----
+- the **trigger** consumes a RabbitMQ queue and enqueues each message as a NexJob job;
+- the **outbox producer** stores a message in NexJob's storage first and publishes it to RabbitMQ from a job, with publisher confirms, so a broker outage does not lose it.
 
-## Installation
+You can use either one alone. For what all triggers have in common (the message contract, how the job type is resolved, the idempotency key and the error model), see the [overview](triggers.md).
+
+## Install
 
 ```bash
 dotnet add package NexJob.RabbitMQ
 ```
 
----
+## The trigger (consumer)
 
-## RabbitMQ Trigger (Consumer)
+### Register it
 
-The RabbitMQ Trigger subscribes to a queue and enqueues a NexJob job for each message it receives. The broker message is acknowledged only after the job record is committed to NexJob storage.
-
-### Option A: Strongly-typed consumer (recommended)
-
-Bind a RabbitMQ queue directly to one job handler class. The job type is automatically registered in DI as `Transient`:
+Bind a RabbitMQ queue to one job type with the generic overload. The job is registered in DI as `Transient`:
 
 ```csharp
-// Program.cs
 builder.Services.AddNexJob()
     .AddRabbitMqTrigger<ProcessOrderJob>(options =>
     {
         options.HostName = builder.Configuration["RABBITMQ_HOST"] ?? "localhost";
-        options.Port = 5672;
-        options.UserName = "guest";
-        options.Password = "guest";
+        options.UserName = builder.Configuration["RABBITMQ_USER"] ?? "guest";
+        options.Password = builder.Configuration["RABBITMQ_PASSWORD"] ?? "guest";
         options.QueueName = "incoming-orders";
         options.TargetQueue = "orders";
         options.PrefetchCount = 10;
     });
-```
 
-```csharp
-// Job handler — receives the raw message body as a string
 public sealed class ProcessOrderJob : IJob<string>
 {
     public async Task ExecuteAsync(string messagePayload, CancellationToken ct)
     {
-        // messagePayload contains the raw string/JSON from the RabbitMQ queue
         var order = JsonSerializer.Deserialize<OrderDto>(messagePayload);
-        // Process order...
+        // ...
     }
 }
 ```
 
-### Option B: Dynamic routing via `nexjob.job_type` header
+The job receives the message body as UTF-8 text and decides how to parse it. The same registration exists on the service collection as `services.AddNexJobRabbitMqTrigger<ProcessOrderJob>(...)`.
 
-When multiple job types share the same queue, omit the generic argument. Each message must carry a `nexjob.job_type` header with the assembly-qualified job name. Set `options.JobType` as a fallback for messages without the header:
+To route messages to different job types, omit the generic argument and have the publisher set the `nexjob.job_type` header to the assembly-qualified name of the job. `JobType` is the fallback for messages without the header; when both exist, the header wins:
 
 ```csharp
 builder.Services.AddNexJob()
@@ -62,121 +55,178 @@ builder.Services.AddNexJob()
     {
         options.HostName = "localhost";
         options.QueueName = "incoming-events";
-        // Fallback for messages without the nexjob.job_type header:
-        // options.JobType = typeof(DefaultEventJob).AssemblyQualifiedName;
+        // options.JobType = typeof(DefaultEventJob).AssemblyQualifiedName; // optional fallback
     });
 ```
 
-### Inbound guarantees
+### Options
 
-- **Never silently drop**: Transient failures (storage down, network error) nack with `requeue: true` after a one-second pause, so the broker redelivers the message without a hot loop. Permanent failures (unresolvable job type, malformed payload) nack with `requeue: false`, routing to the queue's dead-letter exchange if one is configured.
-- **Idempotency**: The `MessageId` AMQP property is used as the `JobRecord.IdempotencyKey`. Redelivery of the same message never creates a second job. Messages published without a `MessageId` are not deduplicated — every delivery creates a job (at-least-once).
-- **Trace propagation**: W3C `traceparent` is extracted from `IBasicProperties.Headers` and attached to the job record.
-- **Ack only after success**: `BasicAck` is sent strictly after the job record is committed to NexJob storage.
+| Option | Default | Meaning |
+|---|---|---|
+| `QueueName` | required | The queue to consume. It must already exist; the trigger does not declare it. |
+| `HostName` | `"localhost"` | The broker host. |
+| `Port` | `5672` | The AMQP port. |
+| `UserName`, `Password` | `"guest"`, `"guest"` | The credentials. RabbitMQ only lets `guest` connect from the same machine, so set real ones elsewhere. |
+| `VirtualHost` | `"/"` | The virtual host. |
+| `PrefetchCount` | `1` | How many unacknowledged messages the broker may send at once. |
+| `JobType` | `null` | The job type for messages without a `nexjob.job_type` header. |
+| `TargetQueue` | `"default"` | The NexJob queue the jobs go to. `"default"` is the application's `{prefix}.default` queue ([details](../concepts/default-queue.md)). |
+| `JobPriority` | `Normal` | The priority of the jobs. |
+| `ReconnectDelay` | 5 seconds | The wait between attempts to reconnect. |
+| `ExhaustedJobsRoutingKey` | `null` | When set, a job that exhausts its retries is copied to this routing key. Needs `AddRabbitMqProducer`. |
+| `ExhaustedJobsExchange` | `""` | The exchange for those copies; the default exchange when empty. |
+| `ExhaustedJobsIncludeErrorHeader` | `false` | Adds the last error message to those copies, in a `nexjob.error` header. |
 
-!!! tip
-    Always set a unique `MessageId` on messages you publish to RabbitMQ queues that feed NexJob triggers. Without it, a redelivered message creates a duplicate job because there is no key to deduplicate on.
+A missing `HostName` or `QueueName` fails when the host starts. The connection is made from `HostName`, `Port`, `UserName`, `Password` and `VirtualHost`; for TLS or any other connection setting, see [TLS and other connection settings](#tls-and-other-connection-settings).
 
+### How a message becomes a job
 
----
+- **Input:** the message body, as UTF-8 text.
+- **Job type:** the `nexjob.job_type` header, else `JobType`.
+- **Idempotency key:** the AMQP `MessageId`. It deduplicates only against jobs that are still active, and **a message without a `MessageId` has no key**, so every delivery of it creates a job. Set a unique `MessageId` on every message you publish to a queue that feeds a trigger. See [the overview](triggers.md#idempotency-keys-by-broker).
+- **Trace:** a `traceparent` header, when present, becomes the job's trace parent.
+- **Ack:** the message is acknowledged only after the job was enqueued.
 
-## Resilient Outbox Producer
+With the default `PrefetchCount` of 1, messages are handled one at a time.
 
-The outbox producer persists messages to NexJob storage before publishing them to RabbitMQ. If the broker is temporarily unreachable, messages remain safe in storage and are retried with exponential backoff. Publisher Confirms mode is used on every channel — the producer waits for a broker ACK before marking the job succeeded.
+### What happens when it fails
 
-### Architecture
+| What happened | What the trigger does |
+|---|---|
+| The job was enqueued | The message is acknowledged. |
+| A transient failure (storage down, network, timeout) | A warning is logged, the trigger waits 1 second and nacks the message with requeue, so the broker delivers it again. |
+| The message can never become a job (no job type, a malformed payload) | It is nacked **without requeue**. With a dead-letter exchange on the queue, the broker routes it there; without one, the broker **discards it**. |
+| The host is stopping | The message is nacked with requeue. |
+| The broker is down at start | The host still starts. A warning is logged and the trigger retries every `ReconnectDelay`. |
+| The connection drops | The trigger reconnects the same way. |
+| The queue does not exist | The same reconnect loop, forever. Checked: a warning every `ReconnectDelay` and no failure of the host. |
+
+!!! warning
+    Configure a **dead-letter exchange** on the queue the trigger consumes. A message that can never become a job is otherwise thrown away, with only a warning in the log. Checked against a real broker: a message without a job type, on a queue with no dead-letter exchange, was removed and a single warning was logged.
+
+### Forwarding exhausted jobs
+
+Set `ExhaustedJobsRoutingKey` (and `ExhaustedJobsExchange` if you do not use the default exchange) to copy a job to another queue once it exhausts its retries. The copy goes through the outbox producer, so `AddRabbitMqProducer` is required (the host fails to start without it). The job stays `Failed` in NexJob, and only the message body is forwarded. A job is forwarded when it carries the RabbitMQ trigger tag and its queue is this trigger's `TargetQueue`. See [Forwarding a dead-lettered job](../concepts/dead-letter-forwarding.md) for the full behavior and its limits.
+
+### Listener status
+
+The trigger registers with the [listener registry](triggers.md#live-listener-registry) and appears on the dashboard's `/listeners` page: `Listening` once it consumes, `Reconnecting` when the connection fails or drops, and `Stopped` on shutdown. It goes back to `Listening` after a successful reconnect.
+
+## The outbox producer
+
+### How it works
 
 ```text
-[Application Service]
+[Your service]  scheduler.EnqueueRabbitMqAsync(...)
        │
-       ▼ scheduler.EnqueueRabbitMqAsync(...)
-[NexJob Storage]
+       ▼
+[NexJob storage]   a RabbitMqProducerJob is stored
        │
-       ▼ Worker dequeues RabbitMqProducerJob
-[RabbitMqProducerJob]
+       ▼
+[A worker]         runs the job: publish, then wait for the broker's confirm
        │
-       ▼ BasicPublish + ConfirmSelect + W3C traceparent
-[RabbitMQ Broker]
+       ▼
+[RabbitMQ]
 ```
 
-### Registration
+The message is safe in storage once `EnqueueRabbitMqAsync` returns. If RabbitMQ is unreachable, or the broker does not confirm in time, the job fails and NexJob's [retry policy](../concepts/retries.md) tries again.
+
+### Register it
 
 ```csharp
 builder.Services.AddNexJob()
     .AddRabbitMqProducer(options =>
     {
-        options.HostName = builder.Configuration["RABBITMQ_HOST"]
-            ?? Environment.GetEnvironmentVariable("RABBITMQ_HOST")
-            ?? "localhost";
-        options.Port = 5672;
+        options.HostName = builder.Configuration["RABBITMQ_HOST"] ?? "localhost";
         options.UserName = builder.Configuration["RABBITMQ_USER"] ?? "guest";
         options.Password = builder.Configuration["RABBITMQ_PASSWORD"] ?? "guest";
-        options.DefaultExchange = "orders.events";
         options.ConfirmTimeout = TimeSpan.FromSeconds(5);
     });
 ```
 
-### Publishing messages
+!!! warning
+    The producer jobs go to a queue named **`rabbitmq-producer`**, and a worker polls only the queues in `NexJobOptions.Queues`. With the default `Queues`, **nothing is published**: the jobs wait in storage. Checked against a real broker: with the default queues the target queue stayed empty; with `options.Queues = ["default", "rabbitmq-producer"]` the message arrived. Add `rabbitmq-producer` (or the queue you pass to `EnqueueRabbitMqAsync`) to `Queues` on at least one node. This default is tracked as [#482](https://github.com/oluciano/NexJob/issues/482).
 
-Inject `IScheduler` and call `EnqueueRabbitMqAsync`. Set `messageId:` on every publish so the consuming NexJob trigger can deduplicate redeliveries:
+| Option | Default | Meaning |
+|---|---|---|
+| `HostName`, `Port`, `UserName`, `Password`, `VirtualHost` | `localhost`, `5672`, `guest`, `guest`, `/` | The connection. For TLS, see [below](#tls-and-other-connection-settings). |
+| `ConfirmTimeout` | 5 seconds | How long to wait for the broker's confirm. |
+| `Mandatory` | `false` | See the warning below. |
+| `DefaultExchange`, `DefaultRoutingKey` | `""`, `null` | **No effect.** See the warning below. |
+| `Queue`, `DefaultPriority` | `"rabbitmq-producer"`, `Normal` | **No effect.** They are declared but nothing reads them; the queue and priority come from the arguments of `EnqueueRabbitMqAsync`. |
+
+!!! warning
+    Three of these options do not work as their names say ([#483](https://github.com/oluciano/NexJob/issues/483)). Checked against a real broker:
+
+    - **`Mandatory` does not fail an unroutable message.** A mandatory publish to the default exchange with a routing key that matches no queue succeeded, with no warning, and the message was lost. The broker returns such a message and also confirms it, and nothing handles the return.
+    - **`DefaultExchange` and `DefaultRoutingKey` are never used.** The `EnqueueRabbitMq*` calls always pass an exchange (an empty one when you leave it out), so the default never applies. With `DefaultExchange = "ex1"`, a publish by routing key alone went to the default exchange, not to `ex1`.
+
+    Always pass the exchange and the routing key explicitly, and make sure the target queue exists and is bound.
+
+### Publish messages
+
+Inject `IScheduler` and call `EnqueueRabbitMqAsync`. Set `messageId` on every message, so a consuming trigger can deduplicate it:
 
 ```csharp
 public class OrderService(IScheduler scheduler)
 {
-    // Strongly typed object — serialized as JSON
-    public async Task CreateOrderAsync(OrderCreatedEvent order, CancellationToken ct)
-    {
-        await scheduler.EnqueueRabbitMqAsync(
+    public Task CreateOrderAsync(OrderCreatedEvent order, CancellationToken ct) =>
+        scheduler.EnqueueRabbitMqAsync(
             exchange: "orders.events",
             routingKey: "order.created",
-            value: order,
+            value: order,                              // serialized as JSON
             correlationId: order.OrderId.ToString(),
             messageId: Guid.NewGuid().ToString(),
             cancellationToken: ct);
-    }
 
-    // Publish to the default exchange with a routing key
-    public async Task SendNotificationAsync(NotificationEvent notification, CancellationToken ct)
-    {
-        await scheduler.EnqueueRabbitMqAsync(
-            routingKey: "notifications",
-            value: notification,
-            cancellationToken: ct);
-    }
+    // routing key only: publishes to the default exchange
+    public Task SendNotificationAsync(NotificationEvent notification, CancellationToken ct) =>
+        scheduler.EnqueueRabbitMqAsync("notifications", notification, cancellationToken: ct);
 
-    // Raw JSON string — sent verbatim
-    public async Task PublishRawJsonAsync(string routingKey, string jsonPayload, CancellationToken ct)
-    {
-        await scheduler.EnqueueRabbitMqRawAsync(
-            exchange: "orders.events",
-            routingKey: routingKey,
-            value: jsonPayload,
-            cancellationToken: ct);
-    }
+    // a JSON string, sent verbatim
+    public Task PublishRawAsync(string routingKey, string json, CancellationToken ct) =>
+        scheduler.EnqueueRabbitMqRawAsync("orders.events", routingKey, json, cancellationToken: ct);
 
-    // Binary payload
-    public async Task PublishBinaryAsync(string exchange, string routingKey, byte[] data, CancellationToken ct)
-    {
-        await scheduler.EnqueueRabbitMqRawAsync(
-            exchange: exchange,
-            routingKey: routingKey,
-            value: data,
-            cancellationToken: ct);
-    }
+    // bytes
+    public Task PublishBinaryAsync(string exchange, string routingKey, byte[] data, CancellationToken ct) =>
+        scheduler.EnqueueRabbitMqRawAsync(exchange, routingKey, data, cancellationToken: ct);
 }
 ```
 
----
+Besides those, the call takes `headers`, `mandatory`, `queue`, `priority`, `idempotencyKey`, `duplicatePolicy`, `tags` and `deadlineAfter`. Things to know:
 
-## Publisher Confirms
+- **Messages are persistent.** Each is published with the persistent flag, with content type `application/json` (`application/octet-stream` for bytes), `AppId` `NexJob` and a timestamp. The queue itself must be durable for that to matter.
+- **Serialization happens at the call.** An object that cannot be serialized throws from `EnqueueRabbitMqAsync` to your code, before anything is stored.
+- **Delivery is at least once.** A job can publish and then fail before NexJob records it, so a message can be published twice. The `messageId` is what lets a NexJob trigger on the other side ignore the repeat while the first job is active.
+- **The trace** of the publishing job is sent in the `traceparent` header.
 
-Every RabbitMQ channel opened by `NexJob.RabbitMQ` operates in Publisher Confirms mode (`ConfirmSelect()`). After each publish the producer awaits an ACK from the broker. If the broker returns a NACK or the operation times out, the producer throws and NexJob's retry policy reschedules the job. This eliminates silent message loss on unroutable or unpersisted messages.
+### Publisher confirms
 
----
+Every channel the producer opens is in confirm mode. After each publish the job waits up to `ConfirmTimeout` for the broker. A negative confirm throws an `InvalidOperationException`, and a timeout throws a `TimeoutException` and discards the channel; either way the job fails and is retried. A publish to an exchange that does not exist also fails and is retried (checked). The producer uses one channel per node and publishes one message at a time, and it reconnects on its own when the connection is lost.
 
-## Configuration from Environment Variables
+A confirm means the broker took the message. It does not mean a queue received it: see the warning above about unroutable messages.
 
-`NexJob.RabbitMQ` does not read fixed environment variable names automatically. Read the values from `IConfiguration` (which surfaces environment variables through the default host builders) and assign them:
+## TLS and other connection settings
+
+The options have no TLS switch, and no way to set a heartbeat or a client name (a `ConfigureConnection` delegate like Kafka's `ConfigureConsumer` is proposed in [#484](https://github.com/oluciano/NexJob/issues/484)). Both the trigger and the producer take the `IConnectionFactory` from DI and overwrite only the five settings above on it, so you can register your own `ConnectionFactory` **after** `AddRabbitMqTrigger` / `AddRabbitMqProducer`:
+
+```csharp
+builder.Services.AddNexJob()
+    .AddRabbitMqTrigger<ProcessOrderJob>(options => { /* host, queue, credentials */ });
+
+builder.Services.AddSingleton<IConnectionFactory>(new ConnectionFactory
+{
+    Port = 5671,
+    Ssl = new SslOption { Enabled = true, ServerName = "rabbit.prod.example.com" },
+    RequestedHeartbeat = TimeSpan.FromSeconds(30),
+});
+```
+
+The factory is shared by the trigger and the producer, and the last registration wins, so register it once and after both. Checked: a registered factory (with a custom client name) was the one used for the connection. TLS itself was not run against a TLS-enabled broker.
+
+## Configuration from `appsettings.json` and the environment
+
+The package does not read fixed environment variable names. Read them from `IConfiguration`, which includes environment variables in the default host:
 
 ```csharp
 builder.Services.AddNexJob()
@@ -184,37 +234,17 @@ builder.Services.AddNexJob()
     {
         options.HostName = builder.Configuration["RABBITMQ_HOST"] ?? "localhost";
         options.Port = int.TryParse(builder.Configuration["RABBITMQ_PORT"], out var port) ? port : 5672;
-        options.UserName = builder.Configuration["RABBITMQ_USER"] ?? "guest";
-        options.Password = builder.Configuration["RABBITMQ_PASSWORD"] ?? "guest";
         options.VirtualHost = builder.Configuration["RABBITMQ_VIRTUAL_HOST"] ?? "/";
         options.QueueName = "incoming-events";
     });
 ```
 
-Or bind an entire configuration section:
+Or bind a section: `.AddRabbitMqTrigger(options => builder.Configuration.GetSection("RabbitMQ").Bind(options))`. Keep the password in a secret store.
 
-```csharp
-builder.Services.AddNexJob()
-    .AddRabbitMqTrigger(options =>
-        builder.Configuration.GetSection("RabbitMQ").Bind(options));
-```
+## What was checked
 
----
-
-## Forwarding exhausted jobs
-
-Set `ExhaustedJobsRoutingKey` (and, if you do not use the default exchange, `ExhaustedJobsExchange`) on the trigger to copy a job to another queue once it exhausts its retries. The copy goes through the Outbox producer (`AddRabbitMqProducer` is required) and the job stays `Failed` in NexJob. Only the message body is forwarded. See [Forwarding a dead-lettered job](../concepts/dead-letter-forwarding.md) for the full behaviour and its limits.
-
-## Reliability and Failure Handling
-
-| Failure Scenario | Behavior |
-|---|---|
-| **RabbitMQ broker down** | Connection/socket exception is thrown; NexJob's retry policy reschedules the job. Messages remain durable in storage. |
-| **Broker NACK** | `InvalidOperationException` is thrown, triggering retry. |
-| **Confirm timeout** | `TimeoutException` is thrown, triggering retry. |
-| **Retries exhausted** | The message is dispatched to the dead-letter pipeline (`IDeadLetterHandler`) and surfaced in the dashboard. |
-| **Host shutdown** | Active connections and channels are closed cleanly without dropping acknowledged messages. |
+Against a single RabbitMQ 3.13 broker: the outbox published only when its queue was polled; a mandatory unroutable publish succeeded and lost the message; `DefaultExchange` was ignored; a publish to a missing exchange failed; the trigger on a missing queue kept reconnecting; a message without a job type was discarded when the queue had no dead-letter exchange. A cluster, a TLS-enabled broker, a dead-letter exchange, `ExhaustedJobsRoutingKey` and prefetch above 1 were not run.
 
 ## Try it
 
-The [`NexJob.Sample.RabbitMQ`](https://github.com/oluciano/NexJob/tree/develop/samples/NexJob.Sample.RabbitMQ) sample runs the outbox producer and the trigger consumer against a RabbitMQ container from the Docker Compose stack in `samples/`.
+The [`NexJob.Sample.RabbitMQ`](https://github.com/oluciano/NexJob/tree/develop/samples/NexJob.Sample.RabbitMQ) sample runs the outbox producer and the trigger against a RabbitMQ container from the Docker Compose stack in `samples/`.
