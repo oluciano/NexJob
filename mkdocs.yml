@@ -103,6 +103,7 @@ nav:
       - RabbitMQ: integrations/rabbitmq.md
       - Azure Service Bus: integrations/azure-service-bus.md
       - AWS SQS: integrations/aws-sqs.md
+      - Google Pub/Sub: integrations/google-pubsub.md
   - Reference:
       - Configuration: reference/configuration.md
       - JobRecord: reference/job-record.md

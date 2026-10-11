@@ -15,7 +15,7 @@ NexJob triggers bridge external message brokers and your background job pipeline
 | **RabbitMQ** | Yes | `MessageId` (none when blank) | header `nexjob.job_type`, or `JobType` | Transient: `nack` with requeue after 1 s. Permanent: `nack` without requeue. |
 | [**Azure Service Bus**](azure-service-bus.md) | No | `MessageId` | application property `nexjob.job_type`, or `JobType` | Transient: the message is abandoned and redelivered. Permanent: dead-lettered. |
 | [**AWS SQS**](aws-sqs.md) | No | `MessageId` | only the `JobName` option | Any failure: the visibility timeout is reset to 0, so the message returns at once. A redrive policy on the queue is what parks it. |
-| **Google Pub/Sub** | No | message ID | attribute `nexjob.job_type`, or `JobType` | Transient: `Nack`. Permanent: `Nack` after 2 s, so a dead-letter policy on the subscription can park it. |
+| [**Google Pub/Sub**](google-pubsub.md) | No | message ID | attribute `nexjob.job_type`, or `JobType` | Transient: `Nack`. Permanent: `Nack` after 2 s, so a dead-letter policy on the subscription can park it. |
 | **Salesforce Pub/Sub API** | No | event id (replay id as hex) | the `JobType` option, else the built-in `SalesforceEventJob` | The event is logged and, when `DeadLetterQueue` is set, copied there as a job. Its replay id is not committed. |
 | **Salesforce Streaming API** | No | `{channel}:{eventId}` | the `JobType` option, else the built-in `SalesforceStreamingEventJob` | The same as the Pub/Sub API trigger. |
 
@@ -102,37 +102,6 @@ Every trigger enqueues with `DuplicatePolicy.AllowAfterFailed` (see [Idempotency
 
 Each broker can be registered in two equivalent ways: on the service collection (`services.AddNexJob{Broker}Trigger<TJob>(...)`, and `AddSalesforceTrigger` for Salesforce) or chained on the builder returned by `AddNexJob()` (`AddNexJob().Add{Broker}Trigger<TJob>(...)`). The tabs below show whichever form each package's own examples use.
 
-
-=== "Google Pub/Sub"
-
-    #### Install the package
-
-    ```bash
-    dotnet add package NexJob.Trigger.GooglePubSub
-    ```
-
-    #### Register the trigger
-
-    ```csharp
-    using NexJob.Trigger.GooglePubSub;
-
-    // Preferred: generic overload
-    builder.Services.AddNexJobGooglePubSubTrigger<ProcessOrderJob>(options =>
-    {
-        options.ProjectId = "my-project";
-        options.SubscriptionId = "my-subscription";
-    });
-
-    // Dynamic routing via nexjob.job_type attribute:
-    // builder.Services.AddNexJobGooglePubSubTrigger(options =>
-    // {
-    //     options.ProjectId = "my-project";
-    //     options.SubscriptionId = "my-subscription";
-    //     options.JobType = typeof(DefaultEventJob).AssemblyQualifiedName;
-    // });
-    ```
-
-    The idempotency key is the Pub/Sub message ID assigned by the service. Messages remain unacknowledged on transient failures and are redelivered by Pub/Sub.
 
 === "Salesforce Pub/Sub API"
 
