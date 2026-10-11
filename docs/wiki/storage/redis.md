@@ -1,10 +1,10 @@
 ---
 title: "NexJob Redis Storage: Sorted Sets, Lua Scripts and Distributed Throttle"
 sidebarTitle: "Redis"
-description: "Use NexJob.Redis to store NexJob jobs in Redis: sorted sets, atomic Lua scripts, a job index, batch acknowledgment and cluster-wide throttling. Tried on standalone Redis, not on Redis Cluster."
+description: "Use NexJob.Redis to store NexJob jobs in Redis: sorted sets, atomic Lua scripts, a job index, batch acknowledgment and cluster-wide throttling. Tried on standalone Redis; Redis Cluster is rejected at startup."
 ---
 
-NexJob's Redis provider stores jobs in sorted sets, uses server-side Lua scripts for atomic state transitions and for fetching and acknowledging jobs in batches, and keeps a sorted-set job index so dashboard queries do not scan the whole keyspace. Choose Redis for ephemeral high-frequency jobs or for cluster-wide rate limiting across worker nodes. It was tried on a standalone Redis and does **not** work on Redis Cluster; see below.
+NexJob's Redis provider stores jobs in sorted sets, uses server-side Lua scripts for atomic state transitions and for fetching and acknowledging jobs in batches, and keeps a sorted-set job index so dashboard queries do not scan the whole keyspace. Choose Redis for ephemeral high-frequency jobs or for cluster-wide rate limiting across worker nodes. It was tried on a standalone Redis and does **not** work on Redis Cluster, which `AddNexJobRedis` rejects with an error; see below.
 
 ## Install
 
@@ -63,7 +63,7 @@ Redis does not change how fast a job starts on the node that enqueued it (that g
 
 ## Redis Cluster is not supported
 
-`NexJob.Redis` fails on a Redis Cluster: its Lua scripts touch keys they do not declare, and Redis rejects that in cluster mode (`ERR Script attempted to access a non local key in a cluster node`). Tried on a healthy 3-node cluster: no job ran, while the same program on a standalone Redis ran all of them. Use a standalone Redis. A primary with replicas, a cluster with replicas and managed cluster-mode services were not tried. Tracked in [#479](https://github.com/oluciano/NexJob/issues/479).
+`AddNexJobRedis` throws an `InvalidOperationException` when the connection reaches a Redis Cluster (any server that reports cluster mode, including a single-shard cluster), before any job is touched. The Lua scripts touch keys they do not declare, and a cluster rejects that (`ERR Script attempted to access a non local key in a cluster node`); without the check, no job ran on a 3-node cluster while the same program on a standalone Redis ran all of them. Use a standalone Redis. A primary with replicas that is not in cluster mode is not rejected, but it was not tried. Tracked in [#479](https://github.com/oluciano/NexJob/issues/479).
 
 ## Distributed throttling
 
