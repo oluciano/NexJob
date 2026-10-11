@@ -28,8 +28,8 @@ builder.Services.AddNexJob(options =>
 
 The window is checked on every polling cycle. The start and the end time are both inside the window, and `TimeZone` defaults to `UTC`.
 
-!!! warning "Check the time zone id"
-    An unknown `TimeZone` is not validated when you configure it. It throws a `TimeZoneNotFoundException` on the first polling cycle and, because nothing handles it, the host stops, **including the queues that have no window**. On Linux the zone ids come from the image, so make sure it has time zone data (the sample `Dockerfile` installs `tzdata`). This is tracked in [#472](https://github.com/oluciano/NexJob/issues/472).
+!!! note "An unknown time zone stops the start"
+    When a host that runs workers starts, every queue's `TimeZone` is checked. An id the machine does not know (a typo, an empty value, or a minimal container image without time zone data) stops the start with an `InvalidOperationException` that names the queue and the id. Use an IANA id such as `America/Sao_Paulo`, or `UTC`. On Linux the ids come from the image, so it needs time zone data (the sample `Dockerfile` installs `tzdata`). If the zone becomes unreadable after the start, only that queue is closed, the error is logged once for it, and the other queues keep running. A host with `Workers = 0` does not evaluate windows and does not run this check.
 
 
 ## Only on some days

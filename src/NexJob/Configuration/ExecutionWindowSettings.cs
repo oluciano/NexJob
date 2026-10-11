@@ -50,6 +50,27 @@ public sealed class ExecutionWindowSettings
         return time <= EndTime && IsDayAllowed((DayOfWeek)(((int)local.DayOfWeek + 6) % 7));
     }
 
+    /// <summary>
+    /// Evaluates the window like <see cref="IsWithinWindow"/>, but reports a time zone that cannot be read (unknown,
+    /// empty, <see langword="null"/> or not installed on this machine) instead of throwing.
+    /// </summary>
+    /// <param name="utcNow">The current UTC time to evaluate.</param>
+    /// <param name="within">Whether <paramref name="utcNow"/> is inside the window; <see langword="false"/> when the zone is unreadable.</param>
+    /// <returns><see langword="true"/> when the time zone could be read.</returns>
+    internal bool TryIsWithinWindow(DateTimeOffset utcNow, out bool within)
+    {
+        try
+        {
+            within = IsWithinWindow(utcNow);
+            return true;
+        }
+        catch (Exception ex) when (ex is TimeZoneNotFoundException or InvalidTimeZoneException or ArgumentException)
+        {
+            within = false;
+            return false;
+        }
+    }
+
     private bool IsDayAllowed(DayOfWeek day) =>
         DaysOfWeek is not { Length: > 0 } days || Array.IndexOf(days, day) >= 0;
 }

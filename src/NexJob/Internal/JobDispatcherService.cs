@@ -20,6 +20,7 @@ internal sealed class JobDispatcherService : BackgroundService
     private readonly JobWakeUpChannel _wakeUp;
     private readonly IQueueCircuitBreakerManager? _circuitBreakerManager;
     private readonly ILogger<JobDispatcherService> _logger;
+    private readonly HashSet<string> _unreadableWindowLogged = new(StringComparer.Ordinal);
     private IReadOnlyList<string> _polledQueues = [];
     private readonly CancellationTokenSource _stopFetching = new();
     private SemaphoreSlim? _workerSlots;
@@ -136,6 +137,15 @@ internal sealed class JobDispatcherService : BackgroundService
         {
             _logger.LogInformation("Workers = 0: this host does not fetch or execute jobs.");
             return;
+        }
+
+        foreach (var q in _polledQueues)
+        {
+            if (_options.SettingsFor(q)?.ExecutionWindow is { } window && !window.TryIsWithinWindow(DateTimeOffset.UtcNow, out _))
+            {
+                throw new InvalidOperationException(
+                    $"The execution window of queue '{q}' uses the time zone '{window.TimeZone}', which this machine does not know. Use an IANA id such as 'America/Sao_Paulo' or 'UTC' (on a minimal container image, install the tzdata package).");
+            }
         }
 
         // Outlives ExecuteAsync: jobs still draining during shutdown release their slot after the loop exits.
@@ -282,10 +292,26 @@ internal sealed class JobDispatcherService : BackgroundService
             }
 
             var settings = _options.SettingsFor(q);
-            if (settings?.ExecutionWindow is not null && !settings.ExecutionWindow.IsWithinWindow(now))
+            if (settings?.ExecutionWindow is { } window)
             {
-                _logger.LogDebug("Queue '{Queue}' skipped — outside execution window", q);
-                continue;
+                if (!window.TryIsWithinWindow(now, out var within))
+                {
+                    if (_unreadableWindowLogged.Add(q))
+                    {
+                        _logger.LogError(
+                            "Queue '{Queue}' is closed: its execution window uses the time zone '{TimeZone}', which cannot be read. The other queues keep running.",
+                            q,
+                            window.TimeZone);
+                    }
+
+                    continue;
+                }
+
+                if (!within)
+                {
+                    _logger.LogDebug("Queue '{Queue}' skipped — outside execution window", q);
+                    continue;
+                }
             }
 
             if (_circuitBreakerManager is not null)
