@@ -75,16 +75,9 @@ await scheduler.EnqueueAsync<ProcessOrderJob, ProcessOrderInput>(
 
 **When to use `IJob<TInput>`:** The job operates on a specific entity decided at call time. Good examples are processing a specific order, sending an email to a specific user, or delivering a webhook payload.
 
-### Input serialization rules
+### Input serialization
 
-NexJob serializes your input to JSON and stores it alongside the job record. Keep the following rules in mind:
-
-!!! note
-    - Input types must be JSON-serializable using `System.Text.Json`.
-      - Prefer `record` types — they are immutable, concise, and serialize predictably.
-      - Keep input minimal: store only the identifiers and values the job needs, not entire entity graphs.
-      - Avoid types that cannot survive a round-trip (e.g. delegates, streams, or non-serializable structs).
-
+The input is stored as JSON, so the type must be serializable with `System.Text.Json`. Prefer a `record`, and keep it to the identifiers and values the job needs. [Job payloads](job-payloads.md) has the rules and explains how to change an input type while jobs are queued.
 
 ## Dependency injection and scoped services
 
@@ -137,6 +130,8 @@ Every non-abstract class that implements `IJob` or `IJob<TInput>` is registered 
 
 ## Related
 
+- **Changing an input type:** [Job payloads](job-payloads.md) covers serialization and `[SchemaVersion]` with `IJobMigration`.
 - **A job that keeps failing:** [Retries](retries.md) covers the retry policy and [dead-letter handling](dead-letter.md) covers `IDeadLetterHandler<TJob>`.
+- **The job's own context:** [`IJobContext`](../guides/job-context.md) gives a job its attempt number, progress reporting and checkpoints, so a retried job can resume where it stopped.
 - **Behavior around every job:** [Job filters](../guides/job-filters.md) wrap each execution with logging, tenant injection or timing.
 - **Enqueueing and timing:** [Scheduling](scheduling.md) covers `EnqueueAsync`, delays, priority and deadlines.

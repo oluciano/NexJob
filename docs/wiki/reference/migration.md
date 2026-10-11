@@ -488,51 +488,6 @@ await context.ReportProgressAsync(50, "Halfway done", ct);
 
 ---
 
-## Schema Migration for Job Payloads
+## Schema migration for job payloads
 
-When your job input type changes, existing queued jobs may carry payloads that no longer match the current type. NexJob handles this automatically with `IJobMigration`.
-
-
-
-#### Define the migration
-
-```csharp
-// Old input (v1)
-public sealed record SendEmailInputV1(string To, string Subject);
-
-// New input (v2)
-public sealed record SendEmailInputV2(string To, string Subject, string ReplyTo);
-
-// Migration from v1 to v2
-public sealed class SendEmailV1ToV2 : IJobMigration<SendEmailInputV1, SendEmailInputV2>
-{
-    public SendEmailInputV2 Migrate(SendEmailInputV1 old) =>
-        new(old.To, old.Subject, ReplyTo: "noreply@example.com");
-}
-```
-
-
-#### Register the migration
-
-```csharp
-builder.Services.AddJobMigration<SendEmailInputV1, SendEmailInputV2, SendEmailV1ToV2>();
-```
-
-
-#### Declare the schema version on the job class
-
-```csharp
-[SchemaVersion(2)]
-public sealed class SendEmailJob : IJob<SendEmailInputV2>
-{
-    public async Task ExecuteAsync(SendEmailInputV2 input, CancellationToken ct)
-    {
-        // input is always v2 — old v1 payloads are migrated automatically
-    }
-}
-```
-
-
-
-
-When the dispatcher fetches a job with a mismatched schema version, it deserializes the stored payload as the old type, runs the migration, and passes the new type to the job. No manual data migration is required.
+Changing a job's input type while jobs are queued is covered in [Job payloads](../concepts/job-payloads.md): `[SchemaVersion]`, `IJobMigration` and `AddJobMigration`.

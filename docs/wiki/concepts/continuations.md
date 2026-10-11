@@ -23,7 +23,7 @@ await scheduler.ContinueWithAsync<SendConfirmationJob, ConfirmationInput>(
     cancellationToken: ct);
 ```
 
-The child job is stored with status `AwaitingContinuation`. As soon as the parent transitions to `Succeeded`, NexJob automatically changes the child's status to `Enqueued`.
+The child job is stored with status `AwaitingContinuation`, and its `ParentJobId` points to the parent (see the [`JobRecord` reference](../reference/job-record.md)). As soon as the parent transitions to `Succeeded`, NexJob automatically changes the child's status to `Enqueued`.
 
 ## Multiple continuations from one parent
 

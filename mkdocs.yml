@@ -61,6 +61,7 @@ nav:
       - Live Playground: playground.md
   - Core Concepts:
       - Job Types: concepts/job-types.md
+      - Job payloads: concepts/job-payloads.md
       - Scheduling: concepts/scheduling.md
       - Recurring Jobs: concepts/recurring-jobs.md
       - Failure handling:
@@ -100,6 +101,7 @@ nav:
       - RabbitMQ: integrations/rabbitmq.md
   - Reference:
       - Configuration: reference/configuration.md
+      - JobRecord: reference/job-record.md
       - Troubleshooting: reference/troubleshooting.md
       - FAQ: reference/faq.md
       - Migration: reference/migration.md

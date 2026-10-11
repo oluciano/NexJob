@@ -139,4 +139,5 @@ builder.Services.AddNexJob(options =>
 ## Next
 
 - [Dead-letter handling](dead-letter.md): what runs when every attempt is spent.
+- [Job context](../guides/job-context.md#progress-checkpoints-for-long-running-jobs): save a checkpoint so a retried attempt resumes where the previous one stopped.
 - [Retries & dead letter](retries-and-dead-letter.md): how to choose a strategy for common failures.

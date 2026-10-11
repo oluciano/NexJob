@@ -99,7 +99,7 @@ If no wake-up signal arrives within the configured `PollingInterval` (default: 1
 When the dispatcher picks up a job, it runs through the following steps in order:
 
 1. **Expiration check**: if `UtcNow > ExpiresAt`, mark the job `Expired` and stop. Nothing else runs.
-2. **Preparation**: create a scoped DI container, migrate the payload if the job carries a `[SchemaVersion]` attribute and the stored version differs, and resolve the job class with its dependencies.
+2. **Preparation**: create a scoped DI container, migrate the payload if the job carries a `[SchemaVersion]` attribute and the stored version differs (see [Job payloads](concepts/job-payloads.md)), and resolve the job class with its dependencies.
 3. **Throttle acquisition**: if the job carries `[Throttle]`, wait for a slot. If the resource stays saturated for a few seconds, the job goes back to the queue about a second later and the attempt is **refunded**, so it never counts toward `MaxAttempts`.
 4. **Filters and execution**: pass through the registered [`IJobExecutionFilter`](guides/job-filters.md) chain, then call `ExecuteAsync` with a `CancellationToken` wired to the shutdown signal (and to `[ExecutionTimeout]`, if set).
 5. **Success path**: persist the `Succeeded` result atomically, then enqueue any registered continuations.
