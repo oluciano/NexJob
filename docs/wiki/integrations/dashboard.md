@@ -11,7 +11,7 @@ The NexJob Dashboard gives you a real-time window into every aspect of your back
 <div class="grid cards" markdown>
   -   **Maxton Design System**
 
-    64px top header with a responsive collapsible sidebar, a live cluster health indicator (`HEALTHY`, `DEGRADED`, `INCIDENT`), and `Ctrl+K` keyboard-shortcut search.
+    64px top header with a responsive collapsible sidebar, a live cluster health indicator (`HEALTHY`, `DEGRADED`, `INCIDENT`), and `Ctrl+K` (`Cmd+K` on macOS) keyboard-shortcut search.
 
   -   **Environment Badge**
 
@@ -156,10 +156,8 @@ Choose the package that matches your application type:
 
 
 
-        !!! note
-        The standalone dashboard listens on **loopback only** by default (`LocalhostOnly = true`). Inside a container this makes the dashboard unreachable through a published port. Set `LocalhostOnly = false` to listen on all interfaces — but also register an `IDashboardAuthorizationHandler` (see below) or restrict the port with a firewall or network policy. Anyone who can reach an exposed port can read job payloads and invoke actions such as pausing queues or requeuing jobs. NexJob logs a startup warning when `LocalhostOnly = false` and no authorization handler is registered.
-
-
+    !!! warning
+        The standalone dashboard listens on **loopback only** by default (`LocalhostOnly = true`). Inside a container this makes the dashboard unreachable through a published port. Set `LocalhostOnly = false` to listen on all interfaces, but also register an `IDashboardAuthorizationHandler` (see below) or restrict the port with a firewall or network policy. Anyone who can reach an exposed port can read job payloads and invoke actions such as pausing queues or requeuing jobs. NexJob logs a startup warning when `LocalhostOnly = false` and no authorization handler is registered.
 
 ---
 
@@ -305,6 +303,9 @@ builder.Services.AddSingleton<IDashboardAuthorizationHandler, BasicAuthDashboard
     View and override runtime settings (polling interval, retention periods) without redeployment. Overrides survive restarts and are shared across all nodes. Read-only clusters reject mutating actions.
 
 </div>
+
+!!! warning "Dashboard actions and a read replica"
+    **Run Now**, **Requeue** and **Delete** go through `IJobControlService`, which calls `IDashboardStorage`. On a host that uses `UseDashboardReadReplica`, that storage points at the replica, so these buttons fail there (checked on PostgreSQL and SQL Server: [#478](https://github.com/oluciano/NexJob/issues/478)). Pause, resume and the recurring-job actions use other storage and are not affected.
 
 ---
 

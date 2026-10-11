@@ -1,31 +1,29 @@
 ---
 title: "Kafka Integration: Triggers and Resilient Outbox for NexJob"
 sidebarTitle: "Kafka"
-description: "Use NexJob.Kafka to consume Kafka topic messages as background job triggers and publish events reliably via the transactional outbox pattern."
+description: "Use NexJob.Kafka to turn Kafka topic messages into NexJob jobs and to publish messages to Kafka through a durable outbox, with its options, defaults, ordering limits and failure behavior."
 ---
 
-`NexJob.Kafka` unifies two complementary capabilities into a single package: a **Kafka Trigger** that transforms incoming topic messages into persisted background jobs, and a **Resilient Outbox Producer** that publishes messages to Kafka through NexJob's storage layer so they survive broker outages and are retried automatically. Together they let you build event-driven pipelines where every message is either processed or reliably recovered — no silent drops, no manual retry loops.
+`NexJob.Kafka` has two independent halves in one package:
 
----
+- the **trigger** reads a topic and enqueues each record as a NexJob job (a consumer);
+- the **outbox producer** stores a message in NexJob's storage first and publishes it to Kafka from a job, so a broker outage does not lose it (a producer).
 
-## Installation
+You can use either one alone. For what all triggers have in common (the message contract, how the job type is resolved, the idempotency key and the error model), see the [overview](triggers.md).
+
+## Install
 
 ```bash
 dotnet add package NexJob.Kafka
 ```
 
----
+## The trigger (consumer)
 
-## Kafka Trigger (Consumer)
+### Register it
 
-The Kafka Trigger subscribes to a topic and enqueues a NexJob job for each message it receives. Job execution happens asynchronously on a NexJob worker; the trigger only persists the record and commits the offset after the enqueue succeeds.
-
-### Option A: Strongly-typed consumer (recommended)
-
-Bind a topic directly to one job handler class. The job type is automatically registered in DI as `Transient`:
+Bind a topic to one job type with the generic overload. The job is registered in DI as `Transient`:
 
 ```csharp
-// Program.cs
 builder.Services.AddNexJob()
     .AddKafkaTrigger<ProcessOrderJob>(options =>
     {
@@ -34,23 +32,20 @@ builder.Services.AddNexJob()
         options.GroupId = "nexjob-order-consumer";
         options.TargetQueue = "orders";
     });
-```
 
-```csharp
-// Job handler — receives the raw message body as a string
 public sealed class ProcessOrderJob : IJob<string>
 {
     public async Task ExecuteAsync(string messagePayload, CancellationToken ct)
     {
         var order = JsonSerializer.Deserialize<OrderDto>(messagePayload);
-        // Process order...
+        // ...
     }
 }
 ```
 
-### Option B: Dynamic routing via `nexjob.job_type` header
+The job receives the record value as text and decides how to parse it. The same registration exists on the service collection as `services.AddNexJobKafkaTrigger<ProcessOrderJob>(...)`.
 
-When multiple job types share the same topic, omit the generic argument. Each message must carry a `nexjob.job_type` header with the assembly-qualified job name. Set `options.JobType` as a fallback for messages that don't carry the header:
+To route records to different job types, omit the generic argument and have the producer set the `nexjob.job_type` header to the assembly-qualified name of the job. `JobType` is the fallback for records without the header; when both exist, the header wins:
 
 ```csharp
 builder.Services.AddNexJob()
@@ -59,174 +54,148 @@ builder.Services.AddNexJob()
         options.BootstrapServers = "localhost:9092";
         options.Topic = "incoming-events";
         options.GroupId = "events-consumer";
-        // Fallback for messages without the nexjob.job_type header:
-        // options.JobType = typeof(DefaultEventJob).AssemblyQualifiedName;
+        // options.JobType = typeof(DefaultEventJob).AssemblyQualifiedName; // optional fallback
     });
 ```
 
-### Inbound guarantees
+### Options
 
-- **Never silently drop**: Transient failures (storage down, network error) retry the same record in place with a 1 s → 2 s → 5 s → 10 s → 20 s → 30 s backoff. The next record is not consumed until the current one succeeds, preserving partition order. Permanent failures (unresolvable job type, malformed payload) are produced to a `DeadLetterTopic` if configured; without one they are logged at `Error` and committed so the partition is not blocked.
-- **Idempotency**: The idempotency key is `kafka:{topic}:{partition}:{offset}`. Redelivery of the same record never creates a second job.
-- **Trace propagation**: W3C `traceparent` headers are extracted and attached to the job record.
-- **Manual commit only**: Offsets are committed to Kafka strictly after the job has been persisted to NexJob storage.
+| Option | Default | Meaning |
+|---|---|---|
+| `BootstrapServers` | required | The brokers, as `host:port,host:port`. |
+| `Topic` | required | The topic to read. One trigger reads one topic. |
+| `GroupId` | required | The consumer group. |
+| `JobType` | `null` | The job type for records without a `nexjob.job_type` header. |
+| `TargetQueue` | `"default"` | The NexJob queue the jobs go to. `"default"` is the application's `{prefix}.default` queue ([details](../concepts/default-queue.md)). |
+| `JobPriority` | `Normal` | The priority of the jobs. |
+| `DeadLetterTopic` | `null` | A topic that receives the records that can never become jobs. |
+| `ExhaustedJobsTopic` | `null` | A topic that receives a copy of a job once it exhausts its retries. Needs `AddKafkaProducer`. |
+| `ExhaustedJobsIncludeErrorHeader` | `false` | Adds the last error message to those copies, in a `nexjob.error` header. |
+| `ConsumeTimeout` | 1 second | How long one poll of the consumer waits for a record. |
+| `ConfigureConsumer` | `null` | A delegate over the Confluent `ConsumerConfig`: SASL, TLS, timeouts. |
 
----
+A missing `BootstrapServers`, `Topic` or `GroupId` fails when the host starts.
 
-## Resilient Outbox Producer
+The consumer is created with `AutoOffsetReset = Earliest`, then your `ConfigureConsumer` runs, then `BootstrapServers`, `GroupId` and `EnableAutoCommit = false` are forced back, so the delegate cannot change those three.
 
-The outbox producer persists messages to NexJob storage before publishing them to Kafka. If the broker is temporarily unreachable, the message stays safe in storage and is retried with exponential backoff on the next worker cycle.
+!!! warning
+    A consumer group that has no committed offset starts from the **beginning of the topic**, because the default is `Earliest`. Checked: a new group read a record that had been produced before the group existed. To start from the end, set `config.AutoOffsetReset = AutoOffsetReset.Latest` in `ConfigureConsumer`.
 
-### Architecture
+### How a record becomes a job
+
+- **Input:** the record value, as text.
+- **Job type:** the `nexjob.job_type` header, else `JobType`.
+- **Idempotency key:** `kafka:{topic}:{partition}:{offset}`, the position of the record. It deduplicates only against jobs that are still active: a record read again after its job has finished (for example after a consumer group reset) creates a new job. See [the overview](triggers.md#idempotency-keys-by-broker).
+- **Trace:** a `traceparent` header, when present, becomes the job's trace parent.
+- **Commit:** the offset is committed only after the job was enqueued. If only the commit fails, the record is read again and the key keeps it from becoming a second job while the first is active.
+
+Records are handled one at a time, in the order the consumer receives them.
+
+### What happens when it fails
+
+| What happened | What the trigger does |
+|---|---|
+| The job was enqueued | The offset is committed. |
+| A transient failure (storage down, network, timeout) | The same record is retried in place, waiting 1, 2, 5, 10, 20 and then 30 seconds between attempts, and it does not stop. No other record is read meanwhile, so the order is kept and no later offset is committed past it. |
+| The record can never become a job (no job type, a malformed payload) | With `DeadLetterTopic`: the record is copied there, then its offset is committed. Without it: an error is logged and the offset is committed, so the partition is not blocked and **the record is skipped**. |
+| Copying to the dead-letter topic fails | The error is logged and the offset is **not** committed; the record is read again after the next rebalance or restart. |
+| The host is stopping | The offset is not committed and the record is read again on restart. |
+
+The dead-letter copy keeps the key, the value and the original headers, and adds `nexjob.error`, `nexjob.original_topic`, `nexjob.original_partition` and `nexjob.original_offset`. The partition and the offset are raw binary integers, not text. Checked against a real broker: a record without a job type reached the dead-letter topic with those headers and the consumer went on. The dead-letter producer is built from the consumer's configuration, so the SASL and TLS settings apply to it too.
+
+A transient failure holds the whole consumer. Because the trigger does not poll while it waits, an outage longer than the consumer's `max.poll.interval.ms` (5 minutes by default in Kafka) gets it removed from the group, which triggers a rebalance. If your storage can be down for longer, raise `MaxPollIntervalMs` in `ConfigureConsumer`. This follows from the code and Kafka's documented default; it was not run.
+
+### Forwarding exhausted jobs
+
+Set `ExhaustedJobsTopic` to copy a job to another topic once it exhausts its retries. The copy goes through the outbox producer, so `AddKafkaProducer` is required (the host fails to start without it). The job stays `Failed` in NexJob, and only the record value is forwarded, with no key. A job is forwarded only when it came from this trigger's topic and queue. See [Forwarding a dead-lettered job](../concepts/dead-letter-forwarding.md) for the full behavior and its limits.
+
+### Listener status
+
+The trigger registers with the [listener registry](triggers.md#live-listener-registry) and appears on the dashboard's `/listeners` page, with its consumer group: `Listening` once it subscribes, `Reconnecting` after a consume error and `Faulted` after an unexpected error in the loop. Read from the source: it is not set back to `Listening` afterwards.
+
+## The outbox producer
+
+### How it works
 
 ```text
-[Application Service]
+[Your service]  scheduler.EnqueueKafkaAsync(...)
        │
-       ▼ scheduler.EnqueueKafkaAsync(...)
-[NexJob Storage]
+       ▼
+[NexJob storage]   a KafkaProducerJob is stored
        │
-       ▼ Worker dequeues KafkaProducerJob
-[KafkaProducerJob]
+       ▼
+[A worker]         runs the job: ProduceAsync to Kafka, with a traceparent header
        │
-       ▼ ProduceAsync + W3C traceparent
-[Apache Kafka Broker]
+       ▼
+[Kafka]
 ```
 
-### Registration
+The message is safe in storage from the moment `EnqueueKafkaAsync` returns. If Kafka is unreachable the job fails and NexJob's [retry policy](../concepts/retries.md) tries again; when the attempts are exhausted the job is dead-lettered like any other.
+
+### Register it
 
 ```csharp
 builder.Services.AddNexJob()
     .AddKafkaProducer(options =>
     {
-        options.BootstrapServers = builder.Configuration["KAFKA_BOOTSTRAP_SERVERS"]
-            ?? "localhost:9092";
+        options.BootstrapServers = builder.Configuration["KAFKA_BOOTSTRAP_SERVERS"] ?? "localhost:9092";
         options.Acks = Confluent.Kafka.Acks.All;
         options.EnableIdempotence = true;
         options.FlushTimeout = TimeSpan.FromSeconds(10);
     });
 ```
 
-### Publishing messages
+!!! warning
+    The producer jobs go to a queue named **`kafka-producer`**, and a worker polls only the queues in `NexJobOptions.Queues`. With the default `Queues`, **nothing is published**: the jobs wait in storage. Checked against a real broker: with the default queues the topic stayed empty; with `options.Queues = ["default", "kafka-producer"]` the message arrived. Add `kafka-producer` (or the queue you pass to `EnqueueKafkaAsync`) to `Queues` on at least one node. This default is tracked as [#482](https://github.com/oluciano/NexJob/issues/482).
 
-Inject `IScheduler` and call `EnqueueKafkaAsync`. Pass a `string` or `byte[]` to send the value as-is; pass any other object to have it serialized as JSON:
+| Option | Default | Meaning |
+|---|---|---|
+| `BootstrapServers` | required | The brokers. |
+| `Acks` | `All` | The acknowledgements the broker must give. |
+| `EnableIdempotence` | `true` | The Kafka producer's idempotence. |
+| `FlushTimeout` | 10 seconds | How long the producer waits to flush on shutdown. |
+| `ConfigureProducer` | `null` | A delegate over the Confluent `ProducerConfig`. |
+| `Queue`, `DefaultPriority` | `"kafka-producer"`, `Normal` | **No effect.** They are declared but nothing reads them; the queue and priority come from the arguments of `EnqueueKafkaAsync`. |
+
+`BootstrapServers`, `Acks` and `EnableIdempotence` are forced back after `ConfigureProducer` runs, so the delegate cannot change them. On shutdown the producer flushes what it has in flight.
+
+### Publish messages
+
+Inject `IScheduler` and call `EnqueueKafkaAsync`. A `string` or `byte[]` is sent as it is, and any other object is serialized as JSON:
 
 ```csharp
 public class OrderService(IScheduler scheduler)
 {
-    // Strongly typed object — serialized as JSON
-    public async Task CreateOrderAsync(OrderCreatedEvent order, CancellationToken ct)
-    {
-        await scheduler.EnqueueKafkaAsync(
+    public Task CreateOrderAsync(OrderCreatedEvent order, CancellationToken ct) =>
+        scheduler.EnqueueKafkaAsync(
             topic: "orders-topic",
             key: order.OrderId.ToString(),
-            value: order,
+            value: order,                      // serialized as JSON
             cancellationToken: ct);
-    }
 
-    // Raw JSON string — sent verbatim
-    public async Task PublishRawJsonAsync(string orderId, string jsonPayload, CancellationToken ct)
-    {
-        await scheduler.EnqueueKafkaAsync(
-            topic: "orders-topic",
-            key: orderId,
-            value: jsonPayload,
-            cancellationToken: ct);
-    }
+    public Task PublishRawAsync(string orderId, string json, CancellationToken ct) =>
+        scheduler.EnqueueKafkaAsync("orders-topic", orderId, json, cancellationToken: ct);        // sent verbatim
 
-    // Binary payload
-    public async Task PublishBinaryAsync(string key, byte[] data, CancellationToken ct)
-    {
-        await scheduler.EnqueueKafkaAsync(
-            topic: "events-topic",
-            key: key,
-            value: data,
-            cancellationToken: ct);
-    }
+    public Task PublishBinaryAsync(string key, byte[] data, CancellationToken ct) =>
+        scheduler.EnqueueKafkaAsync("events-topic", key, data, cancellationToken: ct);            // sent as bytes
 }
 ```
 
----
+Besides `topic`, `key` and `value`, the call takes `headers`, `queue`, `priority`, `idempotencyKey`, `duplicatePolicy`, `tags` and `deadlineAfter`. Things to know:
 
-## Security: SASL and SSL Configuration
+- **No key means an empty key.** A message enqueued with `key: null` is sent with an empty string key. Kafka routes by key, so pass one whenever the partition matters.
+- **Serialization happens at the call.** An object that cannot be serialized throws from `EnqueueKafkaAsync` to your code, before anything is stored.
+- **Delivery is at least once.** A job can publish and then fail before NexJob records it, so the message can be published twice. Give the consumers a way to ignore a repeat. The `idempotencyKey` argument only keeps your own code from storing the same message twice while the first is active.
+- **The trace** of the publishing job is sent in the `traceparent` header.
 
-Use the `ConfigureConsumer` and `ConfigureProducer` delegates to set SASL/SCRAM credentials, SSL/TLS certificates, and custom broker timeouts without environment variables:
+## Ordering and worker concurrency
 
-```csharp
-// Consumer — SASL/SCRAM-SHA-512 with SSL
-builder.Services.AddNexJob()
-    .AddKafkaTrigger(options =>
-    {
-        options.BootstrapServers = "kafka.prod:9092";
-        options.Topic = "incoming-orders";
-        options.GroupId = "order-consumers";
-
-        options.ConfigureConsumer = config =>
-        {
-            config.SecurityProtocol = SecurityProtocol.SaslSsl;
-            config.SaslMechanism = SaslMechanism.ScramSha512;
-            config.SaslUsername = "kafka-user";
-            config.SaslPassword = "vault-secret-password";
-            config.SslCaPem = "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----";
-            config.SessionTimeoutMs = 45000;
-        };
-    });
-
-// Producer — SASL/PLAIN with linger
-builder.Services.AddNexJob()
-    .AddKafkaProducer(options =>
-    {
-        options.BootstrapServers = "kafka.prod:9092";
-
-        options.ConfigureProducer = config =>
-        {
-            config.SecurityProtocol = SecurityProtocol.SaslSsl;
-            config.SaslMechanism = SaslMechanism.Plain;
-            config.SaslUsername = "producer-user";
-            config.SaslPassword = "producer-password";
-            config.LingerMs = 20;
-        };
-    });
-```
-
----
-
-## Configuration from `appsettings.json`
-
-`NexJob.Kafka` does not read a fixed `NexJob:Kafka` configuration section. Bind from whichever section you choose:
-
-```json
-{
-  "Kafka": {
-    "BootstrapServers": "localhost:9092",
-    "Topic": "orders",
-    "GroupId": "orders-consumer"
-  }
-}
-```
+Kafka orders records within a partition, by key. The outbox does not preserve that order by itself. To keep the publishing in order as much as NexJob can, send the messages to a dedicated queue and let one worker run it:
 
 ```csharp
-builder.Services.AddNexJob()
-    .AddKafkaTrigger(options => builder.Configuration.GetSection("Kafka").Bind(options));
-```
+await scheduler.EnqueueKafkaAsync("orders-topic", order.TenantId.ToString(), order,
+    queue: "kafka-ordered", cancellationToken: ct);
 
----
-
-## Partition Ordering and Worker Concurrency
-
-Kafka guarantees message ordering within a partition using the message `Key`. When strict FIFO ordering per partition key is required, publish with a dedicated queue and run that queue on a single worker:
-
-```csharp
-// Publish to a dedicated single-worker queue
-await scheduler.EnqueueKafkaAsync(
-    topic: "orders-topic",
-    key: order.TenantId.ToString(),
-    value: order,
-    queue: "kafka-ordered",
-    cancellationToken: ct);
-```
-
-```csharp
-// Configure the node that processes this queue with one worker
 builder.Services.AddNexJob(options =>
 {
     options.Workers = 1;
@@ -234,28 +203,62 @@ builder.Services.AddNexJob(options =>
 });
 ```
 
-For high-throughput scenarios where eventual delivery is acceptable, use the default worker concurrency to publish multiple messages in parallel.
+This is not a strict guarantee. A job that fails is rescheduled after its retry delay, so the next message can be published before it; and two nodes polling the queue publish in parallel. If order matters across failures, the consumer needs to cope with it (a sequence number in the message, for example). This is reasoning from how retries work, not something run here.
 
----
+## Security: SASL and TLS
 
-## Forwarding exhausted jobs
+Use `ConfigureConsumer` and `ConfigureProducer` to set SASL, TLS and timeouts:
 
-Set `ExhaustedJobsTopic` on the trigger to copy a job to another topic once it exhausts its retries. The copy goes through the Outbox producer (`AddKafkaProducer` is required) and the job stays `Failed` in NexJob. Only the message body is forwarded. See [Forwarding a dead-lettered job](../concepts/dead-letter-forwarding.md) for the full behaviour and its limits.
+```csharp
+builder.Services.AddNexJob()
+    .AddKafkaTrigger(options =>
+    {
+        options.BootstrapServers = "kafka.prod:9093";
+        options.Topic = "incoming-orders";
+        options.GroupId = "order-consumers";
+        options.ConfigureConsumer = config =>
+        {
+            config.SecurityProtocol = SecurityProtocol.SaslSsl;
+            config.SaslMechanism = SaslMechanism.ScramSha512;
+            config.SaslUsername = builder.Configuration["Kafka:User"];
+            config.SaslPassword = builder.Configuration["Kafka:Password"];
+            config.SslCaPem = builder.Configuration["Kafka:CaPem"];
+            config.SessionTimeoutMs = 45000;
+        };
+    })
+    .AddKafkaProducer(options =>
+    {
+        options.BootstrapServers = "kafka.prod:9093";
+        options.ConfigureProducer = config =>
+        {
+            config.SecurityProtocol = SecurityProtocol.SaslSsl;
+            config.SaslMechanism = SaslMechanism.ScramSha512;
+            config.SaslUsername = builder.Configuration["Kafka:User"];
+            config.SaslPassword = builder.Configuration["Kafka:Password"];
+            config.LingerMs = 20;
+        };
+    });
+```
 
----
+Keep the credentials in a secret store. The trigger and the producer have separate configuration, so set the security settings on both.
 
-## Reliability and Failure Handling
+## Configuration from `appsettings.json`
 
-| Failure Scenario | Behavior |
-|---|---|
-| **Kafka broker down** | `ProduceException` is thrown; NexJob's retry policy kicks in. The message remains safe in storage. |
-| **Retries exhausted** | The message is dispatched to the dead-letter pipeline (`IDeadLetterHandler`) and surfaced in the dashboard. |
-| **Host shutdown** | The registered `IKafkaProducerClient` automatically calls `Flush()` to drain all in-flight messages before the process exits. |
-| **Serialization error** | Fails fast and routes to dead-letter without crashing the worker host. |
+The package does not read a fixed section. Bind the options from whichever one you choose:
 
-!!! note
-    `NexJob.Kafka` is tested against Kafka clusters running in **KRaft mode** (no ZooKeeper). It is also compatible with ZooKeeper-based clusters, but KRaft is recommended for new deployments.
+```json
+{ "Kafka": { "BootstrapServers": "localhost:9092", "Topic": "orders", "GroupId": "orders-consumer" } }
+```
+
+```csharp
+builder.Services.AddNexJob()
+    .AddKafkaTrigger(options => builder.Configuration.GetSection("Kafka").Bind(options));
+```
+
+## What was checked
+
+Against a single-node Kafka in KRaft mode (Confluent `cp-kafka` 7.6.0): the trigger read a record that existed before its group; a record without a job type reached the dead-letter topic with the headers above; the outbox published a message when its queue was polled and did not when it was not. SASL and TLS, a cluster with several brokers, `ExhaustedJobsTopic`, the long-outage rebalance and the ordering behavior were not run. The package is tested by its authors against KRaft clusters; ZooKeeper-based clusters are expected to work but were not tried here.
 
 ## Try it
 
-The [`NexJob.Sample.Kafka`](https://github.com/oluciano/NexJob/tree/develop/samples/NexJob.Sample.Kafka) sample publishes events through the partitioned outbox and consumes them with the trigger, tracking offsets. It uses the Kafka (KRaft) container from the Docker Compose stack in `samples/`.
+The [`NexJob.Sample.Kafka`](https://github.com/oluciano/NexJob/tree/develop/samples/NexJob.Sample.Kafka) sample publishes events through the outbox and consumes them with the trigger. It uses the Kafka (KRaft) container from the Docker Compose stack in `samples/`.
