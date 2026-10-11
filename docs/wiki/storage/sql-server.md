@@ -4,7 +4,7 @@ sidebarTitle: "SQL Server"
 description: "Use NexJob.SqlServer to persist background jobs in SQL Server with ACID guarantees, read replica support, and automatic schema setup."
 ---
 
-NexJob's SQL Server provider stores all job state in your Microsoft SQL Server or Azure SQL database. It uses `WITH (UPDLOCK, READPAST, ROWLOCK)` hints for contention-free worker dispatch, `sp_getapplock` for distributed coordination, and vectorized batch acknowledgment for high-throughput workloads. Choose this provider when your application already relies on SQL Server and you need full ACID semantics with optional read replica offloading.
+NexJob's SQL Server provider stores all job state in your Microsoft SQL Server or Azure SQL database. It uses `WITH (UPDLOCK, READPAST, ROWLOCK)` hints so workers on many nodes never claim the same job, `sp_getapplock` so only one node migrates the schema at a time, and one `UPDATE ... WHERE id IN` statement to acknowledge a batch of jobs. Choose this provider when your application already relies on SQL Server and you need full ACID semantics with optional read replica offloading.
 
 ## Install
 
@@ -38,7 +38,7 @@ builder.Services.AddNexJob(options =>
 
 ## Dashboard read replica
 
-Use `UseDashboardReadReplica` to route dashboard list and metrics queries to a read-scale replica, keeping monitoring traffic off your primary database. This works with Azure SQL read-scale replicas, SQL Server Always On readable secondaries, and any compatible replica endpoint.
+Use `UseDashboardReadReplica` to route dashboard list and metrics queries to a read-scale replica, keeping monitoring traffic off your primary database.
 
 ```csharp
 using NexJob.SqlServer;
@@ -52,10 +52,13 @@ builder.Services.AddNexJob(options =>
 .UseDashboardReadReplica(readReplicaConnectionString);
 ```
 
-`UseDashboardReadReplica` overrides only the `IDashboardStorage` registration with a separate provider instance pointed at the replica. All writes and worker coordination continue through the primary connection.
+`UseDashboardReadReplica` overrides only the `IDashboardStorage` registration with a separate provider instance pointed at the replica (it does not run migrations). Enqueueing, fetching and the worker coordination continue through the primary connection.
+
+!!! warning "Requeue and delete go to the replica too"
+    `IDashboardStorage` also holds `RequeueJobAsync` and `DeleteJobAsync`, and `IJobControlService` calls them through it, so with a replica configured they run against the replica and are rejected (checked with a `db_datareader` login: `The DELETE permission was denied on the object 'nexjob_jobs'`). Until this changes ([#478](https://github.com/oluciano/NexJob/issues/478)), do not rely on requeueing or deleting jobs from code or from the dashboard on a host that uses a replica. A real readable secondary was not tried; the tests used a read-only login on the same database.
 
 !!! tip
-    On Azure SQL, enable the built-in read-scale endpoint by appending `ApplicationIntent=ReadOnly` to your replica connection string and pointing it at the same server. No additional infrastructure required.
+    On Azure SQL, the read-scale endpoint is selected by appending `ApplicationIntent=ReadOnly` to the connection string (a Microsoft feature; not tried with NexJob here).
 
 
 ## Using an existing `SqlConnection`
@@ -64,7 +67,7 @@ builder.Services.AddNexJob(options =>
 
 ## Storage segregation
 
-If you want to use separate credentials for job operations and dashboard queries — for example, a read-only database user for the dashboard — override `IDashboardStorage` directly:
+If you want to use separate credentials for job operations and dashboard queries, for example a read-only database user for the dashboard, override `IDashboardStorage` directly:
 
 ```csharp
 using NexJob.SqlServer;
@@ -81,9 +84,11 @@ builder.Services.AddSingleton<IDashboardStorage>(_ =>
 builder.Services.AddNexJob();
 ```
 
+This works with a login that only has `db_datareader` on a database that is already migrated (checked on SQL Server 2022): the constructor runs the migrator, which does nothing when the schema is current. The limit above applies here too: requeue and delete need a writable credential. Unlike PostgreSQL, no extra privilege is needed.
+
 ## High-throughput batch processing
 
-For workloads that stream large volumes of messages — for example, consuming from Kafka or RabbitMQ into SQL Server — enable batch processing. Workers fetch a batch of jobs sized to current idle capacity atomically in a single `TOP (@batchSize) WITH (UPDLOCK, READPAST, ROWLOCK)` statement, and complete them in asynchronous batches to eliminate per-job write round trips.
+For workloads that stream large volumes of messages — for example, consuming from Kafka or RabbitMQ into SQL Server — enable batch processing. Workers fetch a batch of jobs sized to current idle capacity atomically in a single `TOP (@batchSize) WITH (UPDLOCK, READPAST, ROWLOCK)` statement, and complete them in asynchronous batches, one statement for many jobs instead of one per job.
 
 ```csharp
 builder.Services.AddNexJobSqlServer(connectionString);
@@ -94,7 +99,7 @@ builder.Services.AddNexJob(options =>
     options.Workers         = 30;
     options.PollingInterval = TimeSpan.FromMilliseconds(20);
 
-    // Commit successful jobs in asynchronous batches, eliminating per-job write round trips
+    // Commit successful jobs in asynchronous batches (off by default)
     options.EnableBatchAcknowledgment = true;
 });
 ```
@@ -135,11 +140,11 @@ Use the formula `Workers + 10` per node as your pool ceiling. Multiply by the nu
 
 ### Use read replica for dashboard
 
-Always configure `UseDashboardReadReplica` on production deployments. Dashboard queries scan job history and can be expensive under load; routing them to a replica protects worker throughput.
+Consider `UseDashboardReadReplica` when the dashboard is busy. Dashboard queries scan job history and can be expensive under load; routing them to a replica protects worker throughput. Mind the requeue and delete limit above.
 
 ### Enable batch acknowledgment for high volume
 
-Set `EnableBatchAcknowledgment = true` when you process more than a few thousand jobs per minute. Batching acknowledgments removes the per-job write overhead that becomes the bottleneck at scale.
+Set `EnableBatchAcknowledgment = true` when you process more than a few thousand jobs per minute. Batching acknowledgments replaces a write per job with one write for the batch.
 
 
 
