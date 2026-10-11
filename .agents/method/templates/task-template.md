@@ -53,7 +53,7 @@ Use this to clearly specify work for an AI execution engine.
 
 **Use this workflow:** [feature | bugfix | test | refactor | reliability | release]
 
-**Reference architecture:** docs/ARCHITECTURE.md, .claude/CLAUDE.md, foundation rules
+**Reference architecture:** docs/ARCHITECTURE.md, CLAUDE.md, foundation rules
 
 ---
 
