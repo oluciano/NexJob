@@ -102,6 +102,30 @@ public sealed class BatchAckContinuationEndToEndTests
         await host.StopAsync();
     }
 
+    /// <summary>N3 (issue #495): a parent without children succeeds and the next job is still picked up at once.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task ParentWithoutChildren_Succeeds_AndNextJobStillRuns()
+    {
+        var secondRan = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var host = Host.CreateDefaultBuilder()
+            .ConfigureServices(services =>
+            {
+                services.AddNexJob(opt => opt.PollingInterval = TimeSpan.FromSeconds(30));
+                services.AddTransient<ParentJob>();
+                services.AddTransient(_ => new ChildJob(secondRan));
+            })
+            .Build();
+        await host.StartAsync();
+        var scheduler = host.Services.GetRequiredService<IScheduler>();
+
+        await scheduler.EnqueueAsync<ParentJob>();
+        await scheduler.EnqueueAsync<ChildJob>();
+
+        (await secondRan.Task.WaitAsync(TimeSpan.FromSeconds(5))).Should().BeTrue();
+        await host.StopAsync();
+    }
+
     private sealed class GatedParentJob(TaskCompletionSource<bool> gate) : IJob
     {
         public async Task ExecuteAsync(CancellationToken cancellationToken) => await gate.Task.WaitAsync(cancellationToken);
