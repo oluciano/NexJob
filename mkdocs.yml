@@ -72,6 +72,7 @@ nav:
       - Continuations: concepts/continuations.md
       - Idempotency: concepts/idempotency.md
       - Queues: concepts/queues.md
+      - Default queue and prefix: concepts/default-queue.md
   - Guides:
       - Throttling: guides/throttling.md
       - Circuit Breaker: guides/circuit-breaker.md
