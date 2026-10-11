@@ -28,16 +28,15 @@ public sealed class JobExecutingContext
     public IServiceProvider Services { get; }
 
     /// <summary>
-    /// Gets whether the job execution completed successfully.
-    /// This is set after <see cref="IJobExecutionFilter.OnExecutingAsync"/> returns —
-    /// it reflects the outcome of the pipeline invoked via the <c>next</c> delegate.
+    /// Gets whether the part of the pipeline invoked via the <c>next</c> delegate completed without throwing.
+    /// It is <see langword="false"/> until <c>next</c> returns, so read it after <c>await next(ct)</c>.
     /// </summary>
     public bool Succeeded { get; internal set; }
 
     /// <summary>
     /// Gets the exception thrown by the job or a downstream filter, or
     /// <see langword="null"/> when the execution succeeded.
-    /// This is set after <see cref="IJobExecutionFilter.OnExecutingAsync"/> returns.
+    /// <c>await next(ct)</c> rethrows it, so read it in a <c>catch</c> or <c>finally</c>; it is set before the exception reaches the filter.
     /// </summary>
     public Exception? Exception { get; internal set; }
 }

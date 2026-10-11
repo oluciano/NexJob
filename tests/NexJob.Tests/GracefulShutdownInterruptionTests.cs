@@ -147,7 +147,6 @@ public sealed class GracefulShutdownInterruptionTests
             deadLetter.Object,
             new ThrottleRegistry(),
             new NexJobOptions { HeartbeatInterval = TimeSpan.FromMilliseconds(10) },
-            Enumerable.Empty<IJobExecutionFilter>(),
             new JobWakeUpChannel(),
             NullLogger<JobExecutor>.Instance);
         return (sut, storage, invoker, retry, deadLetter);

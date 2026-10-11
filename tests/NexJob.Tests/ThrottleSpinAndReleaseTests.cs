@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using NexJob.Internal;
+using NexJob.Internal.Tests;
 using NexJob.Storage;
 using Xunit;
 
@@ -130,7 +131,7 @@ public sealed class ThrottleSpinAndReleaseTests
         job = new JobRecord { Id = JobId.New(), JobType = "TestJob", Attempts = 1, MaxAttempts = 3 };
         var invoker = new Mock<IJobInvokerFactory>();
         var context = new JobInvocationContext(
-            new Mock<IServiceScope>().Object,
+            TestScopes.Create(),
             new object(),
             new object(),
             (object _, object _, CancellationToken _) => Task.CompletedTask,
@@ -145,7 +146,6 @@ public sealed class ThrottleSpinAndReleaseTests
             new Mock<IDeadLetterDispatcher>().Object,
             registry,
             new NexJobOptions { HeartbeatInterval = TimeSpan.FromMinutes(5) },
-            Enumerable.Empty<IJobExecutionFilter>(),
             new JobWakeUpChannel(),
             NullLogger<JobExecutor>.Instance);
     }

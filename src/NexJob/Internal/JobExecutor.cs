@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Threading.Channels;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using NexJob.Exceptions;
 using NexJob.Storage;
@@ -23,7 +24,6 @@ internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
     private readonly ThrottleRegistry _throttleRegistry;
     private readonly NexJobOptions _options;
     private readonly ILogger<JobExecutor> _logger;
-    private readonly IReadOnlyList<IJobExecutionFilter> _filters;
     private readonly JobWakeUpChannel _wakeUp;
     private readonly Channel<JobId> _ackChannel;
     private readonly CancellationTokenSource _ackCts;
@@ -38,7 +38,6 @@ internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
     /// <param name="deadLetterDispatcher">The dead-letter dispatcher.</param>
     /// <param name="throttleRegistry">The throttle registry.</param>
     /// <param name="options">The nex job options.</param>
-    /// <param name="filters">The filters.</param>
     /// <param name="wakeUp">The wake-up channel signalled after a successful commit, so promoted continuations are fetched without waiting a poll.</param>
     /// <param name="logger">The logger.</param>
     public JobExecutor(
@@ -48,7 +47,6 @@ internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
         IDeadLetterDispatcher deadLetterDispatcher,
         ThrottleRegistry throttleRegistry,
         NexJobOptions options,
-        IEnumerable<IJobExecutionFilter> filters,
         JobWakeUpChannel wakeUp,
         ILogger<JobExecutor> logger)
     {
@@ -60,7 +58,6 @@ internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
         _throttleRegistry = throttleRegistry;
         _options = options;
         _logger = logger;
-        _filters = filters.ToList().AsReadOnly();
 
         _ackChannel = Channel.CreateUnbounded<JobId>(new UnboundedChannelOptions { SingleReader = true });
         _ackCts = new CancellationTokenSource();
@@ -410,7 +407,9 @@ internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
 
             try
             {
-                if (_filters.Count == 0)
+                // Resolved from the job scope, so a filter follows the lifetime it was registered with.
+                var filters = ctx.Scope.ServiceProvider.GetServices<IJobExecutionFilter>().ToList();
+                if (filters.Count == 0)
                 {
                     // Fast path: no filters registered
                     await jobInvoker(jobToken).ConfigureAwait(false);
@@ -419,7 +418,7 @@ internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
                 {
                     var context = new JobExecutingContext(job, ctx.Scope.ServiceProvider);
 
-                    var pipeline = JobFilterPipeline.Build(_filters, context, jobInvoker);
+                    var pipeline = JobFilterPipeline.Build(filters, context, jobInvoker);
 
                     try
                     {

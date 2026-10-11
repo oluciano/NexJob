@@ -26,10 +26,27 @@ internal static class JobFilterPipeline
 
             pipeline = async ct =>
             {
-                await filter.OnExecutingAsync(context, next, ct).ConfigureAwait(false);
+                await filter.OnExecutingAsync(context, RecordOutcome(context, next), ct).ConfigureAwait(false);
             };
         }
 
         return pipeline;
     }
+
+    // The filter reads the outcome right after `await next(ct)` or in its catch, so it is recorded here, not after the pipeline.
+    private static JobExecutionDelegate RecordOutcome(JobExecutingContext context, JobExecutionDelegate next) =>
+        async ct =>
+        {
+            try
+            {
+                await next(ct).ConfigureAwait(false);
+                context.Succeeded = true;
+            }
+            catch (Exception ex)
+            {
+                context.Exception = ex;
+                context.Succeeded = false;
+                throw;
+            }
+        };
 }
