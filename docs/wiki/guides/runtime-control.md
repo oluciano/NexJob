@@ -30,9 +30,8 @@ public sealed class MaintenanceService(IJobControlService control)
     - **Requeueing** a failed job resets its attempts to zero, so it gets a full set of attempts again.
     - **An id that does not exist is ignored** by `RequeueJobAsync` and `DeleteJobAsync`: no exception, nothing happens.
 
-!!! warning "Requeue only failed jobs"
-    `RequeueJobAsync` does not check the state of the job. It is meant for a job that ended in `Failed`, and the dashboard only offers it there, but from code it accepts any job. Requeueing a job that **succeeded** runs it again, and requeueing a job that is **running** starts a second execution while the first is still going (measured on in-memory storage; PostgreSQL updates the row without looking at its status either). Check the status first. On PostgreSQL it can also throw an `InvalidOperationException` when another active job already holds the idempotency key of the job you requeue. This is tracked in [#473](https://github.com/oluciano/NexJob/issues/473).
-
+!!! note "Requeue only acts on three states"
+    `RequeueJobAsync` re-enqueues a job that is `Failed`, `Expired` or `Scheduled` (the last is what **Run Now** uses). A job in any other state, such as `Processing` or `Succeeded`, is left untouched, and so is an unknown id: no exception, nothing happens. Read the job's status afterwards if you need to know whether it was requeued.
 
 Other available methods: `RequeueJobAsync`, `ResetQueueCircuitAsync`.
 
@@ -42,7 +41,7 @@ Other available methods: `RequeueJobAsync`, `ResetQueueCircuitAsync`.
 | --- | --- | --- |
 | `PauseQueueAsync(queue)` | Workers skip the queue from their next polling cycle. Running jobs are not interrupted. | **Queues** |
 | `ResumeQueueAsync(queue)` | Workers fetch from the queue again. | **Queues** |
-| `RequeueJobAsync(id)` | The job goes back to `Enqueued` with its attempts reset to 0. Meant for a failed (dead-letter) job; see the warning above. | **Failed / DLQ** |
+| `RequeueJobAsync(id)` | The job goes back to `Enqueued` with its attempts reset to 0. Acts only on `Failed`, `Expired` and `Scheduled` jobs; see the note above. | **Failed / DLQ** |
 | `DeleteJobAsync(id)` | The job and its logs are removed. A job that is running finishes, and its result is discarded. | **Jobs**, **Failed / DLQ** |
 | `ResetQueueCircuitAsync(queue)` | The circuit breaker of the queue closes and its counters reset. | **Queues**, **Reset Circuit** |
 

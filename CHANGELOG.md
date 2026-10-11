@@ -6,6 +6,10 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- `RequeueJobAsync` only acts on `Failed`, `Expired` and `Scheduled` jobs on every provider. A succeeded job no longer runs again and a running job is no longer started a second time (issue #473).
+
 ## [6.2.0] - 2026-10-10
 
 ### Added

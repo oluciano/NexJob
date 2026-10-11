@@ -89,7 +89,7 @@ Every method is abstract except the four that have a default, marked below: `Fet
 | `GetMetricsAsync`, `GetQueueMetricsAsync` | Global and per-queue counts and throughput. |
 | `GetJobsAsync`, `GetJobByIdAsync`, `GetJobsByTagAsync` | Reads jobs, with filters and paging. |
 | `GetJobCatalogAsync` | Aggregated job definitions and their execution metrics. **The default returns an empty list**, so the dashboard's job catalog stays empty until you implement it. |
-| `RequeueJobAsync` | Puts a failed job back in `Enqueued` and resets its attempts. The built-in providers do not check the status first ([#473](https://github.com/oluciano/NexJob/issues/473)); a new provider should only accept a job that ended in `Failed`. |
+| `RequeueJobAsync` | Puts a `Failed`, `Expired` or `Scheduled` job back in `Enqueued` and resets its attempts. Any other status must be left untouched, so a running or succeeded job is never run again. |
 | `DeleteJobAsync` | Deletes a job and its logs. |
 | `SaveExecutionLogsAsync` | Stores the logs captured during an execution. |
 
