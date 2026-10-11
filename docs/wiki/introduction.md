@@ -15,7 +15,7 @@ Hangfire is the established choice for background jobs in .NET, and it is free f
 - **Built-in dashboard and OpenTelemetry**, with no extra package to find or license.
 - **Near-zero dispatch latency** on the node that enqueues, through an in-process wake-up channel.
 
-NexJob is a young library with a focused scope. If you need a mature ecosystem of extensions, Hangfire is the better fit, and NexJob is not a drop-in replacement for it.
+NexJob is a young library with a focused scope, and it is not a drop-in replacement for Hangfire. The [Migration guide](reference/migration.md) covers moving an existing application.
 
 ### Benchmark numbers
 

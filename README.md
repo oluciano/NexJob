@@ -164,7 +164,7 @@ Runnable examples for the web, worker, storage and broker scenarios are in [`sam
 
 ## Benchmarks
 
-Hangfire is the usual reference for .NET background jobs, so it is the comparison here. NexJob is not a drop-in replacement for it: if you need calendar-based scheduling, distributed execution across untrusted networks or a large plugin ecosystem, Hangfire is the better choice.
+Hangfire is the usual reference for .NET background jobs, so it is the comparison here.
 
 The figures below measure the cost of **enqueueing** one job, not processing throughput. Measured per individual enqueue operation on .NET 8 (BenchmarkDotNet v0.14, RyuJIT AVX2, in-memory storage baseline):
 
