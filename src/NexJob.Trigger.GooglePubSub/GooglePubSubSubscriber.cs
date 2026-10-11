@@ -22,7 +22,7 @@ internal sealed class GooglePubSubSubscriber : IPubSubSubscriber
         _client.StartAsync(handler);
 
     /// <inheritdoc/>
-    public Task StopAsync(CancellationToken ct) => _client.StopAsync(ct);
+    public Task StopAsync(CancellationToken ct) => _client.StopAsync(new SubscriberClient.ShutdownOptions(), ct);
 
     /// <inheritdoc/>
     public async ValueTask DisposeAsync() => await _client.DisposeAsync().ConfigureAwait(false);

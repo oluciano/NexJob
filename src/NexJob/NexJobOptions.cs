@@ -115,9 +115,9 @@ public sealed class NexJobOptions
         get => _defaultExecutionTimeout;
         set
         {
-            if (value is { } timeout)
+            if (value is { } timeout && timeout <= TimeSpan.Zero)
             {
-                ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(timeout, TimeSpan.Zero);
+                throw new ArgumentOutOfRangeException(nameof(value), value, "The default execution timeout must be greater than zero.");
             }
 
             _defaultExecutionTimeout = value;

@@ -173,6 +173,6 @@ public sealed class JobExecutorStorageErrorTests
     private int Committed(JobRecord job, Func<JobExecutionResult, bool> predicate) =>
         _storage.Invocations
             .Count(i => i.Method.Name == nameof(IJobStorage.CommitJobResultAsync)
-                        && (JobId)i.Arguments[0] == job.Id
-                        && predicate((JobExecutionResult)i.Arguments[1]));
+                        && (JobId)i.Arguments[0]! == job.Id
+                        && predicate((JobExecutionResult)i.Arguments[1]!));
 }

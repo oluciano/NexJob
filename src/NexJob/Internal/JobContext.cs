@@ -81,10 +81,9 @@ internal sealed class JobContext : IJobContext
     {
         ArgumentNullException.ThrowIfNull(state);
 
-        if (percent.HasValue)
+        if (percent is < 0 or > 100)
         {
-            ArgumentOutOfRangeException.ThrowIfNegative(percent.Value);
-            ArgumentOutOfRangeException.ThrowIfGreaterThan(percent.Value, 100);
+            throw new ArgumentOutOfRangeException(nameof(percent), percent, "The percent must be between 0 and 100.");
         }
 
         var json = System.Text.Json.JsonSerializer.Serialize(state);
