@@ -6,7 +6,7 @@ description: "Enqueue jobs for immediate execution, schedule them at a future ti
 
 NexJob's `IScheduler` interface is your single entry point for dispatching background work. Inject it into any service, controller, or minimal API handler, then choose whether to run a job immediately, after a relative delay, or at a precise UTC timestamp. Every method returns the `JobId` of the created record, which you can use for continuations, tag queries, or status checks.
 
-## Immediate Enqueue
+## Immediate enqueue
 
 Call `EnqueueAsync` to place a job in the queue right now. The dispatcher picks it up on the next wake-up cycle.
 
@@ -22,9 +22,9 @@ await scheduler.EnqueueAsync<SendEmailJob, SendEmailInput>(
 
 The job transitions to `Enqueued` state immediately and is eligible for processing straight away.
 
-## Scheduled Execution
+## Scheduled execution
 
-### Delay with TimeSpan
+### Delay with `TimeSpan`
 
 Use `ScheduleAsync` when you want the job to become eligible after a relative duration from now:
 
@@ -41,7 +41,7 @@ await scheduler.ScheduleAsync<SendReminderJob, ReminderInput>(
     cancellationToken: ct);
 ```
 
-### Schedule at a Specific Time
+### Schedule at a specific time
 
 Use `ScheduleAtAsync` when you need the job to run at a known UTC instant, such as the start of a business day:
 
@@ -64,6 +64,9 @@ await scheduler.ScheduleAtAsync<GenerateReportJob, ReportInput>(
 
 Scheduled jobs are stored with status `Scheduled` and a `ScheduledAt` timestamp. The dispatcher will not pick them up until `UtcNow >= ScheduledAt`.
 
+!!! note
+    `ScheduleAsync` and `ScheduleAtAsync` accept only `queue`, `idempotencyKey` and (on the overloads that take it) `maxAttempts`. `priority`, `tags`, `duplicatePolicy` and `deadlineAfter` are available on `EnqueueAsync` only.
+
 ## Priority
 
 Every job has a priority level that controls the order in which the dispatcher fetches work. The default is `Normal`. Within the same priority, jobs are processed FIFO.
@@ -78,7 +81,7 @@ await scheduler.EnqueueAsync<BackgroundSyncJob>(
     cancellationToken: ct);
 ```
 
-| Priority | Value | Typical Use Case |
+| Priority | Value | Typical use case |
 |---|---|---|
 | `Critical` | 1 | Payment failures, security alerts |
 | `High` | 2 | User-facing operations needing fast response |
@@ -87,7 +90,7 @@ await scheduler.EnqueueAsync<BackgroundSyncJob>(
 
 The dispatcher fetches jobs in ascending value order, so `Critical` (1) is always processed before `Low` (4).
 
-## Queue Routing
+## Queue routing
 
 Route jobs to dedicated processing pipelines by specifying a queue name. This lets you isolate workloads — for example, keeping heavy computation off the same workers that serve user-facing notifications.
 
@@ -101,16 +104,7 @@ await scheduler.EnqueueAsync<SendEmailJob>(
     cancellationToken: ct);
 ```
 
-Configure which queues each dispatcher instance monitors:
-
-```csharp
-builder.Services.AddNexJob(options =>
-{
-    options.Queues = new[] { "default", "notifications", "compute" };
-});
-```
-
-A dispatcher only processes the queues listed in its `Queues` configuration. Deploy separate worker instances with different queue lists to achieve workload isolation. See [Queues](../concepts/queues.md) for fetch order, per-queue settings and runtime control.
+Each host decides which queues it polls, so you can run separate worker instances with different queue lists. [Queues](queues.md) covers `options.Queues`, fetch order, per-queue settings and runtime control.
 
 ## Deadlines
 
@@ -124,12 +118,12 @@ await scheduler.EnqueueAsync<SendPromotionalEmailJob>(
 ```
 
 !!! warning
-    A job past its deadline is marked `Expired` and **never executes** — it does not retry and no dead-letter handler is called. Only use `deadlineAfter` when skipping the work is an acceptable outcome.
+    A job past its deadline is marked `Expired` and **never executes**: it does not retry and no dead-letter handler is called. Only use `deadlineAfter` when skipping the work is an acceptable outcome.
 
-      `deadlineAfter` is supported only on `EnqueueAsync`. Scheduled jobs (`ScheduleAsync`, `ScheduleAtAsync`) do not accept a deadline — use the `runAt` timestamp as your natural deadline instead.
+!!! note
+    `deadlineAfter` is supported only on `EnqueueAsync`. For `ScheduleAsync` and `ScheduleAtAsync`, use the `runAt` time as your natural deadline.
 
-
-## Idempotency Keys and Tags
+## Idempotency keys and tags
 
 Attach an `idempotencyKey` to prevent the same logical job from being enqueued twice, and use `tags` to attach searchable metadata:
 
@@ -144,13 +138,13 @@ await scheduler.EnqueueAsync<ProcessOrderJob, ProcessOrderInput>(
 var orderJobs = await scheduler.GetJobsByTagAsync(orderId.ToString(), ct);
 ```
 
-See [Idempotency](../concepts/idempotency.md) for the full deduplication rules and `DuplicatePolicy` options.
+See [Idempotency](idempotency.md) for the full deduplication rules and `DuplicatePolicy` options.
 
-## IScheduler Method Cheat Sheet
+## `IScheduler` method cheat sheet
 
 The table below lists every method on `IScheduler` and its key parameters:
 
-| Method | Purpose | Key Parameters |
+| Method | Purpose | Key parameters |
 |---|---|---|
 | `EnqueueAsync<TJob>(...)` | Run immediately, no input | `queue`, `priority`, `idempotencyKey`, `duplicatePolicy`, `tags`, `deadlineAfter`, `ct` |
 | `EnqueueAsync<TJob, TInput>(input, ...)` | Run immediately with typed input | `input`, `queue`, `priority`, `idempotencyKey`, `duplicatePolicy`, `tags`, `deadlineAfter`, `ct` |
@@ -160,6 +154,7 @@ The table below lists every method on `IScheduler` and its key parameters:
 | `ScheduleAsync<TJob>(delay, maxAttempts, ...)` / `ScheduleAsync<TJob, TInput>(input, delay, maxAttempts, ...)` | Run after a delay with its own attempt limit | `maxAttempts` (at least `1`), `delay`, `queue`, `idempotencyKey`, `ct` |
 | `ScheduleAtAsync<TJob>(runAt, ...)` | Run at a fixed UTC time | `runAt` (`DateTimeOffset`), `queue`, `idempotencyKey`, `ct` |
 | `ScheduleAtAsync<TJob, TInput>(input, runAt, ...)` | Run with input at a fixed UTC time | `input`, `runAt` (`DateTimeOffset`), `queue`, `idempotencyKey`, `ct` |
+| `EnqueueAsync(job, duplicatePolicy, ct)` | Enqueue a pre-built `JobRecord`, for when the job type is only known at runtime (the broker triggers use it) | `job`, `duplicatePolicy`, `ct` |
 | `RecurringAsync<TJob>(id, cron, ...)` | Create or update a cron schedule | `recurringJobId`, `cron`, `timeZone`, `queue`, `concurrencyPolicy`, `ct` |
 | `RecurringAsync<TJob, TInput>(id, input, cron, ...)` | Cron schedule with typed input | `recurringJobId`, `input`, `cron`, `timeZone`, `queue`, `concurrencyPolicy`, `ct` |
 | `RemoveRecurringAsync(id, ct)` | Delete a recurring schedule | `recurringJobId`, `ct` |
@@ -167,7 +162,7 @@ The table below lists every method on `IScheduler` and its key parameters:
 | `ContinueWithAsync<TJob, TInput>(parentJobId, input, ...)` | Run with input after parent succeeds | `parentJobId`, `input`, `queue`, `ct` |
 | `GetJobsByTagAsync(tag, ct)` | Find jobs by tag | `tag`, `ct` |
 
-### Parameter Quick Reference
+### Parameter quick reference
 
 <div class="grid cards" markdown>
   -   **queue**
