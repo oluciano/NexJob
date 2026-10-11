@@ -4,25 +4,18 @@ sidebarTitle: "Introduction"
 description: "NexJob is a free, open-source background job library for .NET 8 with predictable retries, deadline enforcement, and a built-in real-time dashboard."
 ---
 
-NexJob is a reliable, open-source background job processing library for .NET 8. It was built for developers who need jobs that **must run, fail safely, and leave a trace** — without paying for storage providers, wrestling with plugin ecosystems, or accepting silent failures. NexJob gives you predictable execution, built-in retries, deadline enforcement, dead-letter handling, and a real-time operational dashboard as first-class features from day one.
+NexJob is a reliable, open-source background job processing library for .NET 8. It was built for developers who need jobs that **must run, fail safely, and leave a trace** — without a paid tier, hidden complexity, or silent failures. NexJob gives you predictable execution, built-in retries, deadline enforcement, dead-letter handling, and a real-time operational dashboard as first-class features from day one.
 
 ## Why NexJob?
 
-If you have used Hangfire, you know the pain: free storage only covers InMemory, deadlines require a plugin, and observability is an afterthought. NexJob fixes all of that.
+Hangfire is the established choice for background jobs in .NET, and it is free for commercial use: `Hangfire.SqlServer` and `Hangfire.InMemory` are open source, and only the Redis provider (`Hangfire.Pro.Redis`) needs a paid Pro subscription. NexJob makes different trade-offs:
 
-| Feature | NexJob | Hangfire |
-|---|---|---|
-| Storage providers | 5 free (PostgreSQL, SQL Server, Redis, MongoDB, InMemory) | Free InMemory only; others require a paid license |
-| Deadline enforcement | Built-in (`deadlineAfter`) | Plugin required |
-| Dead-letter handling | Automatic after exhausted retries | Manual |
-| Dispatch latency | Near-zero (wake-up channel) | Polling-based |
-| Dashboard | Built-in, standalone UI | Built-in (Pro required for advanced features) |
-| OpenTelemetry | Built-in traces and metrics | Plugin required |
-| Concurrency throttling | `[Throttle]` attribute per resource | Queue-level limits only |
-| Ecosystem | Young library, focused scope | Mature ecosystem, many plugins |
-| Package size | ~50 KB | ~2 MB |
+- **Five storage providers, none behind a paid tier:** PostgreSQL, SQL Server, Redis, MongoDB and in-memory, with the same test contract on all of them ([how we test](reference/how-we-test.md)).
+- **Failure is a first-class case.** [Deadlines](concepts/scheduling.md#deadlines), [dead-letter handling](concepts/retries-and-dead-letter.md), crash recovery and a table of [what each failure costs a job](concepts/delivery-guarantees.md) are part of the core library.
+- **Built-in dashboard and OpenTelemetry**, with no extra package to find or license.
+- **Near-zero dispatch latency** on the node that enqueues, through an in-process wake-up channel.
 
-NexJob is **not** a drop-in replacement for Hangfire. If you need calendar-based scheduling, distributed execution across untrusted networks, or a mature enterprise plugin ecosystem, Hangfire is the better fit. NexJob focuses on a tighter scope and delivers it with exceptional performance.
+NexJob is a young library with a focused scope. If you need a mature ecosystem of extensions, Hangfire is the better fit, and NexJob is not a drop-in replacement for it.
 
 ### Benchmark numbers
 
@@ -31,11 +24,11 @@ All measurements are per individual enqueue operation on .NET 8 (BenchmarkDotNet
 | Metric | NexJob | Hangfire |
 |---|---|---|
 | Latency (mean) | **13.35 µs** | 35.95 µs — 2.7× slower |
-| Memory allocated | **2.10 KB** | 11.20 KB — 81% more |
+| Memory allocated | **2.10 KB** | 11.20 KB — 5.3× more (NexJob allocates 81% less) |
 | GC Gen0 (per 1 k ops) | **0.06** | 0.85 — 14× more collections |
 | GC Gen1 (per 1 k ops) | **0.00** | 0.18 — non-zero Gen1 cost |
 
-Hangfire's overhead comes from runtime LINQ expression-tree parsing and reflection during enqueue. NexJob avoids both.
+These are enqueue-only numbers on in-memory storage, not end-to-end throughput.
 
 ## Packages
 
