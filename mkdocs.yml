@@ -97,7 +97,8 @@ nav:
   - Integrations:
       - Dashboard: integrations/dashboard.md
       - OpenTelemetry: integrations/opentelemetry.md
-      - External Triggers: integrations/triggers.md
+  - Message brokers:
+      - Overview: integrations/triggers.md
       - Kafka: integrations/kafka.md
       - RabbitMQ: integrations/rabbitmq.md
   - Reference:
