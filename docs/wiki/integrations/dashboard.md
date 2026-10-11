@@ -304,8 +304,8 @@ builder.Services.AddSingleton<IDashboardAuthorizationHandler, BasicAuthDashboard
 
 </div>
 
-!!! warning "Dashboard actions and a read replica"
-    **Run Now**, **Requeue** and **Delete** go through `IJobControlService`, which calls `IDashboardStorage`. On a host that uses `UseDashboardReadReplica`, that storage points at the replica, so these buttons fail there (checked on PostgreSQL and SQL Server: [#478](https://github.com/oluciano/NexJob/issues/478)). Pause, resume and the recurring-job actions use other storage and are not affected.
+!!! note "Dashboard actions and a read replica"
+    **Run Now**, **Requeue** and **Delete** go through `IJobControlService`, which writes to the primary storage even when the host uses `UseDashboardReadReplica`. The replica only serves the dashboard's read queries. Pause, resume and the recurring-job actions use other storage.
 
 ---
 

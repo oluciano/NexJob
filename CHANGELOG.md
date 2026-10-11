@@ -8,6 +8,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- With `UseDashboardReadReplica`, `IJobControlService.RequeueJobAsync` and `DeleteJobAsync` now write to the primary instead of the replica, and the orphan watcher reads a failed job from the primary so a lagging replica cannot skip its dead-letter handler (issue #478).
 - `RequeueJobAsync` only acts on `Failed`, `Expired` and `Scheduled` jobs on every provider. A succeeded job no longer runs again and a running job is no longer started a second time (issue #473).
 
 ## [6.2.0] - 2026-10-10

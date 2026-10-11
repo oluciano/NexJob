@@ -70,8 +70,8 @@ builder.Services.AddNexJob(options =>
 
 `UseDashboardReadReplica` overrides only the `IDashboardStorage` registration with a separate provider instance pointed at the replica. Enqueueing, fetching and the worker coordination continue through the primary, and the replica must share the same schema. It never runs migrations.
 
-!!! warning "Requeue and delete go to the replica too"
-    `IDashboardStorage` also holds `RequeueJobAsync` and `DeleteJobAsync`, and `IJobControlService` calls them through it, so with a replica configured they run against the replica and are rejected (checked with a read-only role: `permission denied for table nexjob_jobs`). Until this changes ([#478](https://github.com/oluciano/NexJob/issues/478)), do not rely on requeueing or deleting jobs from code or from the dashboard on a host that uses a replica.
+!!! note "Requeue and delete use the primary"
+    `IJobControlService.RequeueJobAsync` and `DeleteJobAsync` write to the primary, not to the replica, and the orphan watcher reads a failed job from the primary before it calls the dead-letter handler. The replica serves only the dashboard's read queries, so a replica that lags never hides a job from those actions.
 
 !!! tip
     The replica only has to be a PostgreSQL database with the same schema that the connection string can read. The tests behind this page used a read-only role on the primary database (see the next section); a streaming or managed replica was not tried.
