@@ -40,7 +40,10 @@ public interface IDashboardStorage
     /// <param name="cancellationToken">Token to cancel the operation.</param>
     Task DeleteJobAsync(JobId id, CancellationToken cancellationToken = default);
 
-    /// <summary>Resets a failed job to Enqueued state so it can be picked up again.</summary>
+    /// <summary>
+    /// Resets a <c>Failed</c>, <c>Expired</c> or <c>Scheduled</c> job to Enqueued so it can be picked up again.
+    /// A job in any other state is left untouched.
+    /// </summary>
     /// <param name="id">The unique identifier of the job.</param>
     /// <param name="cancellationToken">Token to cancel the operation.</param>
     Task RequeueJobAsync(JobId id, CancellationToken cancellationToken = default);

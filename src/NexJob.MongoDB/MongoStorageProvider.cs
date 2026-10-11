@@ -644,7 +644,9 @@ public sealed class MongoStorageProvider : IStorageProvider, IOrphanedJobReporte
 
         try
         {
-            await _jobs.UpdateOneAsync(ById(id), update, cancellationToken: cancellationToken).ConfigureAwait(false);
+            var filter = ById(id) & Builders<JobDocument>.Filter.In(
+                d => d.Status, new[] { JobStatus.Failed, JobStatus.Expired, JobStatus.Scheduled });
+            await _jobs.UpdateOneAsync(filter, update, cancellationToken: cancellationToken).ConfigureAwait(false);
         }
         catch (MongoWriteException ex) when (ex.WriteError.Category == ServerErrorCategory.DuplicateKey)
         {
