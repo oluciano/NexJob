@@ -111,6 +111,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NexJob.Analyzers", "src\Nex
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NexJob.Analyzers.Tests", "tests\NexJob.Analyzers.Tests\NexJob.Analyzers.Tests.csproj", "{F388C774-A368-4612-BD1F-7376B25B535A}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NexJob.Trigger.AzureServiceBus.IntegrationTests", "tests\NexJob.Trigger.AzureServiceBus.IntegrationTests\NexJob.Trigger.AzureServiceBus.IntegrationTests.csproj", "{67038E39-B4FB-4C1B-889B-CFB3F70341AD}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -312,6 +314,10 @@ Global
 		{F388C774-A368-4612-BD1F-7376B25B535A}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{F388C774-A368-4612-BD1F-7376B25B535A}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{F388C774-A368-4612-BD1F-7376B25B535A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{67038E39-B4FB-4C1B-889B-CFB3F70341AD}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{67038E39-B4FB-4C1B-889B-CFB3F70341AD}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{67038E39-B4FB-4C1B-889B-CFB3F70341AD}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{67038E39-B4FB-4C1B-889B-CFB3F70341AD}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{06E9B0C8-A9B6-4DE4-A1CC-C52159A873D1} = {EFA88835-38F5-4A7A-9B3A-9444915331C6}
@@ -362,5 +368,6 @@ Global
 		{59F84FAF-8FFF-4125-ADE5-03E93EEA8C7A} = {0568D1C9-5FFA-46F4-A7D2-D8F1776D3762}
 		{DF98CABC-AF85-4182-B094-987A5B371FF9} = {EFA88835-38F5-4A7A-9B3A-9444915331C6}
 		{F388C774-A368-4612-BD1F-7376B25B535A} = {E96B56A5-5E21-43D0-A041-2AAB3B9E7280}
+		{67038E39-B4FB-4C1B-889B-CFB3F70341AD} = {E96B56A5-5E21-43D0-A041-2AAB3B9E7280}
 	EndGlobalSection
 EndGlobal
