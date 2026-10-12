@@ -491,10 +491,10 @@ public Task ExecuteAsync(MyInput input, CancellationToken ct) { ... }
 #### Update recurring job registration
 
 !!! warning
-    **Breaking change.** `RecurringJobSettings` moved from `NexJobOptions.RecurringJobs` to a separate collection configured via `AddRecurringJob` methods.
+    **Breaking change.** Recurring jobs are registered with the `AddRecurringJob` extension methods instead of by filling a list by hand.
 
 
-Use `AddRecurringJob` on the `NexJobBuilder` returned by `AddNexJob`, or declare recurring jobs in `appsettings.json` using the `RecurringJobs` array.
+Call `AddRecurringJob` on the `NexJobOptions` inside `AddNexJob(options => ...)`, or declare recurring jobs in `appsettings.json` using the `RecurringJobs` array (`NexJobOptions.RecurringJobs` holds the settings loaded from there).
 
 
 #### Update IScheduler.ContinueWithAsync call sites
