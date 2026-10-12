@@ -109,7 +109,7 @@ The trigger registers with the [listener registry](triggers.md#live-listener-reg
 
 ## Not verified
 
-This page was written from the source. No Salesforce org was used and the trigger was not run: the OAuth flows, the handshake, the long-polling loop, the replay behavior and the retention window were not exercised.
+This page was written from the source and then run against a fake: a test server in `tests/NexJob.Trigger.Salesforce.IntegrationTests` that answers the OAuth token endpoint and the CometD handshake, subscribe and connect calls. The run confirmed that an event becomes a job and its replay id is saved, that `Latest` and `Earliest` subscribe with `-1` and `-2`, that a saved replay id wins over the preset, that a `Custom` preset without `CustomReplayId` is refused when the host starts, that a `403::Unknown client` on connect makes the trigger handshake again and resume from the saved replay id, and that refused handshakes are retried. The fake is our reading of the protocol, not Salesforce: no org was used, so the real OAuth flows (only client credentials and username-password are coded), the real long-polling timings, what Salesforce answers to a replay id it no longer keeps, and the retention window were not exercised.
 
 ## Try it
 
