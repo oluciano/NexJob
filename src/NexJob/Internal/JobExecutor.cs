@@ -468,7 +468,8 @@ internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
             { "exception.stacktrace", ex.StackTrace },
         }));
 
-        var retryAt = _retryPolicy.ComputeRetryAt(job, ex);
+        // A job that lacks the contract of its input fails the same way on every attempt: do not spend them.
+        var retryAt = ex is JobContractException ? null : _retryPolicy.ComputeRetryAt(job, ex);
 
         if (retryAt is not null)
         {

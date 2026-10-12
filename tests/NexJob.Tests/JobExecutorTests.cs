@@ -227,6 +227,46 @@ public sealed class JobExecutorTests
     }
 
     [Fact]
+    public async Task ExecuteJobAsync_JobContractException_FailsWithoutRetryAndDeadLetters()
+    {
+        // Arrange: the retry policy would schedule a retry, but a missing contract cannot be fixed by running again.
+        var job = MakeJob<TestJob, TestInput>(new TestInput("test"), maxAttempts: 5);
+        job.Attempts = 1;
+        _invokerFactory
+            .Setup(x => x.PrepareAsync(job, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new JobContractException("Job type 'X' must implement IJob<String>."));
+
+        // Act
+        await _sut.ExecuteJobAsync(job);
+
+        // Assert
+        _storage.Verify(x => x.CommitJobResultAsync(
+            job.Id,
+            It.Is<JobExecutionResult>(r => !r.Succeeded && r.RetryAt == null),
+            It.IsAny<CancellationToken>()), Times.Once);
+        _deadLetterDispatcher.Verify(
+            x => x.DispatchAsync(job, It.IsAny<JobContractException>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task ExecuteJobAsync_OtherFactoryException_StillFollowsRetryPolicy()
+    {
+        var job = MakeJob<TestJob, TestInput>(new TestInput("test"), maxAttempts: 5);
+        job.Attempts = 1;
+        _invokerFactory
+            .Setup(x => x.PrepareAsync(job, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("factory failure"));
+
+        await _sut.ExecuteJobAsync(job);
+
+        _storage.Verify(x => x.CommitJobResultAsync(
+            job.Id,
+            It.Is<JobExecutionResult>(r => !r.Succeeded && r.RetryAt != null),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
     public async Task ExecuteJobAsync_InvokerFactory_CalledWithCorrectJob()
     {
         // Arrange
