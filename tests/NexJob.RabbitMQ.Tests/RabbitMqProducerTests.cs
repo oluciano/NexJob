@@ -110,7 +110,8 @@ public sealed class RabbitMqProducerTests
 
         // Assert
         capturedPayload.Should().NotBeNull();
-        capturedPayload!.Exchange.Should().Be(string.Empty);
+        // Behavior changed in v6.3: the routing-key-only overload leaves the exchange unset (null), so DefaultExchange applies (#483).
+        capturedPayload!.Exchange.Should().BeNull();
         capturedPayload.RoutingKey.Should().Be("simple.key");
     }
 
@@ -620,7 +621,8 @@ public sealed class RabbitMqProducerTests
 
         // Assert
         payload.Exchange.Should().BeNull();
-        payload.RoutingKey.Should().Be(string.Empty);
+        // Behavior changed in v6.3: no routing key is null, so DefaultRoutingKey applies (#483).
+        payload.RoutingKey.Should().BeNull();
         payload.ValueBytes.Should().BeNull();
         payload.ValueString.Should().BeNull();
         payload.Headers.Should().BeNull();
@@ -628,5 +630,62 @@ public sealed class RabbitMqProducerTests
         payload.ContentType.Should().Be("application/json");
         payload.CorrelationId.Should().BeNull();
         payload.MessageId.Should().BeNull();
+    }
+
+    // ── #483: DefaultExchange and DefaultRoutingKey must be able to apply ───────
+
+    /// <summary>N1: the routing-key-only overload leaves the exchange unset, so DefaultExchange applies.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task EnqueueRabbitMqAsync_RoutingKeyOnly_LeavesTheExchangeUnset()
+    {
+        var captured = await CapturePayloadAsync(s => s.EnqueueRabbitMqAsync("orders.created", new { id = 1 }));
+
+        captured.Exchange.Should().BeNull();
+        captured.RoutingKey.Should().Be("orders.created");
+    }
+
+    /// <summary>N2: an exchange named on the call is kept.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task EnqueueRabbitMqAsync_ExplicitExchange_IsKept()
+    {
+        var captured = await CapturePayloadAsync(s => s.EnqueueRabbitMqAsync("orders.exchange", "orders.created", new { id = 1 }));
+
+        captured.Exchange.Should().Be("orders.exchange");
+        captured.RoutingKey.Should().Be("orders.created");
+    }
+
+    /// <summary>N3: a null exchange and a null routing key reach the payload as null, so the producer defaults apply.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task EnqueueRabbitMqAsync_NullExchangeAndRoutingKey_ReachThePayloadAsNull()
+    {
+        var captured = await CapturePayloadAsync(s => s.EnqueueRabbitMqAsync(null!, null!, new { id = 1 }));
+
+        captured.Exchange.Should().BeNull();
+        captured.RoutingKey.Should().BeNull();
+    }
+
+    private static async Task<RabbitMqPublishPayload> CapturePayloadAsync(Func<IScheduler, Task<JobId>> enqueue)
+    {
+        var scheduler = new Mock<IScheduler>();
+        RabbitMqPublishPayload? captured = null;
+        scheduler
+            .Setup(s => s.EnqueueAsync<RabbitMqProducerJob, RabbitMqPublishPayload>(
+                It.IsAny<RabbitMqPublishPayload>(),
+                It.IsAny<string?>(),
+                It.IsAny<JobPriority>(),
+                It.IsAny<string?>(),
+                It.IsAny<DuplicatePolicy>(),
+                It.IsAny<IReadOnlyList<string>?>(),
+                It.IsAny<TimeSpan?>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<RabbitMqPublishPayload, string?, JobPriority, string?, DuplicatePolicy, IReadOnlyList<string>?, TimeSpan?, CancellationToken>((payload, _, _, _, _, _, _, _) => captured = payload)
+            .ReturnsAsync(JobId.New());
+
+        await enqueue(scheduler.Object);
+
+        return captured!;
     }
 }

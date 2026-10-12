@@ -13,8 +13,9 @@ public sealed class RabbitMqPublishPayload
 
     /// <summary>
     /// Gets or sets the target routing key.
+    /// If null, the producer's default routing key is used.
     /// </summary>
-    public string RoutingKey { get; set; } = string.Empty;
+    public string? RoutingKey { get; set; }
 
     /// <summary>
     /// Gets or sets the optional raw binary message payload.
