@@ -112,7 +112,6 @@ public sealed class IgnoreRetryAttemptExceptionsTests
             deadLetter.Object,
             new ThrottleRegistry(),
             _options,
-            Enumerable.Empty<IJobExecutionFilter>(),
             new JobWakeUpChannel(),
             NullLogger<JobExecutor>.Instance);
 

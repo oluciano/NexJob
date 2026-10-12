@@ -150,7 +150,6 @@ public sealed class CancellationIgnoredWarningTests
             _deadLetterDispatcher.Object,
             new ThrottleRegistry(),
             _options,
-            Enumerable.Empty<IJobExecutionFilter>(),
             new JobWakeUpChannel(),
             factory.CreateLogger<JobExecutor>());
     }
@@ -165,7 +164,7 @@ public sealed class CancellationIgnoredWarningTests
         var attribute = timeout is null ? null : new ExecutionTimeoutAttribute(timeout);
         _invokerFactory.Setup(x => x.PrepareAsync(job, It.IsAny<CancellationToken>()))
             .ReturnsAsync(() => new JobInvocationContext(
-                new Mock<IServiceScope>().Object,
+                TestScopes.Create(),
                 new object(),
                 new object(),
                 (j, _, ct) => body(j, ct),

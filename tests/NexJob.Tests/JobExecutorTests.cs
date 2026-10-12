@@ -39,7 +39,6 @@ public sealed class JobExecutorTests
             _deadLetterDispatcher.Object,
             _throttleRegistry,
             _options,
-            Enumerable.Empty<IJobExecutionFilter>(),
             new JobWakeUpChannel(),
             NullLogger<JobExecutor>.Instance);
 
@@ -50,7 +49,6 @@ public sealed class JobExecutorTests
             _hardenedDeadletterdispatcher.Object,
             _hardenedThrottleregistry,
             _hardenedOptions,
-            Enumerable.Empty<IJobExecutionFilter>(),
             new JobWakeUpChannel(),
             NullLogger<JobExecutor>.Instance);
     }
@@ -173,19 +171,12 @@ public sealed class JobExecutorTests
         filter.Setup(x => x.OnExecutingAsync(It.IsAny<JobExecutingContext>(), It.IsAny<JobExecutionDelegate>(), It.IsAny<CancellationToken>()))
             .Returns<JobExecutingContext, JobExecutionDelegate, CancellationToken>((ctx, next, cancellationToken) => next(cancellationToken));
 
-        var sutWithFilters = new JobExecutor(
-            _storage.Object,
-            _invokerFactory.Object,
-            _retryPolicy.Object,
-            _deadLetterDispatcher.Object,
-            _throttleRegistry,
-            _options,
-            new[] { filter.Object },
-            new JobWakeUpChannel(),
-            NullLogger<JobExecutor>.Instance);
+        _invokerFactory
+            .Setup(x => x.PrepareAsync(job, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => MakeContext(job, filter.Object));
 
         // Act
-        await sutWithFilters.ExecuteJobAsync(job);
+        await _sut.ExecuteJobAsync(job);
 
         // Assert
         filter.Verify(x => x.OnExecutingAsync(It.IsAny<JobExecutingContext>(), It.IsAny<JobExecutionDelegate>(), It.IsAny<CancellationToken>()), Times.Once);
@@ -201,19 +192,12 @@ public sealed class JobExecutorTests
         filter.Setup(x => x.OnExecutingAsync(It.IsAny<JobExecutingContext>(), It.IsAny<JobExecutionDelegate>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new Exception("filter failure"));
 
-        var sutWithFilters = new JobExecutor(
-            _storage.Object,
-            _invokerFactory.Object,
-            _retryPolicy.Object,
-            _deadLetterDispatcher.Object,
-            _throttleRegistry,
-            _options,
-            new[] { filter.Object },
-            new JobWakeUpChannel(),
-            NullLogger<JobExecutor>.Instance);
+        _invokerFactory
+            .Setup(x => x.PrepareAsync(job, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => MakeContext(job, filter.Object));
 
         // Act
-        await sutWithFilters.ExecuteJobAsync(job);
+        await _sut.ExecuteJobAsync(job);
 
         // Assert
         _storage.Verify(x => x.CommitJobResultAsync(
@@ -323,7 +307,7 @@ public sealed class JobExecutorTests
         observedToken.IsCancellationRequested.Should().BeTrue("linked token must observe cancellation from host token");
     }
 
-    private static JobInvocationContext MakeContext(JobRecord job)
+    private static JobInvocationContext MakeContext(JobRecord job, params IJobExecutionFilter[] filters)
     {
         var jobType = JobTypeResolver.ResolveJobType(job.JobType)
                       ?? throw new InvalidOperationException($"Cannot load job type: {job.JobType}");
@@ -337,7 +321,7 @@ public sealed class JobExecutorTests
         var throttleAttrs = jobType.GetCustomAttributes<ThrottleAttribute>(inherit: true);
 
         return new JobInvocationContext(
-            new TestServiceScope(new TestServiceProvider()),
+            TestScopes.Create(filters),
             jobInstance,
             input,
             (instance, value, cancellationToken) => Invoke(method, inputType, instance, value, cancellationToken),
@@ -409,22 +393,6 @@ public sealed class JobExecutorTests
         }
     }
 
-    private sealed class TestServiceScope : IServiceScope
-    {
-        public TestServiceScope(IServiceProvider serviceProvider) => ServiceProvider = serviceProvider;
-
-        public IServiceProvider ServiceProvider { get; }
-
-        public void Dispose()
-        {
-        }
-    }
-
-    private sealed class TestServiceProvider : IServiceProvider
-    {
-        public object? GetService(Type serviceType) => null;
-    }
-
     // ── Scope-capturing logger helpers ────────────────────────────────────────
     // Suppress StyleCop warnings for interface implementation methods that are required but unused.
 #pragma warning disable S1144 // Unused private member
@@ -469,7 +437,6 @@ public sealed class JobExecutorTests
             _deadLetterDispatcher.Object,
             _throttleRegistry,
             _options,
-            Enumerable.Empty<IJobExecutionFilter>(),
             new JobWakeUpChannel(),
             logger);
 
@@ -668,21 +635,10 @@ public sealed class JobExecutorTests
         var job = new JobRecord { Id = JobId.New(), JobType = "TestJob" };
         var filterMock = new Mock<IJobExecutionFilter>();
 
-        var sutWithFilters = new JobExecutor(
-            _hardenedStorage.Object,
-            _hardenedInvokerfactory.Object,
-            _hardenedRetrypolicy.Object,
-            _hardenedDeadletterdispatcher.Object,
-            _hardenedThrottleregistry,
-            _hardenedOptions,
-            new[] { filterMock.Object },
-            new JobWakeUpChannel(),
-            NullLogger<JobExecutor>.Instance);
-
-        _ = SetupSuccessfulInvoker(job);
+        _ = SetupSuccessfulInvoker(job, filters: [filterMock.Object]);
 
         // Act
-        await sutWithFilters.ExecuteJobAsync(job);
+        await _hardenedSut.ExecuteJobAsync(job);
 
         // Assert
         filterMock.Verify(x => x.OnExecutingAsync(
@@ -707,17 +663,14 @@ public sealed class JobExecutorTests
 
         _hardenedInvokerfactory.Setup(x => x.PrepareAsync(job, It.IsAny<CancellationToken>()))
             .ReturnsAsync(() =>
-            {
-                var scope = new Mock<IServiceScope>();
 
                 // Behavior changed in v5.10: the job runs until the heartbeat is observed instead of a fixed 50 ms, which a loaded machine could outlast (#371).
-                return new JobInvocationContext(
-                    scope.Object,
+                new JobInvocationContext(
+                    TestScopes.Create(),
                     new object(),
                     new object(),
                     (object j, object i, CancellationToken ct) => heartbeatSeen.Task.WaitAsync(TimeSpan.FromSeconds(10), ct),
-                    Array.Empty<ThrottleAttribute>());
-            });
+                    Array.Empty<ThrottleAttribute>()));
 
         // Act
         await _hardenedSut.ExecuteJobAsync(job);
@@ -878,11 +831,10 @@ public sealed class JobExecutorTests
 
     // ─── Helpers ───────────────────────────────────────────────────────────
 
-    private JobInvocationContext SetupSuccessfulInvoker(JobRecord job, ThrottleAttribute[]? throttles = null)
+    private JobInvocationContext SetupSuccessfulInvoker(JobRecord job, ThrottleAttribute[]? throttles = null, IJobExecutionFilter[]? filters = null)
     {
-        var scope = new Mock<IServiceScope>();
         var context = new JobInvocationContext(
-            scope.Object,
+            TestScopes.Create(filters ?? []),
             new object(),
             new object(),
             (object j, object i, CancellationToken ct) => Task.CompletedTask,

@@ -12,7 +12,11 @@ namespace NexJob;
 /// filter in the pipeline, or the job itself when no more filters remain.
 /// </para>
 /// <para>
-/// Filters are resolved from the job's DI scope, so scoped services are available.
+/// Filters are resolved from the job's DI scope, so a <c>Transient</c> or <c>Scoped</c> filter is built once per job
+/// and scoped services are available; a <c>Singleton</c> filter is shared by every job.
+/// </para>
+/// <para>
+/// A filter that does not call <c>next</c> skips the job, and the job is stored as <c>Succeeded</c>.
 /// </para>
 /// <para>
 /// If a filter throws, the exception propagates through the pipeline and is treated

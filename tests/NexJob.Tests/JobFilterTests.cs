@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using NexJob;
 using NexJob.Internal;
+using NexJob.Storage;
 using Xunit;
 
 namespace NexJob.Tests;
@@ -385,6 +386,186 @@ public sealed class JobFilterTests
         public Task OnExecutingAsync(JobExecutingContext context, JobExecutionDelegate next, CancellationToken ct)
         {
             // Don't call next - short-circuit the pipeline
+            return Task.CompletedTask;
+        }
+    }
+
+    // ─── issue #475: the outcome is readable inside the filter ───────────────
+
+    /// <summary>N1: a filter reads Succeeded = true and no Exception right after next returns.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task Filter_ReadsSucceeded_AfterNext_WhenJobSucceeds()
+    {
+        var seen = new TaskCompletionSource<(bool Succeeded, Exception? Exception)>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var host = BuildHost(
+            s => s.AddTransient(_ => new QuickSuccessJob(new TaskCompletionSource<bool>())),
+            s => s.AddSingleton<IJobExecutionFilter>(new OutcomeFilter(seen)));
+        await host.StartAsync();
+
+        await host.Services.GetRequiredService<IScheduler>().EnqueueAsync<QuickSuccessJob, QuickInput>(new());
+
+        var outcome = await seen.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        outcome.Succeeded.Should().BeTrue();
+        outcome.Exception.Should().BeNull();
+        await host.StopAsync();
+    }
+
+    /// <summary>N2: when the job throws, the filter reads the exception and Succeeded = false in its catch, and the job still fails normally.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task Filter_ReadsException_InCatch_WhenJobThrows_AndJobStillFails()
+    {
+        var seen = new TaskCompletionSource<(bool Succeeded, Exception? Exception)>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var host = BuildHost(
+            s => s.AddTransient<ThrowingJob>(),
+            s => s.AddSingleton<IJobExecutionFilter>(new OutcomeFilter(seen)),
+            maxAttempts: 1);
+        await host.StartAsync();
+
+        var jobId = await host.Services.GetRequiredService<IScheduler>().EnqueueAsync<ThrowingJob, QuickInput>(new());
+
+        var outcome = await seen.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        outcome.Succeeded.Should().BeFalse();
+        outcome.Exception.Should().BeOfType<InvalidOperationException>().Which.Message.Should().Be("filter-outcome-boom");
+
+        var storage = host.Services.GetRequiredService<IStorageProvider>();
+        JobStatus? status = null;
+        for (var i = 0; i < 200 && status != JobStatus.Failed; i++)
+        {
+            status = (await storage.GetJobByIdAsync(jobId))?.Status;
+            await Task.Delay(25);
+        }
+
+        status.Should().Be(JobStatus.Failed, "rethrowing from the filter keeps the normal retry and dead-letter flow");
+        await host.StopAsync();
+    }
+
+    /// <summary>N3: before calling next the outcome is still unset, and an outer filter sees the outcome of the inner filter and the job.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task Filter_OutcomeIsUnsetBeforeNext_AndOuterFilterSeesIt()
+    {
+        var inner = new TaskCompletionSource<(bool Succeeded, Exception? Exception)>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var outer = new TaskCompletionSource<(bool Succeeded, Exception? Exception)>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var before = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var host = BuildHost(
+            s => s.AddTransient(_ => new QuickSuccessJob(new TaskCompletionSource<bool>())),
+            s =>
+            {
+                s.AddSingleton<IJobExecutionFilter>(new OutcomeFilter(outer, before));
+                s.AddSingleton<IJobExecutionFilter>(new OutcomeFilter(inner));
+            });
+        await host.StartAsync();
+
+        await host.Services.GetRequiredService<IScheduler>().EnqueueAsync<QuickSuccessJob, QuickInput>(new());
+
+        (await before.Task.WaitAsync(TimeSpan.FromSeconds(10))).Should().BeFalse("nothing has run before next");
+        (await inner.Task.WaitAsync(TimeSpan.FromSeconds(10))).Succeeded.Should().BeTrue();
+        (await outer.Task.WaitAsync(TimeSpan.FromSeconds(10))).Succeeded.Should().BeTrue();
+        await host.StopAsync();
+    }
+
+    // ─── issue #475: a filter follows its registered lifetime ──────────────────
+
+    /// <summary>N1: a Transient filter is built once per job, not once for every job.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task TransientFilter_IsBuiltOncePerJob()
+    {
+        var built = new ConstructionCounter();
+        await RunJobsAsync(3, s => s.AddTransient<IJobExecutionFilter>(_ => new CountingFilter(built)));
+
+        built.Count.Should().Be(3);
+    }
+
+    /// <summary>N2: a Singleton filter is still one instance shared by every job.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task SingletonFilter_IsBuiltOnce_ForEveryJob()
+    {
+        var built = new ConstructionCounter();
+        await RunJobsAsync(3, s => s.AddSingleton<IJobExecutionFilter>(_ => new CountingFilter(built)));
+
+        built.Count.Should().Be(1);
+    }
+
+    /// <summary>N3: a Scoped filter gets the scope of its own job, so a scoped service is not shared between jobs.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task ScopedFilter_GetsOneScopePerJob()
+    {
+        var built = new ConstructionCounter();
+        await RunJobsAsync(3, s => s.AddScoped<IJobExecutionFilter>(_ => new CountingFilter(built)));
+
+        built.Count.Should().Be(3);
+    }
+
+    private static async Task RunJobsAsync(int jobs, Action<IServiceCollection> registerFilter)
+    {
+        var done = new CountdownEvent(jobs);
+        using var host = BuildHost(
+            s => s.AddTransient(_ => new CountdownJob(done)),
+            registerFilter,
+            workers: 1);
+        await host.StartAsync();
+        var scheduler = host.Services.GetRequiredService<IScheduler>();
+        for (var i = 0; i < jobs; i++)
+        {
+            await scheduler.EnqueueAsync<CountdownJob, QuickInput>(new());
+        }
+
+        await Task.Run(() => done.Wait(TimeSpan.FromSeconds(15))).WaitAsync(TimeSpan.FromSeconds(20));
+        await host.StopAsync();
+    }
+
+    private sealed class ConstructionCounter
+    {
+        private int _count;
+
+        public int Count => Volatile.Read(ref _count);
+
+        public void Increment() => Interlocked.Increment(ref _count);
+    }
+
+    private sealed class CountingFilter : IJobExecutionFilter
+    {
+        public CountingFilter(ConstructionCounter counter) => counter.Increment();
+
+        public Task OnExecutingAsync(JobExecutingContext context, JobExecutionDelegate next, CancellationToken ct) => next(ct);
+    }
+
+    private sealed class OutcomeFilter(
+        TaskCompletionSource<(bool Succeeded, Exception? Exception)> after,
+        TaskCompletionSource<bool>? before = null) : IJobExecutionFilter
+    {
+        public async Task OnExecutingAsync(JobExecutingContext context, JobExecutionDelegate next, CancellationToken ct)
+        {
+            before?.TrySetResult(context.Succeeded);
+            try
+            {
+                await next(ct);
+                after.TrySetResult((context.Succeeded, context.Exception));
+            }
+            catch
+            {
+                after.TrySetResult((context.Succeeded, context.Exception));
+                throw;
+            }
+        }
+    }
+
+    public sealed class ThrowingJob : IJob<QuickInput>
+    {
+        public Task ExecuteAsync(QuickInput input, CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("filter-outcome-boom");
+    }
+
+    public sealed class CountdownJob(CountdownEvent done) : IJob<QuickInput>
+    {
+        public Task ExecuteAsync(QuickInput input, CancellationToken cancellationToken)
+        {
+            done.Signal();
             return Task.CompletedTask;
         }
     }
