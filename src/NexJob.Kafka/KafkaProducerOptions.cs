@@ -33,10 +33,11 @@ public sealed class KafkaProducerOptions
     public TimeSpan FlushTimeout { get; set; } = TimeSpan.FromSeconds(10);
 
     /// <summary>
-    /// Gets or sets the NexJob queue name used to process Kafka publishing jobs.
-    /// Defaults to "kafka-producer".
+    /// Gets or sets the NexJob queue name for Kafka publishing jobs.
+    /// Not read yet: the queue comes from the <c>queue</c> argument of <c>EnqueueKafkaAsync</c>, which defaults to "default".
+    /// Defaults to "default".
     /// </summary>
-    public string Queue { get; set; } = "kafka-producer";
+    public string Queue { get; set; } = "default";
 
     /// <summary>
     /// Gets or sets the default job priority for Kafka publishing jobs.

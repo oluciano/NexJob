@@ -104,6 +104,11 @@ public sealed class KafkaProducerIntegrationTests
                 });
             })
             .Build();
+        using (var admin = new AdminClientBuilder(new AdminClientConfig { BootstrapServers = _fixture.BootstrapServers }).Build())
+        {
+            await admin.CreateTopicsAsync([new Confluent.Kafka.Admin.TopicSpecification { Name = topic, NumPartitions = 1, ReplicationFactor = 1 }]);
+        }
+
         await host.StartAsync();
 
         await host.Services.GetRequiredService<IScheduler>().EnqueueKafkaAsync(topic, "key1", new { id = 1 });
