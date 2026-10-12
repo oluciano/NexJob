@@ -455,6 +455,7 @@ public sealed class RabbitMqTriggerTests : IClassFixture<RabbitMqTriggerFixture>
 
         Encoding.UTF8.GetString(copy!.Body.ToArray()).Should().Be("original body");
         copy.BasicProperties.Headers.Should().ContainKey("nexjob.error");
+        Encoding.UTF8.GetString((byte[])copy.BasicProperties.Headers["nexjob.error"]).Should().Contain("always fails");
     }
 
     /// <summary>
@@ -563,9 +564,9 @@ public sealed class RabbitMqTriggerTests : IClassFixture<RabbitMqTriggerFixture>
         }
     }
 
-    private sealed class AlwaysFailsJob : IJob
+    private sealed class AlwaysFailsJob : IJob<string>
     {
-        public Task ExecuteAsync(CancellationToken cancellationToken) => throw new InvalidOperationException("always fails");
+        public Task ExecuteAsync(string input, CancellationToken cancellationToken) => throw new InvalidOperationException("always fails");
     }
 
     private sealed class TestJob : IJob

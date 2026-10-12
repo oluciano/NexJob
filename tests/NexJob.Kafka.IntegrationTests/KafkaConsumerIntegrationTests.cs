@@ -165,6 +165,111 @@ public sealed class KafkaConsumerIntegrationTests
         job!.TraceParent.Should().Be(expectedTraceParent);
     }
 
+    /// <summary>
+    /// Verifies ExhaustedJobsTopic: a job that exhausts its retries is copied to that topic with the error header.
+    /// </summary>
+    [Fact]
+    public async Task ExhaustedJob_IsForwardedToTheExhaustedTopic_WithTheErrorHeader()
+    {
+        var topic = $"nexjob-exhausted-source-{Guid.NewGuid():N}";
+        var copyTopic = $"nexjob-exhausted-copy-{Guid.NewGuid():N}";
+        await CreateTopicAsync(topic);
+        await CreateTopicAsync(copyTopic);
+        await PublishMessageAsync(topic, "original body", typeof(AlwaysFailsJob).AssemblyQualifiedName!);
+
+        using var host = BuildExhaustionHost(topic, copyTopic);
+        await host.StartAsync();
+
+        var copy = await ConsumeOneAsync(copyTopic);
+        await host.StopAsync();
+
+        copy.Message.Value.Should().Be("original body");
+        copy.Message.Headers.TryGetLastBytes("nexjob.error", out var error).Should().BeTrue();
+        Encoding.UTF8.GetString(error).Should().Contain("always fails");
+    }
+
+    /// <summary>
+    /// Verifies that a blank ExhaustedJobsTopic forwards nothing: the job simply ends Failed (invalid input).
+    /// </summary>
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task ExhaustedJob_WithBlankTopic_ProducesNoCopy(string? copyTopic)
+    {
+        var topic = $"nexjob-blank-exhausted-{Guid.NewGuid():N}";
+        await CreateTopicAsync(topic);
+        await PublishMessageAsync(topic, "body", typeof(AlwaysFailsJob).AssemblyQualifiedName!);
+
+        using var host = BuildExhaustionHost(topic, copyTopic);
+        await host.StartAsync();
+        var scheduler = host.Services.GetRequiredService<IScheduler>();
+
+        JobRecord? failed = null;
+        await TestWait.UntilAsync(
+            async () =>
+            {
+                failed = (await scheduler.GetJobsByTagAsync("trigger:kafka")).FirstOrDefault(j => j.Status == JobStatus.Failed);
+                return failed is not null;
+            },
+            because: "the job to exhaust its attempts");
+        await host.StopAsync();
+
+        failed!.Status.Should().Be(JobStatus.Failed);
+    }
+
+    private IHost BuildExhaustionHost(string topic, string? copyTopic) =>
+        Host.CreateDefaultBuilder()
+            .ConfigureServices(services =>
+            {
+                services.AddNexJob(options =>
+                {
+                    options.Workers = 2;
+                    options.MaxAttempts = 1;
+                    options.PollingInterval = TimeSpan.FromMilliseconds(100);
+                });
+                services.AddTransient<AlwaysFailsJob>();
+                services.AddKafkaTrigger(options =>
+                {
+                    options.BootstrapServers = _fixture.BootstrapServers;
+                    options.Topic = topic;
+                    options.GroupId = $"group-{Guid.NewGuid():N}";
+                    options.ExhaustedJobsTopic = copyTopic;
+                    options.ExhaustedJobsIncludeErrorHeader = true;
+                });
+                if (!string.IsNullOrWhiteSpace(copyTopic))
+                {
+                    services.AddKafkaProducer(options => options.BootstrapServers = _fixture.BootstrapServers);
+                }
+            })
+            .Build();
+
+    private async Task<ConsumeResult<string, string>> ConsumeOneAsync(string topic)
+    {
+        using var consumer = new ConsumerBuilder<string, string>(new ConsumerConfig
+        {
+            BootstrapServers = _fixture.BootstrapServers,
+            GroupId = $"reader-{Guid.NewGuid():N}",
+            AutoOffsetReset = AutoOffsetReset.Earliest,
+        }).Build();
+        consumer.Subscribe(topic);
+        ConsumeResult<string, string>? result = null;
+        await TestWait.UntilAsync(
+            () =>
+            {
+                result = consumer.Consume(TimeSpan.FromSeconds(1));
+                return Task.FromResult(result is not null);
+            },
+            timeout: TimeSpan.FromSeconds(60),
+            because: "a record to arrive on the exhausted-jobs topic");
+        return result!;
+    }
+
+    private sealed class AlwaysFailsJob : IJob<string>
+    {
+        public Task ExecuteAsync(string input, CancellationToken cancellationToken) => throw new InvalidOperationException("always fails");
+    }
+
     private async Task CreateTopicAsync(string topic)
     {
         using var admin = new AdminClientBuilder(

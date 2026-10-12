@@ -257,7 +257,7 @@ builder.Services.AddNexJob()
 
 ## What was checked
 
-Against a single-node Kafka in KRaft mode (Confluent `cp-kafka` 7.6.0): the trigger read a record that existed before its group; a record without a job type reached the dead-letter topic with the headers above; the outbox published a message when its queue was polled and did not when it was not. SASL and TLS, a cluster with several brokers, `ExhaustedJobsTopic`, the long-outage rebalance and the ordering behavior were not run. The package is tested by its authors against KRaft clusters; ZooKeeper-based clusters are expected to work but were not tried here.
+Against a single-node Kafka in KRaft mode (Confluent `cp-kafka` 7.6.0): the trigger read a record that existed before its group; a record without a job type reached the dead-letter topic with the headers above; the outbox published a message when its queue was polled and did not when it was not. `ExhaustedJobsTopic` was run too: a job that exhausted its retries was copied to that topic with the `nexjob.error` header, and a blank topic forwarded nothing. The job type of a trigger must implement `IJob<string>`; one that does not fails at execution with an unhelpful error ([#510](https://github.com/oluciano/NexJob/issues/510)). SASL and TLS, a cluster with several brokers, the long-outage rebalance and the ordering behavior were not run. The package is tested by its authors against KRaft clusters; ZooKeeper-based clusters are expected to work but were not tried here.
 
 ## Try it
 
