@@ -72,7 +72,7 @@ public sealed class SalesforceSchemaService : ISalesforceSchemaService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to decode Avro binary payload for schema {SchemaId}", schemaId);
-            throw new InvalidOperationException($"Failed to decode Avro payload for schema {schemaId}: {ex.Message}", ex);
+            throw new SalesforcePayloadDecodeException($"Failed to decode Avro payload for schema {schemaId}: {ex.Message}", ex);
         }
     }
 

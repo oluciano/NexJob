@@ -490,6 +490,8 @@ public sealed class SalesforceTriggerHandlerTests
     [Fact]
     public async Task UndecodableEvent_IsSkipped_AndTheNextEventIsProcessed()
     {
+        _replayStoreMock.Setup(s => s.GetLastReplayIdAsync(_options.Topic, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((byte[]?)null);
         var bad = NewEvent([0x01], "evt-bad", "schema-bad", [0x0A]);
         var good = NewEvent([0x02], "evt-good", "schema-1", [0x0B]);
         _pubSubClientMock.Setup(c => c.SubscribeAsync(_options.Topic, null, SalesforceReplayPreset.Latest, _options.BatchSize, It.IsAny<CancellationToken>()))
@@ -522,6 +524,8 @@ public sealed class SalesforceTriggerHandlerTests
     [Fact]
     public async Task UndecodableEvent_WithDeadLetterQueue_KeepsTheRawPayload()
     {
+        _replayStoreMock.Setup(s => s.GetLastReplayIdAsync(_options.Topic, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((byte[]?)null);
         _options.DeadLetterQueue = "salesforce-dlq";
         var bad = NewEvent([0x01], "evt-bad", "schema-bad", [0x0A, 0x0B]);
         _pubSubClientMock.Setup(c => c.SubscribeAsync(_options.Topic, null, SalesforceReplayPreset.Latest, _options.BatchSize, It.IsAny<CancellationToken>()))
@@ -554,6 +558,8 @@ public sealed class SalesforceTriggerHandlerTests
     [Fact]
     public async Task TransientDecodeFailure_IsNotSkipped_AndTheReplayIdIsNotCommitted()
     {
+        _replayStoreMock.Setup(s => s.GetLastReplayIdAsync(_options.Topic, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((byte[]?)null);
         var evt = NewEvent([0x01], "evt-1", "schema-1", [0x0A]);
         _pubSubClientMock.Setup(c => c.SubscribeAsync(_options.Topic, null, SalesforceReplayPreset.Latest, _options.BatchSize, It.IsAny<CancellationToken>()))
             .Returns(() => ToAsyncEnumerable([evt]));
