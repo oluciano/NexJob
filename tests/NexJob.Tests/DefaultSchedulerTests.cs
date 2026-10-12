@@ -378,6 +378,39 @@ public sealed class DefaultSchedulerTests
             It.IsAny<CancellationToken>()), Times.Once);
     }
 
+    /// <summary>N1/N3 (#515): RecurringAsync with explicit timeZone preserves its TimeZoneId and computes NextExecution in that zone.</summary>
+    [Fact]
+    public async Task RecurringAsync_WithExplicitTimeZone_SetsTimeZoneIdAndComputesNextExecution()
+    {
+        var tz = TimeZoneInfo.FindSystemTimeZoneById("America/Sao_Paulo");
+
+        await _hardenedSut.RecurringAsync<TestJob>("rec-tz", "0 9 * * *", timeZone: tz);
+        await _hardenedSut.RecurringAsync<StubJob, string>("rec-tz-input", "payload", "0 9 * * *", timeZone: tz);
+
+        _recurringStorage.Verify(x => x.UpsertRecurringJobAsync(
+            It.Is<RecurringJobRecord>(r => r.RecurringJobId == "rec-tz" && r.TimeZoneId == tz.Id && r.NextExecution.HasValue),
+            It.IsAny<CancellationToken>()), Times.Once);
+
+        _recurringStorage.Verify(x => x.UpsertRecurringJobAsync(
+            It.Is<RecurringJobRecord>(r => r.RecurringJobId == "rec-tz-input" && r.TimeZoneId == tz.Id && r.NextExecution.HasValue),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    /// <summary>N1/N3 (#515): ScheduleAsync without input adds positive delay to ScheduledAt.</summary>
+    [Fact]
+    public async Task ScheduleAsync_NoInput_ComputesFutureScheduledAt()
+    {
+        var before = DateTimeOffset.UtcNow;
+        var delay = TimeSpan.FromHours(2);
+
+        var jobId = await _sut.ScheduleAsync<StubNoInputJob>(delay);
+
+        var job = await _storage.GetJobByIdAsync(jobId);
+        job.Should().NotBeNull();
+        job!.ScheduledAt.Should().NotBeNull();
+        job.ScheduledAt!.Value.Should().BeOnOrAfter(before.Add(delay));
+    }
+
     // ─── ParseCron Branches ────────────────────────────────────────────────
 
     /// <summary>Tests that ParseCron falls back to standard format on cron format error.</summary>
