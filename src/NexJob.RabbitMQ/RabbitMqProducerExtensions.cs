@@ -158,7 +158,7 @@ public static class RabbitMqProducerExtensions
     /// <param name="correlationId">Optional correlation ID.</param>
     /// <param name="messageId">Optional message ID.</param>
     /// <param name="jsonOptions">Optional JSON serialization options.</param>
-    /// <param name="queue">The NexJob queue name. Defaults to "rabbitmq-producer".</param>
+    /// <param name="queue">The NexJob queue name. Defaults to "default", which is the default queue of the application (<c>{prefix}.default</c>).</param>
     /// <param name="priority">The job priority. Defaults to <see cref="JobPriority.Normal"/>.</param>
     /// <param name="idempotencyKey">Optional deduplication key.</param>
     /// <param name="duplicatePolicy">Behavior when a duplicate key exists. Defaults to <see cref="DuplicatePolicy.AllowAfterFailed"/>.</param>
@@ -236,7 +236,7 @@ public static class RabbitMqProducerExtensions
 
         return scheduler.EnqueueAsync<RabbitMqProducerJob, RabbitMqPublishPayload>(
             payload,
-            queue: queue ?? "rabbitmq-producer",
+            queue: queue ?? "default",
             priority: priority,
             idempotencyKey: idempotencyKey,
             duplicatePolicy: duplicatePolicy,
@@ -253,7 +253,7 @@ public static class RabbitMqProducerExtensions
     /// <param name="routingKey">The target routing key.</param>
     /// <param name="value">The message payload.</param>
     /// <param name="headers">Optional custom headers to attach to the RabbitMQ message.</param>
-    /// <param name="queue">The NexJob queue name. Defaults to "rabbitmq-producer".</param>
+    /// <param name="queue">The NexJob queue name. Defaults to "default", which is the default queue of the application (<c>{prefix}.default</c>).</param>
     /// <param name="priority">The job priority. Defaults to <see cref="JobPriority.Normal"/>.</param>
     /// <param name="idempotencyKey">Optional deduplication key.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
@@ -287,7 +287,7 @@ public static class RabbitMqProducerExtensions
     /// <param name="routingKey">The target routing key.</param>
     /// <param name="value">The raw string payload to publish.</param>
     /// <param name="headers">Optional custom headers to attach to the RabbitMQ message.</param>
-    /// <param name="queue">The NexJob queue name. Defaults to "rabbitmq-producer".</param>
+    /// <param name="queue">The NexJob queue name. Defaults to "default", which is the default queue of the application (<c>{prefix}.default</c>).</param>
     /// <param name="priority">The job priority. Defaults to <see cref="JobPriority.Normal"/>.</param>
     /// <param name="idempotencyKey">Optional deduplication key.</param>
     /// <param name="duplicatePolicy">Behavior when a duplicate key exists. Defaults to <see cref="DuplicatePolicy.AllowAfterFailed"/>.</param>
@@ -325,7 +325,7 @@ public static class RabbitMqProducerExtensions
 
         return scheduler.EnqueueAsync<RabbitMqProducerJob, RabbitMqPublishPayload>(
             payload,
-            queue: queue ?? "rabbitmq-producer",
+            queue: queue ?? "default",
             priority: priority,
             idempotencyKey: idempotencyKey,
             duplicatePolicy: duplicatePolicy,
@@ -342,7 +342,7 @@ public static class RabbitMqProducerExtensions
     /// <param name="routingKey">The target routing key.</param>
     /// <param name="value">The raw byte array payload to publish.</param>
     /// <param name="headers">Optional custom headers to attach to the RabbitMQ message.</param>
-    /// <param name="queue">The NexJob queue name. Defaults to "rabbitmq-producer".</param>
+    /// <param name="queue">The NexJob queue name. Defaults to "default", which is the default queue of the application (<c>{prefix}.default</c>).</param>
     /// <param name="priority">The job priority. Defaults to <see cref="JobPriority.Normal"/>.</param>
     /// <param name="idempotencyKey">Optional deduplication key.</param>
     /// <param name="duplicatePolicy">Behavior when a duplicate key exists. Defaults to <see cref="DuplicatePolicy.AllowAfterFailed"/>.</param>
@@ -380,7 +380,7 @@ public static class RabbitMqProducerExtensions
 
         return scheduler.EnqueueAsync<RabbitMqProducerJob, RabbitMqPublishPayload>(
             payload,
-            queue: queue ?? "rabbitmq-producer",
+            queue: queue ?? "default",
             priority: priority,
             idempotencyKey: idempotencyKey,
             duplicatePolicy: duplicatePolicy,

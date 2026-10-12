@@ -123,7 +123,7 @@ builder.Services.AddNexJob(options =>
 | `CustomReplayId` | `long?` | Historic Replay ID to start from when `ReplayPreset` is `Custom` | `null` |
 | `ReplayIdStore` | `IStreamingReplayIdStore?` | Custom Replay ID store implementation | `null` (uses `FileStreamingReplayIdStore`) |
 | `ReplayStoreDirectory` | `string` | Local disk directory for storing Replay ID files | `./.nexjob/salesforce-streaming` |
-| `TargetQueue` | `string` | Target NexJob queue name | `"salesforce-streaming"` |
+| `TargetQueue` | `string` | Target NexJob queue name | `"default"` |
 | `JobPriority` | `JobPriority` | Job priority for enqueued events | `JobPriority.Normal` |
 | `DeadLetterQueue` | `string?` | Queue for events that failed to enqueue | `null` |
 | `CometdVersion` | `string` | Salesforce CometD API version | `"60.0"` |

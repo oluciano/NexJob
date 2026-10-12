@@ -100,7 +100,7 @@ builder.Services.AddNexJob(options =>
 | `ClientSecret` | `string` | Connected App OAuth2 Client Secret (Consumer Secret) | *Required* |
 | `AuthEndpoint` | `string` | Salesforce OAuth2 token endpoint URL. Must be `https` (`http` is accepted only for a loopback address such as a local mock), because the OAuth credentials are sent to it | `https://login.salesforce.com/services/oauth2/token` |
 | `PubSubEndpoint` | `string` | Salesforce Pub/Sub gRPC endpoint | `api.pubsub.salesforce.com:7443` |
-| `TargetQueue` | `string` | Target NexJob queue for enqueued jobs | `salesforce-events` |
+| `TargetQueue` | `string` | Target NexJob queue for enqueued jobs | `default` |
 | `JobPriority` | `JobPriority` | Execution priority for enqueued jobs | `Normal` |
 | `TenantId` | `string?` | 18-character Salesforce organization ID (derived if omitted) | `null` |
 | `ReplayPreset` | `SalesforceReplayPreset` | Starting offset when no checkpoint exists (`Latest`, `Earliest`, `Custom`) | `Latest` |

@@ -121,7 +121,8 @@ public sealed class DeadLetterForwardingTests
                     o.PollingInterval = TimeSpan.FromMilliseconds(50);
 
                     // The dispatcher only polls these queues: the trigger's target queue and the Outbox queue.
-                    o.Queues = ["orders", "payments", "kafka-producer"];
+                    // Behavior changed in v6.3: the outbox jobs go to "default", no longer to "kafka-producer" (#482).
+                    o.Queues = ["orders", "payments", "default"];
                 });
                 services.AddKafkaProducer(o => o.BootstrapServers = "localhost:9092");
                 services.AddSingleton<IKafkaProducerClient>(producer);

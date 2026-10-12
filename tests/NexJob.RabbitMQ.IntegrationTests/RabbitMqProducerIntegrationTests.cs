@@ -1,6 +1,7 @@
 using System.Text;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using NexJob.RabbitMQ;
 using NexJob.Tests;
@@ -97,5 +98,61 @@ public sealed class RabbitMqProducerIntegrationTests : IClassFixture<RabbitMqTri
         result.BasicProperties.Headers.Should().ContainKey("event-source");
         var headerBytes = (byte[])result.BasicProperties.Headers["event-source"];
         Encoding.UTF8.GetString(headerBytes).Should().Be("billing-service");
+    }
+
+    /// <summary>N1 (#482): with the default queue configuration, an outbox message is published without listing a queue.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task EnqueueRabbitMqAsync_WithDefaultQueueConfiguration_PublishesTheMessage()
+    {
+        var queueName = $"outbox-default-queue-{Guid.NewGuid():N}";
+        var factory = new ConnectionFactory
+        {
+            HostName = _fixture.HostName,
+            Port = _fixture.Port,
+            UserName = RabbitMqTriggerFixture.UserName,
+            Password = RabbitMqTriggerFixture.Password,
+        };
+        using (var setupConnection = factory.CreateConnection())
+        using (var setupChannel = setupConnection.CreateModel())
+        {
+            setupChannel.QueueDeclare(queue: queueName, durable: false, exclusive: false, autoDelete: false);
+        }
+
+        using var host = Host.CreateDefaultBuilder()
+            .ConfigureServices(services =>
+            {
+                services.AddNexJob(o =>
+                {
+                    o.PollingInterval = TimeSpan.FromMilliseconds(50);
+                    o.MaxAttempts = 1;
+                });
+                services.AddRabbitMqProducer(options =>
+                {
+                    options.HostName = _fixture.HostName;
+                    options.Port = _fixture.Port;
+                    options.UserName = RabbitMqTriggerFixture.UserName;
+                    options.Password = RabbitMqTriggerFixture.Password;
+                    options.ConfirmTimeout = TimeSpan.FromSeconds(10);
+                });
+            })
+            .Build();
+        await host.StartAsync();
+
+        await host.Services.GetRequiredService<IScheduler>().EnqueueRabbitMqAsync(string.Empty, queueName, new { id = 1 });
+
+        using var verifyConnection = factory.CreateConnection();
+        using var verifyChannel = verifyConnection.CreateModel();
+        BasicGetResult? result = null;
+        await TestWait.UntilAsync(
+            () =>
+            {
+                result = verifyChannel.BasicGet(queueName, autoAck: true);
+                return Task.FromResult(result is not null);
+            },
+            because: "the published message to reach the queue");
+
+        Encoding.UTF8.GetString(result!.Body.ToArray()).Should().Be("{\"id\":1}");
+        await host.StopAsync();
     }
 }

@@ -13,7 +13,8 @@ public sealed class SalesforceTriggerOptionsTests
         var options = new SalesforceTriggerOptions();
 
         // Assert
-        options.TargetQueue.Should().Be("salesforce-events");
+        // Behavior changed in v6.3: the default queue is "default", the one a worker polls out of the box (#482).
+        options.TargetQueue.Should().Be("default");
         options.JobPriority.Should().Be(JobPriority.Normal);
         options.AuthEndpoint.Should().Be("https://login.salesforce.com/services/oauth2/token");
         options.PubSubEndpoint.Should().Be("api.pubsub.salesforce.com:7443");

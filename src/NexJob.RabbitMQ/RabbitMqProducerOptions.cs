@@ -57,10 +57,11 @@ public sealed class RabbitMqProducerOptions
     public TimeSpan ConfirmTimeout { get; set; } = TimeSpan.FromSeconds(5);
 
     /// <summary>
-    /// Gets or sets the NexJob queue name used to process RabbitMQ publishing jobs.
-    /// Defaults to "rabbitmq-producer".
+    /// Gets or sets the NexJob queue name for RabbitMQ publishing jobs.
+    /// Not read yet: the queue comes from the <c>queue</c> argument of <c>EnqueueRabbitMqAsync</c>, which defaults to "default", the default queue of the application (<c>{prefix}.default</c>).
+    /// Defaults to "default", the default queue of the application (<c>{prefix}.default</c>).
     /// </summary>
-    public string Queue { get; set; } = "rabbitmq-producer";
+    public string Queue { get; set; } = "default";
 
     /// <summary>
     /// Gets or sets the default job priority for RabbitMQ publishing jobs.

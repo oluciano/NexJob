@@ -80,7 +80,8 @@ public sealed class KafkaDeadLetterForwarderEndToEndTests
                     o.Workers = 2;
                     o.MaxAttempts = 1;
                     o.PollingInterval = TimeSpan.FromMilliseconds(50);
-                    o.Queues = ["orders", "kafka-producer"];
+                    // Behavior changed in v6.3: the outbox jobs go to "default", no longer to "kafka-producer" (#482).
+                    o.Queues = ["orders", "default"];
                 });
                 services.AddKafkaProducer(o => o.BootstrapServers = "localhost:9092");
                 services.AddSingleton<IKafkaProducerClient>(producer);

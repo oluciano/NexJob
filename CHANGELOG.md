@@ -6,13 +6,20 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-## [6.2.1] - 2026-10-11
+### Changed
+
+- The Kafka outbox (`EnqueueKafkaAsync`), the RabbitMQ outbox (`EnqueueRabbitMqAsync`), `NexJob.Trigger.Salesforce` and `NexJob.Trigger.SalesforceStreaming` now default to the `default` queue, like the other triggers. They used to default to `kafka-producer`, `rabbitmq-producer`, `salesforce-events` and `salesforce-streaming`, which no worker polled unless the application listed them in `NexJobOptions.Queues`, so with the default settings the jobs waited unseen. Jobs already waiting in the old queues are drained only while the old name stays in `Queues`. `KafkaProducerOptions.Queue` and `RabbitMqProducerOptions.Queue` are still not read; their default is now `default` (issue #482).
 
 ### Fixed
 
 - `NexJob.Trigger.Salesforce`: the job the trigger enqueues now receives the decoded event as a JSON string, like the other triggers. Before, the trigger stored a JSON object but declared the input as `string`, so every job (`SalesforceEventJob` and any `AddSalesforceTrigger<TJob>`) failed on every attempt. The payload shape is a behaviour change for anything that read `JobRecord.InputJson` directly (issue #481).
 - `NexJob.Trigger.Salesforce`: an event that can never be decoded no longer drops the stream and reconnects in a loop, blocking every event behind it. It is logged, kept in `DeadLetterQueue` as Base64 when one is configured, and skipped with its replay id committed. A schema that cannot be fetched is still retried. A custom `ISalesforceSchemaService` opts in by throwing the new `SalesforcePayloadDecodeException` (issue #481).
 - `JobExecutingContext.Succeeded` and `Exception` can now be read inside a filter, right after `await next(ct)` or in a `catch`/`finally`. Before, NexJob set them only after the whole pipeline had finished, so a filter always saw `Succeeded = false` and `Exception = null`. Filters are also resolved from the job's DI scope, so a `Transient` or `Scoped` filter is built once per job instead of once for all jobs. A `Singleton` filter is unchanged, and a filter that does not call `next` still stores the job as `Succeeded`, which is now documented (issue #475).
+
+## [6.2.1] - 2026-10-11
+
+### Fixed
+
 - A job cancelled when the shutdown drain ends is now back in the queue, with its attempt refunded, before `StopAsync` returns. Before, the requeue was committed after `StopAsync` returned, so a process that exited right away left the job `Processing` until the orphan watcher recovered it. `StopAsync` waits at most 5 more seconds; a job that ignores cancellation is still left to the orphan watcher (issue #476).
 - A continuation now starts right after its parent succeeds. The executor signals the wake-up channel after a successful commit, on both the direct and the batch-acknowledgment path. Before, the promoted child waited for the next poll (15 s with the default `PollingInterval`) (issue #495).
 - `ContinueWithAsync` now releases the child at once when its parent has already succeeded, on every provider. Before, a continuation registered after the parent finished stayed `AwaitingContinuation` forever. A parent that failed or is still running behaves as before (issue #471).
