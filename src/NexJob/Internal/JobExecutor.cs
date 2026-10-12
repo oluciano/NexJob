@@ -25,6 +25,9 @@ internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
     private readonly NexJobOptions _options;
     private readonly ILogger<JobExecutor> _logger;
     private readonly JobWakeUpChannel _wakeUp;
+#pragma warning disable S4487 // red commit only: the seam exists but is not read yet
+    private readonly TimeProvider _timeProvider;
+#pragma warning restore S4487
     private readonly Channel<JobId> _ackChannel;
     private readonly CancellationTokenSource _ackCts;
     private readonly Task _ackFlusherTask;
@@ -40,6 +43,7 @@ internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
     /// <param name="options">The nex job options.</param>
     /// <param name="wakeUp">The wake-up channel signalled after a successful commit, so promoted continuations are fetched without waiting a poll.</param>
     /// <param name="logger">The logger.</param>
+    /// <param name="timeProvider">The clock used for deadlines and retry times; the system clock when omitted.</param>
     public JobExecutor(
         IJobStorage storage,
         IJobInvokerFactory invokerFactory,
@@ -48,8 +52,10 @@ internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
         ThrottleRegistry throttleRegistry,
         NexJobOptions options,
         JobWakeUpChannel wakeUp,
-        ILogger<JobExecutor> logger)
+        ILogger<JobExecutor> logger,
+        TimeProvider? timeProvider = null)
     {
+        _timeProvider = timeProvider ?? TimeProvider.System;
         _wakeUp = wakeUp;
         _storage = storage;
         _invokerFactory = invokerFactory;

@@ -5,6 +5,7 @@ using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Time.Testing;
 using Moq;
 using NexJob.Exceptions;
 using NexJob.Internal;
@@ -595,6 +596,78 @@ public sealed class JobExecutorTests
         _hardenedStorage.Verify(x => x.SetExpiredAsync(job.Id, It.IsAny<CancellationToken>()), Times.Never);
         _hardenedStorage.Verify(x => x.CommitJobResultAsync(job.Id, It.Is<JobExecutionResult>(r => r.Succeeded), It.IsAny<CancellationToken>()), Times.Once);
     }
+
+    /// <summary>N1 (#517): a job whose ExpiresAt equals the clock's now is not expired (boundary is inclusive).</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task ExecuteJobAsync_WhenExpiresAtEqualsNow_ExecutesNormally()
+    {
+        var clock = new FakeTimeProvider(new DateTimeOffset(2040, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        var job = new JobRecord { Id = JobId.New(), ExpiresAt = clock.GetUtcNow(), JobType = "TestJob" };
+        _ = SetupSuccessfulInvoker(job);
+
+        await MakeHardenedSut(clock).ExecuteJobAsync(job);
+
+        _hardenedStorage.Verify(x => x.SetExpiredAsync(job.Id, It.IsAny<CancellationToken>()), Times.Never);
+        _hardenedStorage.Verify(x => x.CommitJobResultAsync(job.Id, It.Is<JobExecutionResult>(r => r.Succeeded), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    /// <summary>N2 (#517): a job whose ExpiresAt is one tick before the clock's now is expired and never executes.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task ExecuteJobAsync_WhenExpiresAtOneTickBeforeNow_MarksExpiredWithoutExecuting()
+    {
+        var clock = new FakeTimeProvider(new DateTimeOffset(2040, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        var job = new JobRecord { Id = JobId.New(), ExpiresAt = clock.GetUtcNow().AddTicks(-1), JobType = "TestJob" };
+        _ = SetupSuccessfulInvoker(job);
+
+        await MakeHardenedSut(clock).ExecuteJobAsync(job);
+
+        _hardenedStorage.Verify(x => x.SetExpiredAsync(job.Id, It.IsAny<CancellationToken>()), Times.Once);
+        _hardenedStorage.Verify(x => x.CommitJobResultAsync(job.Id, It.IsAny<JobExecutionResult>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    /// <summary>N3 (#517): a job without ExpiresAt is never treated as expired, whatever the clock says.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task ExecuteJobAsync_WhenNoExpiresAt_ExecutesNormallyAtAnyTime()
+    {
+        var clock = new FakeTimeProvider(new DateTimeOffset(2040, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        var job = new JobRecord { Id = JobId.New(), ExpiresAt = null, JobType = "TestJob" };
+        _ = SetupSuccessfulInvoker(job);
+
+        await MakeHardenedSut(clock).ExecuteJobAsync(job);
+
+        _hardenedStorage.Verify(x => x.SetExpiredAsync(job.Id, It.IsAny<CancellationToken>()), Times.Never);
+        _hardenedStorage.Verify(x => x.CommitJobResultAsync(job.Id, It.Is<JobExecutionResult>(r => r.Succeeded), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    /// <summary>(#517): a foreign job is deferred to exactly the clock's now plus ForeignJobRetryDelay.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task ExecuteJobAsync_WhenForeignJob_DefersToClockNowPlusForeignRetryDelay()
+    {
+        var clock = new FakeTimeProvider(new DateTimeOffset(2040, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        var job = new JobRecord { Id = JobId.New(), JobType = "ForeignService.Job", Attempts = 1, MaxAttempts = 3 };
+        _hardenedInvokerfactory.Setup(x => x.PrepareAsync(job, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new ForeignJobTypeException(job.JobType, "Cannot load job type: ForeignService.Job"));
+
+        await MakeHardenedSut(clock).ExecuteJobAsync(job);
+
+        var expected = clock.GetUtcNow() + _hardenedOptions.ForeignJobRetryDelay;
+        _hardenedStorage.Verify(x => x.CommitJobResultAsync(job.Id, It.Is<JobExecutionResult>(r => r.RetryAt == expected), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    private JobExecutor MakeHardenedSut(TimeProvider clock) => new(
+        _hardenedStorage.Object,
+        _hardenedInvokerfactory.Object,
+        _hardenedRetrypolicy.Object,
+        _hardenedDeadletterdispatcher.Object,
+        _hardenedThrottleregistry,
+        _hardenedOptions,
+        new JobWakeUpChannel(),
+        NullLogger<JobExecutor>.Instance,
+        clock);
 
     // ─── Failure Path Branches ─────────────────────────────────────────────
 
