@@ -28,6 +28,7 @@ public sealed class MockSalesforceServer : IAsyncDisposable
     """;
 
     private readonly WebApplication _app;
+
     /// <summary>Gets the replay id the fake refuses with <c>InvalidArgument</c>, as Salesforce does for an expired one.</summary>
     public static byte[] RejectedReplayId { get; } = [0xDE, 0xAD];
 

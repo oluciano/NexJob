@@ -8,6 +8,7 @@ namespace NexJob.ReliabilityTests;
 /// Makes the next calls of one storage method fail, on a real provider, and forwards everything else. Used to inject
 /// the failure a database can have at the one moment a test cares about.
 /// </summary>
+/// <typeparam name="T">The storage interface the proxy implements.</typeparam>
 public class FaultInjectingStorage<T> : DispatchProxy
     where T : class
 {
