@@ -248,7 +248,7 @@ NexJob is designed to surface diagnostic information through structured logs, me
 
     **Batch acknowledgment**
 
-    By default, every job completion is a synchronous database write. Enable batch acknowledgment to aggregate completions and cut write roundtrips by over 90%:
+    By default, every job completion is a synchronous database write. With batch acknowledgment, completions that are waiting are written together, up to 100 per write, so under a backlog the writes drop sharply; with little load most batches hold one job and nothing changes. A job still commits synchronously when it is recurring, is a continuation child, uses `[Retention(PurgeOnSuccess)]` or `TrimPayloadOnSuccess`, or wrote log entries:
 
     ```csharp
     options.EnableBatchAcknowledgment = true;
@@ -280,7 +280,7 @@ NexJob is designed to surface diagnostic information through structured logs, me
 
     **Pool sizing rule of thumb**
 
-    A node needs about `Workers + 5` connections; set the pool maximum to `Workers + 10` to leave room for spikes. For a 3-node cluster each with 20 workers, that is about 75 connections in use and a pool maximum of 30 per node, 90 in total, so keep the database's connection limit above 90. As of v5.7.0, NexJob logs the detected pool size and worker count at startup, and warns when the pool is smaller than `Workers`.
+    A node needs about `Workers + 5` connections; set the pool maximum to `Workers + 10` to leave room for spikes. For a 3-node cluster each with 20 workers, that is about 75 connections in use and a pool maximum of 30 per node, 90 in total, so keep the database's connection limit above 90. On PostgreSQL and SQL Server, NexJob logs the detected pool size and worker count at startup, and warns when the pool is smaller than `Workers`. Redis and MongoDB log nothing about their pools.
 
     **PostgreSQL: `AddNexJobPostgres(NpgsqlDataSource)` on password-protected databases**
 

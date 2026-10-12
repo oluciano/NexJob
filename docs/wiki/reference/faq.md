@@ -82,7 +82,7 @@ These answers describe verified behavior as of v5.6.1 and later.
 
 
 ???+ "How do I get the best throughput from NexJob?"
-    Enable batch acknowledgment. By default, every job completion is a synchronous database write. With `EnableBatchAcknowledgment = true`, completions are aggregated and written in batches, cutting DB write roundtrips by over 90%:
+    Enable batch acknowledgment. By default, every job completion is a synchronous database write. With `EnableBatchAcknowledgment = true`, completions that are waiting are aggregated and written in batches of up to 100 (recurring, continuation child, purge/trim and logging jobs still commit alone):
 
     ```csharp
     options.EnableBatchAcknowledgment = true;
