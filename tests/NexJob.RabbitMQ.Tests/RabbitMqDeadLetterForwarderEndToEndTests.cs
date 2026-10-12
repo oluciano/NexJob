@@ -107,7 +107,8 @@ public sealed class RabbitMqDeadLetterForwarderEndToEndTests
                     o.Workers = 2;
                     o.MaxAttempts = 1;
                     o.PollingInterval = TimeSpan.FromMilliseconds(50);
-                    o.Queues = ["orders", "payments", "rabbitmq-producer"];
+                    // Behavior changed in v6.3: the outbox jobs go to "default", no longer to "rabbitmq-producer" (#482).
+                    o.Queues = ["orders", "payments", "default"];
                 });
                 services.AddRabbitMqProducer(o => o.HostName = "localhost");
                 services.AddSingleton<IRabbitMqProducerClient>(producer);

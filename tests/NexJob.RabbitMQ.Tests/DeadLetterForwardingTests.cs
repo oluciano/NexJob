@@ -120,7 +120,8 @@ public sealed class DeadLetterForwardingTests
                     o.PollingInterval = TimeSpan.FromMilliseconds(50);
 
                     // The dispatcher only polls these queues: the trigger's queue and the Outbox queue.
-                    o.Queues = ["orders", "payments", "rabbitmq-producer"];
+                    // Behavior changed in v6.3: the outbox jobs go to "default", no longer to "rabbitmq-producer" (#482).
+                    o.Queues = ["orders", "payments", "default"];
                 });
                 services.AddRabbitMqProducer(o => o.HostName = "localhost");
                 services.AddSingleton<IRabbitMqProducerClient>(producer);

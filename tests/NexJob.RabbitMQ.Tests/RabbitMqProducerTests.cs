@@ -74,7 +74,8 @@ public sealed class RabbitMqProducerTests
         capturedPayload.ContentType.Should().Be("application/json");
         capturedPayload.ValueString.Should().NotBeNull();
         capturedPayload.Headers.Should().ContainKey("source").WhoseValue.Should().Be("checkout-api");
-        capturedQueue.Should().Be("rabbitmq-producer");
+        // Behavior changed in v6.3: the outbox jobs go to "default", the queue a worker polls out of the box (#482).
+        capturedQueue.Should().Be("default");
         capturedTags.Should().Contain("producer:rabbitmq");
 
         var deserialized = JsonSerializer.Deserialize<TestOrder>(capturedPayload.ValueString!);
@@ -606,7 +607,8 @@ public sealed class RabbitMqProducerTests
         options.DefaultRoutingKey.Should().BeNull();
         options.Mandatory.Should().BeFalse();
         options.ConfirmTimeout.Should().Be(TimeSpan.FromSeconds(5));
-        options.Queue.Should().Be("rabbitmq-producer");
+        // Behavior changed in v6.3: the default is "default", like the other triggers (#482).
+        options.Queue.Should().Be("default");
         options.DefaultPriority.Should().Be(JobPriority.Normal);
     }
 
