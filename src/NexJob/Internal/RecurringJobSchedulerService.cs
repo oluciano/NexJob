@@ -142,6 +142,7 @@ internal sealed class RecurringJobSchedulerService : BackgroundService
                 // enqueued and the job is not re-fired on every polling cycle.
                 var nextExecution = CalculateNextExecution(current);
 
+                var jobType = JobTypeResolver.ResolveJobType(current.JobType);
                 var jobRecord = new JobRecord
                 {
                     Id = JobId.New(),
@@ -152,7 +153,8 @@ internal sealed class RecurringJobSchedulerService : BackgroundService
                     Priority = JobPriority.Normal,
                     Status = JobStatus.Enqueued,
                     CreatedAt = DateTimeOffset.UtcNow,
-                    MaxAttempts = JobRecordFactory.ResolveMaxAttempts(JobTypeResolver.ResolveJobType(current.JobType), null, _options),
+                    MaxAttempts = JobRecordFactory.ResolveMaxAttempts(jobType, null, _options),
+                    SchemaVersion = JobRecordFactory.ResolveSchemaVersion(jobType),
                     RecurringJobId = current.RecurringJobId,
                     // SkipIfRunning: idempotency key blocks a second instance while
                     // the first is Enqueued or Processing.

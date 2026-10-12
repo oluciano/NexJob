@@ -43,7 +43,7 @@ internal sealed class DefaultJobInvokerFactory : IJobInvokerFactory
             var inputType = JobTypeResolver.ResolveInputType(job.InputType)
                            ?? throw new Exceptions.ForeignJobTypeException(job.InputType, $"Cannot load input type: {job.InputType}");
 
-            var currentVersion = jobType.GetCustomAttribute<SchemaVersionAttribute>()?.Version ?? 1;
+            var currentVersion = JobRecordFactory.ResolveSchemaVersion(jobType);
             var migratedJson = scope.ServiceProvider
                 .GetRequiredService<IMigrationPipeline>()
                 .Migrate(job.InputJson, job.SchemaVersion, currentVersion, inputType);

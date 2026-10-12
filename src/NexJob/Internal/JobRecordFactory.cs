@@ -60,6 +60,7 @@ internal static class JobRecordFactory
             ExpiresAt = expiresAt,
             CreatedAt = DateTimeOffset.UtcNow,
             MaxAttempts = ResolveMaxAttempts(typeof(TJob), maxAttempts, options),
+            SchemaVersion = ResolveSchemaVersion(typeof(TJob)),
             TraceParent = capturedTraceParent,
             Tags = tags ?? [],
             ParentJobId = parentJobId,
@@ -112,6 +113,7 @@ internal static class JobRecordFactory
             ExpiresAt = expiresAt,
             CreatedAt = DateTimeOffset.UtcNow,
             MaxAttempts = ResolveMaxAttempts(typeof(TJob), maxAttempts, options),
+            SchemaVersion = ResolveSchemaVersion(typeof(TJob)),
             TraceParent = capturedTraceParent,
             Tags = tags ?? [],
             ParentJobId = parentJobId,
@@ -154,6 +156,7 @@ internal static class JobRecordFactory
         int? maxAttempts = null)
     {
         var capturedTraceParent = traceParent ?? Activity.Current?.Id;
+        var resolvedType = JobTypeResolver.ResolveJobType(jobType);
 
         return new JobRecord
         {
@@ -168,12 +171,22 @@ internal static class JobRecordFactory
             ScheduledAt = scheduledAt,
             ExpiresAt = expiresAt,
             CreatedAt = DateTimeOffset.UtcNow,
-            MaxAttempts = ResolveMaxAttempts(JobTypeResolver.ResolveJobType(jobType), maxAttempts, options),
+            MaxAttempts = ResolveMaxAttempts(resolvedType, maxAttempts, options),
+            SchemaVersion = ResolveSchemaVersion(resolvedType),
             TraceParent = capturedTraceParent,
             Tags = tags ?? [],
             ParentJobId = parentJobId,
         };
     }
+
+    /// <summary>
+    /// Resolves the payload version of a job class: its <see cref="SchemaVersionAttribute"/>, else 1. A new job stores it so
+    /// the migration pipeline does not treat a current payload as an old one.
+    /// </summary>
+    /// <param name="jobType">The job type, or <see langword="null"/> when it cannot be loaded in this process.</param>
+    /// <returns>The schema version to store.</returns>
+    internal static int ResolveSchemaVersion(Type? jobType) =>
+        jobType?.GetCustomAttribute<SchemaVersionAttribute>()?.Version ?? 1;
 
     /// <summary>
     /// Resolves the attempt limit stored on a new job: the explicit value, else the job type's
