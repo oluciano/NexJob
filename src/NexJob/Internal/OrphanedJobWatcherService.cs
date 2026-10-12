@@ -61,7 +61,10 @@ internal sealed class OrphanedJobWatcherService : BackgroundService
             {
                 if (_storage is IOrphanedJobReporter reporter && _dashboard is not null && _deadLetterDispatcher is not null)
                 {
-                    var failed = await reporter.RequeueOrphanedJobsAndReportAsync(_options.HeartbeatTimeout, stoppingToken).ConfigureAwait(false);
+                    var skipped = new HashSet<string>(StringComparer.Ordinal);
+                    var failed = await reporter
+                        .RequeueOrphanedJobsAndReportAsync(_options.HeartbeatTimeout, jobType => CanLoad(jobType, skipped), stoppingToken)
+                        .ConfigureAwait(false);
                     foreach (var jobId in failed)
                     {
                         await DeadLetterAsync(_dashboard, _deadLetterDispatcher, jobId).ConfigureAwait(false);
@@ -91,6 +94,30 @@ internal sealed class OrphanedJobWatcherService : BackgroundService
         }
 
         _logger.LogInformation("OrphanedJobWatcherService stopped.");
+    }
+
+    // A node that cannot load the job type must not fail the job: the typed dead-letter handler lives in the service that
+    // owns the type (several services can share one database). The job stays Processing for a node that can load it.
+    private bool CanLoad(string jobType, HashSet<string> skipped)
+    {
+        bool canLoad;
+        try
+        {
+            canLoad = JobTypeResolver.ResolveJobType(jobType) is not null;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            canLoad = false;
+        }
+
+        if (!canLoad && skipped.Add(jobType))
+        {
+            _logger.LogWarning(
+                "A job of type {JobType} ran out of attempts after its node stopped sending heartbeats, but this node cannot load that type. It stays Processing until a node of the service that owns it runs the orphan watcher.",
+                jobType);
+        }
+
+        return canLoad;
     }
 
     // The job is already Failed in storage when it gets here, so nothing in this method may stop the watcher: a handler

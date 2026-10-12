@@ -900,8 +900,13 @@ public sealed class RedisStorageProvider : IStorageProvider, IOrphanedJobReporte
     }
 
     /// <inheritdoc/>
-    public async Task<IReadOnlyList<JobId>> RequeueOrphanedJobsAndReportAsync(
+    public Task<IReadOnlyList<JobId>> RequeueOrphanedJobsAndReportAsync(
         TimeSpan heartbeatTimeout, CancellationToken cancellationToken = default)
+        => RequeueOrphanedJobsAndReportAsync(heartbeatTimeout, _ => true, cancellationToken);
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<JobId>> RequeueOrphanedJobsAndReportAsync(
+        TimeSpan heartbeatTimeout, Func<string, bool> canHandleJobType, CancellationToken cancellationToken = default)
     {
         var failed = new List<JobId>();
         var cutoff = DateTimeOffset.UtcNow - heartbeatTimeout;
@@ -932,6 +937,16 @@ public sealed class RedisStorageProvider : IStorageProvider, IOrphanedJobReporte
             }
 
             var dict = ParseHash(jobHash);
+
+            // Attempts do not change while a job is Processing, so the hash read says whether the script would fail it. A job
+            // with no attempts left is left for a node that can load its type, so its typed dead-letter handler can run.
+            var attempts = int.TryParse(dict.GetValueOrDefault("attempts"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var att) ? att : 0;
+            var maxAttempts = int.TryParse(dict.GetValueOrDefault("maxAttempts"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var ma) ? ma : 10;
+            if (attempts >= maxAttempts && !canHandleJobType(dict.GetValueOrDefault("jobType", string.Empty)))
+            {
+                continue;
+            }
+
             var queue = dict.GetValueOrDefault("queue", "default");
             var priorityStr = dict.GetValueOrDefault("priority", "3");
             var createdAtStr = dict.GetValueOrDefault("createdAt", DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture));

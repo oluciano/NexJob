@@ -344,6 +344,85 @@ public abstract class StorageProviderTestsBase
         (await Reporter(storage).RequeueOrphanedJobsAndReportAsync(TimeSpan.Zero)).Should().BeEmpty("the job already failed, a second node must not report it again");
     }
 
+    // ── Orphan scan leaves the jobs of a type this node cannot load to their own service (issue #474) ──
+
+    private const string ForeignJobType = "Other.Service.B.Job, OtherService.B";
+
+    private static readonly string LoadableJobType = typeof(StorageProviderTestsBase).AssemblyQualifiedName!;
+
+    private static bool IsLoadable(string jobType) => string.Equals(jobType, LoadableJobType, StringComparison.Ordinal);
+
+    [Fact]
+    public async Task RequeueOrphanedJobsAndReportAsync_WithAFilter_DoesNotFailAnExhaustedJobOfATypeTheNodeCannotLoad()
+    {
+        // N1 (Positive): the node that cannot load the type leaves the job for a node that can.
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
+        await storage.EnqueueAsync(MakeJob(maxAttempts: 1, jobType: ForeignJobType));
+        var fetched = (await storage.FetchNextAsync(["default"]))!;
+        await Task.Delay(10);
+
+        var failed = await Reporter(storage).RequeueOrphanedJobsAndReportAsync(TimeSpan.Zero, IsLoadable);
+
+        failed.Should().BeEmpty("a node that cannot load the type must not dead-letter the job");
+        (await dashboard.GetJobByIdAsync(fetched.Id))!.Status.Should().Be(JobStatus.Processing);
+
+        var failedByOwner = await Reporter(storage).RequeueOrphanedJobsAndReportAsync(TimeSpan.Zero, _ => true);
+
+        failedByOwner.Should().ContainSingle().Which.Should().Be(fetched.Id, "a node that can load the type fails it and reports it");
+        (await dashboard.GetJobByIdAsync(fetched.Id))!.Status.Should().Be(JobStatus.Failed);
+    }
+
+    [Fact]
+    public async Task RequeueOrphanedJobsAndReportAsync_WithAFilter_StillRequeuesAForeignJobWithAttemptsLeft()
+    {
+        // N2 (Negative, guard): giving a job back needs no type, so any node does it.
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
+        await storage.EnqueueAsync(MakeJob(maxAttempts: 3, jobType: ForeignJobType));
+        var fetched = (await storage.FetchNextAsync(["default"]))!;
+        await Task.Delay(10);
+
+        var failed = await Reporter(storage).RequeueOrphanedJobsAndReportAsync(TimeSpan.Zero, _ => false);
+
+        failed.Should().BeEmpty();
+        (await dashboard.GetJobByIdAsync(fetched.Id))!.Status.Should().Be(JobStatus.Enqueued);
+    }
+
+    [Fact]
+    public async Task RequeueOrphanedJobsAndReportAsync_WithAFilter_FailsOnlyTheLoadableJobsWhenTheTypesAreMixed()
+    {
+        // N3 (Boundary): one scan, two types, one empty-type-list scan afterwards.
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
+        (await Reporter(storage).RequeueOrphanedJobsAndReportAsync(TimeSpan.Zero, IsLoadable)).Should().BeEmpty("nothing to scan");
+
+        await storage.EnqueueAsync(MakeJob(maxAttempts: 1, jobType: ForeignJobType));
+        await storage.EnqueueAsync(MakeJob(maxAttempts: 1, jobType: LoadableJobType));
+        var first = (await storage.FetchNextAsync(["default"]))!;
+        var second = (await storage.FetchNextAsync(["default"]))!;
+        await Task.Delay(10);
+
+        var failed = await Reporter(storage).RequeueOrphanedJobsAndReportAsync(TimeSpan.Zero, IsLoadable);
+
+        var loadable = new[] { first, second }.Single(j => IsLoadable(j.JobType));
+        var foreign = new[] { first, second }.Single(j => !IsLoadable(j.JobType));
+        failed.Should().ContainSingle().Which.Should().Be(loadable.Id);
+        (await dashboard.GetJobByIdAsync(foreign.Id))!.Status.Should().Be(JobStatus.Processing);
+    }
+
+    [Fact]
+    public async Task RequeueOrphanedJobsAndReportAsync_WithAFilterThatThrows_FailsNothing()
+    {
+        // N3 (Invalid): a broken predicate must not fail a job it could not vouch for.
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
+        await storage.EnqueueAsync(MakeJob(maxAttempts: 1, jobType: LoadableJobType));
+        var fetched = (await storage.FetchNextAsync(["default"]))!;
+        await Task.Delay(10);
+
+        var act = () => Reporter(storage).RequeueOrphanedJobsAndReportAsync(TimeSpan.Zero, _ => throw new InvalidOperationException("boom"));
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+        (await dashboard.GetJobByIdAsync(fetched.Id))!.Status.Should().Be(JobStatus.Processing);
+    }
+
     [Fact]
     public async Task RequeueOrphanedJobsAsync_does_not_touch_fresh_heartbeat()
     {
