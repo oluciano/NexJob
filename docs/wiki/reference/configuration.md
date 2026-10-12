@@ -101,7 +101,7 @@ builder.Services.AddNexJob(options =>
     options.RetentionBatchSize = 1000; // Default: 1000
 
     // ── Throughput ───────────────────────────────────────────────────────────
-    // Aggregate completed acknowledgments to cut DB write roundtrips by 90%+.
+    // Aggregate completed acknowledgments, up to 100 per write (recurring, child, purge/trim and logging jobs still commit alone).
     options.EnableBatchAcknowledgment = true; // Default: false
 
     // ── Logging ──────────────────────────────────────────────────────────────

@@ -248,7 +248,7 @@ NexJob is designed to surface diagnostic information through structured logs, me
 
     **Batch acknowledgment**
 
-    By default, every job completion is a synchronous database write. Enable batch acknowledgment to aggregate completions and cut write roundtrips by over 90%:
+    By default, every job completion is a synchronous database write. With batch acknowledgment, completions that are waiting are written together, up to 100 per write, so under a backlog the writes drop sharply; with little load most batches hold one job and nothing changes. A job still commits synchronously when it is recurring, is a continuation child, uses `[Retention(PurgeOnSuccess)]` or `TrimPayloadOnSuccess`, or wrote log entries:
 
     ```csharp
     options.EnableBatchAcknowledgment = true;
