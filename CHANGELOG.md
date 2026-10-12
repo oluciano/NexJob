@@ -6,6 +6,10 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- `NexJob.RabbitMQ`: `ConfigureConnection` on `RabbitMqTriggerOptions` and `RabbitMqProducerOptions`, a delegate over the `ConnectionFactory` for TLS, heartbeat, client name and any other connection setting, like Kafka's `ConfigureConsumer`. It runs before the five connection settings are applied, so those still win (issue #484).
+
 ### Changed
 
 - The Kafka outbox (`EnqueueKafkaAsync`), the RabbitMQ outbox (`EnqueueRabbitMqAsync`), `NexJob.Trigger.Salesforce` and `NexJob.Trigger.SalesforceStreaming` now default to the `default` queue, like the other triggers. They used to default to `kafka-producer`, `rabbitmq-producer`, `salesforce-events` and `salesforce-streaming`, which no worker polled unless the application listed them in `NexJobOptions.Queues`, so with the default settings the jobs waited unseen. Jobs already waiting in the old queues are drained only while the old name stays in `Queues`. `KafkaProducerOptions.Queue` and `RabbitMqProducerOptions.Queue` are still not read; their default is now `default` (issue #482).

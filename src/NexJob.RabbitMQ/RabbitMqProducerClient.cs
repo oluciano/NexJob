@@ -163,6 +163,7 @@ internal sealed class RabbitMqProducerClient : IRabbitMqProducerClient
 
             if (_connectionFactory is ConnectionFactory concrete)
             {
+                _options.ConfigureConnection?.Invoke(concrete);
                 concrete.HostName = _options.HostName;
                 concrete.Port = _options.Port;
                 concrete.UserName = _options.UserName;

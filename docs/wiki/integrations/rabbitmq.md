@@ -205,21 +205,27 @@ A confirm means the broker took the message. It does not mean a queue received i
 
 ## TLS and other connection settings
 
-The options have no TLS switch, and no way to set a heartbeat or a client name (a `ConfigureConnection` delegate like Kafka's `ConfigureConsumer` is proposed in [#484](https://github.com/oluciano/NexJob/issues/484)). Both the trigger and the producer take the `IConnectionFactory` from DI and overwrite only the five settings above on it, so you can register your own `ConnectionFactory` **after** `AddRabbitMqTrigger` / `AddRabbitMqProducer`:
+Both options classes (`RabbitMqTriggerOptions` and `RabbitMqProducerOptions`) have a `ConfigureConnection` delegate over the `ConnectionFactory`, like Kafka's `ConfigureConsumer`. Use it for TLS, heartbeat, a client name or any other `ConnectionFactory` property:
 
 ```csharp
 builder.Services.AddNexJob()
-    .AddRabbitMqTrigger<ProcessOrderJob>(options => { /* host, queue, credentials */ });
-
-builder.Services.AddSingleton<IConnectionFactory>(new ConnectionFactory
-{
-    Port = 5671,
-    Ssl = new SslOption { Enabled = true, ServerName = "rabbit.prod.example.com" },
-    RequestedHeartbeat = TimeSpan.FromSeconds(30),
-});
+    .AddRabbitMqTrigger<ProcessOrderJob>(options =>
+    {
+        options.HostName = "rabbit.prod.example.com";
+        options.Port = 5671;
+        options.QueueName = "incoming-events";
+        options.ConfigureConnection = factory =>
+        {
+            factory.Ssl = new SslOption { Enabled = true, ServerName = "rabbit.prod.example.com" };
+            factory.RequestedHeartbeat = TimeSpan.FromSeconds(30);
+            factory.ClientProvidedName = "orders-worker";
+        };
+    });
 ```
 
-The factory is shared by the trigger and the producer, and the last registration wins, so register it once and after both. Checked: a registered factory (with a custom client name) was the one used for the connection. TLS itself was not run against a TLS-enabled broker.
+The delegate runs before `HostName`, `Port`, `UserName`, `Password` and `VirtualHost` are applied, so those five settings always win: set them on the options, not in the delegate. It runs on every connection attempt, including each reconnect, so keep it cheap and free of side effects. A delegate that throws fails that attempt (the trigger logs it and keeps retrying; the producer's publish fails and is retried by the job).
+
+If you register your own `IConnectionFactory` in DI instead, the trigger and the producer use it and overwrite the same five settings on it. The factory is then shared by both and the last registration wins. The delegate is applied to that factory too. TLS itself was not run against a TLS-enabled broker; what is checked is that the delegate's settings reach the factory used for the connection, and a real broker accepts a connection configured this way.
 
 ## Configuration from `appsettings.json` and the environment
 

@@ -919,6 +919,61 @@ public sealed class RabbitMqTriggerTests
 
         _hardenedFactorymock.Verify(x => x.CreateConnection(), Times.AtLeast(2));
     }
+
+    // ─── ConfigureConnection (#484) ─────────────────────────────────────────
+
+    /// <summary>N1: the delegate configures the factory the trigger connects with.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task StartAsync_ConfigureConnection_IsAppliedToTheFactory()
+    {
+        var factory = new ConnectionFactory();
+        var options = new RabbitMqTriggerOptions { Port = 1, QueueName = "q", ConfigureConnection = f => f.ClientProvidedName = "my-trigger" };
+        var handler = new RabbitMqTriggerHandler(Options.Create(options), factory, _scheduler, _nexJobOptions, NullLogger<RabbitMqTriggerHandler>.Instance);
+
+        await handler.StartAsync(CancellationToken.None);
+        await handler.StopAsync(CancellationToken.None);
+
+        factory.ClientProvidedName.Should().Be("my-trigger");
+    }
+
+    /// <summary>N2: the five connection settings win over what the delegate sets.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task StartAsync_ConfigureConnection_CannotOverrideTheFiveSettings()
+    {
+        var factory = new ConnectionFactory();
+        var options = new RabbitMqTriggerOptions
+        {
+            HostName = "host-from-options",
+            Port = 1,
+            QueueName = "q",
+            ConfigureConnection = f => f.HostName = "host-from-delegate",
+        };
+        var handler = new RabbitMqTriggerHandler(Options.Create(options), factory, _scheduler, _nexJobOptions, NullLogger<RabbitMqTriggerHandler>.Instance);
+
+        await handler.StartAsync(CancellationToken.None);
+        await handler.StopAsync(CancellationToken.None);
+
+        factory.HostName.Should().Be("host-from-options");
+    }
+
+    /// <summary>N3: no delegate is the default and changes nothing.</summary>
+    [Fact]
+    public void ConfigureConnection_DefaultsToNull() =>
+        new RabbitMqTriggerOptions().ConfigureConnection.Should().BeNull();
+
+    /// <summary>N2: a delegate that throws is logged as a failed connection and does not crash the host.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task StartAsync_ConfigureConnectionThrows_DoesNotThrow()
+    {
+        var options = new RabbitMqTriggerOptions { Port = 1, QueueName = "q", ConfigureConnection = _ => throw new FormatException("bad tls") };
+        var handler = new RabbitMqTriggerHandler(Options.Create(options), new ConnectionFactory(), _scheduler, _nexJobOptions, NullLogger<RabbitMqTriggerHandler>.Instance);
+
+        await handler.Invoking(h => h.StartAsync(CancellationToken.None)).Should().NotThrowAsync();
+        await handler.StopAsync(CancellationToken.None);
+    }
 }
 
 /// <summary>

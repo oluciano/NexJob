@@ -166,6 +166,7 @@ internal sealed class RabbitMqTriggerHandler : IHostedService, IAsyncDisposable
     {
         if (_connectionFactory is ConnectionFactory concreteFactory)
         {
+            _options.ConfigureConnection?.Invoke(concreteFactory);
             concreteFactory.HostName = _options.HostName;
             concreteFactory.Port = _options.Port;
             concreteFactory.UserName = _options.UserName;

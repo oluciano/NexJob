@@ -688,4 +688,63 @@ public sealed class RabbitMqProducerTests
 
         return captured!;
     }
+
+    // =========================================================================
+    // ConfigureConnection (#484)
+    // =========================================================================
+
+    /// <summary>N1: the delegate configures the factory the producer connects with.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task PublishAsync_ConfigureConnection_IsAppliedToTheFactory()
+    {
+        var factory = new ConnectionFactory();
+        var options = new RabbitMqProducerOptions { Port = 1, ConfigureConnection = f => f.ClientProvidedName = "my-producer" };
+        using var client = new RabbitMqProducerClient(factory, options);
+
+        await client.Invoking(c => c.PublishAsync(new RabbitMqPublishPayload())).Should().ThrowAsync<Exception>();
+
+        factory.ClientProvidedName.Should().Be("my-producer");
+    }
+
+    /// <summary>N2: the five connection settings win over what the delegate sets.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task PublishAsync_ConfigureConnection_CannotOverrideTheFiveSettings()
+    {
+        var factory = new ConnectionFactory();
+        var options = new RabbitMqProducerOptions
+        {
+            HostName = "host-from-options",
+            Port = 1,
+            VirtualHost = "vhost-from-options",
+            ConfigureConnection = f =>
+            {
+                f.HostName = "host-from-delegate";
+                f.VirtualHost = "vhost-from-delegate";
+            },
+        };
+        using var client = new RabbitMqProducerClient(factory, options);
+
+        await client.Invoking(c => c.PublishAsync(new RabbitMqPublishPayload())).Should().ThrowAsync<Exception>();
+
+        factory.HostName.Should().Be("host-from-options");
+        factory.VirtualHost.Should().Be("vhost-from-options");
+    }
+
+    /// <summary>N3: no delegate is the default and changes nothing.</summary>
+    [Fact]
+    public void ConfigureConnection_DefaultsToNull() =>
+        new RabbitMqProducerOptions().ConfigureConnection.Should().BeNull();
+
+    /// <summary>N2: a delegate that throws fails the publish with its own exception.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task PublishAsync_ConfigureConnectionThrows_PublishFailsWithThatException()
+    {
+        var options = new RabbitMqProducerOptions { Port = 1, ConfigureConnection = _ => throw new FormatException("bad tls") };
+        using var client = new RabbitMqProducerClient(new ConnectionFactory(), options);
+
+        await client.Invoking(c => c.PublishAsync(new RabbitMqPublishPayload())).Should().ThrowAsync<FormatException>().WithMessage("bad tls");
+    }
 }
