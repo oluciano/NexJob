@@ -139,6 +139,53 @@ public sealed class JobRecordFactoryTests
         act.Should().NotThrow().Subject.SchemaVersion.Should().Be(1);
     }
 
+    /// <summary>N1/N2/N3: Tags null-coalescing on generic Build preserves provided tags or defaults to empty list.</summary>
+    [Fact]
+    public void BuildGeneric_TagsNullOrProvided_HandledCorrectly()
+    {
+        var providedTags = new[] { "tag1", "tag2" };
+        var jobWithTags = JobRecordFactory.Build<TestJob>(_options, tags: providedTags);
+        var jobWithoutTags = JobRecordFactory.Build<TestJob>(_options, tags: null);
+
+        jobWithTags.Tags.Should().Equal("tag1", "tag2");
+        jobWithoutTags.Tags.Should().NotBeNull().And.BeEmpty();
+    }
+
+    /// <summary>N1/N2/N3: Tags null-coalescing on string-based Build preserves provided tags or defaults to empty list.</summary>
+    [Fact]
+    public void BuildDynamic_TagsNullOrProvided_HandledCorrectly()
+    {
+        var providedTags = new[] { "urgent", "batch" };
+        var jobWithTags = JobRecordFactory.Build("CustomJob", "CustomInput", "{}", _options, tags: providedTags);
+        var jobWithoutTags = JobRecordFactory.Build("CustomJob", "CustomInput", "{}", _options, tags: null);
+
+        jobWithTags.Tags.Should().Equal("urgent", "batch");
+        jobWithoutTags.Tags.Should().NotBeNull().And.BeEmpty();
+    }
+
+    /// <summary>N1/N2: RetryAttribute on job class is resolved when explicitMaxAttempts is null.</summary>
+    [Fact]
+    public void Build_WithRetryAttribute_ResolvesAttributeAttempts()
+    {
+        var job = JobRecordFactory.Build<JobWithRetryAttribute>(_options);
+        var dynamicJob = JobRecordFactory.Build(
+            typeof(JobWithRetryAttribute).AssemblyQualifiedName!,
+            typeof(NoInput).AssemblyQualifiedName!,
+            "{}",
+            _options);
+
+        job.MaxAttempts.Should().Be(7);
+        dynamicJob.MaxAttempts.Should().Be(7);
+    }
+
+    /// <summary>Support job with RetryAttribute.</summary>
+    [Retry(7)]
+    public sealed class JobWithRetryAttribute : IJob
+    {
+        /// <inheritdoc/>
+        public Task ExecuteAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    }
+
     /// <summary>Support input.</summary>
     public sealed class TestInput
     {

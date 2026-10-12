@@ -6,6 +6,10 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Tests
+
+- Hardened unit tests covering core execution mutation survivors across `JobRecordFactory`, `DeadLetterDispatcherTests`, `JobDispatcherService`, and `JobExecutor` (issue #515).
+
 ## [6.3.0] - 2026-10-12
 
 ### Added
