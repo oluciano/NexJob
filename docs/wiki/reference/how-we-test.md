@@ -62,9 +62,9 @@ They need Docker. A validation test is a normal test: when the page and the run 
 
 | Round | Version | What ran | Result |
 |---|---|---|---|
-| 2026-10-12 | 6.2.1 + #486 | Redis primary and replica (both endpoints, replica only, promoted replica); Kafka three brokers with one lost; Kafka `SASL_SSL` with `PLAIN`; Kafka eviction by `max.poll.interval.ms` | All passed |
+| 2026-10-12 | 6.2.1 + #486 | Redis primary and replica (both endpoints, replica only, promoted replica); PostgreSQL streaming replica behind `UseDashboardReadReplica` (replica rejecting writes, replica lost); Kafka three brokers with one lost; Kafka `SASL_SSL` with `PLAIN`; Kafka eviction by `max.poll.interval.ms` | All passed |
 
-What is not in a round yet: Redis Sentinel, a real Salesforce org, and the real Azure Service Bus, SQS and RabbitMQ services (the emulators and containers used are named on each integration page).
+What is not in a round yet: Redis Sentinel, a SQL Server replica (Always On needs more than a container), a real Salesforce org, and the real Azure Service Bus, SQS and RabbitMQ services (the emulators and containers used are named on each integration page).
 
 ## See also
 
