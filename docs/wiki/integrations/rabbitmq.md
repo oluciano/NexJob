@@ -151,17 +151,14 @@ builder.Services.AddNexJob()
 |---|---|---|
 | `HostName`, `Port`, `UserName`, `Password`, `VirtualHost` | `localhost`, `5672`, `guest`, `guest`, `/` | The connection. For TLS, see [below](#tls-and-other-connection-settings). |
 | `ConfirmTimeout` | 5 seconds | How long to wait for the broker's confirm. |
-| `Mandatory` | `false` | See the warning below. |
-| `DefaultExchange`, `DefaultRoutingKey` | `""`, `null` | **No effect.** See the warning below. |
+| `Mandatory` | `false` | Fail the publish when the broker cannot route the message. See the note below. |
+| `DefaultExchange`, `DefaultRoutingKey` | `""`, `null` | The exchange and routing key used when the call passes none. See the note below. |
 | `Queue`, `DefaultPriority` | `"default"`, `Normal` | **No effect.** They are declared but nothing reads them; the queue and priority come from the arguments of `EnqueueRabbitMqAsync`. |
 
-!!! warning
-    Three of these options do not work as their names say ([#483](https://github.com/oluciano/NexJob/issues/483)). Checked against a real broker:
-
-    - **`Mandatory` does not fail an unroutable message.** A mandatory publish to the default exchange with a routing key that matches no queue succeeded, with no warning, and the message was lost. The broker returns such a message and also confirms it, and nothing handles the return.
-    - **`DefaultExchange` and `DefaultRoutingKey` are never used.** The `EnqueueRabbitMq*` calls always pass an exchange (an empty one when you leave it out), so the default never applies. With `DefaultExchange = "ex1"`, a publish by routing key alone went to the default exchange, not to `ex1`.
-
-    Always pass the exchange and the routing key explicitly, and make sure the target queue exists and is bound.
+!!! note "What `Mandatory`, `DefaultExchange` and `DefaultRoutingKey` do"
+    - **`Mandatory`** (or `mandatory: true` on the call) makes the publish fail when the broker cannot route the message to any queue: the job fails with an `InvalidOperationException` that carries the broker's reply (for example `312 NO_ROUTE`) and goes through the retry and dead-letter flow. Without it, the broker drops an unroutable message silently. A publish to an exchange that does not exist fails either way.
+    - **`DefaultExchange`** is used when the call names no exchange: `EnqueueRabbitMqAsync(routingKey, value)`, or `exchange: null` on the longer overload. It is empty by default, which is the broker's default exchange. An exchange you pass, even `""`, wins.
+    - **`DefaultRoutingKey`** is used when the call passes `routingKey: null`. A routing key you pass, even `""`, wins.
 
 ### Publish messages
 
@@ -243,7 +240,7 @@ Or bind a section: `.AddRabbitMqTrigger(options => builder.Configuration.GetSect
 
 ## What was checked
 
-Against a single RabbitMQ 3.13 broker: the outbox published only when its queue was polled; a mandatory unroutable publish succeeded and lost the message; `DefaultExchange` was ignored; a publish to a missing exchange failed; the trigger on a missing queue kept reconnecting; a message without a job type was discarded when the queue had no dead-letter exchange. A cluster, a TLS-enabled broker, a dead-letter exchange, `ExhaustedJobsRoutingKey` and prefetch above 1 were not run.
+Against a single RabbitMQ 3.13 broker: the outbox published only when its queue was polled; a mandatory unroutable publish failed with `312 NO_ROUTE`, and a routable one and a non-mandatory unroutable one behaved as before; `DefaultExchange` and `DefaultRoutingKey` applied; a publish to a missing exchange failed; the trigger on a missing queue kept reconnecting; a message without a job type was discarded when the queue had no dead-letter exchange. A cluster, a TLS-enabled broker, a dead-letter exchange, `ExhaustedJobsRoutingKey` and prefetch above 1 were not run.
 
 ## Try it
 
