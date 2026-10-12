@@ -1,3 +1,4 @@
+using System.Text.Json;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -18,6 +19,54 @@ public sealed class SalesforceTriggerIntegrationTests : IAsyncLifetime
     public async Task DisposeAsync()
     {
         await _server.DisposeAsync();
+    }
+
+    /// <summary>N1 (#481): the job the trigger enqueues actually runs, and receives the decoded event as JSON text.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task SalesforceTrigger_EndToEnd_JobRunsAndReceivesThePayloadAsJsonText()
+    {
+        var replayDirectory = Path.Combine(Path.GetTempPath(), $"nexjob-replay-{Guid.NewGuid():N}");
+        var received = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var host = Host.CreateDefaultBuilder()
+            .ConfigureServices(services =>
+            {
+                services.AddNexJob(o =>
+                {
+                    o.Queues = ["salesforce-run-queue"];
+                    o.PollingInterval = TimeSpan.FromMilliseconds(50);
+                    o.MaxAttempts = 1;
+                });
+                services.AddSingleton(received);
+                services.AddSalesforceTrigger<RecordingJob>(options =>
+                {
+                    options.Topic = "/data/OrderChangeEvent";
+                    options.ReplayStoreDirectory = replayDirectory;
+                    options.TargetQueue = "salesforce-run-queue";
+                    options.ClientId = "test-client-id";
+                    options.ClientSecret = "test-client-secret";
+                    options.AuthEndpoint = $"{_server.OAuthAddress}/services/oauth2/token";
+                    options.PubSubEndpoint = _server.GrpcAddress;
+                });
+            })
+            .Build();
+
+        await host.StartAsync();
+        var text = await received.Task.WaitAsync(TimeSpan.FromSeconds(20));
+        await host.StopAsync();
+
+        using var document = JsonDocument.Parse(text);
+        document.RootElement.GetProperty("OrderId").GetString().Should().Be("ORD-INTEG-999");
+        Directory.Delete(replayDirectory, recursive: true);
+    }
+
+    private sealed class RecordingJob(TaskCompletionSource<string> received) : IJob<string>
+    {
+        public Task ExecuteAsync(string input, CancellationToken cancellationToken)
+        {
+            received.TrySetResult(input);
+            return Task.CompletedTask;
+        }
     }
 
     [Fact]
@@ -70,8 +119,11 @@ public sealed class SalesforceTriggerIntegrationTests : IAsyncLifetime
         job!.Queue.Should().Be("salesforce-integration-queue");
         job.IdempotencyKey.Should().Be("evt-integ-001");
         job.TraceParent.Should().Be("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01");
-        job.InputJson.Should().Contain("\"OrderId\":\"ORD-INTEG-999\"");
-        job.InputJson.Should().Contain("\"Amount\":199.95");
+
+        // Behavior changed in v6.3: the payload is stored as a JSON string, like the other triggers (#481).
+        var payload = JsonSerializer.Deserialize<string>(job.InputJson);
+        payload.Should().Contain("\"OrderId\":\"ORD-INTEG-999\"");
+        payload.Should().Contain("\"Amount\":199.95");
 
         // Verify Replay ID store persisted the offset
         var persistedReplayId = await replayStore.GetLastReplayIdAsync("/data/OrderChangeEvent");

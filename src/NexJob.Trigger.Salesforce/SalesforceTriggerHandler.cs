@@ -197,9 +197,23 @@ public sealed class SalesforceTriggerHandler : BackgroundService
         var schemaId = consumerEvent.Event?.SchemaId ?? string.Empty;
         var payloadBytes = consumerEvent.Event?.Payload?.ToByteArray() ?? [];
 
-        var jsonPayload = await _schemaService.DecodePayloadToJsonAsync(schemaId, payloadBytes, ct).ConfigureAwait(false);
-
         var jobType = _options.JobType ?? typeof(SalesforceEventJob).AssemblyQualifiedName!;
+
+        string decoded;
+        try
+        {
+            decoded = string.IsNullOrWhiteSpace(schemaId)
+                ? throw new SalesforcePayloadDecodeException("The event carries no schema id.")
+                : await _schemaService.DecodePayloadToJsonAsync(schemaId, payloadBytes, ct).ConfigureAwait(false);
+        }
+        catch (SalesforcePayloadDecodeException ex)
+        {
+            await SkipUndecodableEventAsync(ex, jobType, idempotencyKey, replayBytes, payloadBytes, ct).ConfigureAwait(false);
+            return;
+        }
+
+        // Stored as a JSON string, like the other triggers: the job (an IJob<string>) receives the event as JSON text.
+        var jsonPayload = JsonSerializer.Serialize(decoded);
 
         var job = JobRecordFactory.Build(
             jobType: jobType,
@@ -261,5 +275,53 @@ public sealed class SalesforceTriggerHandler : BackgroundService
         // a stop requested now must not skip the commit (the event would be delivered again after the restart).
         await _replayIdStore.SaveReplayIdAsync(_options.Topic, replayBytes, CancellationToken.None).ConfigureAwait(false);
         _logger.LogInformation("Salesforce event {IdempotencyKey} enqueued on queue {Queue} and Replay ID committed.", idempotencyKey, _options.TargetQueue);
+    }
+
+    // A payload that can never decode would fail again on every redelivery and block the events behind it, so it is
+    // logged, kept in the dead-letter queue when one is configured, and its replay id is committed to move on.
+    private async Task SkipUndecodableEventAsync(
+        SalesforcePayloadDecodeException ex,
+        string jobType,
+        string idempotencyKey,
+        byte[] replayBytes,
+        byte[] payloadBytes,
+        CancellationToken ct)
+    {
+        _logger.LogError(
+            ex,
+            "Salesforce event {IdempotencyKey} on topic {Topic} cannot be decoded and is skipped.",
+            idempotencyKey,
+            _options.Topic);
+
+        if (!string.IsNullOrWhiteSpace(_options.DeadLetterQueue))
+        {
+            try
+            {
+                var dlqJob = JobRecordFactory.Build(
+                    jobType: jobType,
+                    inputType: typeof(string).AssemblyQualifiedName!,
+                    inputJson: JsonSerializer.Serialize(Convert.ToBase64String(payloadBytes)),
+                    options: _nexJobOptions,
+                    queue: _options.DeadLetterQueue,
+                    priority: JobPriority.Low,
+                    idempotencyKey: $"dlq:{idempotencyKey}",
+                    status: JobStatus.Enqueued,
+                    tags: ["trigger:salesforce", "dead-letter", "decode-failed", $"topic:{_options.Topic}"]);
+
+                await _scheduler.EnqueueAsync(dlqJob, DuplicatePolicy.AllowAfterFailed, ct).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception dlqEx)
+            {
+                // The raw payload could not be kept, so the replay id stays uncommitted and a restart delivers it again.
+                _logger.LogError(dlqEx, "Failed to route undecodable Salesforce event {IdempotencyKey} to DeadLetterQueue {DLQ}.", idempotencyKey, _options.DeadLetterQueue);
+                return;
+            }
+        }
+
+        await _replayIdStore.SaveReplayIdAsync(_options.Topic, replayBytes, CancellationToken.None).ConfigureAwait(false);
     }
 }

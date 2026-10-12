@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using System.Text;
+using System.Text.Json;
 using Eventbus.V1;
 using FluentAssertions;
 using Google.Protobuf;
@@ -92,7 +93,9 @@ public sealed class SalesforceTriggerHandlerTests
         capturedJob!.IdempotencyKey.Should().Be("evt-uuid-100");
         capturedJob.TraceParent.Should().Be(traceParent);
         capturedJob.Queue.Should().Be("salesforce-events");
-        capturedJob.InputJson.Should().Be("{\"AccountId\":\"001TEST\"}");
+
+        // Behavior changed in v6.3: the payload is stored as a JSON string, like the other triggers, so an IJob<string> can read it (#481).
+        capturedJob.InputJson.Should().Be(JsonSerializer.Serialize("{\"AccountId\":\"001TEST\"}"));
         capturedJob.Tags.Should().Contain("trigger:salesforce");
 
         // Guarantee 5: ReplayId committed strictly after enqueue
@@ -479,6 +482,111 @@ public sealed class SalesforceTriggerHandlerTests
 
         _replayStoreMock.Verify(s => s.SaveReplayIdAsync(_options.Topic, It.IsAny<byte[]>(), It.IsAny<CancellationToken>()), Times.Once);
     }
+
+    // ── #481: an event that can never be decoded must not block the stream ──────
+
+    /// <summary>N2: an undecodable event is skipped with its replay id committed, and the next event is processed.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task UndecodableEvent_IsSkipped_AndTheNextEventIsProcessed()
+    {
+        _replayStoreMock.Setup(s => s.GetLastReplayIdAsync(_options.Topic, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((byte[]?)null);
+        var bad = NewEvent([0x01], "evt-bad", "schema-bad", [0x0A]);
+        var good = NewEvent([0x02], "evt-good", "schema-1", [0x0B]);
+        _pubSubClientMock.Setup(c => c.SubscribeAsync(_options.Topic, null, SalesforceReplayPreset.Latest, _options.BatchSize, It.IsAny<CancellationToken>()))
+            .Returns(() => ToAsyncEnumerable([bad, good]));
+        _schemaServiceMock.Setup(s => s.DecodePayloadToJsonAsync("schema-bad", It.IsAny<byte[]>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new SalesforcePayloadDecodeException("corrupted"));
+        _schemaServiceMock.Setup(s => s.DecodePayloadToJsonAsync("schema-1", It.IsAny<byte[]>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync("{\"a\":1}");
+        var enqueued = new List<JobRecord>();
+        _schedulerMock.Setup(s => s.EnqueueAsync(It.IsAny<JobRecord>(), DuplicatePolicy.AllowAfterFailed, It.IsAny<CancellationToken>()))
+            .Callback<JobRecord, DuplicatePolicy, CancellationToken>((j, _, _) => enqueued.Add(j))
+            .ReturnsAsync(JobId.New());
+        var goodCommitted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _replayStoreMock.Setup(s => s.SaveReplayIdAsync(_options.Topic, It.Is<byte[]>(b => b.SequenceEqual(new byte[] { 0x02 })), It.IsAny<CancellationToken>()))
+            .Callback(() => goodCommitted.TrySetResult(true))
+            .Returns(default(ValueTask));
+        var handler = CreateHandler();
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await handler.StartAsync(cts.Token);
+        await goodCommitted.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        await handler.StopAsync(CancellationToken.None);
+
+        enqueued.Select(j => j.IdempotencyKey).Should().Equal("evt-good");
+        _replayStoreMock.Verify(s => s.SaveReplayIdAsync(_options.Topic, It.Is<byte[]>(b => b.SequenceEqual(new byte[] { 0x01 })), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    /// <summary>N2: with a dead-letter queue, the raw payload of an undecodable event is kept there as Base64.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task UndecodableEvent_WithDeadLetterQueue_KeepsTheRawPayload()
+    {
+        _replayStoreMock.Setup(s => s.GetLastReplayIdAsync(_options.Topic, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((byte[]?)null);
+        _options.DeadLetterQueue = "salesforce-dlq";
+        var bad = NewEvent([0x01], "evt-bad", "schema-bad", [0x0A, 0x0B]);
+        _pubSubClientMock.Setup(c => c.SubscribeAsync(_options.Topic, null, SalesforceReplayPreset.Latest, _options.BatchSize, It.IsAny<CancellationToken>()))
+            .Returns(() => ToAsyncEnumerable([bad]));
+        _schemaServiceMock.Setup(s => s.DecodePayloadToJsonAsync("schema-bad", It.IsAny<byte[]>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new SalesforcePayloadDecodeException("corrupted"));
+        JobRecord? dlqJob = null;
+        _schedulerMock.Setup(s => s.EnqueueAsync(It.Is<JobRecord>(j => j.Queue == "salesforce-dlq"), DuplicatePolicy.AllowAfterFailed, It.IsAny<CancellationToken>()))
+            .Callback<JobRecord, DuplicatePolicy, CancellationToken>((j, _, _) => dlqJob = j)
+            .ReturnsAsync(JobId.New());
+        var committed = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _replayStoreMock.Setup(s => s.SaveReplayIdAsync(_options.Topic, It.IsAny<byte[]>(), It.IsAny<CancellationToken>()))
+            .Callback(() => committed.TrySetResult(true))
+            .Returns(default(ValueTask));
+        var handler = CreateHandler();
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await handler.StartAsync(cts.Token);
+        await committed.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        await handler.StopAsync(CancellationToken.None);
+
+        dlqJob.Should().NotBeNull();
+        dlqJob!.IdempotencyKey.Should().Be("dlq:evt-bad");
+        dlqJob.Tags.Should().Contain(["dead-letter", "decode-failed"]);
+        JsonSerializer.Deserialize<string>(dlqJob.InputJson).Should().Be(Convert.ToBase64String([0x0A, 0x0B]));
+    }
+
+    /// <summary>N3: a failure that is not a payload problem (a schema that could not be fetched) is never skipped.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task TransientDecodeFailure_IsNotSkipped_AndTheReplayIdIsNotCommitted()
+    {
+        _replayStoreMock.Setup(s => s.GetLastReplayIdAsync(_options.Topic, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((byte[]?)null);
+        var evt = NewEvent([0x01], "evt-1", "schema-1", [0x0A]);
+        _pubSubClientMock.Setup(c => c.SubscribeAsync(_options.Topic, null, SalesforceReplayPreset.Latest, _options.BatchSize, It.IsAny<CancellationToken>()))
+            .Returns(() => ToAsyncEnumerable([evt]));
+        _schemaServiceMock.Setup(s => s.DecodePayloadToJsonAsync("schema-1", It.IsAny<byte[]>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new HttpRequestException("schema registry unreachable"));
+        var handler = CreateHandler();
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await handler.StartAsync(cts.Token);
+        await WaitForCallAsync(_pubSubClientMock, nameof(ISalesforcePubSubClient.SubscribeAsync), atLeast: 2);
+        await handler.StopAsync(CancellationToken.None);
+
+        _replayStoreMock.Verify(s => s.SaveReplayIdAsync(It.IsAny<string>(), It.IsAny<byte[]>(), It.IsAny<CancellationToken>()), Times.Never);
+        _schedulerMock.Verify(s => s.EnqueueAsync(It.IsAny<JobRecord>(), It.IsAny<DuplicatePolicy>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    private static ConsumerEvent NewEvent(byte[] replayId, string id, string schemaId, byte[] payload) =>
+        new()
+        {
+            ReplayId = ByteString.CopyFrom(replayId),
+            Event = new ProducerEvent
+            {
+                Id = id,
+                SchemaId = schemaId,
+                Payload = ByteString.CopyFrom(payload),
+            },
+        };
 
     private static Task WaitForCallAsync<T>(Mock<T> mock, string method, int atLeast = 1)
         where T : class =>

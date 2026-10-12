@@ -111,7 +111,7 @@ The trigger registers with the [listener registry](triggers.md#live-listener-reg
 
 ## Not verified
 
-This page was written from the source. No Salesforce org was used and the trigger was not run: the OAuth flows, the handshake, the long-polling loop, the replay behavior and the retention window were not exercised. The input type was not tried either; it is a typed record, so it does not have the string-input problem of [#481](https://github.com/oluciano/NexJob/issues/481) in the Pub/Sub API trigger.
+This page was written from the source. No Salesforce org was used and the trigger was not run: the OAuth flows, the handshake, the long-polling loop, the replay behavior and the retention window were not exercised.
 
 ## Try it
 
