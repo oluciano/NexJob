@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using FluentAssertions;
+using NexJob.Internal;
 using NexJob.Storage;
 using Xunit;
 
@@ -1498,6 +1499,32 @@ public abstract class StorageProviderTestsBase
             Logs = [],
         });
         return record;
+    }
+
+    /// <summary>
+    /// #470: a job built the way the scheduler builds it for a <c>[SchemaVersion(2)]</c> class is stored and fetched with
+    /// version 2, so the invoker does not migrate a current payload as an old one.
+    /// </summary>
+    /// <returns>A task that completes when the assertion has run.</returns>
+    [Fact]
+    public async Task EnqueuedJobOfAVersionedClass_IsFetchedWithItsSchemaVersion()
+    {
+        var (job, _, _, _) = await CreateStorageAsync();
+        var record = JobRecordFactory.Build<VersionedContractJob, string>("payload", new NexJobOptions());
+
+        await job.EnqueueAsync(record);
+        var fetched = await job.FetchNextAsync([record.Queue]);
+
+        fetched.Should().NotBeNull();
+        fetched!.SchemaVersion.Should().Be(2);
+    }
+
+    /// <summary>Support job at schema version 2.</summary>
+    [SchemaVersion(2)]
+    public sealed class VersionedContractJob : IJob<string>
+    {
+        /// <inheritdoc/>
+        public Task ExecuteAsync(string input, CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
     private static JobRecord MakeJob(

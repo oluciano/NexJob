@@ -92,6 +92,53 @@ public sealed class JobRecordFactoryTests
         job.Priority.Should().Be(JobPriority.Critical);
     }
 
+    /// <summary>N1 (#470): the typed Build stores the version of the job class, not the default 1.</summary>
+    [Fact]
+    public void BuildGeneric_WithInput_StoresTheSchemaVersionOfTheJobClass()
+    {
+        var job = JobRecordFactory.Build<VersionedJob, TestInput>(new TestInput(), _options);
+
+        job.SchemaVersion.Should().Be(2);
+    }
+
+    /// <summary>N1 (#470): the no-input Build stores the version of the job class.</summary>
+    [Fact]
+    public void BuildGeneric_NoInput_StoresTheSchemaVersionOfTheJobClass()
+    {
+        JobRecordFactory.Build<VersionedNoInputJob>(_options).SchemaVersion.Should().Be(3);
+    }
+
+    /// <summary>N1 (#470): the string-typed Build (triggers) stores the version of the job class.</summary>
+    [Fact]
+    public void BuildFromTypeNames_StoresTheSchemaVersionOfTheJobClass()
+    {
+        var job = JobRecordFactory.Build(
+            typeof(VersionedJob).AssemblyQualifiedName!,
+            typeof(TestInput).AssemblyQualifiedName!,
+            "{}",
+            _options);
+
+        job.SchemaVersion.Should().Be(2);
+    }
+
+    /// <summary>N2 (#470, guard): a job class without the attribute keeps storing version 1.</summary>
+    [Fact]
+    public void Build_JobWithoutSchemaVersionAttribute_StoresVersionOne()
+    {
+        JobRecordFactory.Build<TestJobWithInput, TestInput>(new TestInput(), _options).SchemaVersion.Should().Be(1);
+    }
+
+    /// <summary>N3 (#470, guard): a job type name that cannot be loaded stores 1 and does not throw.</summary>
+    [Theory]
+    [InlineData("Not.A.Real.Type, NoSuchAssembly")]
+    [InlineData("")]
+    public void BuildFromTypeNames_UnresolvableJobType_StoresVersionOne(string jobType)
+    {
+        var act = () => JobRecordFactory.Build(jobType, "System.String", "\"x\"", _options);
+
+        act.Should().NotThrow().Subject.SchemaVersion.Should().Be(1);
+    }
+
     /// <summary>Support input.</summary>
     public sealed class TestInput
     {
@@ -101,6 +148,28 @@ public sealed class JobRecordFactoryTests
 
     /// <summary>Support job.</summary>
     public sealed class TestJob : IJob
+    {
+        /// <inheritdoc/>
+        public Task ExecuteAsync(CancellationToken cancellationToken)
+        {
+            return Task.CompletedTask;
+        }
+    }
+
+    /// <summary>Support job at schema version 2.</summary>
+    [SchemaVersion(2)]
+    public sealed class VersionedJob : IJob<TestInput>
+    {
+        /// <inheritdoc/>
+        public Task ExecuteAsync(TestInput input, CancellationToken cancellationToken)
+        {
+            return Task.CompletedTask;
+        }
+    }
+
+    /// <summary>Support job without input at schema version 3.</summary>
+    [SchemaVersion(3)]
+    public sealed class VersionedNoInputJob : IJob
     {
         /// <inheritdoc/>
         public Task ExecuteAsync(CancellationToken cancellationToken)

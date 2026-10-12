@@ -43,4 +43,29 @@ public sealed class DashboardJobFactoryTests
         job.MaxAttempts.Should().Be(4);
         job.Status.Should().Be(JobStatus.Enqueued);
     }
+
+    /// <summary>N1 (#470): the ad-hoc trigger stores the schema version of the job class.</summary>
+    [Fact]
+    public void CreateJobRecord_StoresTheSchemaVersionOfTheJobClass()
+    {
+        var job = DashboardJobFactory.CreateJobRecord(
+            typeof(VersionedDashboardJob), "raw", typeof(NoInput).AssemblyQualifiedName!, "{}", null, new NexJobOptions());
+
+        job.SchemaVersion.Should().Be(2);
+    }
+
+    /// <summary>N2/N3 (#470, guard): a job class without the attribute stores version 1.</summary>
+    [Fact]
+    public void CreateJobRecord_JobWithoutSchemaVersionAttribute_StoresVersionOne()
+    {
+        Build(null, new NexJobOptions()).SchemaVersion.Should().Be(1);
+    }
+
+    /// <summary>Support job at schema version 2.</summary>
+    [SchemaVersion(2)]
+    public sealed class VersionedDashboardJob : IJob
+    {
+        /// <inheritdoc/>
+        public Task ExecuteAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    }
 }
