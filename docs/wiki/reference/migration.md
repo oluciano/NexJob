@@ -343,7 +343,7 @@ The `DateTimeOffset` serializer is no longer registered globally. NexJob now app
 builder.Services.AddNexJobMongoDB(connectionString, keepLegacyGlobalDateTimeOffsetSerializer: true);
 ```
 
-Remove this flag in the next release cycle — it will be removed in a future version.
+The flag is temporary: it still exists in v6.3.0 and will be removed in a later release, so fix the code that depends on it rather than keep the flag.
 
 
 
