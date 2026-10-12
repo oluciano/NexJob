@@ -14,7 +14,7 @@ public sealed class SalesforceTriggerOptions : IValidatableObject
     public string Topic { get; set; } = string.Empty;
 
     /// <summary>
-    /// Gets or sets the target NexJob queue name. Defaults to "default", the queue a worker polls out of the box. A queue you name is polled only if it is in <c>NexJobOptions.Queues</c>.
+    /// Gets or sets the target NexJob queue name. Defaults to "default", which is the default queue of the application (<c>{prefix}.default</c>). A queue you name is polled only if it is in <c>NexJobOptions.Queues</c>.
     /// </summary>
     public string TargetQueue { get; set; } = "default";
 

@@ -34,8 +34,8 @@ public sealed class KafkaProducerOptions
 
     /// <summary>
     /// Gets or sets the NexJob queue name for Kafka publishing jobs.
-    /// Not read yet: the queue comes from the <c>queue</c> argument of <c>EnqueueKafkaAsync</c>, which defaults to "default".
-    /// Defaults to "default".
+    /// Not read yet: the queue comes from the <c>queue</c> argument of <c>EnqueueKafkaAsync</c>, which defaults to "default", the default queue of the application (<c>{prefix}.default</c>).
+    /// Defaults to "default", the default queue of the application (<c>{prefix}.default</c>).
     /// </summary>
     public string Queue { get; set; } = "default";
 

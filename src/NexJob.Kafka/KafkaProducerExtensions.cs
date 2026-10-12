@@ -153,7 +153,7 @@ public static class KafkaProducerExtensions
     /// <param name="value">The object payload to serialize and publish.</param>
     /// <param name="headers">Optional custom headers to attach to the Kafka message.</param>
     /// <param name="jsonOptions">Optional JSON serializer options.</param>
-    /// <param name="queue">The NexJob queue name. Defaults to "default", the queue a worker polls out of the box.</param>
+    /// <param name="queue">The NexJob queue name. Defaults to "default", which is the default queue of the application (<c>{prefix}.default</c>).</param>
     /// <param name="priority">The job priority. Defaults to <see cref="JobPriority.Normal"/>.</param>
     /// <param name="idempotencyKey">Optional deduplication key.</param>
     /// <param name="duplicatePolicy">Behavior when a duplicate key exists. Defaults to <see cref="DuplicatePolicy.AllowAfterFailed"/>.</param>
@@ -234,7 +234,7 @@ public static class KafkaProducerExtensions
     /// <param name="key">The optional message partition key.</param>
     /// <param name="value">The raw string payload to publish.</param>
     /// <param name="headers">Optional custom headers to attach to the Kafka message.</param>
-    /// <param name="queue">The NexJob queue name. Defaults to "default", the queue a worker polls out of the box.</param>
+    /// <param name="queue">The NexJob queue name. Defaults to "default", which is the default queue of the application (<c>{prefix}.default</c>).</param>
     /// <param name="priority">The job priority. Defaults to <see cref="JobPriority.Normal"/>.</param>
     /// <param name="idempotencyKey">Optional deduplication key.</param>
     /// <param name="duplicatePolicy">Behavior when a duplicate key exists. Defaults to <see cref="DuplicatePolicy.AllowAfterFailed"/>.</param>
@@ -276,7 +276,7 @@ public static class KafkaProducerExtensions
     /// <param name="key">The optional message partition key.</param>
     /// <param name="value">The raw binary payload to publish.</param>
     /// <param name="headers">Optional custom headers to attach to the Kafka message.</param>
-    /// <param name="queue">The NexJob queue name. Defaults to "default", the queue a worker polls out of the box.</param>
+    /// <param name="queue">The NexJob queue name. Defaults to "default", which is the default queue of the application (<c>{prefix}.default</c>).</param>
     /// <param name="priority">The job priority. Defaults to <see cref="JobPriority.Normal"/>.</param>
     /// <param name="idempotencyKey">Optional deduplication key.</param>
     /// <param name="duplicatePolicy">Behavior when a duplicate key exists. Defaults to <see cref="DuplicatePolicy.AllowAfterFailed"/>.</param>

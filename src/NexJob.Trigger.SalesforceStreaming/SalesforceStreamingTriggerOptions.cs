@@ -45,7 +45,7 @@ public sealed class SalesforceStreamingTriggerOptions : IValidatableObject
 
     /// <summary>
     /// Gets or sets the target NexJob queue name where jobs will be enqueued.
-    /// Defaults to "default", the queue a worker polls out of the box. A queue you name is polled only if it is in <c>NexJobOptions.Queues</c>.
+    /// Defaults to "default", which is the default queue of the application (<c>{prefix}.default</c>). A queue you name is polled only if it is in <c>NexJobOptions.Queues</c>.
     /// </summary>
     [Required]
     public string TargetQueue { get; set; } = "default";
