@@ -16,6 +16,14 @@ No schema migration and no stored format change. These changes can need an actio
 - **A filter that is not a singleton is built once per job**, and `JobExecutingContext.Succeeded` and `Exception` can be read inside a filter.
 - **Jobs now store the `[SchemaVersion]` of their class.** Before 6.3.0 every job was stored as version 1, so a current payload was migrated as if it were old. Jobs already stored keep version 1 and nothing rewrites them: if you raised `[SchemaVersion]` while jobs were queued, let them drain. See [Job payloads](../concepts/job-payloads.md#jobs-enqueued-by-earlier-releases).
 - **A job that died on its last attempt is failed by a node that can load its type.** In a database shared by several services, a node of another service used to fail it and skip its typed `IDeadLetterHandler<TJob>`. Now such a job stays `Processing` until a node of its own service runs the orphan watcher, and the other node logs a `Warning`. A custom `IOrphanedJobReporter` keeps working; override the new overload that takes a job-type predicate to get the new behaviour. See [Multi-service](../guides/multi-service.md).
+- **A job that lacks the interface its stored input needs fails once, with a clear message.** A trigger job that implements `IJob` or `IJob<Other>` instead of `IJob<string>` used to fail with `Value cannot be null (Parameter 'method')` and spend every attempt. It now fails on the first attempt, the message names the job type and the missing interface, and the dead-letter handling runs at once. Nothing changes for a job that already implements the right interface.
+
+**Rolling upgrade.** No stored data changes, so 6.2.1 and 6.3.0 nodes can run together, with these differences while they do: a 6.2.1 node stores new jobs with `[SchemaVersion]` 1 and, in a shared database, still fails an exhausted job of a type it cannot load; a 6.2.1 outbox or Salesforce trigger still writes to its old queue, which a 6.3.0 worker drains only if the old name is in `Queues`.
+
+**Rollout and rollback.**
+
+- **Roll out:** upgrade one node first. Watch the startup log for the new `Warning` about an exhausted job of a type the node cannot load, and check that every queue your outboxes and triggers used before is still listed in `Queues` until it is empty.
+- **Roll back:** go back to 6.2.1; there is no schema migration to undo. Jobs stored by 6.3.0 with their `[SchemaVersion]` and jobs in the `default` queue are read and polled by 6.2.1.
 
 ## v6.2.0 → v6.2.1
 

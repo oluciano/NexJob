@@ -163,6 +163,18 @@ builder.Services.AddNexJob()
 
 Or bind a whole section of your own: `.AddRabbitMqTrigger(options => builder.Configuration.GetSection("RabbitMQ").Bind(options))`.
 
+### TLS, heartbeat and other connection settings
+
+`RabbitMqTriggerOptions` and `RabbitMqProducerOptions` have a `ConfigureConnection` delegate over the `ConnectionFactory`. It runs before `HostName`, `Port`, `UserName`, `Password` and `VirtualHost` are applied, so those five always win.
+
+```csharp
+options.ConfigureConnection = factory =>
+{
+    factory.Ssl = new SslOption { Enabled = true, ServerName = "rabbit.prod.example.com" };
+    factory.RequestedHeartbeat = TimeSpan.FromSeconds(30);
+};
+```
+
 ## Forwarding failed jobs
 
 A job created from a consumed message that exhausts its retries stays **only inside NexJob** (`Failed` in the dashboard), because the broker message was acknowledged when it became a job. To copy the original message body to another queue, set `ExhaustedJobsRoutingKey` on the trigger (the Outbox producer, `AddRabbitMqProducer`, is required):
