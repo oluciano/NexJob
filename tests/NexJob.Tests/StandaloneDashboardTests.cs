@@ -1506,6 +1506,71 @@ public sealed class StandaloneDashboardTests
         }
     }
 
+    [Fact]
+    public async Task StandaloneDashboards_InOneProcess_KeepTheirOwnPlaygroundAndTheme()
+    {
+        // N1/N2: the playground switch and the default theme belong to each dashboard, not to the process. A dashboard
+        // built after another one used to overwrite them, so which page got the playground depended on the start order.
+        var (withPlayground, withPort) = BuildPlaygroundHost("With", enablePlayground: true, theme: "semi-dark");
+        var (without, withoutPort) = BuildPlaygroundHost("Without", enablePlayground: false, theme: "blue-theme");
+        using var first = withPlayground;
+        using var second = without;
+        await first.StartAsync();
+        await second.StartAsync();
+
+        try
+        {
+            var withHtml = await GetDashboardHtmlAsync(withPort);
+            var withoutHtml = await GetDashboardHtmlAsync(withoutPort);
+
+            withHtml.Should().Contain("🎮").And.Contain("data-theme=\"semi-dark\"");
+            withoutHtml.Should().NotContain("🎮").And.Contain("data-theme=\"blue-theme\"");
+        }
+        finally
+        {
+            await second.StopAsync();
+            await first.StopAsync();
+        }
+    }
+
+    [Fact]
+    public void HtmlShell_WrapOutsideAnyDashboard_UsesTheDefaults()
+    {
+        // N3 (Boundary): no dashboard request in flight, so no playground and the default theme.
+        var html = NexJob.Dashboard.HtmlShell.Wrap("NexJob", "/dashboard", "overview", "<p>body</p>");
+
+        html.Should().NotContain("🎮").And.Contain("data-theme=\"blue-theme\"");
+    }
+
+    private static (IHost Host, int Port) BuildPlaygroundHost(string title, bool enablePlayground, string theme)
+    {
+        var port = GetFreeTcpPort();
+        var host = Host.CreateDefaultBuilder()
+            .ConfigureServices(services =>
+            {
+                services.AddNexJob();
+                services.AddNexJobStandaloneDashboard(options =>
+                {
+                    options.Port = port;
+                    options.Path = "/dashboard";
+                    options.Title = title;
+                    options.LocalhostOnly = true;
+                    options.DefaultTheme = theme;
+                    options.EnablePlayground = enablePlayground;
+                });
+            })
+            .Build();
+        return (host, port);
+    }
+
+    private static async Task<string> GetDashboardHtmlAsync(int port)
+    {
+        using var client = new HttpClient { BaseAddress = new Uri($"http://localhost:{port}"), Timeout = TimeSpan.FromSeconds(5) };
+        var res = await client.GetAsync("/dashboard");
+        res.StatusCode.Should().Be(HttpStatusCode.OK);
+        return await res.Content.ReadAsStringAsync();
+    }
+
     private static int GetFreeTcpPort() => TestPorts.Next();
 }
 
