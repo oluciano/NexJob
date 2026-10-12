@@ -8,6 +8,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `IOrphanedJobReporter.RequeueOrphanedJobsAndReportAsync(heartbeatTimeout, canHandleJobType, cancellationToken)`: an overload that takes a predicate on the stored job type. Its default implementation ignores the predicate, so existing reporters keep working. The five built-in providers apply it (issue #474).
 - `NexJob.RabbitMQ`: `ConfigureConnection` on `RabbitMqTriggerOptions` and `RabbitMqProducerOptions`, a delegate over the `ConnectionFactory` for TLS, heartbeat, client name and any other connection setting, like Kafka's `ConfigureConsumer`. It runs before the five connection settings are applied, so those still win (issue #484).
 
 ### Changed
@@ -16,6 +17,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- In a database shared by several services, a job that died on its last attempt could be failed by the orphan watcher of another service, which cannot load its type, so its typed `IDeadLetterHandler<TJob>` never ran and the only trace was a `Debug` line. A node now fails such a job only when it can load the job type; otherwise it logs a `Warning` and leaves the job `Processing` for a node of the owning service. A job with attempts left is still requeued by any node (issue #474).
 - A job is now stored with the `[SchemaVersion]` of its class. Before, `JobRecordFactory`, the recurring firing and the dashboard's ad-hoc trigger never set it, so every job was stored as version 1 and a current payload was migrated as if it were old, silently replacing the caller's new fields with the migration defaults. Jobs already stored keep version 1 (no data migration). A recurring job takes the class version when it fires (issue #470).
 - `NexJob.RabbitMQ`: a `Mandatory` publish the broker cannot route now fails the job with an `InvalidOperationException` carrying the broker's reply, instead of succeeding and losing the message. The producer subscribes to `basic.return` and checks it after the confirm (issue #483).
 - `NexJob.RabbitMQ`: `RabbitMqProducerOptions.DefaultExchange` and `DefaultRoutingKey` now apply. `EnqueueRabbitMqAsync(routingKey, value)` leaves the exchange unset, `exchange` and `routingKey` of the other overloads are nullable (null applies the default), and `RabbitMqPublishPayload.RoutingKey` defaults to `null` instead of `""`. `RabbitMqProducerOptions.Queue` and `DefaultPriority` are still not read (issue #483).

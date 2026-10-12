@@ -29,7 +29,7 @@ The columns are the same in all three tables: what happens to the job, whether t
 | The job throws an exception listed in [`IgnoreRetryAttemptExceptions`](retries.md#failures-that-should-not-be-retried) (v5.9.0) | `Failed` at once, even with attempts left | Used | **Called** with the exception |
 | It runs longer than its [`[ExecutionTimeout]`](retries.md#execution-timeout) (v5.9.0) | Its token is cancelled and the run fails with a `TimeoutException`; then rescheduled like any failure. A job that ignores its token keeps its worker slot | Used | **Called** on the last attempt |
 | The node running it dies (crash, kill, lost machine) | Stays `Processing` until its heartbeat is older than `HeartbeatTimeout` (default 5 minutes; the check runs every `HeartbeatTimeout`, so recovery takes between 5 and about 10 minutes), then goes back to `Enqueued` | **Used**: the attempt that was running may have partly run | No |
-| The node dies on the job's last attempt | `Failed` | Used | **Called** with an `OrphanedJobException` (v5.8.0) |
+| The node dies on the job's last attempt | `Failed`, by a node that can load the job type; until one does it stays `Processing` (v6.3.0) | Used | **Called** with an `OrphanedJobException` (v5.8.0) |
 | The job succeeds but its result cannot be saved | The save is retried a few times. If it still fails the job stays `Processing` and is treated like a crashed node: run again by the orphan watcher, or `Failed` (and dead-lettered) if it had no attempts left | Used | Only if no attempts were left |
 | A dead-letter handler or forwarder throws | The job stays `Failed`; the error is logged | n/a | Swallowed, other forwarders still run |
 

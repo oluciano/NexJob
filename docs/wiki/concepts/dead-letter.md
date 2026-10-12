@@ -76,6 +76,8 @@ The `JobRecord` passed to your handler gives you everything you need to diagnose
 
 A job can also run out of attempts without ever reporting an error: the process running it died (out of memory, `kill -9`, a lost machine) and each recovery used up an attempt. When the orphan watcher finds such a job with no attempts left, it marks it `Failed` and runs the same dead-letter handling: the typed `IDeadLetterHandler<TJob>` and every `IDeadLetterForwarder`.
 
+When several services share one database, the watcher of every node scans every job, but a node fails a job without attempts left only if it can load the job type. The job stays `Processing` until a node of the service that owns it finds it, so its typed handler runs there (before v6.3.0 any node could fail it, and a node of another service skipped the handler). See [Multi-service](../guides/multi-service.md).
+
 The exception you receive is an `OrphanedJobException`, because the job never threw one. It carries the job id and how many attempts were used, so a handler can tell a crash from an ordinary failure:
 
 ```csharp
