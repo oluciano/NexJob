@@ -25,6 +25,7 @@ internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
     private readonly NexJobOptions _options;
     private readonly ILogger<JobExecutor> _logger;
     private readonly JobWakeUpChannel _wakeUp;
+    private readonly TimeProvider _timeProvider;
     private readonly Channel<JobId> _ackChannel;
     private readonly CancellationTokenSource _ackCts;
     private readonly Task _ackFlusherTask;
@@ -40,6 +41,7 @@ internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
     /// <param name="options">The nex job options.</param>
     /// <param name="wakeUp">The wake-up channel signalled after a successful commit, so promoted continuations are fetched without waiting a poll.</param>
     /// <param name="logger">The logger.</param>
+    /// <param name="timeProvider">The clock used for deadlines and retry times; the system clock when omitted.</param>
     public JobExecutor(
         IJobStorage storage,
         IJobInvokerFactory invokerFactory,
@@ -48,8 +50,10 @@ internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
         ThrottleRegistry throttleRegistry,
         NexJobOptions options,
         JobWakeUpChannel wakeUp,
-        ILogger<JobExecutor> logger)
+        ILogger<JobExecutor> logger,
+        TimeProvider? timeProvider = null)
     {
+        _timeProvider = timeProvider ?? TimeProvider.System;
         _wakeUp = wakeUp;
         _storage = storage;
         _invokerFactory = invokerFactory;
@@ -156,7 +160,7 @@ internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
             // Foreign job: the job type or input type cannot be resolved in this process/service.
             // Do not penalize attempts or move to dead-letter. Defer with backoff so the owning service can execute it.
             // The attempt is given back by the storage (RefundAttempt): editing the local copy is not persisted.
-            var retryAt = DateTimeOffset.UtcNow + _options.ForeignJobRetryDelay;
+            var retryAt = _timeProvider.GetUtcNow() + _options.ForeignJobRetryDelay;
             _logger.LogWarning(
                 ex,
                 "Job {JobId} references foreign type '{TypeName}' not available in this host. Deferring until {RetryAt} without penalizing attempts.",
@@ -182,7 +186,7 @@ internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
             sw.Stop();
             // The throttled resource stayed saturated: free the worker slot instead of keeping it while waiting.
             // The attempt is refunded by the storage, so this never counts towards MaxAttempts or dead-letter.
-            var retryAt = DateTimeOffset.UtcNow
+            var retryAt = _timeProvider.GetUtcNow()
                 + ThrottleRequeueDelay
                 + TimeSpan.FromMilliseconds(System.Security.Cryptography.RandomNumberGenerator.GetInt32(500));
 
@@ -227,7 +231,7 @@ internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
                 Succeeded = false,
                 Logs = logScope.Entries,
                 Exception = ex,
-                RetryAt = DateTimeOffset.UtcNow,
+                RetryAt = _timeProvider.GetUtcNow(),
                 RecurringJobId = job.RecurringJobId,
                 RefundAttempt = true,
             }, CancellationToken.None).ConfigureAwait(false);
@@ -324,7 +328,7 @@ internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
 
     private async Task<bool> TryHandleExpirationAsync(JobRecord job)
     {
-        if (!job.ExpiresAt.HasValue || DateTimeOffset.UtcNow <= job.ExpiresAt.Value)
+        if (!job.ExpiresAt.HasValue || _timeProvider.GetUtcNow() <= job.ExpiresAt.Value)
         {
             return false;
         }
