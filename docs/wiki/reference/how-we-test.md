@@ -49,6 +49,22 @@ Being clear about gaps matters more than a long list of passing tests:
 - **Wake-up latency.** Wall-clock bounds are too fragile on shared build machines to assert.
 - Brokers other than Kafka, RabbitMQ, SQS, Salesforce and the Pub/Sub emulator are exercised by unit tests only.
 
+## Validation rounds
+
+Some claims need infrastructure that is too slow or too fragile for every pull request: a Redis primary with a replica, a Kafka cluster of three brokers, a broker with SASL and TLS, a consumer evicted by `max.poll.interval.ms`. Those tests live in `tests/NexJob.ReliabilityTests/Validation` with `Category=Reliability.Validation`. No pipeline runs them; you run them before a release, or when the page that depends on them changes:
+
+```bash
+dotnet test tests/NexJob.ReliabilityTests --filter "Category=Reliability.Validation"
+```
+
+They need Docker. A validation test is a normal test: when the page and the run disagree, the page is the one that was wrong.
+
+| Round | Version | What ran | Result |
+|---|---|---|---|
+| 2026-10-12 | 6.2.1 + #486 | Redis primary and replica (both endpoints, replica only, promoted replica); Kafka three brokers with one lost; Kafka `SASL_SSL` with `PLAIN`; Kafka eviction by `max.poll.interval.ms` | All passed |
+
+What is not in a round yet: Redis Sentinel, a real Salesforce org, and the real Azure Service Bus, SQS and RabbitMQ services (the emulators and containers used are named on each integration page).
+
 ## See also
 
 - [Delivery Guarantees](../concepts/delivery-guarantees.md): the behaviour these tests check.

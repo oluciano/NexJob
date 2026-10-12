@@ -45,6 +45,16 @@ dotnet test tests/NexJob.ReliabilityTests -c Release --filter "Category=Reliabil
 dotnet test tests/NexJob.ReliabilityTests -c Release --filter "FullyQualifiedName~PostgresConcurrencyTests"
 ```
 
+## Validation rounds
+
+`Validation/` holds tests for claims that need slow or fragile infrastructure (a Redis replica, a Kafka cluster, SASL and TLS). They are `Category=Reliability.Validation` and no workflow runs them:
+
+```bash
+dotnet test tests/NexJob.ReliabilityTests --filter "Category=Reliability.Validation"
+```
+
+The round is recorded in `docs/wiki/reference/how-we-test.md`.
+
 ## In CI
 
 | Tier | When | What |
