@@ -101,6 +101,31 @@ public sealed class ThrottleSpinAndReleaseTests
         store.ReleaseCalls.Should().Be(0);
     }
 
+    /// <summary>N1/N3 (#515): Multiple acquisitions decrement distributed holds sequentially (holds - 1) and stop releasing when holds reach 0.</summary>
+    [Fact]
+    public async Task MultipleAcquisitions_ReleaseDecrementsHoldsCorrectly()
+    {
+        var store = new CountingStore { AcquireResult = true };
+        var registry = new ThrottleRegistry(store, NullLogger<ThrottleRegistry>.Instance);
+
+        // Acquire 2 slots
+        (await registry.TryAcquireAsync("res-multi", 5, CancellationToken.None)).Should().BeTrue();
+        (await registry.TryAcquireAsync("res-multi", 5, CancellationToken.None)).Should().BeTrue();
+
+        // Release first slot -> release call 1
+        await registry.ReleaseAsync("res-multi", CancellationToken.None);
+        store.ReleaseCalls.Should().Be(1);
+
+        // Release second slot -> release call 2
+        await registry.ReleaseAsync("res-multi", CancellationToken.None);
+        store.ReleaseCalls.Should().Be(2);
+
+        // Third release: semaphore was created with maxConcurrent=5, so 3rd release when only 2 were acquired throws SemaphoreFullException
+        var act = () => registry.ReleaseAsync("res-multi", CancellationToken.None);
+        await act.Should().ThrowAsync<SemaphoreFullException>();
+        store.ReleaseCalls.Should().Be(2, "over-releasing local semaphore does not invoke distributed store");
+    }
+
     // ─── N3: cancellation while waiting ──────────────────────────────────────
 
     /// <summary>N3 (Boundary): cancelling while waiting on a full throttle returns promptly and leaks no slot.</summary>
