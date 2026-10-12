@@ -166,16 +166,19 @@ Runnable examples for the web, worker, storage and broker scenarios are in [`sam
 
 Hangfire is the usual reference for .NET background jobs, so it is the comparison here.
 
-The figures below measure the cost of **enqueueing** one job, not processing throughput. Measured per individual enqueue operation on .NET 8 (BenchmarkDotNet v0.14, RyuJIT AVX2, in-memory storage baseline):
+The figures below measure the cost of **enqueueing** one job, not processing throughput. Measured per individual enqueue operation with the benchmark in this repository (BenchmarkDotNet 0.15.8, .NET 8.0.31, RyuJIT, Intel Xeon E5-2667 v4, in-memory storage on both sides, Hangfire.Core 1.8.25 and Hangfire.InMemory 0.9.0), a job with no payload:
 
 | Metric | NexJob | Hangfire | Comparison |
 |---|---|---|---|
-| Latency (Mean) | **13.35 µs** | 35.95 µs | **2.7× faster** |
-| Memory (Allocated) | **2.10 KB** | 11.20 KB | **81% less memory** |
-| GC Gen0 (per 1k ops) | **0.06** | 0.85 | **14× fewer Gen0 collections** |
-| GC Gen1 (per 1k ops) | **0.00** | 0.18 | **Zero Gen1 collections** |
+| Latency (mean) | 34.5 µs | 36.7 µs | Same range; the difference is within the noise of the run |
+| Latency (median) | 31.7 µs | 36.6 µs | |
+| Memory (allocated) | **4.82 KB** | 12.57 KB | **62% less memory** |
+| GC Gen0 (per 1k ops) | **0.12** | 0.98 | **8× fewer Gen0 collections** |
+| GC Gen1 (per 1k ops) | **0.00** | 0.24 | **No Gen1 collections** |
 
-NexJob is **2.7× faster**, allocates **81% less memory**, and produces zero Gen1 garbage collections during enqueue bursts. Hangfire incurs additional CPU and allocation overhead due to runtime LINQ expression tree parsing and reflection.
+With a 1 KB payload NexJob took 44 µs and allocated 6 KB, against 54 µs and 26 KB for Hangfire; with 10 KB, 123 µs and 30 KB against 103 µs and 143 KB. Latency differs little between the two; the difference that holds in every run is allocation. This is enqueue only: processing throughput, a database storage and concurrent enqueue were not measured in this run. Earlier versions of this page showed 13.35 µs and 2.10 KB for NexJob; that figure did not reproduce, see [#511](https://github.com/oluciano/NexJob/issues/511).
+
+Run it yourself: `cd benchmarks/NexJob.Benchmarks && dotnet run -c Release -- --filter *EnqueueLatencyBenchmark*`.
 
 Benchmarks can be parameterized by payload size (`PayloadBytes: 0, 1024, 10240`) and concurrency levels (`ConcurrencyLevel: 10, 50`) in [`benchmarks/NexJob.Benchmarks`](benchmarks/NexJob.Benchmarks).
 
