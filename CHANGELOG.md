@@ -6,6 +6,8 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [6.3.0] - 2026-10-12
+
 ### Added
 
 - `IOrphanedJobReporter.RequeueOrphanedJobsAndReportAsync(heartbeatTimeout, canHandleJobType, cancellationToken)`: an overload that takes a predicate on the stored job type. Its default implementation ignores the predicate, so existing reporters keep working. The five built-in providers apply it (issue #474).
