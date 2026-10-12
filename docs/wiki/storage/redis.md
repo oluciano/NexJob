@@ -70,7 +70,7 @@ Redis does not change how fast a job starts on the node that enqueued it (that g
 Tried with Redis 7: one primary and one replica, not in cluster mode (`Category=Reliability.Validation` in `NexJob.ReliabilityTests`).
 
 - **Connect to the primary, or to both.** With both endpoints in the connection string, in either order, jobs run once each: NexJob sends every write and script to the primary, and the replica only keeps a copy.
-- **Do not connect to the replica alone.** The host starts, but every enqueue fails with `READONLY You can't write against a read only replica`, and a job that finished cannot commit its result.
+- **Do not connect to the replica alone.** The host starts, but every enqueue fails with `READONLY You can't write against a read only replica`.
 - **Losing the primary.** With both endpoints configured, after the primary stopped and an operator promoted the replica (`REPLICAOF NO ONE`), NexJob kept the jobs that had been replicated and ran a new job, without a restart of the host. NexJob does not promote a replica itself.
 
 Not tried: Redis Sentinel, a managed failover, a job that was `Processing` when the primary was lost, and writes the primary had not yet sent to the replica (replication is asynchronous, so a failover can lose the last ones).
