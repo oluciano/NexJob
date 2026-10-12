@@ -28,6 +28,13 @@ public sealed class MockSalesforceServer : IAsyncDisposable
     """;
 
     private readonly WebApplication _app;
+
+    /// <summary>Gets the replay id the fake refuses with <c>InvalidArgument</c>, as Salesforce does for an expired one.</summary>
+    public static byte[] RejectedReplayId { get; } = [0xDE, 0xAD];
+
+    /// <summary>Gets the subscribe requests received, in order.</summary>
+    public System.Collections.Concurrent.ConcurrentQueue<FetchRequest> SubscribeRequests { get; } = new();
+
     public string OAuthAddress { get; private set; } = string.Empty;
     public string GrpcAddress { get; private set; } = string.Empty;
 
@@ -51,6 +58,7 @@ public sealed class MockSalesforceServer : IAsyncDisposable
         });
 
         builder.Services.AddGrpc();
+        builder.Services.AddSingleton(SubscribeRequests);
 
         _app = builder.Build();
 
@@ -96,7 +104,7 @@ public sealed class MockSalesforceServer : IAsyncDisposable
         return stream.ToArray();
     }
 
-    public sealed class MockPubSubService : PubSub.PubSubBase
+    public sealed class MockPubSubService(System.Collections.Concurrent.ConcurrentQueue<FetchRequest> subscribeRequests) : PubSub.PubSubBase
     {
         public override Task<TopicInfo> GetTopic(TopicRequest request, ServerCallContext context)
         {
@@ -127,7 +135,12 @@ public sealed class MockSalesforceServer : IAsyncDisposable
                 return;
             }
 
-            _ = requestStream.Current;
+            var request = requestStream.Current;
+            subscribeRequests.Enqueue(request);
+            if (request.ReplayId.ToByteArray().SequenceEqual(RejectedReplayId))
+            {
+                throw new RpcException(new Status(StatusCode.InvalidArgument, "replayId is no longer available"));
+            }
 
             // Send one test event
             var payloadBytes = CreateAvroOrderEvent("ORD-INTEG-999", 199.95);

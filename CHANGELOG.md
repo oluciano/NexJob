@@ -29,6 +29,8 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Documentation
 
 - Wiki Reference: the connection budget in Troubleshooting now matches the pool advisor (`Workers + 5` needed, `Workers + 10` as the ceiling); the changelog page covers 5.10.0 to 6.2.1; the migration guide lists the 6.3.0 actions (stored `SchemaVersion`, orphan dead-lettering across services); the stale warning about continuations in the testing guide is gone (issue #486).
+- Wiki and README: the enqueue benchmark was re-measured against Hangfire 1.8.25 and the published figures were corrected. NexJob's latency is in the same range as Hangfire's (about 35 µs against 37 µs, not 13 µs against 36 µs), and its allocation is 62% lower (4.8 KB against 12.6 KB); the earlier NexJob figure did not reproduce (issue #511).
+- Wiki Integrations and Storage: each page says what was run and against what. Run for the first time: AWS SQS (LocalStack), RabbitMQ (dead-letter exchange, `ExhaustedJobsRoutingKey`, prefetch above 1, TLS), Kafka (`ExhaustedJobsTopic`, three brokers, `SASL_SSL`, eviction by `max.poll.interval.ms`), Azure Service Bus (the official emulator), Salesforce Pub/Sub and Streaming (fake servers, our reading of the protocol), a Redis primary with a replica and a PostgreSQL streaming replica. How We Test describes the on-demand validation rounds (`Category=Reliability.Validation`) and lists the new reliability scenarios.
 
 ## [6.2.1] - 2026-10-11
 

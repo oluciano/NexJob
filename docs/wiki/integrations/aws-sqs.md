@@ -100,7 +100,7 @@ While a message is being handled, the trigger renews its visibility every `Visib
 
 The trigger registers with the [listener registry](triggers.md#live-listener-registry) and appears on the dashboard's `/listeners` page: `Listening` once it starts, `Reconnecting` after a failed receive call, and `Stopped` when it stops. Read from the source: the status is not set back to `Listening` after a failure, so it can stay `Reconnecting` until the trigger restarts, even when the polling has recovered.
 
-This page was written from the source code. It was not run against SQS, so the AWS behaviors above (redelivery, redrive) are those of the service as documented by AWS, not something observed here.
+This page was written from the source code and then run against LocalStack, an SQS emulator, not against AWS. The run confirmed: a failed enqueue makes the message come back at once (not after the visibility timeout), a poison message is received again in a loop without a redrive policy, a dead-letter queue with `maxReceiveCount` stops it, and the visibility renewal keeps a message hidden while a slow enqueue runs. The listener status after a failure is read from the code only. Real SQS timing and limits are those documented by AWS.
 
 ## Try it
 

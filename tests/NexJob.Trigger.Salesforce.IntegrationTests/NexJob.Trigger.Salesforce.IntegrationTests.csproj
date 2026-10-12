@@ -12,6 +12,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\NexJob\NexJob.csproj" />
     <ProjectReference Include="..\..\src\NexJob.Trigger.Salesforce\NexJob.Trigger.Salesforce.csproj" />
+    <ProjectReference Include="..\..\src\NexJob.Trigger.SalesforceStreaming\NexJob.Trigger.SalesforceStreaming.csproj" />
   </ItemGroup>
 
   <ItemGroup>

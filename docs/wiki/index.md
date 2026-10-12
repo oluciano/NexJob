@@ -38,7 +38,7 @@ dotnet add package NexJob
 
     What each failure costs a job: crashes, shutdown, throttling, pauses and deadlines.
 
-  -   [**Retries & Dead Letter**](concepts/retries-and-dead-letter.md)
+  -   [**Retries and dead letter**](concepts/retries-and-dead-letter.md)
 
     Exponential backoff, and what happens to a job when every attempt is spent.
 

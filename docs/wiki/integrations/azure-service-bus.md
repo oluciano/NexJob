@@ -96,6 +96,10 @@ Because the message is completed after the enqueue and not before, a crash in be
 
 The trigger registers with the [listener registry](triggers.md#live-listener-registry) and appears on the dashboard's `/listeners` page: `Listening` once the processor starts, `Reconnecting` when the Service Bus processor reports an error, and `Stopped` when it stops. Read from the source: the status is not set back to `Listening` after an error, so it can stay `Reconnecting` until the trigger restarts, even if the processor has recovered.
 
+## What was checked
+
+Against the official Azure Service Bus emulator (Microsoft's `servicebus-emulator` image with SQL Server 2022), with queues set to a `MaxDeliveryCount` of 3: a message with a job type became a job and was completed after the enqueue; a message without `nexjob.job_type` was dead-lettered with the reason `EnqueueFailed` and a description naming the property; a storage that always failed made the trigger abandon the message three times, after which Service Bus dead-lettered it with `MaxDeliveryCountExceeded`; and `MaxConcurrentMessages` of 1 and of 3 held exactly that many messages in the enqueue at once. The emulator is not the cloud service: limits, timings and topic subscriptions with rules were not run, and the listener status after a processor error is read from the source only. The tests are in `tests/NexJob.Trigger.AzureServiceBus.IntegrationTests` and are not part of the pull request pipeline: they need the emulator image and a SQL Server container.
+
 ## Try it
 
 The [`NexJob.Sample.CloudTriggers`](https://github.com/oluciano/NexJob/tree/develop/samples/NexJob.Sample.CloudTriggers) sample wires this trigger next to the AWS SQS, Google Pub/Sub and Salesforce ones, with `/simulate/*` endpoints to produce messages without the real services.

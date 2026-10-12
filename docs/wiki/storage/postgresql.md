@@ -74,7 +74,7 @@ builder.Services.AddNexJob(options =>
     `IJobControlService.RequeueJobAsync` and `DeleteJobAsync` write to the primary, not to the replica, and the orphan watcher reads a failed job from the primary before it calls the dead-letter handler. The replica serves only the dashboard's read queries, so a replica that lags never hides a job from those actions.
 
 !!! tip
-    The replica only has to be a PostgreSQL database with the same schema that the connection string can read. The tests behind this page used a read-only role on the primary database (see the next section); a streaming or managed replica was not tried.
+    The replica only has to be a PostgreSQL database with the same schema that the connection string can read. The tests behind this page used a read-only role on the primary database (see the next section); a physical streaming replica (PostgreSQL 16, a hot standby that answers `25006` to a write) was also tried: jobs enqueued and run on the primary showed up in the dashboard's metrics once the replica had them, and when the replica was stopped the dashboard's reads failed with an Npgsql exception while enqueueing and running jobs on the primary went on unchanged. A managed replica (Azure, RDS) and long replication lag were not tried.
 
 
 ## Storage segregation

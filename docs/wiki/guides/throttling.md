@@ -71,7 +71,7 @@ services.AddNexJobDistributedThrottle();      // enforces [Throttle] limits clus
 services.AddNexJob();
 ```
 
-With distributed throttling enabled, `[Throttle("api", maxConcurrent: 5)]` allows exactly **5 concurrent executions across the entire cluster**, not 5 per node.
+With distributed throttling enabled, `[Throttle("api", maxConcurrent: 5)]` allows exactly **5 concurrent executions across the entire cluster**, not 5 per node. Checked with two nodes on one Redis and `maxConcurrent: 1`: without `AddNexJobDistributedThrottle()` the two nodes ran one job each at the same time (peak 2); with it the peak was 1 and all eight jobs still succeeded. More than two nodes, a node that crashes while holding a slot and slot expiry were not run.
 
 Each running job holds a slot and its node continuously refreshes that slot while the job runs. If a node crashes, its slots are reclaimed automatically after three `HeartbeatInterval` periods — 90 seconds with the default settings — rather than being lost for an hour.
 

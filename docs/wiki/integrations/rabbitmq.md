@@ -87,7 +87,7 @@ A missing `HostName` or `QueueName` fails when the host starts. The connection i
 - **Trace:** a `traceparent` header, when present, becomes the job's trace parent.
 - **Ack:** the message is acknowledged only after the job was enqueued.
 
-With the default `PrefetchCount` of 1, messages are handled one at a time.
+With the default `PrefetchCount` of 1, messages are handled one at a time. With a higher value the broker sends that many messages at once, unacknowledged, and the trigger still enqueues them one after the other: a slow storage holds the whole window, so a large `PrefetchCount` only buffers messages in the process.
 
 ### What happens when it fails
 
@@ -225,7 +225,7 @@ builder.Services.AddNexJob()
 
 The delegate runs before `HostName`, `Port`, `UserName`, `Password` and `VirtualHost` are applied, so those five settings always win: set them on the options, not in the delegate. It runs on every connection attempt, including each reconnect, so keep it cheap and free of side effects. A delegate that throws fails that attempt (the trigger logs it and keeps retrying; the producer's publish fails and is retried by the job).
 
-If you register your own `IConnectionFactory` in DI instead, the trigger and the producer use it and overwrite the same five settings on it. The factory is then shared by both and the last registration wins. The delegate is applied to that factory too. TLS itself was not run against a TLS-enabled broker; what is checked is that the delegate's settings reach the factory used for the connection, and a real broker accepts a connection configured this way.
+If you register your own `IConnectionFactory` in DI instead, the trigger and the producer use it and overwrite the same five settings on it. The factory is then shared by both and the last registration wins. The delegate is applied to that factory too. Run against a RabbitMQ 3.13 broker with a TLS listener (a certificate signed by a CA generated for the test): with the right `ServerName` the message became a job; with a `ServerName` that does not match the certificate, or with `Ssl.Enabled` on the plain AMQP port, the connection was refused and the message stayed in the queue. Client certificates (mutual TLS) and a broker that requires them were not run.
 
 ## Configuration from `appsettings.json` and the environment
 
@@ -246,7 +246,7 @@ Or bind a section: `.AddRabbitMqTrigger(options => builder.Configuration.GetSect
 
 ## What was checked
 
-Against a single RabbitMQ 3.13 broker: the outbox published only when its queue was polled; a mandatory unroutable publish failed with `312 NO_ROUTE`, and a routable one and a non-mandatory unroutable one behaved as before; `DefaultExchange` and `DefaultRoutingKey` applied; a publish to a missing exchange failed; the trigger on a missing queue kept reconnecting; a message without a job type was discarded when the queue had no dead-letter exchange. A cluster, a TLS-enabled broker, a dead-letter exchange, `ExhaustedJobsRoutingKey` and prefetch above 1 were not run.
+Against a single RabbitMQ 3.13 broker: the outbox published only when its queue was polled; a mandatory unroutable publish failed with `312 NO_ROUTE`, and a routable one and a non-mandatory unroutable one behaved as before; `DefaultExchange` and `DefaultRoutingKey` applied; a publish to a missing exchange failed; the trigger on a missing queue kept reconnecting; a message without a job type was discarded when the queue had no dead-letter exchange. Also run against the same broker: a dead-letter exchange on the queue received a message without a job type; a job that exhausted its retries was copied to `ExhaustedJobsRoutingKey` with the `nexjob.error` header, and a blank routing key forwarded nothing; with `PrefetchCount = 5` the broker reported five unacknowledged messages while the first enqueue was blocked, and the trigger never ran two enqueues at once. A cluster and `ExhaustedJobsExchange` other than the default exchange were not run.
 
 ## Try it
 

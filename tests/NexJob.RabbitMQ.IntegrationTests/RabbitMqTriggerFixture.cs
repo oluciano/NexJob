@@ -12,6 +12,7 @@ public sealed class RabbitMqTriggerFixture : IAsyncLifetime
         .WithImage("rabbitmq:3-management")
         .WithUsername("guest")
         .WithPassword("guest")
+        .WithPortBinding(15672, true)
         .Build();
 
     /// <summary>
@@ -23,6 +24,11 @@ public sealed class RabbitMqTriggerFixture : IAsyncLifetime
     /// Gets the RabbitMQ public port.
     /// </summary>
     public int Port => _container.GetMappedPublicPort(5672);
+
+    /// <summary>
+    /// Gets the public port of the management API.
+    /// </summary>
+    public int ManagementPort => _container.GetMappedPublicPort(15672);
 
     /// <summary>
     /// Gets the RabbitMQ username.
