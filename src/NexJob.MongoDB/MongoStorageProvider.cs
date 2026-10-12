@@ -413,16 +413,30 @@ public sealed class MongoStorageProvider : IStorageProvider, IOrphanedJobReporte
     }
 
     /// <inheritdoc/>
-    public async Task<IReadOnlyList<JobId>> RequeueOrphanedJobsAndReportAsync(TimeSpan heartbeatTimeout, CancellationToken cancellationToken = default)
+    public Task<IReadOnlyList<JobId>> RequeueOrphanedJobsAndReportAsync(TimeSpan heartbeatTimeout, CancellationToken cancellationToken = default)
+        => RequeueOrphanedJobsAndReportAsync(heartbeatTimeout, _ => true, cancellationToken);
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<JobId>> RequeueOrphanedJobsAndReportAsync(
+        TimeSpan heartbeatTimeout, Func<string, bool> canHandleJobType, CancellationToken cancellationToken = default)
     {
         var now = DateTimeOffset.UtcNow;
         var cutoff = now - heartbeatTimeout;
         var failed = new List<JobId>();
 
-        var exhaustedFilter = Builders<JobDocument>.Filter.And(
+        var exhaustedOrphans = Builders<JobDocument>.Filter.And(
             Builders<JobDocument>.Filter.Eq(d => d.Status, JobStatus.Processing),
             Builders<JobDocument>.Filter.Lt(d => d.HeartbeatAt, cutoff),
             new BsonDocument("$expr", new BsonDocument("$gte", new BsonArray { "$Attempts", "$MaxAttempts" })));
+
+        // A job with no attempts left is failed only when this node can load its type. The types are asked first and the
+        // filter is restricted to the accepted ones, so a type that shows up in between is skipped, never failed by mistake.
+        var exhaustedTypes = await (await _jobs.DistinctAsync(d => d.JobType, exhaustedOrphans, cancellationToken: cancellationToken).ConfigureAwait(false))
+            .ToListAsync(cancellationToken).ConfigureAwait(false);
+        var allowedTypes = exhaustedTypes.Where(canHandleJobType).ToList();
+        var exhaustedFilter = Builders<JobDocument>.Filter.And(
+            exhaustedOrphans,
+            Builders<JobDocument>.Filter.In(d => d.JobType, allowedTypes));
 
         // Exhausted jobs that never recorded an error get the generic message; those that did keep the original.
         var exhaustedWithoutErrorFilter = Builders<JobDocument>.Filter.And(
