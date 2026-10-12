@@ -30,17 +30,21 @@ public sealed class DeadLetterDispatcherTests
     }
 
     [Fact]
-    public async Task DispatchAsync_NoHandlerRegistered_IsNoOp()
+    public async Task DispatchAsync_NoHandlerRegistered_IsNoOpForHandlerAndExecutesForwarders()
     {
         // Arrange
         var job = MakeJob<TestJob>();
-        var dispatcher = MakeDispatcher(_ => { });
+        var forwarder = new Mock<IDeadLetterForwarder>();
+        forwarder.Setup(x => x.AppliesTo(job)).Returns(true);
+        var dispatcher = MakeDispatcher(services =>
+            services.AddSingleton<IDeadLetterForwarder>(forwarder.Object));
 
         // Act
         Func<Task> act = () => dispatcher.DispatchAsync(job, new InvalidOperationException("failure"));
 
         // Assert
         await act.Should().NotThrowAsync();
+        forwarder.Verify(x => x.ForwardAsync(job, It.IsAny<Exception>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -64,13 +68,16 @@ public sealed class DeadLetterDispatcherTests
     {
         // Arrange
         var job = MakeJob<TestJob>(jobType: "NonExistent.Type, Assembly");
-        var dispatcher = MakeDispatcher(_ => { });
+        var handler = new RecordingHandler();
+        var dispatcher = MakeDispatcher(services =>
+            services.AddSingleton<IDeadLetterHandler<TestJob>>(handler));
 
         // Act
         Func<Task> act = () => dispatcher.DispatchAsync(job, new InvalidOperationException("failure"));
 
         // Assert
         await act.Should().NotThrowAsync();
+        handler.Calls.Should().Be(0);
     }
 
     [Fact]

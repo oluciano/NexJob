@@ -630,6 +630,50 @@ public sealed class JobDispatcherServiceTests
         ran.Task.IsCompleted.Should().BeFalse();
     }
 
+    /// <summary>N1/N2 (#515): when circuit breaker for a queue is OPEN, that queue is skipped and other queues proceed.</summary>
+    [Fact]
+    public async Task OpenCircuitBreaker_SkipsOpenQueueAndExecutesOtherQueues()
+    {
+        var sink = new LevelLogSink();
+        var ran = new TaskCompletionSource<bool>();
+        using var host = Host.CreateDefaultBuilder()
+            .ConfigureLogging(l => l.AddProvider(sink))
+            .ConfigureServices(services =>
+            {
+                services.AddNexJob(o =>
+                {
+                    o.Workers = 2;
+                    o.PollingInterval = TimeSpan.FromMilliseconds(20);
+                    o.Queues = ["payments", "emails"];
+                    o.ConfigureQueue("payments", q => q.CircuitBreaker = new QueueCircuitBreakerOptions
+                    {
+                        ConsecutiveFailuresThreshold = 1,
+                        OpenDuration = TimeSpan.FromMinutes(5),
+                    });
+                });
+                services.AddTransient(_ => new QuickSuccessJob(ran));
+            })
+            .Build();
+
+        var breakerManager = host.Services.GetRequiredService<IQueueCircuitBreakerManager>();
+        breakerManager.RecordOutcome("payments", false, new InvalidOperationException("boom"));
+        breakerManager.GetState("payments", out _).Should().Be(QueueCircuitState.Open);
+
+        var storage = (InMemoryStorageProvider)host.Services.GetRequiredService<NexJob.Storage.IStorageProvider>();
+        var blockedPaymentJob = QuickRecord("payments");
+        var activeEmailJob = QuickRecord("emails");
+        await storage.EnqueueAsync(blockedPaymentJob);
+        await storage.EnqueueAsync(activeEmailJob);
+
+        await host.StartAsync();
+        await ran.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await TestWait.SucceededAsync(storage, 1);
+        await host.StopAsync();
+
+        (await storage.GetJobByIdAsync(blockedPaymentJob.Id))!.Status.Should().Be(JobStatus.Enqueued, "open circuit prevents fetching from payments");
+        (await storage.GetJobByIdAsync(activeEmailJob.Id))!.Status.Should().Be(JobStatus.Succeeded, "emails queue is not blocked");
+    }
+
     private static ExecutionWindowSettings AllDayWindow(string timeZone) => new()
     {
         StartTime = new TimeOnly(0, 0),
