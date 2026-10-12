@@ -599,12 +599,25 @@ public sealed class SqlServerStorageProvider : IStorageProvider, IOrphanedJobRep
     }
 
     /// <inheritdoc/>
-    public async Task<IReadOnlyList<JobId>> RequeueOrphanedJobsAndReportAsync(
+    public Task<IReadOnlyList<JobId>> RequeueOrphanedJobsAndReportAsync(
         TimeSpan heartbeatTimeout, CancellationToken cancellationToken = default)
+        => RequeueOrphanedJobsAndReportAsync(heartbeatTimeout, _ => true, cancellationToken);
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<JobId>> RequeueOrphanedJobsAndReportAsync(
+        TimeSpan heartbeatTimeout, Func<string, bool> canHandleJobType, CancellationToken cancellationToken = default)
     {
         var now = DateTimeOffset.UtcNow;
+        var cutoff = now - heartbeatTimeout;
         await using var conn = Open();
         await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+
+        // A job with no attempts left is failed only when this node can load its type. The types are asked first and the
+        // statement is restricted to the accepted ones, so a type that shows up in between is skipped, never failed by mistake.
+        var exhaustedTypes = await conn.QueryAsync<string>(
+            "SELECT DISTINCT job_type FROM nexjob_jobs WHERE status = 'Processing' AND heartbeat_at < @cutoff AND attempts >= max_attempts",
+            new { cutoff }).ConfigureAwait(false);
+        var allowedTypes = exhaustedTypes.Where(canHandleJobType).ToArray();
 
         // Only the jobs this statement moved to Failed come back, so another node scanning at the same time cannot report them too.
         var failedIds = (await conn.QueryAsync<Guid>(
@@ -618,11 +631,12 @@ public sealed class SqlServerStorageProvider : IStorageProvider, IOrphanedJobRep
                 heartbeat_at = NULL,
                 processing_started_at = NULL
             OUTPUT INSERTED.id, INSERTED.status INTO @moved
-            WHERE status = 'Processing' AND heartbeat_at < @cutoff;
+            WHERE status = 'Processing' AND heartbeat_at < @cutoff
+              AND (attempts < max_attempts OR job_type IN @allowedTypes);
 
             SELECT id FROM @moved WHERE status = 'Failed';
             """,
-            new { cutoff = now - heartbeatTimeout, now }).ConfigureAwait(false)).ToList();
+            new { cutoff, now, allowedTypes }).ConfigureAwait(false)).ToList();
 
         return failedIds.ConvertAll(id => new JobId(id));
     }
