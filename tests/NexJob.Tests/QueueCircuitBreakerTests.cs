@@ -468,4 +468,43 @@ public sealed class QueueCircuitBreakerTests
         Assert.Equal(QueueCircuitState.Closed, manager.GetState(string.Empty, out _));
         Assert.Equal(QueueCircuitState.Closed, manager.GetState("PAYMENTS", out _));
     }
+
+    /// <summary>N1/N3 (#515): GetAllStatuses returns all configured statuses; status remaining duration is TimeSpan.Zero when now == NextProbeAt.</summary>
+    [Fact]
+    public void GetAllStatuses_And_RemainingDurationAtBoundary_HandledCorrectly()
+    {
+        var fakeTime = new FakeTimeProvider();
+        var options = new QueueCircuitBreakerOptions
+        {
+            ConsecutiveFailuresThreshold = 1,
+            OpenDuration = TimeSpan.FromSeconds(30),
+        };
+
+        var manager = new DefaultQueueCircuitBreakerManager(
+            new Dictionary<string, QueueCircuitBreakerOptions>
+            {
+                ["payments"] = options,
+                ["orders"] = options,
+            },
+            timeProvider: fakeTime);
+
+        // Trip payments
+        manager.RecordOutcome("payments", succeeded: false, new InvalidOperationException("boom"));
+
+        var allStatuses = manager.GetAllStatuses();
+        Assert.Equal(2, allStatuses.Count);
+
+        // Advance time to exactly NextProbeAt (diff == TimeSpan.Zero)
+        fakeTime.Advance(TimeSpan.FromSeconds(30));
+        var status = manager.GetStatus("payments");
+        Assert.NotNull(status);
+        Assert.Equal(QueueCircuitState.Open, status.State);
+        Assert.Equal(TimeSpan.Zero, status.RemainingCooldown);
+
+        // Advance further (diff < TimeSpan.Zero)
+        fakeTime.Advance(TimeSpan.FromSeconds(5));
+        var statusAfter = manager.GetStatus("payments");
+        Assert.NotNull(statusAfter);
+        Assert.Equal(TimeSpan.Zero, statusAfter.RemainingCooldown);
+    }
 }
