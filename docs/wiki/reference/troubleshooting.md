@@ -280,7 +280,7 @@ NexJob is designed to surface diagnostic information through structured logs, me
 
     **Pool sizing rule of thumb**
 
-    NexJob typically uses about `Workers + 10` connections per node. For a 3-node cluster each with 20 workers, allow ~90 connections. As of v5.7.0, NexJob logs the detected pool size and worker count at startup, and warns when the pool is smaller than `Workers`.
+    A node needs about `Workers + 5` connections; set the pool maximum to `Workers + 10` to leave room for spikes. For a 3-node cluster each with 20 workers, that is about 75 connections in use and a pool maximum of 30 per node, 90 in total, so keep the database's connection limit above 90. As of v5.7.0, NexJob logs the detected pool size and worker count at startup, and warns when the pool is smaller than `Workers`.
 
     **PostgreSQL: `AddNexJobPostgres(NpgsqlDataSource)` on password-protected databases**
 

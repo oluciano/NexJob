@@ -323,8 +323,8 @@ public sealed class ChildJob(TaskCompletionSource<bool> childRan) : IJob
 }
 ```
 
-!!! warning "Register the child before the parent can finish"
-    The test passes because `ContinueWithAsync` is called right after `EnqueueAsync`, before the parent has finished (this example passed 40 runs out of 40). A child registered **after** its parent succeeded is never released ([#471](https://github.com/oluciano/NexJob/issues/471)), so a test that does work between the two calls can hang. To make the order deterministic, have the parent wait on a gate your test opens after it registers the child, as NexJob's own reliability tests do.
+!!! note "The order of `EnqueueAsync` and `ContinueWithAsync`"
+    Since v6.2.1, `ContinueWithAsync` releases the child at once when its parent has already succeeded, so a test that does work between the two calls no longer hangs. A parent that failed does not release its child. To control when the parent finishes (for example, to assert that the child has not started yet), have the parent wait on a gate your test opens, as NexJob's own reliability tests do.
 
 ## Tips
 

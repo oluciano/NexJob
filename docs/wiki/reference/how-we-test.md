@@ -24,7 +24,7 @@ Each scenario is written once and runs on every database. They check, for exampl
 
 - **Exactly once under concurrency:** several workers and several nodes run each job once, and no job is lost under concurrent enqueue.
 - **Retry and dead-letter:** a failed job is retried, the handler runs once after the last attempt, and a handler that throws does not stop the dispatcher.
-- **Crash recovery:** a job left `Processing` by a node that died is recovered and runs once; one on its last attempt fails and its dead-letter handler runs once. On SQL Server a **node runs in its own process and is killed** while it runs a job.
+- **Crash recovery:** a job left `Processing` by a node that died is recovered and runs once; one on its last attempt fails and its dead-letter handler runs once, while a job of a type this host cannot load (another service's) is left alone. On SQL Server a **node runs in its own process and is killed** while it runs a job.
 - **Restarts:** jobs stored by one host run exactly once on the next host.
 - **Continuations, deadlines, pausing, requeue and delete** behave as documented, including deleting a job while it runs.
 - **Connections:** the database sees about one connection per worker under load, and a pool smaller than the workers still finishes every job.
