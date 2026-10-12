@@ -19,4 +19,22 @@ public interface IOrphanedJobReporter
     Task<IReadOnlyList<JobId>> RequeueOrphanedJobsAndReportAsync(
         TimeSpan heartbeatTimeout,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Does what <see cref="RequeueOrphanedJobsAndReportAsync(TimeSpan, CancellationToken)"/> does, but a job with no
+    /// attempts left is moved to <see cref="JobStatus.Failed"/> only when <paramref name="canHandleJobType"/> accepts its
+    /// job type. Several services can share one database: a node must not fail, and so dead-letter, a job whose type it
+    /// cannot load, because its typed handler could never run there. Such a job stays <see cref="JobStatus.Processing"/>
+    /// until a node that can load the type finds it. A job with attempts left is requeued whatever its type.
+    /// The default implementation ignores the predicate; a provider overrides it to apply it.
+    /// </summary>
+    /// <param name="heartbeatTimeout">Maximum allowed time since the last heartbeat.</param>
+    /// <param name="canHandleJobType">Tells whether this node can load the stored job type name.</param>
+    /// <param name="cancellationToken">Token to cancel the operation.</param>
+    /// <returns>The ids of the jobs failed by this call.</returns>
+    Task<IReadOnlyList<JobId>> RequeueOrphanedJobsAndReportAsync(
+        TimeSpan heartbeatTimeout,
+        Func<string, bool> canHandleJobType,
+        CancellationToken cancellationToken = default)
+        => RequeueOrphanedJobsAndReportAsync(heartbeatTimeout, cancellationToken);
 }

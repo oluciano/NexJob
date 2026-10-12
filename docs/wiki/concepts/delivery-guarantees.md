@@ -29,9 +29,11 @@ The columns are the same in all three tables: what happens to the job, whether t
 | The job throws an exception listed in [`IgnoreRetryAttemptExceptions`](retries.md#failures-that-should-not-be-retried) (v5.9.0) | `Failed` at once, even with attempts left | Used | **Called** with the exception |
 | It runs longer than its [`[ExecutionTimeout]`](retries.md#execution-timeout) (v5.9.0) | Its token is cancelled and the run fails with a `TimeoutException`; then rescheduled like any failure. A job that ignores its token keeps its worker slot | Used | **Called** on the last attempt |
 | The node running it dies (crash, kill, lost machine) | Stays `Processing` until its heartbeat is older than `HeartbeatTimeout` (default 5 minutes; the check runs every `HeartbeatTimeout`, so recovery takes between 5 and about 10 minutes), then goes back to `Enqueued` | **Used**: the attempt that was running may have partly run | No |
-| The node dies on the job's last attempt | `Failed` | Used | **Called** with an `OrphanedJobException` (v5.8.0) |
+| The node dies on the job's last attempt | `Failed`, by a node that can load the job type; until one does it stays `Processing` (v6.3.0) | Used | **Called** with an `OrphanedJobException` (v5.8.0) |
 | The job succeeds but its result cannot be saved | The save is retried a few times. If it still fails the job stays `Processing` and is treated like a crashed node: run again by the orphan watcher, or `Failed` (and dead-lettered) if it had no attempts left | Used | Only if no attempts were left |
 | A dead-letter handler or forwarder throws | The job stays `Failed`; the error is logged | n/a | Swallowed, other forwarders still run |
+
+The failed save is retried three times, about 2.6 seconds in all (four calls). Run on PostgreSQL, SQL Server, Redis and MongoDB with the save failing on purpose: up to three failures the job ran once and ended `Succeeded`; with four, the job stayed `Processing`, was run a second time by the orphan watcher and then ended `Succeeded`. Keep `HeartbeatTimeout` above those 2.6 seconds, or the orphan watcher can give the job back while the executor is still retrying. This is the at-least-once guarantee at work: a job that succeeded can run twice, so make it [idempotent](idempotency.md).
 
 ### When the job waits or is skipped
 

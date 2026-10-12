@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using NexJob.Internal;
+using NexJob.Internal.Tests;
 using NexJob.Storage;
 using Xunit;
 
@@ -153,7 +154,6 @@ public sealed class JobExecutorStorageErrorTests
             _deadLetter.Object,
             new ThrottleRegistry(),
             new NexJobOptions { HeartbeatInterval = heartbeatInterval },
-            Enumerable.Empty<IJobExecutionFilter>(),
             new JobWakeUpChannel(),
             NullLogger<JobExecutor>.Instance)
         {
@@ -163,7 +163,7 @@ public sealed class JobExecutorStorageErrorTests
     private void SetupInvoker(JobRecord job, Func<CancellationToken, Task> body)
     {
         var context = new JobInvocationContext(
-            new Mock<IServiceScope>().Object,
+            TestScopes.Create(),
             new object(),
             new object(),
             (object _, object _, CancellationToken ct) => body(ct),

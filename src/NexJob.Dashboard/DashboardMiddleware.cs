@@ -31,17 +31,12 @@ public sealed class DashboardMiddleware
         _next = next;
         _pathPrefix = pathPrefix.TrimEnd('/');
         _options = options;
-        if (!string.IsNullOrWhiteSpace(options.DefaultTheme))
-        {
-            HtmlShell.DefaultTheme = options.DefaultTheme;
-        }
-
-        HtmlShell.EnablePlayground = options.EnablePlayground;
     }
 
     /// <summary>Processes an incoming request.</summary>
     public async Task InvokeAsync(HttpContext context)
     {
+        HtmlShell.UseSettings(_options.DefaultTheme, _options.EnablePlayground);
         var path = context.Request.Path.Value ?? string.Empty;
 
         if (!path.StartsWith(_pathPrefix, StringComparison.OrdinalIgnoreCase))

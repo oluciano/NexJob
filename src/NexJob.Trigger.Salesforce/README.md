@@ -100,7 +100,7 @@ builder.Services.AddNexJob(options =>
 | `ClientSecret` | `string` | Connected App OAuth2 Client Secret (Consumer Secret) | *Required* |
 | `AuthEndpoint` | `string` | Salesforce OAuth2 token endpoint URL. Must be `https` (`http` is accepted only for a loopback address such as a local mock), because the OAuth credentials are sent to it | `https://login.salesforce.com/services/oauth2/token` |
 | `PubSubEndpoint` | `string` | Salesforce Pub/Sub gRPC endpoint | `api.pubsub.salesforce.com:7443` |
-| `TargetQueue` | `string` | Target NexJob queue for enqueued jobs | `salesforce-events` |
+| `TargetQueue` | `string` | Target NexJob queue for enqueued jobs | `default` |
 | `JobPriority` | `JobPriority` | Execution priority for enqueued jobs | `Normal` |
 | `TenantId` | `string?` | 18-character Salesforce organization ID (derived if omitted) | `null` |
 | `ReplayPreset` | `SalesforceReplayPreset` | Starting offset when no checkpoint exists (`Latest`, `Earliest`, `Custom`) | `Latest` |
@@ -134,7 +134,7 @@ Salesforce event retention is typically 72 hours. If a worker is offline longer 
 
 ## Core Guarantees
 
-1. **Never Silently Drop**: All stream errors, deserialization failures, and enqueue faults are logged and routed to the configured `DeadLetterQueue`.
+1. **Never Silently Drop**: Stream errors, enqueue faults and events that can never be decoded are logged. A failed enqueue is copied to the configured `DeadLetterQueue`; an undecodable event is kept there as Base64 and skipped, so it does not block the events behind it. A schema that cannot be fetched is retried.
 2. **Idempotency**: Broker event ID (`ConsumerEvent.Event.Id`) is assigned to `JobRecord.IdempotencyKey`.
 3. **Trace Propagation**: Extracts W3C `traceparent` from `ConsumerEvent.Event.Headers` directly into `JobRecord.TraceParent`.
 4. **Signal After Enqueue**: Dispatcher wake-up notification is handled automatically by `IScheduler.EnqueueAsync`.

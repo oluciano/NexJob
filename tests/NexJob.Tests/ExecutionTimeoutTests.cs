@@ -28,7 +28,6 @@ public sealed class ExecutionTimeoutTests
         _deadLetterDispatcher.Object,
         _throttleRegistry,
         _options,
-        Enumerable.Empty<IJobExecutionFilter>(),
         new JobWakeUpChannel(),
         NullLogger<JobExecutor>.Instance);
 
@@ -110,20 +109,11 @@ public sealed class ExecutionTimeoutTests
     {
         var job = NewJob();
         var filter = new CapturingFilter();
-        var sut = new JobExecutor(
-            _storage.Object,
-            _invokerFactory.Object,
-            _retryPolicy.Object,
-            _deadLetterDispatcher.Object,
-            _throttleRegistry,
-            _options,
-            new IJobExecutionFilter[] { filter },
-            new JobWakeUpChannel(),
-            NullLogger<JobExecutor>.Instance);
         _retryPolicy.Setup(x => x.ComputeRetryAt(job, It.IsAny<Exception>())).Returns(DateTimeOffset.UtcNow.AddMinutes(1));
+        _filters = [filter];
         SetupInvoker(job, (_, ct) => Task.Delay(TimeSpan.FromSeconds(3), ct), new ExecutionTimeoutAttribute("00:00:00.150"));
 
-        await sut.ExecuteJobAsync(job).WaitAsync(TimeSpan.FromSeconds(10));
+        await Sut.ExecuteJobAsync(job).WaitAsync(TimeSpan.FromSeconds(10));
 
         filter.Seen.Should().BeOfType<TimeoutException>();
     }
@@ -263,6 +253,8 @@ public sealed class ExecutionTimeoutTests
         }
     }
 
+    private IJobExecutionFilter[] _filters = [];
+
     private static JobRecord NewJob() => new() { Id = JobId.New(), JobType = "TestJob", Attempts = 1, MaxAttempts = 3 };
 
     private void SetupInvoker(
@@ -273,7 +265,7 @@ public sealed class ExecutionTimeoutTests
     {
         _invokerFactory.Setup(x => x.PrepareAsync(job, It.IsAny<CancellationToken>()))
             .ReturnsAsync(() => new JobInvocationContext(
-                new Mock<IServiceScope>().Object,
+                TestScopes.Create(_filters),
                 new object(),
                 new object(),
                 (j, _, ct) => body(j, ct),

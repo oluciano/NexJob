@@ -20,6 +20,7 @@
     <ProjectReference Include="..\..\src\NexJob.SqlServer\NexJob.SqlServer.csproj" />
     <ProjectReference Include="..\..\src\NexJob.Redis\NexJob.Redis.csproj" />
     <ProjectReference Include="..\..\src\NexJob.MongoDB\NexJob.MongoDB.csproj" />
+    <ProjectReference Include="..\..\src\NexJob.Kafka\NexJob.Kafka.csproj" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2">
@@ -33,7 +34,14 @@
     <PackageReference Include="Testcontainers.MsSql" Version="3.10.0" />
     <PackageReference Include="Testcontainers.Redis" Version="3.10.0" />
     <PackageReference Include="Testcontainers.MongoDb" Version="3.10.0" />
+    <PackageReference Include="Testcontainers.Kafka" Version="3.10.0" />
+    <PackageReference Include="Moq" Version="4.21.0" />
     <PackageReference Include="SSH.NET" Version="2026.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\Shared\TestWait.Until.cs" Link="Shared\TestWait.Until.cs" />
+    <Compile Include="..\NexJob.Tests\TestPorts.cs" Link="Shared\TestPorts.cs" />
   </ItemGroup>
 
 </Project>

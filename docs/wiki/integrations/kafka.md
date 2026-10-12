@@ -145,8 +145,8 @@ builder.Services.AddNexJob()
     });
 ```
 
-!!! warning
-    The producer jobs go to a queue named **`kafka-producer`**, and a worker polls only the queues in `NexJobOptions.Queues`. With the default `Queues`, **nothing is published**: the jobs wait in storage. Checked against a real broker: with the default queues the topic stayed empty; with `options.Queues = ["default", "kafka-producer"]` the message arrived. Add `kafka-producer` (or the queue you pass to `EnqueueKafkaAsync`) to `Queues` on at least one node. This default is tracked as [#482](https://github.com/oluciano/NexJob/issues/482).
+!!! note "Which queue the outbox jobs use"
+    The producer jobs go to the `default` queue, which a worker polls out of the box. Pass `queue:` to `EnqueueKafkaAsync` to name another one; a queue you name is polled only when it is in `NexJobOptions.Queues`. Before 6.3.0 the default was `kafka-producer`, which no worker polled unless it was listed; jobs already waiting there are only drained while it stays in `Queues`.
 
 | Option | Default | Meaning |
 |---|---|---|
@@ -155,7 +155,7 @@ builder.Services.AddNexJob()
 | `EnableIdempotence` | `true` | The Kafka producer's idempotence. |
 | `FlushTimeout` | 10 seconds | How long the producer waits to flush on shutdown. |
 | `ConfigureProducer` | `null` | A delegate over the Confluent `ProducerConfig`. |
-| `Queue`, `DefaultPriority` | `"kafka-producer"`, `Normal` | **No effect.** They are declared but nothing reads them; the queue and priority come from the arguments of `EnqueueKafkaAsync`. |
+| `Queue`, `DefaultPriority` | `"default"`, `Normal` | **No effect.** They are declared but nothing reads them; the queue and priority come from the arguments of `EnqueueKafkaAsync`. |
 
 `BootstrapServers`, `Acks` and `EnableIdempotence` are forced back after `ConfigureProducer` runs, so the delegate cannot change them. On shutdown the producer flushes what it has in flight.
 
@@ -257,7 +257,7 @@ builder.Services.AddNexJob()
 
 ## What was checked
 
-Against a single-node Kafka in KRaft mode (Confluent `cp-kafka` 7.6.0): the trigger read a record that existed before its group; a record without a job type reached the dead-letter topic with the headers above; the outbox published a message when its queue was polled and did not when it was not. SASL and TLS, a cluster with several brokers, `ExhaustedJobsTopic`, the long-outage rebalance and the ordering behavior were not run. The package is tested by its authors against KRaft clusters; ZooKeeper-based clusters are expected to work but were not tried here.
+Against a single-node Kafka in KRaft mode (Confluent `cp-kafka` 7.6.0): the trigger read a record that existed before its group; a record without a job type reached the dead-letter topic with the headers above; the outbox published a message when its queue was polled and did not when it was not. `ExhaustedJobsTopic` was run too: a job that exhausted its retries was copied to that topic with the `nexjob.error` header, and a blank topic forwarded nothing. The job type of a trigger must implement `IJob<string>`; one that does not fails at execution with an unhelpful error ([#510](https://github.com/oluciano/NexJob/issues/510)). Run on demand (`Category=Reliability.Validation`): a cluster of three KRaft brokers kept turning records into jobs, none lost and none doubled, after one broker was stopped; a `SASL_SSL` listener with the `PLAIN` mechanism and a certificate from a test CA accepted the trigger with the right password and left the records unread with a wrong one; and with storage slower than `max.poll.interval.ms` the consumer was evicted, the offset commit failed (`Kafka message ... was enqueued but its offset could not be committed`) and the record came back, reaching storage twice with the same `kafka:{topic}:{partition}:{offset}` key, which is what keeps it one job. `SCRAM-SHA-512` (the mechanism in the example above), mutual TLS and the ordering behavior were not run. The package is tested by its authors against KRaft clusters; ZooKeeper-based clusters are expected to work but were not tried here.
 
 ## Try it
 

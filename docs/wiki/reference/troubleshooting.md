@@ -174,7 +174,7 @@ NexJob is designed to surface diagnostic information through structured logs, me
 
     **Check 3: Job was orphaned, not failed by a retry**
 
-    If an orphaned job has consumed all its attempts, it is marked `Failed` with the message `"Orphaned execution exceeded maximum attempts."`. From v5.8.0 the dead-letter handler and the `IDeadLetterForwarder`s **are** called for it, with an `OrphanedJobException` (on the built-in providers; a custom storage that does not implement `IOrphanedJobReporter` still fails the job without calling them). If the handler did not run, look in the logs for the warning `... stopped sending heartbeats and no attempts were left`. See [When the node dies](../concepts/dead-letter.md#when-the-node-dies).
+    If an orphaned job has consumed all its attempts, it is marked `Failed` with the message `"Orphaned execution exceeded maximum attempts."`. From v5.8.0 the dead-letter handler and the `IDeadLetterForwarder`s **are** called for it, with an `OrphanedJobException` (on the built-in providers; a custom storage that does not implement `IOrphanedJobReporter` still fails the job without calling them). If the handler did not run, look in the logs for the warning `... stopped sending heartbeats and no attempts were left`. If the job is still `Processing` and the log says `this node cannot load that type`, the job belongs to another service sharing the database: its handler runs when a node of that service finds it. See [When the node dies](../concepts/dead-letter.md#when-the-node-dies).
 
 
 ???+ "Dashboard not loading or showing no data"
@@ -248,7 +248,7 @@ NexJob is designed to surface diagnostic information through structured logs, me
 
     **Batch acknowledgment**
 
-    By default, every job completion is a synchronous database write. Enable batch acknowledgment to aggregate completions and cut write roundtrips by over 90%:
+    By default, every job completion is a synchronous database write. With batch acknowledgment, completions that are waiting are written together, up to 100 per write, so under a backlog the writes drop sharply; with little load most batches hold one job and nothing changes. A job still commits synchronously when it is recurring, is a continuation child, uses `[Retention(PurgeOnSuccess)]` or `TrimPayloadOnSuccess`, or wrote log entries:
 
     ```csharp
     options.EnableBatchAcknowledgment = true;
@@ -280,7 +280,7 @@ NexJob is designed to surface diagnostic information through structured logs, me
 
     **Pool sizing rule of thumb**
 
-    NexJob typically uses about `Workers + 10` connections per node. For a 3-node cluster each with 20 workers, allow ~90 connections. As of v5.7.0, NexJob logs the detected pool size and worker count at startup, and warns when the pool is smaller than `Workers`.
+    A node needs about `Workers + 5` connections; set the pool maximum to `Workers + 10` to leave room for spikes. For a 3-node cluster each with 20 workers, that is about 75 connections in use and a pool maximum of 30 per node, 90 in total, so keep the database's connection limit above 90. On PostgreSQL and SQL Server, NexJob logs the detected pool size and worker count at startup, and warns when the pool is smaller than `Workers`. Redis and MongoDB log nothing about their pools.
 
     **PostgreSQL: `AddNexJobPostgres(NpgsqlDataSource)` on password-protected databases**
 

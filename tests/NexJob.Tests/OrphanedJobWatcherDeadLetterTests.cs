@@ -12,6 +12,8 @@ namespace NexJob.Tests;
 /// </summary>
 public sealed class OrphanedJobWatcherDeadLetterTests
 {
+    private const string ForeignJobType = "Other.Service.B.Job, OtherService.B";
+
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(10);
 
     [Fact]
@@ -81,6 +83,37 @@ public sealed class OrphanedJobWatcherDeadLetterTests
         dispatcher.Calls.Should().BeEmpty();
     }
 
+    [Fact]
+    public async Task Watcher_ExhaustedJobOfATypeThisNodeCannotLoad_IsLeftProcessingAndNotDispatched()
+    {
+        // N1 (Positive, issue #474): the handler of another service's job must not be skipped by failing it here.
+        var (storage, dispatcher, watcher) = Build();
+        var foreign = await LeaveOrphanAsync(storage, maxAttempts: 1, ForeignJobType);
+        var own = await LeaveOrphanAsync(storage, maxAttempts: 1);
+
+        await watcher.StartAsync(CancellationToken.None);
+        await WaitAsync(() => dispatcher.Calls.Count >= 1);
+        await Task.Delay(300); // more watcher cycles
+        await watcher.StopAsync(CancellationToken.None);
+
+        dispatcher.Calls.Should().ContainSingle().Which.Job.Id.Should().Be(own);
+        (await storage.GetJobByIdAsync(foreign))!.Status.Should().Be(JobStatus.Processing);
+    }
+
+    [Fact]
+    public async Task Watcher_ForeignJobWithAttemptsLeft_IsRequeuedAndNotDispatched()
+    {
+        // N2 (Negative, guard): giving a job back needs no type.
+        var (storage, dispatcher, watcher) = Build();
+        var id = await LeaveOrphanAsync(storage, maxAttempts: 3, ForeignJobType);
+
+        await watcher.StartAsync(CancellationToken.None);
+        await WaitAsync(() => storage.GetJobByIdAsync(id).Result!.Status == JobStatus.Enqueued);
+        await watcher.StopAsync(CancellationToken.None);
+
+        dispatcher.Calls.Should().BeEmpty();
+    }
+
     private static NexJobOptions Options() => new() { HeartbeatTimeout = TimeSpan.FromMilliseconds(100) };
 
     private static (InMemoryStorageProvider Storage, RecordingDispatcher Dispatcher, OrphanedJobWatcherService Watcher) Build()
@@ -91,12 +124,12 @@ public sealed class OrphanedJobWatcherDeadLetterTests
         return (storage, dispatcher, watcher);
     }
 
-    private static async Task<JobId> LeaveOrphanAsync(InMemoryStorageProvider storage, int maxAttempts)
+    private static async Task<JobId> LeaveOrphanAsync(InMemoryStorageProvider storage, int maxAttempts, string? jobType = null)
     {
         var job = new JobRecord
         {
             Id = JobId.New(),
-            JobType = typeof(OrphanedJobWatcherDeadLetterTests).AssemblyQualifiedName!,
+            JobType = jobType ?? typeof(OrphanedJobWatcherDeadLetterTests).AssemblyQualifiedName!,
             Queue = "default",
             Priority = JobPriority.Normal,
             Status = JobStatus.Enqueued,

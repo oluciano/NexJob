@@ -64,16 +64,16 @@ nav:
       - Job payloads: concepts/job-payloads.md
       - Scheduling: concepts/scheduling.md
       - Recurring Jobs: concepts/recurring-jobs.md
+      - Queues: concepts/queues.md
+      - Default queue and prefix: concepts/default-queue.md
       - Failure handling:
           - Retries and dead letter: concepts/retries-and-dead-letter.md
           - Retries: concepts/retries.md
           - Dead-letter handling: concepts/dead-letter.md
           - Dead-letter forwarding: concepts/dead-letter-forwarding.md
       - Delivery Guarantees: concepts/delivery-guarantees.md
-      - Continuations: concepts/continuations.md
       - Idempotency: concepts/idempotency.md
-      - Queues: concepts/queues.md
-      - Default queue and prefix: concepts/default-queue.md
+      - Continuations: concepts/continuations.md
   - Guides:
       - Throttling: guides/throttling.md
       - Circuit Breaker: guides/circuit-breaker.md

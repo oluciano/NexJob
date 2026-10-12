@@ -34,18 +34,27 @@ public sealed class RabbitMqProducerOptions
     public string VirtualHost { get; set; } = "/";
 
     /// <summary>
-    /// Gets or sets the default exchange name to publish to.
+    /// Gets or sets an optional delegate that configures the underlying <see cref="global::RabbitMQ.Client.ConnectionFactory"/>:
+    /// TLS (<c>Ssl</c>), heartbeat, <c>ClientProvidedName</c> and any other property. It runs before
+    /// <see cref="HostName"/>, <see cref="Port"/>, <see cref="UserName"/>, <see cref="Password"/> and <see cref="VirtualHost"/>
+    /// are applied, so those five settings always win. A delegate that throws fails the connection attempt.
+    /// </summary>
+    public Action<global::RabbitMQ.Client.ConnectionFactory>? ConfigureConnection { get; set; }
+
+    /// <summary>
+    /// Gets or sets the exchange used when the call names none (a <see langword="null"/> exchange).
     /// Defaults to empty string (RabbitMQ default direct exchange).
     /// </summary>
     public string DefaultExchange { get; set; } = string.Empty;
 
     /// <summary>
-    /// Gets or sets the default routing key to use if none is specified per message.
+    /// Gets or sets the routing key used when the call passes a <see langword="null"/> routing key.
     /// </summary>
     public string? DefaultRoutingKey { get; set; }
 
     /// <summary>
     /// Gets or sets a value indicating whether messages should be published with the mandatory flag.
+    /// A mandatory message the broker cannot route fails the publish with an <see cref="InvalidOperationException"/>.
     /// Defaults to <see langword="false"/>.
     /// </summary>
     public bool Mandatory { get; set; }
@@ -57,10 +66,11 @@ public sealed class RabbitMqProducerOptions
     public TimeSpan ConfirmTimeout { get; set; } = TimeSpan.FromSeconds(5);
 
     /// <summary>
-    /// Gets or sets the NexJob queue name used to process RabbitMQ publishing jobs.
-    /// Defaults to "rabbitmq-producer".
+    /// Gets or sets the NexJob queue name for RabbitMQ publishing jobs.
+    /// Not read yet: the queue comes from the <c>queue</c> argument of <c>EnqueueRabbitMqAsync</c>, which defaults to "default", the default queue of the application (<c>{prefix}.default</c>).
+    /// Defaults to "default", the default queue of the application (<c>{prefix}.default</c>).
     /// </summary>
-    public string Queue { get; set; } = "rabbitmq-producer";
+    public string Queue { get; set; } = "default";
 
     /// <summary>
     /// Gets or sets the default job priority for RabbitMQ publishing jobs.

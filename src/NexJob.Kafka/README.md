@@ -157,7 +157,7 @@ builder.Services.AddNexJob()
 | `Acks` | Acknowledgment guarantee (`Acks.All`, `Acks.Leader`, `Acks.None`) | `Acks.All` |
 | `EnableIdempotence` | Controls producer idempotence on the broker | `true` |
 | `FlushTimeout` | Timeout for flushing messages on application shutdown | `10 seconds` |
-| `Queue` | NexJob queue name used for publishing jobs | `"kafka-producer"` |
+| `Queue` | NexJob queue name for publishing jobs (not read yet: use the `queue` argument of `EnqueueKafkaAsync`) | `"default"` |
 | `DefaultPriority` | Default execution priority for publishing jobs | `JobPriority.Normal` |
 | `ConfigureProducer` | Delegate (`Action<ProducerConfig>`) to customize SASL/SSL credentials, TLS certificates, and timeouts | `null` |
 

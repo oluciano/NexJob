@@ -2,6 +2,7 @@ using System.Text;
 using Confluent.Kafka;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NexJob.Kafka;
@@ -80,5 +81,49 @@ public sealed class KafkaProducerIntegrationTests
         var header = consumeResult.Message.Headers.FirstOrDefault(h => h.Key == "correlation-id");
         header.Should().NotBeNull();
         Encoding.UTF8.GetString(header!.GetValueBytes()).Should().Be("corr-integration-999");
+    }
+
+    /// <summary>N1 (#482): with the default queue configuration, an outbox message is published without listing a queue.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task EnqueueKafkaAsync_WithDefaultQueueConfiguration_PublishesTheMessage()
+    {
+        var topic = $"outbox-default-queue-{Guid.NewGuid():N}";
+        using var host = Host.CreateDefaultBuilder()
+            .ConfigureServices(services =>
+            {
+                services.AddNexJob(o =>
+                {
+                    o.PollingInterval = TimeSpan.FromMilliseconds(50);
+                    o.MaxAttempts = 1;
+                });
+                services.AddKafkaProducer(options =>
+                {
+                    options.BootstrapServers = _fixture.BootstrapServers;
+                    options.Acks = Acks.All;
+                });
+            })
+            .Build();
+        using (var admin = new AdminClientBuilder(new AdminClientConfig { BootstrapServers = _fixture.BootstrapServers }).Build())
+        {
+            await admin.CreateTopicsAsync([new Confluent.Kafka.Admin.TopicSpecification { Name = topic, NumPartitions = 1, ReplicationFactor = 1 }]);
+        }
+
+        await host.StartAsync();
+
+        await host.Services.GetRequiredService<IScheduler>().EnqueueKafkaAsync(topic, "key1", new { id = 1 });
+
+        using var consumer = new ConsumerBuilder<string, byte[]>(new ConsumerConfig
+        {
+            BootstrapServers = _fixture.BootstrapServers,
+            GroupId = $"verifier-{Guid.NewGuid():N}",
+            AutoOffsetReset = AutoOffsetReset.Earliest,
+        }).Build();
+        consumer.Subscribe(topic);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var result = consumer.Consume(cts.Token);
+
+        Encoding.UTF8.GetString(result.Message.Value).Should().Be("{\"id\":1}");
+        await host.StopAsync();
     }
 }

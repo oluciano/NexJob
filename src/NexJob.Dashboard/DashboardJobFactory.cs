@@ -1,3 +1,5 @@
+using NexJob.Internal;
+
 namespace NexJob.Dashboard;
 
 /// <summary>Builds the jobs the dashboard itself enqueues (scenarios, Trigger now).</summary>
@@ -32,6 +34,7 @@ internal static class DashboardJobFactory
             Status = JobStatus.Enqueued,
             CreatedAt = DateTimeOffset.UtcNow,
             MaxAttempts = options.MaxAttempts,
+            SchemaVersion = JobRecordFactory.ResolveSchemaVersion(jobType),
             Tags = tags ?? [],
         };
     }

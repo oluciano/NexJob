@@ -6,9 +6,6 @@ description: "Use NexJob.Trigger.Salesforce to turn Salesforce Platform Events a
 
 The Salesforce trigger subscribes to a topic of the Salesforce **Pub/Sub API** (gRPC, Avro) and enqueues each event as a NexJob job. It reads Platform Events (`/event/...`) and Change Data Capture (`/data/...`) topics. For the older CometD protocol, see [Salesforce Streaming API](salesforce-streaming.md). For what all triggers have in common, see the [overview](triggers.md).
 
-!!! warning
-    Known bug: the jobs this trigger enqueues fail when they run ([#481](https://github.com/oluciano/NexJob/issues/481)). The trigger stores the decoded event as a JSON object, but declares the job input as a `string`, so deserializing it throws and every attempt fails, for `SalesforceEventJob` and for any `AddSalesforceTrigger<TJob>` job. Reproduced with a fake Pub/Sub client; not against Salesforce. Until it is fixed, prefer the [Streaming API trigger](salesforce-streaming.md), or treat this one as not ready.
-
 ## Install
 
 ```bash
@@ -33,8 +30,6 @@ builder.Services.AddSalesforceTrigger<OrderEventJob>(options =>
 
 The builder form is `AddNexJob().AddSalesforceTrigger<OrderEventJob>(...)`. Keep the client id and secret in a secret store.
 
-!!! warning
-    `TargetQueue` defaults to `"salesforce-events"`, not `"default"`. A queue you name is polled only when it is in `NexJobOptions.Queues`. Checked: with the default `Queues`, the jobs were enqueued and no worker ever fetched them; once `salesforce-events` was listed, they were fetched. Either set `TargetQueue = "default"` or add the queue to `Queues`. This default is tracked as [#482](https://github.com/oluciano/NexJob/issues/482).
 
 ## Authentication
 
@@ -52,7 +47,7 @@ The trigger uses the OAuth 2.0 **client credentials** flow of a Connected App (a
 | `PubSubEndpoint` | `api.pubsub.salesforce.com:7443` | The gRPC endpoint. |
 | `TenantId` | `null` | The 18-character org id. Taken from the token response when omitted. |
 | `JobType` | `null` | The assembly-qualified job type. Without it, the built-in no-op `SalesforceEventJob` runs. |
-| `TargetQueue` | `"salesforce-events"` | The NexJob queue. See the warning above. |
+| `TargetQueue` | `"default"` | The NexJob queue. A queue you name is polled only when it is in `NexJobOptions.Queues`. |
 | `JobPriority` | `Normal` | The priority of the jobs. |
 | `BatchSize` | `100` | Events requested per batch (1 to 500). |
 | `ReplayPreset` | `Latest` | Where to start when no replay id is saved: `Latest`, `Earliest` or `Custom`. |
@@ -65,7 +60,7 @@ The options are validated when the host starts: a wrong `Topic`, a missing crede
 
 ## How an event becomes a job
 
-- **Input:** the Avro payload, decoded with the event's schema (fetched and cached) into JSON. This is the shape [#481](https://github.com/oluciano/NexJob/issues/481) is about.
+- **Input:** the Avro payload, decoded with the event's schema (fetched and cached) into JSON, handed to the job as a **string** with that JSON text (like every other trigger), so the job is an `IJob<string>` that parses it.
 - **Idempotency key:** the event's `Id`, or the hex replay id when it has none. It deduplicates only against jobs that are still active; see [the overview](triggers.md#idempotency-keys-by-broker).
 - **Trace:** a `traceparent` event header, when present.
 - **Tags:** `trigger:salesforce` and `topic:{Topic}`.
@@ -89,7 +84,7 @@ When Salesforce rejects the saved replay id (an expired one, an invalid argument
 
 | Policy | What happens |
 |---|---|
-| `FailFast` (default) | A critical log, the status becomes `Faulted`, and the exception ends the trigger's background service. With the default .NET host settings an unhandled background-service exception stops the whole application (not run here). Events published in the gap are not read. |
+| `FailFast` (default) | A critical log, the status becomes `Faulted`, and the exception ends the trigger's background service. With the default .NET host settings an unhandled background-service exception stops the whole application: run against the fake server below, the host was asked to stop and no job was created. Events published in the gap are not read. |
 | `ResetToLatest` | The saved position is dropped and the trigger resumes from the tip. Events in the gap are skipped. |
 | `ResetToEarliest` | The saved position is dropped and the trigger resumes from the oldest event Salesforce still keeps. Events may repeat. |
 
@@ -99,11 +94,12 @@ When Salesforce rejects the saved replay id (an expired one, an invalid argument
 |---|---|
 | The event was enqueued | The replay id is saved, even if the host is stopping at that moment. |
 | The enqueue failed | A warning is logged and the replay id is **not** saved, and with `DeadLetterQueue` set, a copy of the job is enqueued there (low priority, key `dlq:{key}`). The trigger then goes on to the next event, so the failed one is not tried again while the process runs. |
-| The event cannot be decoded (a schema that cannot be fetched or parsed) | The stream is dropped and the trigger reconnects from the previous replay id, which delivers the same event again, in a loop with a pause that doubles up to 30 seconds. The events behind it do not advance. |
+| The event can never be decoded (corrupted Avro, or no schema id) | An error is logged and, with `DeadLetterQueue` set, the raw payload is enqueued there as a Base64 string (low priority, key `dlq:{key}`, tags `dead-letter` and `decode-failed`). The replay id is then saved, so the event is not delivered again and the events behind it advance. If the copy in `DeadLetterQueue` cannot be enqueued, the replay id is not saved. |
+| The schema cannot be fetched (a network or registry failure) | The stream is dropped and the trigger reconnects from the previous replay id, which delivers the same event again, with a pause that doubles up to 30 seconds. The events behind it wait until the schema can be fetched. |
 | The stream ends or errors | The trigger reconnects, waiting 1 second, doubling up to 30 seconds. A received event resets the wait. |
 | The host is stopping | The trigger stops; the saved replay id is the last enqueued event. |
 
-The failed-enqueue and the decode rows were read from the code; the decode loop was seen with a fake client. If the enqueue fails because the storage is down, the copy in `DeadLetterQueue` goes to the same storage and fails too, so do not count on it for that case.
+The rows were checked with a fake Pub/Sub client and against the mock Pub/Sub server of the integration tests. A custom `ISalesforceSchemaService` makes an event skippable by throwing `SalesforcePayloadDecodeException`; any other exception is treated as retryable. If the enqueue fails because the storage is down, the copy in `DeadLetterQueue` goes to the same storage and fails too, so do not count on it for that case.
 
 ## Listener status
 
@@ -111,7 +107,7 @@ The trigger registers with the [listener registry](triggers.md#live-listener-reg
 
 ## Not verified
 
-This page was written from the source and a fake Pub/Sub client. No Salesforce org was used, so the OAuth flow, the real gRPC stream, the Avro decoding of real events and the 24-hour window were not exercised.
+This page was written from the source, a fake Pub/Sub client and a fake Pub/Sub server in `tests/NexJob.Trigger.Salesforce.IntegrationTests` (OAuth token endpoint and a gRPC stream with Avro events, built from the public proto). The fake server confirmed the end-to-end path, the saved replay id, and the three fallback policies for a replay id answered with `InvalidArgument`: `ResetToLatest` and `ResetToEarliest` resubscribed with an empty replay id and the matching preset and the event became a job, and `FailFast` stopped the host. The fake is our reading of the protocol, not Salesforce: no org was used, so the real OAuth flow, the real gRPC stream, the Avro decoding of real events, what Salesforce actually answers to an expired replay id, and the 24-hour window were not exercised.
 
 ## Try it
 

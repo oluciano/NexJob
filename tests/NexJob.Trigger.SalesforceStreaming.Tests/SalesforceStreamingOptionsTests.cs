@@ -14,7 +14,8 @@ public sealed class SalesforceStreamingOptionsTests
 
         // Assert
         options.Channel.Should().BeEmpty();
-        options.TargetQueue.Should().Be("salesforce-streaming");
+        // Behavior changed in v6.3: the default queue is "default", the one a worker polls out of the box (#482).
+        options.TargetQueue.Should().Be("default");
         options.JobPriority.Should().Be(JobPriority.Normal);
         options.ReplayPreset.Should().Be(SalesforceStreamingReplayPreset.Latest);
         options.CustomReplayId.Should().BeNull();

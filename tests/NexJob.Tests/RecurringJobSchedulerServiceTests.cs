@@ -46,6 +46,51 @@ public sealed class RecurringJobSchedulerServiceTests
 
     // ─── tests ────────────────────────────────────────────────────────────────
 
+    /// <summary>N1 (#470): a fired recurring job stores the schema version of its job class; N2/N3 guard: an unresolvable type stores 1.</summary>
+    /// <param name="jobType">The job type stored on the recurring schedule.</param>
+    /// <param name="expectedVersion">The schema version the fired job must carry.</param>
+    /// <returns>A task that completes when the assertion has run.</returns>
+    [Theory]
+    [InlineData("VERSIONED", 2)]
+    [InlineData("FakeJob", 1)]
+    public async Task FiringARecurringJob_StoresTheSchemaVersionOfTheJobClass(string jobType, int expectedVersion)
+    {
+        var storage = new InMemoryStorageProvider();
+        var recurring = MakeRecurring("r-schema", DateTimeOffset.UtcNow.AddSeconds(-1));
+        await storage.UpsertRecurringJobAsync(new RecurringJobRecord
+        {
+            RecurringJobId = recurring.RecurringJobId,
+            JobType = jobType == "VERSIONED" ? typeof(VersionedRecurringJob).AssemblyQualifiedName! : jobType,
+            InputType = recurring.InputType,
+            InputJson = recurring.InputJson,
+            Cron = recurring.Cron,
+            Queue = recurring.Queue,
+            NextExecution = recurring.NextExecution,
+            CreatedAt = recurring.CreatedAt,
+            ConcurrencyPolicy = recurring.ConcurrencyPolicy,
+        });
+
+        var svc = (IHostedService)MakeService(storage);
+        await svc.StartAsync(CancellationToken.None);
+        JobRecord? fired = null;
+        await TestWait.UntilAsync(async () =>
+        {
+            fired = await storage.FetchNextAsync(["default"]);
+            return fired is not null;
+        });
+        await svc.StopAsync(CancellationToken.None);
+
+        fired!.SchemaVersion.Should().Be(expectedVersion);
+    }
+
+    /// <summary>Support job at schema version 2.</summary>
+    [SchemaVersion(2)]
+    public sealed class VersionedRecurringJob : IJob<string>
+    {
+        /// <inheritdoc/>
+        public Task ExecuteAsync(string input, CancellationToken cancellationToken) => Task.CompletedTask;
+    }
+
     [Fact]
     public async Task DueJob_IsEnqueuedOnFirstPollCycle()
     {

@@ -215,7 +215,7 @@ The [samples folder](https://github.com/oluciano/NexJob/tree/develop/samples) ha
 
     Enqueue, schedule with delay, set deadlines, and chain job continuations.
 
-  -   [**Retries & Dead Letter**](concepts/retries-and-dead-letter.md)
+  -   [**Retries and dead letter**](concepts/retries-and-dead-letter.md)
 
     Configure exponential backoff and handle exhausted retries gracefully.
 

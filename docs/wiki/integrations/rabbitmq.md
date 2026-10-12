@@ -87,7 +87,7 @@ A missing `HostName` or `QueueName` fails when the host starts. The connection i
 - **Trace:** a `traceparent` header, when present, becomes the job's trace parent.
 - **Ack:** the message is acknowledged only after the job was enqueued.
 
-With the default `PrefetchCount` of 1, messages are handled one at a time.
+With the default `PrefetchCount` of 1, messages are handled one at a time. With a higher value the broker sends that many messages at once, unacknowledged, and the trigger still enqueues them one after the other: a slow storage holds the whole window, so a large `PrefetchCount` only buffers messages in the process.
 
 ### What happens when it fails
 
@@ -144,24 +144,21 @@ builder.Services.AddNexJob()
     });
 ```
 
-!!! warning
-    The producer jobs go to a queue named **`rabbitmq-producer`**, and a worker polls only the queues in `NexJobOptions.Queues`. With the default `Queues`, **nothing is published**: the jobs wait in storage. Checked against a real broker: with the default queues the target queue stayed empty; with `options.Queues = ["default", "rabbitmq-producer"]` the message arrived. Add `rabbitmq-producer` (or the queue you pass to `EnqueueRabbitMqAsync`) to `Queues` on at least one node. This default is tracked as [#482](https://github.com/oluciano/NexJob/issues/482).
+!!! note "Which queue the outbox jobs use"
+    The producer jobs go to the `default` queue, which a worker polls out of the box. Pass `queue:` to `EnqueueRabbitMqAsync` to name another one; a queue you name is polled only when it is in `NexJobOptions.Queues`. Before 6.3.0 the default was `rabbitmq-producer`, which no worker polled unless it was listed; jobs already waiting there are only drained while it stays in `Queues`.
 
 | Option | Default | Meaning |
 |---|---|---|
 | `HostName`, `Port`, `UserName`, `Password`, `VirtualHost` | `localhost`, `5672`, `guest`, `guest`, `/` | The connection. For TLS, see [below](#tls-and-other-connection-settings). |
 | `ConfirmTimeout` | 5 seconds | How long to wait for the broker's confirm. |
-| `Mandatory` | `false` | See the warning below. |
-| `DefaultExchange`, `DefaultRoutingKey` | `""`, `null` | **No effect.** See the warning below. |
-| `Queue`, `DefaultPriority` | `"rabbitmq-producer"`, `Normal` | **No effect.** They are declared but nothing reads them; the queue and priority come from the arguments of `EnqueueRabbitMqAsync`. |
+| `Mandatory` | `false` | Fail the publish when the broker cannot route the message. See the note below. |
+| `DefaultExchange`, `DefaultRoutingKey` | `""`, `null` | The exchange and routing key used when the call passes none. See the note below. |
+| `Queue`, `DefaultPriority` | `"default"`, `Normal` | **No effect.** They are declared but nothing reads them; the queue and priority come from the arguments of `EnqueueRabbitMqAsync`. |
 
-!!! warning
-    Three of these options do not work as their names say ([#483](https://github.com/oluciano/NexJob/issues/483)). Checked against a real broker:
-
-    - **`Mandatory` does not fail an unroutable message.** A mandatory publish to the default exchange with a routing key that matches no queue succeeded, with no warning, and the message was lost. The broker returns such a message and also confirms it, and nothing handles the return.
-    - **`DefaultExchange` and `DefaultRoutingKey` are never used.** The `EnqueueRabbitMq*` calls always pass an exchange (an empty one when you leave it out), so the default never applies. With `DefaultExchange = "ex1"`, a publish by routing key alone went to the default exchange, not to `ex1`.
-
-    Always pass the exchange and the routing key explicitly, and make sure the target queue exists and is bound.
+!!! note "What `Mandatory`, `DefaultExchange` and `DefaultRoutingKey` do"
+    - **`Mandatory`** (or `mandatory: true` on the call) makes the publish fail when the broker cannot route the message to any queue: the job fails with an `InvalidOperationException` that carries the broker's reply (for example `312 NO_ROUTE`) and goes through the retry and dead-letter flow. Without it, the broker drops an unroutable message silently. A publish to an exchange that does not exist fails either way.
+    - **`DefaultExchange`** is used when the call names no exchange: `EnqueueRabbitMqAsync(routingKey, value)`, or `exchange: null` on the longer overload. It is empty by default, which is the broker's default exchange. An exchange you pass, even `""`, wins.
+    - **`DefaultRoutingKey`** is used when the call passes `routingKey: null`. A routing key you pass, even `""`, wins.
 
 ### Publish messages
 
@@ -208,21 +205,27 @@ A confirm means the broker took the message. It does not mean a queue received i
 
 ## TLS and other connection settings
 
-The options have no TLS switch, and no way to set a heartbeat or a client name (a `ConfigureConnection` delegate like Kafka's `ConfigureConsumer` is proposed in [#484](https://github.com/oluciano/NexJob/issues/484)). Both the trigger and the producer take the `IConnectionFactory` from DI and overwrite only the five settings above on it, so you can register your own `ConnectionFactory` **after** `AddRabbitMqTrigger` / `AddRabbitMqProducer`:
+Both options classes (`RabbitMqTriggerOptions` and `RabbitMqProducerOptions`) have a `ConfigureConnection` delegate over the `ConnectionFactory`, like Kafka's `ConfigureConsumer`. Use it for TLS, heartbeat, a client name or any other `ConnectionFactory` property:
 
 ```csharp
 builder.Services.AddNexJob()
-    .AddRabbitMqTrigger<ProcessOrderJob>(options => { /* host, queue, credentials */ });
-
-builder.Services.AddSingleton<IConnectionFactory>(new ConnectionFactory
-{
-    Port = 5671,
-    Ssl = new SslOption { Enabled = true, ServerName = "rabbit.prod.example.com" },
-    RequestedHeartbeat = TimeSpan.FromSeconds(30),
-});
+    .AddRabbitMqTrigger<ProcessOrderJob>(options =>
+    {
+        options.HostName = "rabbit.prod.example.com";
+        options.Port = 5671;
+        options.QueueName = "incoming-events";
+        options.ConfigureConnection = factory =>
+        {
+            factory.Ssl = new SslOption { Enabled = true, ServerName = "rabbit.prod.example.com" };
+            factory.RequestedHeartbeat = TimeSpan.FromSeconds(30);
+            factory.ClientProvidedName = "orders-worker";
+        };
+    });
 ```
 
-The factory is shared by the trigger and the producer, and the last registration wins, so register it once and after both. Checked: a registered factory (with a custom client name) was the one used for the connection. TLS itself was not run against a TLS-enabled broker.
+The delegate runs before `HostName`, `Port`, `UserName`, `Password` and `VirtualHost` are applied, so those five settings always win: set them on the options, not in the delegate. It runs on every connection attempt, including each reconnect, so keep it cheap and free of side effects. A delegate that throws fails that attempt (the trigger logs it and keeps retrying; the producer's publish fails and is retried by the job).
+
+If you register your own `IConnectionFactory` in DI instead, the trigger and the producer use it and overwrite the same five settings on it. The factory is then shared by both and the last registration wins. The delegate is applied to that factory too. Run against a RabbitMQ 3.13 broker with a TLS listener (a certificate signed by a CA generated for the test): with the right `ServerName` the message became a job; with a `ServerName` that does not match the certificate, or with `Ssl.Enabled` on the plain AMQP port, the connection was refused and the message stayed in the queue. Client certificates (mutual TLS) and a broker that requires them were not run.
 
 ## Configuration from `appsettings.json` and the environment
 
@@ -243,7 +246,7 @@ Or bind a section: `.AddRabbitMqTrigger(options => builder.Configuration.GetSect
 
 ## What was checked
 
-Against a single RabbitMQ 3.13 broker: the outbox published only when its queue was polled; a mandatory unroutable publish succeeded and lost the message; `DefaultExchange` was ignored; a publish to a missing exchange failed; the trigger on a missing queue kept reconnecting; a message without a job type was discarded when the queue had no dead-letter exchange. A cluster, a TLS-enabled broker, a dead-letter exchange, `ExhaustedJobsRoutingKey` and prefetch above 1 were not run.
+Against a single RabbitMQ 3.13 broker: the outbox published only when its queue was polled; a mandatory unroutable publish failed with `312 NO_ROUTE`, and a routable one and a non-mandatory unroutable one behaved as before; `DefaultExchange` and `DefaultRoutingKey` applied; a publish to a missing exchange failed; the trigger on a missing queue kept reconnecting; a message without a job type was discarded when the queue had no dead-letter exchange. Also run against the same broker: a dead-letter exchange on the queue received a message without a job type; a job that exhausted its retries was copied to `ExhaustedJobsRoutingKey` with the `nexjob.error` header, and a blank routing key forwarded nothing; with `PrefetchCount = 5` the broker reported five unacknowledged messages while the first enqueue was blocked, and the trigger never ran two enqueues at once. A cluster and `ExhaustedJobsExchange` other than the default exchange were not run.
 
 ## Try it
 

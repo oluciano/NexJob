@@ -6,6 +6,35 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [6.3.0] - 2026-10-12
+
+### Added
+
+- `IOrphanedJobReporter.RequeueOrphanedJobsAndReportAsync(heartbeatTimeout, canHandleJobType, cancellationToken)`: an overload that takes a predicate on the stored job type. Its default implementation ignores the predicate, so existing reporters keep working. The five built-in providers apply it (issue #474).
+- `NexJob.RabbitMQ`: `ConfigureConnection` on `RabbitMqTriggerOptions` and `RabbitMqProducerOptions`, a delegate over the `ConnectionFactory` for TLS, heartbeat, client name and any other connection setting, like Kafka's `ConfigureConsumer`. It runs before the five connection settings are applied, so those still win (issue #484).
+
+### Changed
+
+- The Kafka outbox (`EnqueueKafkaAsync`), the RabbitMQ outbox (`EnqueueRabbitMqAsync`), `NexJob.Trigger.Salesforce` and `NexJob.Trigger.SalesforceStreaming` now default to the `default` queue, like the other triggers. They used to default to `kafka-producer`, `rabbitmq-producer`, `salesforce-events` and `salesforce-streaming`, which no worker polled unless the application listed them in `NexJobOptions.Queues`, so with the default settings the jobs waited unseen. Jobs already waiting in the old queues are drained only while the old name stays in `Queues`. `KafkaProducerOptions.Queue` and `RabbitMqProducerOptions.Queue` are still not read; their default is now `default` (issue #482).
+
+### Fixed
+
+- A job that does not implement the interface its stored input needs (for example a trigger job that implements `IJob` or `IJob<Other>` instead of `IJob<string>`) used to fail with `Value cannot be null (Parameter 'method')`, spent all its attempts and told nothing about the cause. It now fails once, with a message that names the job type, the input type and the missing interface, and goes straight to dead-letter handling (issue #510). Startup validation for triggers is not part of this change.
+- Dashboard: `DefaultTheme` and `EnablePlayground` were process-wide, so a dashboard built after another one in the same process (a standalone and a mounted one, or two in a test host) overwrote the other's theme and playground switch, and which page got the playground depended on the start order. Each dashboard now applies its own settings to the requests it serves.
+- In a database shared by several services, a job that died on its last attempt could be failed by the orphan watcher of another service, which cannot load its type, so its typed `IDeadLetterHandler<TJob>` never ran and the only trace was a `Debug` line. A node now fails such a job only when it can load the job type; otherwise it logs a `Warning` and leaves the job `Processing` for a node of the owning service. A job with attempts left is still requeued by any node (issue #474).
+- A job is now stored with the `[SchemaVersion]` of its class. Before, `JobRecordFactory`, the recurring firing and the dashboard's ad-hoc trigger never set it, so every job was stored as version 1 and a current payload was migrated as if it were old, silently replacing the caller's new fields with the migration defaults. Jobs already stored keep version 1 (no data migration). A recurring job takes the class version when it fires (issue #470).
+- `NexJob.RabbitMQ`: a `Mandatory` publish the broker cannot route now fails the job with an `InvalidOperationException` carrying the broker's reply, instead of succeeding and losing the message. The producer subscribes to `basic.return` and checks it after the confirm (issue #483).
+- `NexJob.RabbitMQ`: `RabbitMqProducerOptions.DefaultExchange` and `DefaultRoutingKey` now apply. `EnqueueRabbitMqAsync(routingKey, value)` leaves the exchange unset, `exchange` and `routingKey` of the other overloads are nullable (null applies the default), and `RabbitMqPublishPayload.RoutingKey` defaults to `null` instead of `""`. `RabbitMqProducerOptions.Queue` and `DefaultPriority` are still not read (issue #483).
+- `NexJob.Trigger.Salesforce`: the job the trigger enqueues now receives the decoded event as a JSON string, like the other triggers. Before, the trigger stored a JSON object but declared the input as `string`, so every job (`SalesforceEventJob` and any `AddSalesforceTrigger<TJob>`) failed on every attempt. The payload shape is a behaviour change for anything that read `JobRecord.InputJson` directly (issue #481).
+- `NexJob.Trigger.Salesforce`: an event that can never be decoded no longer drops the stream and reconnects in a loop, blocking every event behind it. It is logged, kept in `DeadLetterQueue` as Base64 when one is configured, and skipped with its replay id committed. A schema that cannot be fetched is still retried. A custom `ISalesforceSchemaService` opts in by throwing the new `SalesforcePayloadDecodeException` (issue #481).
+- `JobExecutingContext.Succeeded` and `Exception` can now be read inside a filter, right after `await next(ct)` or in a `catch`/`finally`. Before, NexJob set them only after the whole pipeline had finished, so a filter always saw `Succeeded = false` and `Exception = null`. Filters are also resolved from the job's DI scope, so a `Transient` or `Scoped` filter is built once per job instead of once for all jobs. A `Singleton` filter is unchanged, and a filter that does not call `next` still stores the job as `Succeeded`, which is now documented (issue #475).
+
+### Documentation
+
+- Wiki Reference: the connection budget in Troubleshooting now matches the pool advisor (`Workers + 5` needed, `Workers + 10` as the ceiling); the changelog page covers 5.10.0 to 6.2.1; the migration guide lists the 6.3.0 actions (stored `SchemaVersion`, orphan dead-lettering across services); the stale warning about continuations in the testing guide is gone (issue #486).
+- Wiki and README: the enqueue benchmark was re-measured against Hangfire 1.8.25 and the published figures were corrected. NexJob's latency is in the same range as Hangfire's (about 35 µs against 37 µs, not 13 µs against 36 µs), and its allocation is 62% lower (4.8 KB against 12.6 KB); the earlier NexJob figure did not reproduce (issue #511).
+- Wiki Integrations and Storage: each page says what was run and against what. Run for the first time: AWS SQS (LocalStack), RabbitMQ (dead-letter exchange, `ExhaustedJobsRoutingKey`, prefetch above 1, TLS), Kafka (`ExhaustedJobsTopic`, three brokers, `SASL_SSL`, eviction by `max.poll.interval.ms`), Azure Service Bus (the official emulator), Salesforce Pub/Sub and Streaming (fake servers, our reading of the protocol), a Redis primary with a replica and a PostgreSQL streaming replica. How We Test describes the on-demand validation rounds (`Category=Reliability.Validation`) and lists the new reliability scenarios.
+
 ## [6.2.1] - 2026-10-11
 
 ### Fixed

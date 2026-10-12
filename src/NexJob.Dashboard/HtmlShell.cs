@@ -546,11 +546,24 @@ internal static class HtmlShell
 
     private static readonly string CoreVersion = GetAssemblyVersion(typeof(JobRecord).Assembly);
 
-    /// <summary>Gets or sets the default theme applied when no stored theme preference is found.</summary>
-    internal static string DefaultTheme { get; set; } = "blue-theme";
+    // The settings of the dashboard serving the current request. They flow with the request, so two dashboards in one
+    // process (a standalone one and a mounted one, or two in a test host) never overwrite each other's.
+    private static readonly AsyncLocal<(string Theme, bool Playground)?> RequestSettings = new();
 
-    /// <summary>Gets or sets a value indicating whether playground scenario triggers are rendered.</summary>
-    internal static bool EnablePlayground { get; set; }
+    /// <summary>Gets the default theme applied when no stored theme preference is found.</summary>
+    internal static string DefaultTheme => RequestSettings.Value?.Theme ?? "blue-theme";
+
+    /// <summary>Gets a value indicating whether playground scenario triggers are rendered.</summary>
+    internal static bool EnablePlayground => RequestSettings.Value?.Playground ?? false;
+
+    /// <summary>
+    /// Sets the theme and playground switch of the dashboard serving the current request. Call it at the start of the
+    /// request: the value is visible to everything the request awaits and is dropped when the request ends.
+    /// </summary>
+    /// <param name="defaultTheme">The configured default theme; blank keeps the built-in one.</param>
+    /// <param name="enablePlayground">Whether the playground is enabled for this dashboard.</param>
+    internal static void UseSettings(string? defaultTheme, bool enablePlayground) =>
+        RequestSettings.Value = (string.IsNullOrWhiteSpace(defaultTheme) ? "blue-theme" : defaultTheme, enablePlayground);
 
     /// <summary>Adds the environment badge and the browser tab title prefix to a rendered page.</summary>
     /// <param name="html">The rendered page.</param>

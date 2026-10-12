@@ -24,11 +24,12 @@ Each scenario is written once and runs on every database. They check, for exampl
 
 - **Exactly once under concurrency:** several workers and several nodes run each job once, and no job is lost under concurrent enqueue.
 - **Retry and dead-letter:** a failed job is retried, the handler runs once after the last attempt, and a handler that throws does not stop the dispatcher.
-- **Crash recovery:** a job left `Processing` by a node that died is recovered and runs once; one on its last attempt fails and its dead-letter handler runs once. On SQL Server a **node runs in its own process and is killed** while it runs a job.
+- **Crash recovery:** a job left `Processing` by a node that died is recovered and runs once; one on its last attempt fails and its dead-letter handler runs once, while a job of a type this host cannot load (another service's) is left alone. On SQL Server a **node runs in its own process and is killed** while it runs a job.
 - **Restarts:** jobs stored by one host run exactly once on the next host.
 - **Continuations, deadlines, pausing, requeue and delete** behave as documented, including deleting a job while it runs.
 - **Connections:** the database sees about one connection per worker under load, and a pool smaller than the workers still finishes every job.
 - **Live objects:** `AddNexJobPostgres(NpgsqlDataSource)`, `AddNexJobRedis(IConnectionMultiplexer)` and `AddNexJobMongoDB(IMongoDatabase)` work on a real database.
+- **Failures at the worst moment:** the database failing as a finished job commits its result (absorbed up to three failures, a second run past that), a job of another service deferred without using an attempt, an execution window and a circuit breaker deciding whether a queue runs, and `[Throttle]` across two nodes on Redis, per node and cluster-wide.
 - **Upgrades:** a storage filled by the previous version opens with the new one on every database, with its history, orphans and continuations intact, and the MongoDB case of old and new nodes sharing a database is covered.
 
 Tests count executions and wait for a condition with a timeout; they do not sleep for a fixed time, and each test that shares a database uses its own queue.
@@ -48,6 +49,22 @@ Being clear about gaps matters more than a long list of passing tests:
 - Authentication on Redis, and MongoDB through a live object beyond what the test container requires.
 - **Wake-up latency.** Wall-clock bounds are too fragile on shared build machines to assert.
 - Brokers other than Kafka, RabbitMQ, SQS, Salesforce and the Pub/Sub emulator are exercised by unit tests only.
+
+## Validation rounds
+
+Some claims need infrastructure that is too slow or too fragile for every pull request: a Redis primary with a replica, a Kafka cluster of three brokers, a broker with SASL and TLS, a consumer evicted by `max.poll.interval.ms`. Those tests live in `tests/NexJob.ReliabilityTests/Validation` with `Category=Reliability.Validation`. No pipeline runs them; you run them before a release, or when the page that depends on them changes:
+
+```bash
+dotnet test tests/NexJob.ReliabilityTests --filter "Category=Reliability.Validation"
+```
+
+They need Docker. A validation test is a normal test: when the page and the run disagree, the page is the one that was wrong.
+
+| Round | Version | What ran | Result |
+|---|---|---|---|
+| 2026-10-12 | 6.2.1 + #486 | Redis primary and replica (both endpoints, replica only, promoted replica); PostgreSQL streaming replica behind `UseDashboardReadReplica` (replica rejecting writes, replica lost); Kafka three brokers with one lost; Kafka `SASL_SSL` with `PLAIN`; Kafka eviction by `max.poll.interval.ms` | All passed |
+
+What is not in a round yet: Redis Sentinel, a SQL Server replica (Always On needs more than a container), a real Salesforce org, and the real Azure Service Bus, SQS and RabbitMQ services (the emulators and containers used are named on each integration page).
 
 ## See also
 

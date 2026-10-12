@@ -150,15 +150,15 @@ public static class RabbitMqProducerExtensions
     /// </summary>
     /// <typeparam name="T">The type of the message payload.</typeparam>
     /// <param name="scheduler">The NexJob scheduler instance.</param>
-    /// <param name="exchange">The target RabbitMQ exchange name (use empty string for default direct exchange).</param>
-    /// <param name="routingKey">The target routing key.</param>
+    /// <param name="exchange">The target RabbitMQ exchange name (empty string for the default direct exchange). <see langword="null"/> uses <c>RabbitMqProducerOptions.DefaultExchange</c>.</param>
+    /// <param name="routingKey">The target routing key. <see langword="null"/> uses <c>RabbitMqProducerOptions.DefaultRoutingKey</c>.</param>
     /// <param name="value">The message payload.</param>
     /// <param name="headers">Optional custom headers to attach to the RabbitMQ message.</param>
     /// <param name="mandatory">Optional mandatory flag for this message.</param>
     /// <param name="correlationId">Optional correlation ID.</param>
     /// <param name="messageId">Optional message ID.</param>
     /// <param name="jsonOptions">Optional JSON serialization options.</param>
-    /// <param name="queue">The NexJob queue name. Defaults to "rabbitmq-producer".</param>
+    /// <param name="queue">The NexJob queue name. Defaults to "default", which is the default queue of the application (<c>{prefix}.default</c>).</param>
     /// <param name="priority">The job priority. Defaults to <see cref="JobPriority.Normal"/>.</param>
     /// <param name="idempotencyKey">Optional deduplication key.</param>
     /// <param name="duplicatePolicy">Behavior when a duplicate key exists. Defaults to <see cref="DuplicatePolicy.AllowAfterFailed"/>.</param>
@@ -168,8 +168,8 @@ public static class RabbitMqProducerExtensions
     /// <returns>The identifier of the enqueued NexJob background job.</returns>
     public static Task<JobId> EnqueueRabbitMqAsync<T>(
         this IScheduler scheduler,
-        string exchange,
-        string routingKey,
+        string? exchange,
+        string? routingKey,
         T value,
         Dictionary<string, string>? headers = null,
         bool? mandatory = null,
@@ -236,7 +236,7 @@ public static class RabbitMqProducerExtensions
 
         return scheduler.EnqueueAsync<RabbitMqProducerJob, RabbitMqPublishPayload>(
             payload,
-            queue: queue ?? "rabbitmq-producer",
+            queue: queue ?? "default",
             priority: priority,
             idempotencyKey: idempotencyKey,
             duplicatePolicy: duplicatePolicy,
@@ -250,10 +250,10 @@ public static class RabbitMqProducerExtensions
     /// </summary>
     /// <typeparam name="T">The type of the message payload.</typeparam>
     /// <param name="scheduler">The NexJob scheduler instance.</param>
-    /// <param name="routingKey">The target routing key.</param>
+    /// <param name="routingKey">The target routing key. The exchange is left unset, so <c>RabbitMqProducerOptions.DefaultExchange</c> applies.</param>
     /// <param name="value">The message payload.</param>
     /// <param name="headers">Optional custom headers to attach to the RabbitMQ message.</param>
-    /// <param name="queue">The NexJob queue name. Defaults to "rabbitmq-producer".</param>
+    /// <param name="queue">The NexJob queue name. Defaults to "default", which is the default queue of the application (<c>{prefix}.default</c>).</param>
     /// <param name="priority">The job priority. Defaults to <see cref="JobPriority.Normal"/>.</param>
     /// <param name="idempotencyKey">Optional deduplication key.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
@@ -269,7 +269,7 @@ public static class RabbitMqProducerExtensions
         CancellationToken cancellationToken = default)
     {
         return scheduler.EnqueueRabbitMqAsync(
-            exchange: string.Empty,
+            exchange: null,
             routingKey: routingKey,
             value: value,
             headers: headers,
@@ -283,11 +283,11 @@ public static class RabbitMqProducerExtensions
     /// Enqueues a raw string message to be published durably to RabbitMQ.
     /// </summary>
     /// <param name="scheduler">The NexJob scheduler instance.</param>
-    /// <param name="exchange">The target RabbitMQ exchange name.</param>
-    /// <param name="routingKey">The target routing key.</param>
+    /// <param name="exchange">The target RabbitMQ exchange name. <see langword="null"/> uses <c>RabbitMqProducerOptions.DefaultExchange</c>.</param>
+    /// <param name="routingKey">The target routing key. <see langword="null"/> uses <c>RabbitMqProducerOptions.DefaultRoutingKey</c>.</param>
     /// <param name="value">The raw string payload to publish.</param>
     /// <param name="headers">Optional custom headers to attach to the RabbitMQ message.</param>
-    /// <param name="queue">The NexJob queue name. Defaults to "rabbitmq-producer".</param>
+    /// <param name="queue">The NexJob queue name. Defaults to "default", which is the default queue of the application (<c>{prefix}.default</c>).</param>
     /// <param name="priority">The job priority. Defaults to <see cref="JobPriority.Normal"/>.</param>
     /// <param name="idempotencyKey">Optional deduplication key.</param>
     /// <param name="duplicatePolicy">Behavior when a duplicate key exists. Defaults to <see cref="DuplicatePolicy.AllowAfterFailed"/>.</param>
@@ -297,8 +297,8 @@ public static class RabbitMqProducerExtensions
     /// <returns>The identifier of the enqueued NexJob background job.</returns>
     public static Task<JobId> EnqueueRabbitMqRawAsync(
         this IScheduler scheduler,
-        string exchange,
-        string routingKey,
+        string? exchange,
+        string? routingKey,
         string value,
         Dictionary<string, string>? headers = null,
         string? queue = null,
@@ -325,7 +325,7 @@ public static class RabbitMqProducerExtensions
 
         return scheduler.EnqueueAsync<RabbitMqProducerJob, RabbitMqPublishPayload>(
             payload,
-            queue: queue ?? "rabbitmq-producer",
+            queue: queue ?? "default",
             priority: priority,
             idempotencyKey: idempotencyKey,
             duplicatePolicy: duplicatePolicy,
@@ -338,11 +338,11 @@ public static class RabbitMqProducerExtensions
     /// Enqueues a raw binary byte array message to be published durably to RabbitMQ.
     /// </summary>
     /// <param name="scheduler">The NexJob scheduler instance.</param>
-    /// <param name="exchange">The target RabbitMQ exchange name.</param>
-    /// <param name="routingKey">The target routing key.</param>
+    /// <param name="exchange">The target RabbitMQ exchange name. <see langword="null"/> uses <c>RabbitMqProducerOptions.DefaultExchange</c>.</param>
+    /// <param name="routingKey">The target routing key. <see langword="null"/> uses <c>RabbitMqProducerOptions.DefaultRoutingKey</c>.</param>
     /// <param name="value">The raw byte array payload to publish.</param>
     /// <param name="headers">Optional custom headers to attach to the RabbitMQ message.</param>
-    /// <param name="queue">The NexJob queue name. Defaults to "rabbitmq-producer".</param>
+    /// <param name="queue">The NexJob queue name. Defaults to "default", which is the default queue of the application (<c>{prefix}.default</c>).</param>
     /// <param name="priority">The job priority. Defaults to <see cref="JobPriority.Normal"/>.</param>
     /// <param name="idempotencyKey">Optional deduplication key.</param>
     /// <param name="duplicatePolicy">Behavior when a duplicate key exists. Defaults to <see cref="DuplicatePolicy.AllowAfterFailed"/>.</param>
@@ -352,8 +352,8 @@ public static class RabbitMqProducerExtensions
     /// <returns>The identifier of the enqueued NexJob background job.</returns>
     public static Task<JobId> EnqueueRabbitMqRawAsync(
         this IScheduler scheduler,
-        string exchange,
-        string routingKey,
+        string? exchange,
+        string? routingKey,
         byte[] value,
         Dictionary<string, string>? headers = null,
         string? queue = null,
@@ -380,7 +380,7 @@ public static class RabbitMqProducerExtensions
 
         return scheduler.EnqueueAsync<RabbitMqProducerJob, RabbitMqPublishPayload>(
             payload,
-            queue: queue ?? "rabbitmq-producer",
+            queue: queue ?? "default",
             priority: priority,
             idempotencyKey: idempotencyKey,
             duplicatePolicy: duplicatePolicy,

@@ -197,6 +197,63 @@ public sealed class DefaultJobInvokerFactoryTests
         await result.Invoker(result.JobInstance, result.Input, CancellationToken.None);
     }
 
+    /// <summary>Tests that a job without the contract of its stored input names the job type and the missing interface.</summary>
+    /// <param name="jobType">The job type that lacks the contract.</param>
+    /// <param name="inputType">The stored input type.</param>
+    /// <param name="expectedContract">The interface the message must mention.</param>
+    /// <returns>A task.</returns>
+    [Theory]
+    [InlineData(typeof(TestJob), typeof(string), "IJob<String>")]
+    [InlineData(typeof(TestJobWithInput), typeof(string), "IJob<String>")]
+    [InlineData(typeof(TestJobWithInput), typeof(NoInput), "IJob")]
+    public async Task PrepareAsync_JobLacksContractOfInput_ThrowsJobContractExceptionNamingJobAndContract(
+        Type jobType, Type inputType, string expectedContract)
+    {
+        _services.AddTransient(jobType);
+        var sut = CreateSut();
+        var job = new JobRecord
+        {
+            JobType = jobType.AssemblyQualifiedName ?? string.Empty,
+            InputType = inputType.AssemblyQualifiedName ?? string.Empty,
+            InputJson = inputType == typeof(string) ? "\"body\"" : "{}",
+        };
+
+        var act = () => sut.PrepareAsync(job);
+
+        var ex = (await act.Should().ThrowAsync<JobContractException>()).Which;
+        ex.Message.Should().Contain(jobType.FullName).And.Contain(expectedContract);
+    }
+
+    /// <summary>Tests that a job implementing IJob of string prepares and runs with a string input.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task PrepareAsync_JobImplementsJobOfString_Prepares()
+    {
+        _services.AddTransient<TestJobWithString>();
+        var sut = CreateSut();
+        var job = new JobRecord
+        {
+            JobType = typeof(TestJobWithString).AssemblyQualifiedName ?? string.Empty,
+            InputType = typeof(string).AssemblyQualifiedName ?? string.Empty,
+            InputJson = "\"body\"",
+        };
+
+        var result = await sut.PrepareAsync(job);
+
+        result.Input.Should().Be("body");
+        await result.Invoker(result.JobInstance, result.Input, CancellationToken.None);
+    }
+
+    /// <summary>Test job taking a string, like the jobs behind a trigger.</summary>
+    public sealed class TestJobWithString : IJob<string>
+    {
+        /// <inheritdoc/>
+        public Task ExecuteAsync(string input, CancellationToken cancellationToken)
+        {
+            return Task.CompletedTask;
+        }
+    }
+
     private DefaultJobInvokerFactory CreateSut()
     {
         var sp = _services.BuildServiceProvider();

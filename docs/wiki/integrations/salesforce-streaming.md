@@ -42,8 +42,6 @@ public sealed class OrderEventJob : IJob<SalesforceStreamingEventInput>
 
 Without the generic argument the trigger enqueues the built-in `SalesforceStreamingEventJob`, which only logs the event: use it to check the connection. The registration is also available on the builder, as `AddNexJob().AddSalesforceStreamingTrigger<OrderEventJob>(...)`, and as `AddNexJobSalesforceStreamingTrigger` on the service collection. There is one job type per trigger.
 
-!!! warning
-    `TargetQueue` defaults to `"salesforce-streaming"`, not `"default"`. A queue you name is polled only when it is in `NexJobOptions.Queues`; otherwise the jobs wait and no worker takes them (checked with the Pub/Sub API trigger, whose default works the same way). Set `TargetQueue = "default"` or add the queue to `Queues`. This default is tracked as [#482](https://github.com/oluciano/NexJob/issues/482).
 
 ## Authentication
 
@@ -63,7 +61,7 @@ Set `Authentication.AuthType`. The default is `OAuth2UsernamePassword`, so set i
 |---|---|---|
 | `Channel` | required | The channel, starting with `/`: `/event/OrderEvent__e`, `/data/AccountChangeEvent`, `/topic/MyPushTopic`. |
 | `Authentication` | required | See above. |
-| `TargetQueue` | `"salesforce-streaming"` | The NexJob queue. See the warning above. |
+| `TargetQueue` | `"default"` | The NexJob queue. A queue you name is polled only when it is in `NexJobOptions.Queues`. |
 | `JobPriority` | `Normal` | The priority of the jobs. |
 | `ReplayPreset` | `Latest` | Where to start when no replay id is saved: `Latest`, `Earliest` or `Custom`. |
 | `CustomReplayId` | `null` | Required when the preset is `Custom`. |
@@ -111,7 +109,7 @@ The trigger registers with the [listener registry](triggers.md#live-listener-reg
 
 ## Not verified
 
-This page was written from the source. No Salesforce org was used and the trigger was not run: the OAuth flows, the handshake, the long-polling loop, the replay behavior and the retention window were not exercised. The input type was not tried either; it is a typed record, so it does not have the string-input problem of [#481](https://github.com/oluciano/NexJob/issues/481) in the Pub/Sub API trigger.
+This page was written from the source and then run against a fake: a test server in `tests/NexJob.Trigger.Salesforce.IntegrationTests` that answers the OAuth token endpoint and the CometD handshake, subscribe and connect calls. The run confirmed that an event becomes a job and its replay id is saved, that `Latest` and `Earliest` subscribe with `-1` and `-2`, that a saved replay id wins over the preset, that a `Custom` preset without `CustomReplayId` is refused when the host starts, that a `403::Unknown client` on connect makes the trigger handshake again and resume from the saved replay id, and that refused handshakes are retried. The fake is our reading of the protocol, not Salesforce: no org was used, so the real OAuth flows (username-password, client credentials and a ready-made session id are coded), the real long-polling timings, what Salesforce answers to a replay id it no longer keeps, and the retention window were not exercised.
 
 ## Try it
 

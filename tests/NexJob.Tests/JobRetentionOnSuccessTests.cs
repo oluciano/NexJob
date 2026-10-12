@@ -34,7 +34,6 @@ public sealed class JobRetentionOnSuccessTests
             _deadLetterDispatcher.Object,
             _throttleRegistry,
             _options,
-            Enumerable.Empty<IJobExecutionFilter>(),
             new JobWakeUpChannel(),
             NullLogger<JobExecutor>.Instance);
     }

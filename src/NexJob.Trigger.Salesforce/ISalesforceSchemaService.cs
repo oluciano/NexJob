@@ -12,6 +12,7 @@ public interface ISalesforceSchemaService
     /// <param name="payloadBytes">The binary Avro payload bytes.</param>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>Decoded JSON payload string.</returns>
+    /// <exception cref="SalesforcePayloadDecodeException">The payload can never be decoded; the trigger skips the event. Any other exception is treated as retryable.</exception>
     ValueTask<string> DecodePayloadToJsonAsync(string schemaId, byte[] payloadBytes, CancellationToken ct = default);
 
     /// <summary>

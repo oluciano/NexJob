@@ -6,6 +6,25 @@ description: "Step-by-step migration guides for NexJob major version upgrades, i
 
 This page covers every breaking change between NexJob releases and tells you exactly what to update in your code. Schema migrations for PostgreSQL and SQL Server apply automatically at startup. Follow the steps in order for each version jump you're crossing.
 
+## v6.2.1 → v6.3.0
+
+No schema migration and no stored format change. These changes can need an action:
+
+- **The Kafka and RabbitMQ outboxes and the two Salesforce triggers use the `default` queue.** `EnqueueKafkaAsync` and `EnqueueRabbitMqAsync` (when you pass no `queue:`), `SalesforceTriggerOptions.TargetQueue` and `SalesforceStreamingTriggerOptions.TargetQueue` used to default to `kafka-producer`, `rabbitmq-producer`, `salesforce-events` and `salesforce-streaming`, queues no worker polled unless you listed them. New jobs now go to `default`. Jobs already waiting in the old queues stay there and are drained only while the old name is still in `NexJobOptions.Queues`; remove it once they are gone. If you set the queue yourself, nothing changes.
+- **The Salesforce Pub/Sub trigger hands the job the event as a JSON string.** Before, the jobs failed on every attempt. A job that read `JobRecord.InputJson` directly now finds a JSON string, not an object.
+- **RabbitMQ: `Mandatory` fails an unroutable publish, and `DefaultExchange`/`DefaultRoutingKey` apply.** A mandatory message the broker cannot route used to succeed and be lost; the job now fails with an `InvalidOperationException` and is retried. `EnqueueRabbitMqAsync(routingKey, value)` leaves the exchange unset, so a `DefaultExchange` you configured (it was ignored before) now takes effect; nothing changes if you did not set one. `exchange` and `routingKey` of the longer overloads, and `RabbitMqPublishPayload.RoutingKey`, are nullable, and a payload built without a routing key now carries `null` instead of `""`.
+- **A filter that is not a singleton is built once per job**, and `JobExecutingContext.Succeeded` and `Exception` can be read inside a filter.
+- **Jobs now store the `[SchemaVersion]` of their class.** Before 6.3.0 every job was stored as version 1, so a current payload was migrated as if it were old. Jobs already stored keep version 1 and nothing rewrites them: if you raised `[SchemaVersion]` while jobs were queued, let them drain. See [Job payloads](../concepts/job-payloads.md#jobs-enqueued-by-earlier-releases).
+- **A job that died on its last attempt is failed by a node that can load its type.** In a database shared by several services, a node of another service used to fail it and skip its typed `IDeadLetterHandler<TJob>`. Now such a job stays `Processing` until a node of its own service runs the orphan watcher, and the other node logs a `Warning`. A custom `IOrphanedJobReporter` keeps working; override the new overload that takes a job-type predicate to get the new behaviour. See [Multi-service](../guides/multi-service.md).
+- **A job that lacks the interface its stored input needs fails once, with a clear message.** A trigger job that implements `IJob` or `IJob<Other>` instead of `IJob<string>` used to fail with `Value cannot be null (Parameter 'method')` and spend every attempt. It now fails on the first attempt, the message names the job type and the missing interface, and the dead-letter handling runs at once. Nothing changes for a job that already implements the right interface.
+
+**Rolling upgrade.** No stored data changes, so 6.2.1 and 6.3.0 nodes can run together, with these differences while they do: a 6.2.1 node stores new jobs with `[SchemaVersion]` 1 and, in a shared database, still fails an exhausted job of a type it cannot load; a 6.2.1 outbox or Salesforce trigger still writes to its old queue, which a 6.3.0 worker drains only if the old name is in `Queues`.
+
+**Rollout and rollback.**
+
+- **Roll out:** upgrade one node first. Watch the startup log for the new `Warning` about an exhausted job of a type the node cannot load, and check that every queue your outboxes and triggers used before is still listed in `Queues` until it is empty.
+- **Roll back:** go back to 6.2.1; there is no schema migration to undo. Jobs stored by 6.3.0 with their `[SchemaVersion]` and jobs in the `default` queue are read and polled by 6.2.1.
+
 ## v6.2.0 → v6.2.1
 
 No schema migration, no stored format change and no public API removed. Seven fixes ship; these change what you can observe:
@@ -332,7 +351,7 @@ The `DateTimeOffset` serializer is no longer registered globally. NexJob now app
 builder.Services.AddNexJobMongoDB(connectionString, keepLegacyGlobalDateTimeOffsetSerializer: true);
 ```
 
-Remove this flag in the next release cycle — it will be removed in a future version.
+The flag is temporary: it still exists in v6.3.0 and will be removed in a later release, so fix the code that depends on it rather than keep the flag.
 
 
 
@@ -480,10 +499,10 @@ public Task ExecuteAsync(MyInput input, CancellationToken ct) { ... }
 #### Update recurring job registration
 
 !!! warning
-    **Breaking change.** `RecurringJobSettings` moved from `NexJobOptions.RecurringJobs` to a separate collection configured via `AddRecurringJob` methods.
+    **Breaking change.** Recurring jobs are registered with the `AddRecurringJob` extension methods instead of by filling a list by hand.
 
 
-Use `AddRecurringJob` on the `NexJobBuilder` returned by `AddNexJob`, or declare recurring jobs in `appsettings.json` using the `RecurringJobs` array.
+Call `AddRecurringJob` on the `NexJobOptions` inside `AddNexJob(options => ...)`, or declare recurring jobs in `appsettings.json` using the `RecurringJobs` array (`NexJobOptions.RecurringJobs` holds the settings loaded from there).
 
 
 #### Update IScheduler.ContinueWithAsync call sites

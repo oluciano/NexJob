@@ -19,16 +19,16 @@ NexJob is a young library with a focused scope.
 
 ### Benchmark numbers
 
-Measured per individual enqueue operation on .NET 8 (BenchmarkDotNet v0.14, RyuJIT AVX2, in-memory storage baseline):
+Measured per individual enqueue operation with the benchmark in the repository (BenchmarkDotNet 0.15.8, .NET 8.0.31, RyuJIT, in-memory storage), a job with no payload:
 
 | Metric | NexJob |
 |---|---|
-| Latency (mean) | **13.35 µs** |
-| Memory allocated | **2.10 KB** |
-| GC Gen0 (per 1 k ops) | **0.06** |
+| Latency (mean) | 34.5 µs (median 31.7 µs) |
+| Memory allocated | **4.82 KB** |
+| GC Gen0 (per 1 k ops) | **0.12** |
 | GC Gen1 (per 1 k ops) | **0.00** |
 
-These are enqueue-only numbers on in-memory storage, not end-to-end throughput. The benchmark project is in the repository (`benchmarks/NexJob.Benchmarks`), so you can run it against your own setup.
+These are enqueue-only numbers on in-memory storage, not end-to-end throughput. The Hangfire comparison, the other payload sizes and the command to reproduce it are in the [FAQ](reference/faq.md#comparison-with-hangfire) and the [README](https://github.com/oluciano/NexJob#benchmarks).
 
 ## Packages
 
@@ -115,13 +115,13 @@ A trigger turns messages from a broker into jobs. The two outbox packages also p
 
 ### Operate
 
-- [**Built-in dashboard**](integrations/dashboard.md) — standalone dark UI with live cluster topology, SSE log stream, and job catalog
+- [**Built-in dashboard**](integrations/dashboard.md) — standalone light and dark UI with live cluster topology, SSE log stream, and job catalog
 - [**Dashboard authorization**](integrations/dashboard.md#dashboard-authorization) — implement `IDashboardAuthorizationHandler` to control who can view or operate the dashboard
 - [**Runtime control**](guides/runtime-control.md) — pause and resume queues, requeue failed jobs, delete jobs and reset circuit breakers at runtime with `IJobControlService`
 - [**Alerts**](guides/alerts.md) — know when a job fails for good, with a Slack recipe and the metrics to alert on
 - [**Health checks**](guides/best-practices.md#monitoring-and-alerting) — `AddNexJob()` on the ASP.NET Core health checks builder reports whether storage is reachable
 - [**OpenTelemetry**](integrations/opentelemetry.md) — distributed traces and metrics emitted out of the box
-- [**Job retention**](guides/best-practices.md#control-storage-growth-with-retention-policies) — automatic cleanup of terminal jobs with configurable TTL via the `[Retention]` attribute
+- [**Job retention**](guides/best-practices.md#control-storage-growth-with-retention-policies) — automatic cleanup of terminal jobs with a configurable age per status (`RetentionSucceeded`, `RetentionFailed` and the others), and `[Retention]` to purge or trim a job's payload as soon as it succeeds
 - [**Configuration**](reference/configuration.md) — `NexJobOptions` centralises worker count, polling interval, retry policy, and more
 
 ### Storage and integrations

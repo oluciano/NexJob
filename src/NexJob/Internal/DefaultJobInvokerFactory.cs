@@ -43,7 +43,7 @@ internal sealed class DefaultJobInvokerFactory : IJobInvokerFactory
             var inputType = JobTypeResolver.ResolveInputType(job.InputType)
                            ?? throw new Exceptions.ForeignJobTypeException(job.InputType, $"Cannot load input type: {job.InputType}");
 
-            var currentVersion = jobType.GetCustomAttribute<SchemaVersionAttribute>()?.Version ?? 1;
+            var currentVersion = JobRecordFactory.ResolveSchemaVersion(jobType);
             var migratedJson = scope.ServiceProvider
                 .GetRequiredService<IMigrationPipeline>()
                 .Migrate(job.InputJson, job.SchemaVersion, currentVersion, inputType);
@@ -78,7 +78,8 @@ internal sealed class DefaultJobInvokerFactory : IJobInvokerFactory
             {
                 var noInputMethod = jt.GetMethod(
                     nameof(IJob.ExecuteAsync),
-                    [typeof(CancellationToken)])!;
+                    [typeof(CancellationToken)])
+                    ?? throw MissingContract(jt, it);
 
                 var jobParam = Expression.Parameter(typeof(object), "job");
                 var inputParam = Expression.Parameter(typeof(object), "input"); // ignored
@@ -94,7 +95,8 @@ internal sealed class DefaultJobInvokerFactory : IJobInvokerFactory
             }
 
             var method = jt.GetMethod(nameof(IJob<object>.ExecuteAsync),
-                [it, typeof(CancellationToken)])!;
+                [it, typeof(CancellationToken)])
+                ?? throw MissingContract(jt, it);
 
             var jp = Expression.Parameter(typeof(object), "job");
             var ip = Expression.Parameter(typeof(object), "input");
@@ -109,5 +111,13 @@ internal sealed class DefaultJobInvokerFactory : IJobInvokerFactory
             return Expression.Lambda<Func<object, object, CancellationToken, Task>>(
                 callTyped, jp, ip, ct).Compile();
         });
+    }
+
+    private static JobContractException MissingContract(Type jobType, Type inputType)
+    {
+        var contract = inputType == typeof(NoInput) ? "IJob" : $"IJob<{inputType.Name}>";
+        return new JobContractException(
+            $"Job type '{jobType.FullName}' is stored with input type '{inputType.FullName}' but does not implement {contract}. " +
+            "Make the job implement that interface (a job started by a trigger receives the message body as a string, so it must implement IJob<string>).");
     }
 }
