@@ -248,6 +248,30 @@ public sealed class RabbitMqProducerIntegrationTests : IClassFixture<RabbitMqTri
         await host.StopAsync();
     }
 
+    /// <summary>N1: a connection configured through ConfigureConnection is accepted by a real broker and publishes.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task Producer_WithConfigureConnection_ConnectsToRealBrokerAndPublishes()
+    {
+        var queue = DeclareQueue();
+        ConnectionFactory? seen = null;
+        var client = NewClient(options =>
+        {
+            options.ConfigureConnection = factory =>
+            {
+                factory.RequestedHeartbeat = TimeSpan.FromSeconds(7);
+                factory.ClientProvidedName = "nexjob-it-484";
+                seen = factory;
+            };
+        });
+
+        await client.PublishAsync(new RabbitMqPublishPayload { Exchange = string.Empty, RoutingKey = queue, ValueString = "configured" });
+
+        (await ReadAsync(queue)).Should().Be("configured");
+        seen.Should().NotBeNull();
+        seen!.RequestedHeartbeat.Should().Be(TimeSpan.FromSeconds(7));
+    }
+
     private ConnectionFactory NewFactory() => new()
     {
         HostName = _fixture.HostName,
