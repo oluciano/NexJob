@@ -145,8 +145,8 @@ builder.Services.AddNexJob()
     });
 ```
 
-!!! warning
-    The producer jobs go to a queue named **`kafka-producer`**, and a worker polls only the queues in `NexJobOptions.Queues`. With the default `Queues`, **nothing is published**: the jobs wait in storage. Checked against a real broker: with the default queues the topic stayed empty; with `options.Queues = ["default", "kafka-producer"]` the message arrived. Add `kafka-producer` (or the queue you pass to `EnqueueKafkaAsync`) to `Queues` on at least one node. This default is tracked as [#482](https://github.com/oluciano/NexJob/issues/482).
+!!! note "Which queue the outbox jobs use"
+    The producer jobs go to the `default` queue, which a worker polls out of the box. Pass `queue:` to `EnqueueKafkaAsync` to name another one; a queue you name is polled only when it is in `NexJobOptions.Queues`. Before 6.3.0 the default was `kafka-producer`, which no worker polled unless it was listed; jobs already waiting there are only drained while it stays in `Queues`.
 
 | Option | Default | Meaning |
 |---|---|---|
@@ -155,7 +155,7 @@ builder.Services.AddNexJob()
 | `EnableIdempotence` | `true` | The Kafka producer's idempotence. |
 | `FlushTimeout` | 10 seconds | How long the producer waits to flush on shutdown. |
 | `ConfigureProducer` | `null` | A delegate over the Confluent `ProducerConfig`. |
-| `Queue`, `DefaultPriority` | `"kafka-producer"`, `Normal` | **No effect.** They are declared but nothing reads them; the queue and priority come from the arguments of `EnqueueKafkaAsync`. |
+| `Queue`, `DefaultPriority` | `"default"`, `Normal` | **No effect.** They are declared but nothing reads them; the queue and priority come from the arguments of `EnqueueKafkaAsync`. |
 
 `BootstrapServers`, `Acks` and `EnableIdempotence` are forced back after `ConfigureProducer` runs, so the delegate cannot change them. On shutdown the producer flushes what it has in flight.
 

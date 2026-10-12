@@ -30,8 +30,6 @@ builder.Services.AddSalesforceTrigger<OrderEventJob>(options =>
 
 The builder form is `AddNexJob().AddSalesforceTrigger<OrderEventJob>(...)`. Keep the client id and secret in a secret store.
 
-!!! warning
-    `TargetQueue` defaults to `"salesforce-events"`, not `"default"`. A queue you name is polled only when it is in `NexJobOptions.Queues`. Checked: with the default `Queues`, the jobs were enqueued and no worker ever fetched them; once `salesforce-events` was listed, they were fetched. Either set `TargetQueue = "default"` or add the queue to `Queues`. This default is tracked as [#482](https://github.com/oluciano/NexJob/issues/482).
 
 ## Authentication
 
@@ -49,7 +47,7 @@ The trigger uses the OAuth 2.0 **client credentials** flow of a Connected App (a
 | `PubSubEndpoint` | `api.pubsub.salesforce.com:7443` | The gRPC endpoint. |
 | `TenantId` | `null` | The 18-character org id. Taken from the token response when omitted. |
 | `JobType` | `null` | The assembly-qualified job type. Without it, the built-in no-op `SalesforceEventJob` runs. |
-| `TargetQueue` | `"salesforce-events"` | The NexJob queue. See the warning above. |
+| `TargetQueue` | `"default"` | The NexJob queue. A queue you name is polled only when it is in `NexJobOptions.Queues`. |
 | `JobPriority` | `Normal` | The priority of the jobs. |
 | `BatchSize` | `100` | Events requested per batch (1 to 500). |
 | `ReplayPreset` | `Latest` | Where to start when no replay id is saved: `Latest`, `Earliest` or `Custom`. |

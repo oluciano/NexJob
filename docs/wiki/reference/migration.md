@@ -6,6 +6,14 @@ description: "Step-by-step migration guides for NexJob major version upgrades, i
 
 This page covers every breaking change between NexJob releases and tells you exactly what to update in your code. Schema migrations for PostgreSQL and SQL Server apply automatically at startup. Follow the steps in order for each version jump you're crossing.
 
+## v6.2.1 → v6.3.0
+
+No schema migration and no stored format change. These changes can need an action:
+
+- **The Kafka and RabbitMQ outboxes and the two Salesforce triggers use the `default` queue.** `EnqueueKafkaAsync` and `EnqueueRabbitMqAsync` (when you pass no `queue:`), `SalesforceTriggerOptions.TargetQueue` and `SalesforceStreamingTriggerOptions.TargetQueue` used to default to `kafka-producer`, `rabbitmq-producer`, `salesforce-events` and `salesforce-streaming`, queues no worker polled unless you listed them. New jobs now go to `default`. Jobs already waiting in the old queues stay there and are drained only while the old name is still in `NexJobOptions.Queues`; remove it once they are gone. If you set the queue yourself, nothing changes.
+- **The Salesforce Pub/Sub trigger hands the job the event as a JSON string.** Before, the jobs failed on every attempt. A job that read `JobRecord.InputJson` directly now finds a JSON string, not an object.
+- **A filter that is not a singleton is built once per job**, and `JobExecutingContext.Succeeded` and `Exception` can be read inside a filter.
+
 ## v6.2.0 → v6.2.1
 
 No schema migration, no stored format change and no public API removed. Seven fixes ship; these change what you can observe:

@@ -144,8 +144,8 @@ builder.Services.AddNexJob()
     });
 ```
 
-!!! warning
-    The producer jobs go to a queue named **`rabbitmq-producer`**, and a worker polls only the queues in `NexJobOptions.Queues`. With the default `Queues`, **nothing is published**: the jobs wait in storage. Checked against a real broker: with the default queues the target queue stayed empty; with `options.Queues = ["default", "rabbitmq-producer"]` the message arrived. Add `rabbitmq-producer` (or the queue you pass to `EnqueueRabbitMqAsync`) to `Queues` on at least one node. This default is tracked as [#482](https://github.com/oluciano/NexJob/issues/482).
+!!! note "Which queue the outbox jobs use"
+    The producer jobs go to the `default` queue, which a worker polls out of the box. Pass `queue:` to `EnqueueRabbitMqAsync` to name another one; a queue you name is polled only when it is in `NexJobOptions.Queues`. Before 6.3.0 the default was `rabbitmq-producer`, which no worker polled unless it was listed; jobs already waiting there are only drained while it stays in `Queues`.
 
 | Option | Default | Meaning |
 |---|---|---|
@@ -153,7 +153,7 @@ builder.Services.AddNexJob()
 | `ConfirmTimeout` | 5 seconds | How long to wait for the broker's confirm. |
 | `Mandatory` | `false` | See the warning below. |
 | `DefaultExchange`, `DefaultRoutingKey` | `""`, `null` | **No effect.** See the warning below. |
-| `Queue`, `DefaultPriority` | `"rabbitmq-producer"`, `Normal` | **No effect.** They are declared but nothing reads them; the queue and priority come from the arguments of `EnqueueRabbitMqAsync`. |
+| `Queue`, `DefaultPriority` | `"default"`, `Normal` | **No effect.** They are declared but nothing reads them; the queue and priority come from the arguments of `EnqueueRabbitMqAsync`. |
 
 !!! warning
     Three of these options do not work as their names say ([#483](https://github.com/oluciano/NexJob/issues/483)). Checked against a real broker:
