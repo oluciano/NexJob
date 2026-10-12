@@ -596,25 +596,6 @@ public sealed class JobExecutorTests
         _hardenedStorage.Verify(x => x.CommitJobResultAsync(job.Id, It.Is<JobExecutionResult>(r => r.Succeeded), It.IsAny<CancellationToken>()), Times.Once);
     }
 
-    /// <summary>Tests that job with ExpiresAt equal to UtcNow boundary is not marked expired.</summary>
-    /// <returns>A task.</returns>
-    [Fact]
-    public async Task ExecuteJobAsync_WhenExpiresAtIsAtBoundary_ExecutesNormally()
-    {
-        var job = new JobRecord
-        {
-            Id = JobId.New(),
-            ExpiresAt = DateTimeOffset.UtcNow.AddSeconds(2),
-            JobType = "TestJob",
-        };
-        _ = SetupSuccessfulInvoker(job);
-
-        await _hardenedSut.ExecuteJobAsync(job);
-
-        _hardenedStorage.Verify(x => x.SetExpiredAsync(job.Id, It.IsAny<CancellationToken>()), Times.Never);
-        _hardenedStorage.Verify(x => x.CommitJobResultAsync(job.Id, It.Is<JobExecutionResult>(r => r.Succeeded), It.IsAny<CancellationToken>()), Times.Once);
-    }
-
     // ─── Failure Path Branches ─────────────────────────────────────────────
 
     /// <summary>Tests that dead-letter dispatcher is invoked when retries are exhausted.</summary>

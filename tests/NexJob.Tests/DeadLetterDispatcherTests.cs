@@ -30,7 +30,21 @@ public sealed class DeadLetterDispatcherTests
     }
 
     [Fact]
-    public async Task DispatchAsync_NoHandlerRegistered_IsNoOpForHandlerAndExecutesForwarders()
+    public async Task DispatchAsync_NoHandlerRegistered_IsNoOp()
+    {
+        // Arrange
+        var job = MakeJob<TestJob>();
+        var dispatcher = MakeDispatcher(_ => { });
+
+        // Act
+        Func<Task> act = () => dispatcher.DispatchAsync(job, new InvalidOperationException("failure"));
+
+        // Assert
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task DispatchAsync_NoHandlerRegistered_StillInvokesForwarders()
     {
         // Arrange
         var job = MakeJob<TestJob>();
@@ -65,6 +79,20 @@ public sealed class DeadLetterDispatcherTests
 
     [Fact]
     public async Task DispatchAsync_UnresolvableJobType_IsNoOp()
+    {
+        // Arrange
+        var job = MakeJob<TestJob>(jobType: "NonExistent.Type, Assembly");
+        var dispatcher = MakeDispatcher(_ => { });
+
+        // Act
+        Func<Task> act = () => dispatcher.DispatchAsync(job, new InvalidOperationException("failure"));
+
+        // Assert
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task DispatchAsync_UnresolvableJobType_WithRegisteredHandler_DoesNotInvokeHandler()
     {
         // Arrange
         var job = MakeJob<TestJob>(jobType: "NonExistent.Type, Assembly");
