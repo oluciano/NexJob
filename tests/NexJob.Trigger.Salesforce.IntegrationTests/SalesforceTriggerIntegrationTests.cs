@@ -60,6 +60,42 @@ public sealed class SalesforceTriggerIntegrationTests : IAsyncLifetime
         Directory.Delete(replayDirectory, recursive: true);
     }
 
+    /// <summary>N1 (#482): with the default queue configuration, nothing to list in Queues, the job still runs.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task SalesforceTrigger_WithDefaultQueueConfiguration_JobRuns()
+    {
+        var replayDirectory = Path.Combine(Path.GetTempPath(), $"nexjob-replay-{Guid.NewGuid():N}");
+        var received = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var host = Host.CreateDefaultBuilder()
+            .ConfigureServices(services =>
+            {
+                services.AddNexJob(o =>
+                {
+                    o.PollingInterval = TimeSpan.FromMilliseconds(50);
+                    o.MaxAttempts = 1;
+                });
+                services.AddSingleton(received);
+                services.AddSalesforceTrigger<RecordingJob>(options =>
+                {
+                    options.Topic = "/data/OrderChangeEvent";
+                    options.ReplayStoreDirectory = replayDirectory;
+                    options.ClientId = "test-client-id";
+                    options.ClientSecret = "test-client-secret";
+                    options.AuthEndpoint = $"{_server.OAuthAddress}/services/oauth2/token";
+                    options.PubSubEndpoint = _server.GrpcAddress;
+                });
+            })
+            .Build();
+
+        await host.StartAsync();
+        var text = await received.Task.WaitAsync(TimeSpan.FromSeconds(20));
+        await host.StopAsync();
+
+        text.Should().Contain("ORD-INTEG-999");
+        Directory.Delete(replayDirectory, recursive: true);
+    }
+
     private sealed class RecordingJob(TaskCompletionSource<string> received) : IJob<string>
     {
         public Task ExecuteAsync(string input, CancellationToken cancellationToken)

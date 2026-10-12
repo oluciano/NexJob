@@ -67,7 +67,8 @@ public sealed class KafkaProducerTests
         capturedPayload.Key.Should().Be("order-42");
         capturedPayload.ValueString.Should().NotBeNull();
         capturedPayload.Headers.Should().ContainKey("source").WhoseValue.Should().Be("checkout-service");
-        capturedQueue.Should().Be("kafka-producer");
+        // Behavior changed in v6.3: the outbox jobs go to "default", the queue a worker polls out of the box (#482).
+        capturedQueue.Should().Be("default");
         capturedTags.Should().Contain("producer:kafka");
 
         var deserialized = JsonSerializer.Deserialize<TestOrder>(capturedPayload.ValueString!);
@@ -666,4 +667,28 @@ public sealed class KafkaProducerTests
     }
 
     private sealed record TestOrder(int Id, string Item, decimal Price);
+
+    /// <summary>N2 (#482): a queue named on the call still wins over the default.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task EnqueueKafkaAsync_ExplicitQueue_IsStillUsed()
+    {
+        string? capturedQueue = null;
+        var scheduler = new Mock<IScheduler>();
+        scheduler.Setup(s => s.EnqueueAsync<KafkaProducerJob, KafkaPublishPayload>(
+                It.IsAny<KafkaPublishPayload>(),
+                It.IsAny<string?>(),
+                It.IsAny<JobPriority>(),
+                It.IsAny<string?>(),
+                It.IsAny<DuplicatePolicy>(),
+                It.IsAny<IReadOnlyList<string>?>(),
+                It.IsAny<TimeSpan?>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<KafkaPublishPayload, string?, JobPriority, string?, DuplicatePolicy, IReadOnlyList<string>?, TimeSpan?, CancellationToken>((_, queue, _, _, _, _, _, _) => capturedQueue = queue)
+            .ReturnsAsync(JobId.New());
+
+        await scheduler.Object.EnqueueKafkaAsync("t", "k", "v", queue: "payments-out");
+
+        capturedQueue.Should().Be("payments-out");
+    }
 }
