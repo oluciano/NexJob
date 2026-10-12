@@ -94,6 +94,40 @@ public abstract class OrphanScenarios : DistributedReliabilityTestBase
     }
 
     [Fact]
+    public async Task OrphanedJobOfAnotherServicesType_OnItsLastAttempt_IsLeftForItsOwnService()
+    {
+        // N1 (Positive, issue #474): a host that cannot load the job type must not fail it, or the typed handler of the
+        // service that owns the job could never run. A job of a type this host can load, in the same database, still fails.
+        var queue = NewQueue();
+        var log = new ExecutionLog();
+        var recorder = new DeadLetterRecorder();
+        var own = await LeaveOrphanAsync(queue, log, maxAttempts: 1);
+        var foreign = await LeaveForeignOrphanAsync(queue);
+
+        using var host = BuildHost(
+            Storage(),
+            s =>
+            {
+                Register(s, log);
+                s.AddSingleton(recorder);
+                s.AddTransient<IDeadLetterHandler<StepJob>, RecordingDeadLetterHandler<StepJob>>();
+            },
+            workers: 1,
+            queues: [queue],
+            heartbeatTimeout: HeartbeatTimeout,
+            maxAttempts: 1);
+        await host.StartAsync();
+
+        (await WaitForJobStatus(host, own, JobStatus.Failed, Timeout)).Should().NotBeNull("the job this host can load is failed by its watcher");
+        await Task.Delay(Grace + HeartbeatTimeout + HeartbeatTimeout); // more watcher cycles
+
+        var stored = await host.Services.GetRequiredService<IDashboardStorage>().GetJobByIdAsync(foreign);
+        stored!.Status.Should().Be(JobStatus.Processing, "the node of the service that owns the type is the one that fails it and runs its handler");
+        recorder.InvocationCount.Should().Be(1, "only the job of this host's own type reached a handler");
+        await host.StopAsync();
+    }
+
+    [Fact]
     public async Task OrphanedJobWithAttemptsLeft_IsRequeued_AndTheDeadLetterHandlerIsNotCalled()
     {
         // N2 (Negative): giving the job back is not a failure.
@@ -237,5 +271,29 @@ public abstract class OrphanScenarios : DistributedReliabilityTestBase
         taken!.Attempts.Should().Be(1);
         await Task.Delay(HeartbeatTimeout + TimeSpan.FromMilliseconds(500));
         return jobId;
+    }
+
+    // A job of a type no node of this host can load, taken and abandoned on its last attempt: what a node of another
+    // service leaves behind when it dies.
+    private async Task<JobId> LeaveForeignOrphanAsync(string queue)
+    {
+        using var seed = BuildHost(Storage(), s => s.AddSingleton(new ExecutionLog()), workers: 1, queues: [queue], maxAttempts: 1);
+        var storage = seed.Services.GetRequiredService<IStorageProvider>();
+        var job = new JobRecord
+        {
+            Id = JobId.New(),
+            JobType = "Other.Service.B.Job, OtherService.B",
+            InputType = typeof(string).AssemblyQualifiedName!,
+            InputJson = "\"x\"",
+            Queue = queue,
+            Priority = JobPriority.Normal,
+            Status = JobStatus.Enqueued,
+            CreatedAt = DateTimeOffset.UtcNow,
+            MaxAttempts = 1,
+        };
+        await storage.EnqueueAsync(job);
+        (await storage.FetchNextAsync([queue])).Should().NotBeNull();
+        await Task.Delay(HeartbeatTimeout + TimeSpan.FromMilliseconds(500));
+        return job.Id;
     }
 }
