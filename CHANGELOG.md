@@ -26,6 +26,10 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `NexJob.Trigger.Salesforce`: an event that can never be decoded no longer drops the stream and reconnects in a loop, blocking every event behind it. It is logged, kept in `DeadLetterQueue` as Base64 when one is configured, and skipped with its replay id committed. A schema that cannot be fetched is still retried. A custom `ISalesforceSchemaService` opts in by throwing the new `SalesforcePayloadDecodeException` (issue #481).
 - `JobExecutingContext.Succeeded` and `Exception` can now be read inside a filter, right after `await next(ct)` or in a `catch`/`finally`. Before, NexJob set them only after the whole pipeline had finished, so a filter always saw `Succeeded = false` and `Exception = null`. Filters are also resolved from the job's DI scope, so a `Transient` or `Scoped` filter is built once per job instead of once for all jobs. A `Singleton` filter is unchanged, and a filter that does not call `next` still stores the job as `Succeeded`, which is now documented (issue #475).
 
+### Documentation
+
+- Wiki Reference: the connection budget in Troubleshooting now matches the pool advisor (`Workers + 5` needed, `Workers + 10` as the ceiling); the changelog page covers 5.10.0 to 6.2.1; the migration guide lists the 6.3.0 actions (stored `SchemaVersion`, orphan dead-lettering across services); the stale warning about continuations in the testing guide is gone (issue #486).
+
 ## [6.2.1] - 2026-10-11
 
 ### Fixed

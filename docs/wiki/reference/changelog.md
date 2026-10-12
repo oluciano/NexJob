@@ -6,6 +6,51 @@ description: "A history of NexJob releases with key features, bug fixes, and bre
 
 NexJob follows [Semantic Versioning](https://semver.org/). Breaking changes increment the major version. This page summarizes every public release from newest to oldest.
 
+## v6.2.1
+
+**Fixed**
+- A job cancelled when the shutdown drain ends is back in the queue, with its attempt refunded, before `StopAsync` returns.
+- A continuation starts right after its parent succeeds, and `ContinueWithAsync` releases the child at once when the parent already succeeded, on every provider.
+- `RequeueJobAsync` only acts on `Failed`, `Expired` and `Scheduled` jobs; with `UseDashboardReadReplica`, requeue and delete write to the primary.
+- `AddNexJobRedis` throws when it connects to a Redis Cluster, which is not supported.
+- An execution window with an unknown time zone stops the start with an error that names the queue, instead of ending the dispatch loop.
+
+## v6.2.0
+
+**Added**
+- Roslyn analyzers bundled in the `NexJob` package (`NXJ001` to `NXJ019`): blocking calls, `DateTime.Now`, a missing `CancellationToken`, static state and more inside jobs. See [Analyzers](../guides/analyzers.md).
+
+## v6.1.0
+
+**Fixed**
+- PostgreSQL and SQL Server: the fetch no longer reads the whole backlog, so its cost does not grow with the number of waiting jobs.
+- Salesforce triggers refuse an `http://` `AuthEndpoint`, which sent credentials in clear text.
+
+**Changed**
+- Queue names are matched exactly everywhere (the circuit breaker, `ConfigureQueue` and the in-memory storage used to ignore case).
+
+## v6.0.0
+
+**Breaking**
+- A job enqueued without a queue is stored in `{prefix}.default`, so hosts that share a database no longer share a queue. See the [migration guide](migration.md).
+
+**Added**
+- `tools/DocsTruth`, which compares the wiki with the code.
+- A warning when a recurring job id is already stored for a job of another type.
+- Dashboard: an orphaned-queue hint on the Servers and Queues pages.
+
+**Fixed**
+- `Workers = 0` is valid, and `DisableWorkers` really stops a standalone dashboard from running jobs.
+- The execution window and the circuit breaker configured for `default` also govern the legacy `default` queue.
+
+## v5.10.0
+
+**Added**
+- Dashboard: `DashboardOptions.EnvironmentName` shows an environment badge and prefixes the browser tab title.
+
+**Fixed**
+- Dashboard: narrow screens no longer squeeze the content or scroll horizontally.
+
 ## v5.9.0
 
 **Added**
