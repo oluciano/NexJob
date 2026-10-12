@@ -29,6 +29,7 @@ Each scenario is written once and runs on every database. They check, for exampl
 - **Continuations, deadlines, pausing, requeue and delete** behave as documented, including deleting a job while it runs.
 - **Connections:** the database sees about one connection per worker under load, and a pool smaller than the workers still finishes every job.
 - **Live objects:** `AddNexJobPostgres(NpgsqlDataSource)`, `AddNexJobRedis(IConnectionMultiplexer)` and `AddNexJobMongoDB(IMongoDatabase)` work on a real database.
+- **Failures at the worst moment:** the database failing as a finished job commits its result (absorbed up to three failures, a second run past that), a job of another service deferred without using an attempt, an execution window and a circuit breaker deciding whether a queue runs, and `[Throttle]` across two nodes on Redis, per node and cluster-wide.
 - **Upgrades:** a storage filled by the previous version opens with the new one on every database, with its history, orphans and continuations intact, and the MongoDB case of old and new nodes sharing a database is covered.
 
 Tests count executions and wait for a condition with a timeout; they do not sleep for a fixed time, and each test that shares a database uses its own queue.
