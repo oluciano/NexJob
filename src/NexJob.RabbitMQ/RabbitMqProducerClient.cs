@@ -16,6 +16,7 @@ internal sealed class RabbitMqProducerClient : IRabbitMqProducerClient
     private readonly SemaphoreSlim _lock = new(1, 1);
     private IConnection? _connection;
     private IModel? _channel;
+    private string? _returnedReply;
     private bool _disposed;
 
     /// <summary>
@@ -83,6 +84,7 @@ internal sealed class RabbitMqProducerClient : IRabbitMqProducerClient
 
             byte[] bodyBytes = payload.ValueBytes ?? (payload.ValueString != null ? Encoding.UTF8.GetBytes(payload.ValueString) : Array.Empty<byte>());
 
+            Volatile.Write(ref _returnedReply, null);
             _channel.BasicPublish(
                 exchange: exchange,
                 routingKey: routingKey,
@@ -100,6 +102,12 @@ internal sealed class RabbitMqProducerClient : IRabbitMqProducerClient
             if (!confirmed)
             {
                 throw new InvalidOperationException($"RabbitMQ publisher confirm received NACK from broker for exchange '{exchange}' and routingKey '{routingKey}'.");
+            }
+
+            // For a mandatory message the broker sends basic.return and then acks it, so the confirm alone does not tell.
+            if (Volatile.Read(ref _returnedReply) is { } reply)
+            {
+                throw new InvalidOperationException($"RabbitMQ could not route the mandatory message for exchange '{exchange}' and routingKey '{routingKey}': the broker returned it ({reply}).");
             }
         }
         catch
@@ -171,6 +179,7 @@ internal sealed class RabbitMqProducerClient : IRabbitMqProducerClient
             ResetChannel();
             _channel = _connection.CreateModel();
             _channel.ConfirmSelect();
+            _channel.BasicReturn += (_, args) => Volatile.Write(ref _returnedReply, $"{args.ReplyCode} {args.ReplyText}");
         }
     }
 

@@ -110,7 +110,8 @@ public sealed class RabbitMqProducerTests
 
         // Assert
         capturedPayload.Should().NotBeNull();
-        capturedPayload!.Exchange.Should().Be(string.Empty);
+        // Behavior changed in v6.3: the routing-key-only overload leaves the exchange unset (null), so DefaultExchange applies (#483).
+        capturedPayload!.Exchange.Should().BeNull();
         capturedPayload.RoutingKey.Should().Be("simple.key");
     }
 
@@ -620,7 +621,8 @@ public sealed class RabbitMqProducerTests
 
         // Assert
         payload.Exchange.Should().BeNull();
-        payload.RoutingKey.Should().Be(string.Empty);
+        // Behavior changed in v6.3: no routing key is null, so DefaultRoutingKey applies (#483).
+        payload.RoutingKey.Should().BeNull();
         payload.ValueBytes.Should().BeNull();
         payload.ValueString.Should().BeNull();
         payload.Headers.Should().BeNull();

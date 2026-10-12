@@ -34,18 +34,19 @@ public sealed class RabbitMqProducerOptions
     public string VirtualHost { get; set; } = "/";
 
     /// <summary>
-    /// Gets or sets the default exchange name to publish to.
+    /// Gets or sets the exchange used when the call names none (a <see langword="null"/> exchange).
     /// Defaults to empty string (RabbitMQ default direct exchange).
     /// </summary>
     public string DefaultExchange { get; set; } = string.Empty;
 
     /// <summary>
-    /// Gets or sets the default routing key to use if none is specified per message.
+    /// Gets or sets the routing key used when the call passes a <see langword="null"/> routing key.
     /// </summary>
     public string? DefaultRoutingKey { get; set; }
 
     /// <summary>
     /// Gets or sets a value indicating whether messages should be published with the mandatory flag.
+    /// A mandatory message the broker cannot route fails the publish with an <see cref="InvalidOperationException"/>.
     /// Defaults to <see langword="false"/>.
     /// </summary>
     public bool Mandatory { get; set; }
