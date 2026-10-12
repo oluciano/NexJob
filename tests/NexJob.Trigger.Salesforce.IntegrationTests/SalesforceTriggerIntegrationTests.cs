@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Eventbus.V1;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -166,5 +167,81 @@ public sealed class SalesforceTriggerIntegrationTests : IAsyncLifetime
         persistedReplayId.Should().Equal(0x10, 0x20, 0x30, 0x40);
 
         Directory.Delete(replayDirectory, recursive: true);
+    }
+
+    /// <summary>
+    /// A saved replay id that Salesforce refuses (the fake answers <c>InvalidArgument</c>): the reset policies drop it and
+    /// resume from the tip or from the oldest event, and the event still becomes a job.
+    /// </summary>
+    /// <param name="policy">The fallback policy.</param>
+    /// <param name="expectedPreset">The preset the second subscribe must use.</param>
+    /// <returns>A task.</returns>
+    [Theory]
+    [InlineData(ReplayFallbackPolicy.ResetToLatest, ReplayPreset.Latest)]
+    [InlineData(ReplayFallbackPolicy.ResetToEarliest, ReplayPreset.Earliest)]
+    public async Task RejectedReplayId_WithAResetPolicy_ResumesFromTheTipOrTheEarliestAndKeepsDelivering(ReplayFallbackPolicy policy, ReplayPreset expectedPreset)
+    {
+        var replayDirectory = Path.Combine(Path.GetTempPath(), $"nexjob-replay-{Guid.NewGuid():N}");
+        using var host = BuildHost(replayDirectory, policy, out var replayStore);
+        await replayStore().SaveReplayIdAsync("/data/OrderChangeEvent", MockSalesforceServer.RejectedReplayId);
+        await host.StartAsync();
+
+        var scheduler = host.Services.GetRequiredService<IScheduler>();
+        await TestWait.UntilAsync(
+            async () => (await scheduler.GetJobsByTagAsync("trigger:salesforce")).Any(j => j.IdempotencyKey == "evt-integ-001"),
+            timeout: TimeSpan.FromSeconds(30),
+            because: "the event to become a job after the replay id was reset");
+        await host.StopAsync();
+
+        var requests = _server.SubscribeRequests.ToArray();
+        requests[0].ReplayId.ToByteArray().Should().Equal(MockSalesforceServer.RejectedReplayId);
+        requests[1].ReplayPreset.Should().Be(expectedPreset);
+        requests[1].ReplayId.Should().BeEmpty("the refused position was dropped");
+        Directory.Delete(replayDirectory, recursive: true);
+    }
+
+    /// <summary>
+    /// A saved replay id that Salesforce refuses, with the default FailFast: the trigger faults and, with the default host
+    /// settings, the whole application is asked to stop. No job is created.
+    /// </summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task RejectedReplayId_WithFailFast_StopsTheHostAndCreatesNoJob()
+    {
+        var replayDirectory = Path.Combine(Path.GetTempPath(), $"nexjob-replay-{Guid.NewGuid():N}");
+        using var host = BuildHost(replayDirectory, ReplayFallbackPolicy.FailFast, out var replayStore);
+        await replayStore().SaveReplayIdAsync("/data/OrderChangeEvent", MockSalesforceServer.RejectedReplayId);
+        var lifetime = host.Services.GetRequiredService<IHostApplicationLifetime>();
+
+        await host.StartAsync();
+
+        await TestWait.UntilAsync(
+            () => Task.FromResult(lifetime.ApplicationStopping.IsCancellationRequested),
+            timeout: TimeSpan.FromSeconds(30),
+            because: "the default host to stop when a background service throws");
+        (await host.Services.GetRequiredService<IScheduler>().GetJobsByTagAsync("trigger:salesforce")).Should().BeEmpty();
+        Directory.Delete(replayDirectory, recursive: true);
+    }
+
+    private IHost BuildHost(string replayDirectory, ReplayFallbackPolicy policy, out Func<IReplayIdStore> replayStore)
+    {
+        var host = Host.CreateDefaultBuilder()
+            .ConfigureServices(services =>
+            {
+                services.AddNexJob(options => options.Workers = 0);
+                services.AddSalesforceTrigger(options =>
+                {
+                    options.Topic = "/data/OrderChangeEvent";
+                    options.ReplayStoreDirectory = replayDirectory;
+                    options.FallbackPolicy = policy;
+                    options.ClientId = "test-client-id";
+                    options.ClientSecret = "test-client-secret";
+                    options.AuthEndpoint = $"{_server.OAuthAddress}/services/oauth2/token";
+                    options.PubSubEndpoint = _server.GrpcAddress;
+                });
+            })
+            .Build();
+        replayStore = () => host.Services.GetRequiredService<IReplayIdStore>();
+        return host;
     }
 }

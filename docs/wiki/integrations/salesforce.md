@@ -84,7 +84,7 @@ When Salesforce rejects the saved replay id (an expired one, an invalid argument
 
 | Policy | What happens |
 |---|---|
-| `FailFast` (default) | A critical log, the status becomes `Faulted`, and the exception ends the trigger's background service. With the default .NET host settings an unhandled background-service exception stops the whole application (not run here). Events published in the gap are not read. |
+| `FailFast` (default) | A critical log, the status becomes `Faulted`, and the exception ends the trigger's background service. With the default .NET host settings an unhandled background-service exception stops the whole application: run against the fake server below, the host was asked to stop and no job was created. Events published in the gap are not read. |
 | `ResetToLatest` | The saved position is dropped and the trigger resumes from the tip. Events in the gap are skipped. |
 | `ResetToEarliest` | The saved position is dropped and the trigger resumes from the oldest event Salesforce still keeps. Events may repeat. |
 
@@ -107,7 +107,7 @@ The trigger registers with the [listener registry](triggers.md#live-listener-reg
 
 ## Not verified
 
-This page was written from the source and a fake Pub/Sub client. No Salesforce org was used, so the OAuth flow, the real gRPC stream, the Avro decoding of real events and the 24-hour window were not exercised.
+This page was written from the source, a fake Pub/Sub client and a fake Pub/Sub server in `tests/NexJob.Trigger.Salesforce.IntegrationTests` (OAuth token endpoint and a gRPC stream with Avro events, built from the public proto). The fake server confirmed the end-to-end path, the saved replay id, and the three fallback policies for a replay id answered with `InvalidArgument`: `ResetToLatest` and `ResetToEarliest` resubscribed with an empty replay id and the matching preset and the event became a job, and `FailFast` stopped the host. The fake is our reading of the protocol, not Salesforce: no org was used, so the real OAuth flow, the real gRPC stream, the Avro decoding of real events, what Salesforce actually answers to an expired replay id, and the 24-hour window were not exercised.
 
 ## Try it
 
