@@ -412,6 +412,11 @@ internal sealed class InMemoryStorageProvider : IStorageProvider, IOrphanedJobRe
 
     /// <inheritdoc/>
     public Task<IReadOnlyList<JobId>> RequeueOrphanedJobsAndReportAsync(TimeSpan heartbeatTimeout, CancellationToken cancellationToken = default)
+        => RequeueOrphanedJobsAndReportAsync(heartbeatTimeout, _ => true, cancellationToken);
+
+    /// <inheritdoc/>
+    public Task<IReadOnlyList<JobId>> RequeueOrphanedJobsAndReportAsync(
+        TimeSpan heartbeatTimeout, Func<string, bool> canHandleJobType, CancellationToken cancellationToken = default)
     {
         var cutoff = DateTimeOffset.UtcNow - heartbeatTimeout;
         var failed = new List<JobId>();
@@ -442,6 +447,12 @@ internal sealed class InMemoryStorageProvider : IStorageProvider, IOrphanedJobRe
 
                 if (job.Attempts >= job.MaxAttempts)
                 {
+                    // Left Processing for a node that can load the type, so its typed dead-letter handler can run.
+                    if (!canHandleJobType(job.JobType))
+                    {
+                        continue;
+                    }
+
                     job.Status = JobStatus.Failed;
                     job.CompletedAt = DateTimeOffset.UtcNow;
                     job.ProcessingStartedAt = null;
