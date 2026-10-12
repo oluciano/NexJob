@@ -33,6 +33,8 @@ The columns are the same in all three tables: what happens to the job, whether t
 | The job succeeds but its result cannot be saved | The save is retried a few times. If it still fails the job stays `Processing` and is treated like a crashed node: run again by the orphan watcher, or `Failed` (and dead-lettered) if it had no attempts left | Used | Only if no attempts were left |
 | A dead-letter handler or forwarder throws | The job stays `Failed`; the error is logged | n/a | Swallowed, other forwarders still run |
 
+The failed save is retried three times, about 2.6 seconds in all (four calls). Run on PostgreSQL, SQL Server, Redis and MongoDB with the save failing on purpose: up to three failures the job ran once and ended `Succeeded`; with four, the job stayed `Processing`, was run a second time by the orphan watcher and then ended `Succeeded`. Keep `HeartbeatTimeout` above those 2.6 seconds, or the orphan watcher can give the job back while the executor is still retrying. This is the at-least-once guarantee at work: a job that succeeded can run twice, so make it [idempotent](idempotency.md).
+
 ### When the job waits or is skipped
 
 | Event | The job | Attempt | Dead-letter handler and forwarders |
