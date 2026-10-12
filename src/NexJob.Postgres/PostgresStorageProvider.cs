@@ -572,11 +572,25 @@ public sealed class PostgresStorageProvider : IStorageProvider, IOrphanedJobRepo
     }
 
     /// <inheritdoc/>
-    public async Task<IReadOnlyList<JobId>> RequeueOrphanedJobsAndReportAsync(
+    public Task<IReadOnlyList<JobId>> RequeueOrphanedJobsAndReportAsync(
         TimeSpan heartbeatTimeout, CancellationToken cancellationToken = default)
+        => RequeueOrphanedJobsAndReportAsync(heartbeatTimeout, _ => true, cancellationToken);
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<JobId>> RequeueOrphanedJobsAndReportAsync(
+        TimeSpan heartbeatTimeout, Func<string, bool> canHandleJobType, CancellationToken cancellationToken = default)
     {
         await using var conn = Open();
         await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+
+        var cutoff = DateTimeOffset.UtcNow - heartbeatTimeout;
+
+        // A job with no attempts left is failed only when this node can load its type. The types are asked first and the
+        // statement is restricted to the accepted ones, so a type that shows up in between is skipped, never failed by mistake.
+        var exhaustedTypes = await conn.QueryAsync<string>(
+            "SELECT DISTINCT job_type FROM nexjob_jobs WHERE status = 'Processing' AND heartbeat_at < @cutoff AND attempts >= max_attempts",
+            new { cutoff }).ConfigureAwait(false);
+        var allowedTypes = exhaustedTypes.Where(canHandleJobType).ToArray();
 
         // The statement returns only the jobs it moved to Failed, so another node scanning at the same time cannot report them too.
         var failedIds = await conn.QueryAsync<Guid>(
@@ -589,10 +603,11 @@ public sealed class PostgresStorageProvider : IStorageProvider, IOrphanedJobRepo
                     heartbeat_at = NULL,
                     processing_started_at = NULL
                 WHERE status = 'Processing' AND heartbeat_at < @cutoff
+                  AND (attempts < max_attempts OR job_type = ANY(@allowedTypes))
                 RETURNING id, status)
             SELECT id FROM moved WHERE status = 'Failed'
             """,
-            new { cutoff = DateTimeOffset.UtcNow - heartbeatTimeout, now = DateTimeOffset.UtcNow }).ConfigureAwait(false);
+            new { cutoff, now = DateTimeOffset.UtcNow, allowedTypes }).ConfigureAwait(false);
 
         return failedIds.Select(id => new JobId(id)).ToList();
     }
