@@ -128,7 +128,7 @@ A NexJob queue is a partition in your storage database that governs execution, n
 
     Full `IScheduler` reference: enqueue, schedule with delay, set deadlines, and create job chains.
 
-  -   [**Retries & Dead Letter**](concepts/retries-and-dead-letter.md)
+  -   [**Retries and dead letter**](concepts/retries-and-dead-letter.md)
 
     Configure exponential backoff per job and handle exhausted retries with dead-letter handlers.
 
