@@ -82,7 +82,11 @@ A migration only goes forward. When the stored version is equal to or higher tha
 
 ## Jobs enqueued by earlier releases
 
-Releases before this behavior did not record the version: every job was stored as version 1, whatever the attribute said. Those jobs keep that value, so a job written with a version 2 payload that is still queued will be migrated as if it were version 1. If you raised `[SchemaVersion]` while jobs were queued, let them drain before relying on the migration.
+Releases before 6.3.0 did not record the version: every job was stored as version 1, whatever the attribute said. Those jobs keep that value, since NexJob does not rewrite stored jobs, so a job written with a version 2 payload that is still queued will be migrated as if it were version 1. If you raised `[SchemaVersion]` while jobs were queued, let them drain before relying on the migration. Jobs enqueued from 6.3.0 on carry the version of their class.
+
+## Recurring jobs
+
+A recurring job takes the version of its class when it fires, not when it was registered. Registering from code or `appsettings.json` serializes the payload again at every startup, so the two agree. A schedule stored before you raised `[SchemaVersion]` and not registered again since fires with the new version over its old payload, so register it again after a bump.
 
 ## Next
 
