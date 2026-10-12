@@ -8,7 +8,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Tests
 
-- Hardened unit tests covering core execution mutation survivors across `JobRecordFactory`, `DeadLetterDispatcherTests`, `JobDispatcherService`, and `JobExecutor` (issue #515).
+- Hardened unit tests covering core execution mutation survivors across `JobRecordFactory`, `DeadLetterDispatcherTests`, `JobDispatcherService`, `DefaultScheduler`, `DefaultQueueCircuitBreakerManager`, `ThrottleRegistry`, and `InMemoryStorageProvider` (issue #515).
 
 ### Changed
 

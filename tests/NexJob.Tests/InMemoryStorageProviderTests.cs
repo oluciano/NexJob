@@ -179,6 +179,72 @@ public sealed class InMemoryStorageProviderTests
         negativeBatch.Should().BeEmpty();
     }
 
+    /// <summary>N1/N3 (#515): Enqueued job with future ScheduledAt is not immediately written to channel and not returned by FetchNextAsync.</summary>
+    [Fact]
+    public async Task EnqueueAsync_WithFutureScheduledAt_IsNotImmediatelyFetchable()
+    {
+        var job = new JobRecord
+        {
+            Id = JobId.New(),
+            JobType = typeof(StubJob).AssemblyQualifiedName!,
+            InputType = typeof(string).AssemblyQualifiedName!,
+            InputJson = "\"test\"",
+            Queue = "default",
+            Priority = JobPriority.Normal,
+            Status = JobStatus.Enqueued,
+            ScheduledAt = DateTimeOffset.UtcNow.AddMinutes(10),
+            CreatedAt = DateTimeOffset.UtcNow,
+            MaxAttempts = 10,
+        };
+
+        await _sut.EnqueueAsync(job);
+
+        var fetched = await _sut.FetchNextAsync(["default"]);
+        fetched.Should().BeNull("job with future ScheduledAt must wait for promotion");
+    }
+
+    /// <summary>N1/N3 (#515): FetchBatchAsync across multiple queues stops exactly when reaching maxBatchSize.</summary>
+    [Fact]
+    public async Task FetchBatchAsync_MultipleQueues_StopsAtExactMaxBatchSize()
+    {
+        // Enqueue 2 jobs in q1 and 2 jobs in q2
+        for (var i = 0; i < 2; i++)
+        {
+            var j1 = new JobRecord
+            {
+                Id = JobId.New(),
+                JobType = typeof(StubJob).AssemblyQualifiedName!,
+                InputType = typeof(string).AssemblyQualifiedName!,
+                InputJson = "\"test\"",
+                Queue = "q1",
+                Priority = JobPriority.Normal,
+                Status = JobStatus.Enqueued,
+                CreatedAt = DateTimeOffset.UtcNow,
+                MaxAttempts = 10,
+            };
+            await _sut.EnqueueAsync(j1);
+
+            var j2 = new JobRecord
+            {
+                Id = JobId.New(),
+                JobType = typeof(StubJob).AssemblyQualifiedName!,
+                InputType = typeof(string).AssemblyQualifiedName!,
+                InputJson = "\"test\"",
+                Queue = "q2",
+                Priority = JobPriority.Normal,
+                Status = JobStatus.Enqueued,
+                CreatedAt = DateTimeOffset.UtcNow,
+                MaxAttempts = 10,
+            };
+            await _sut.EnqueueAsync(j2);
+        }
+
+        // Request batch of 3 across [q1, q2]
+        var batch = await _sut.FetchBatchAsync(["q1", "q2"], 3);
+
+        batch.Should().HaveCount(3, "must not exceed maxBatchSize even across multiple queues");
+    }
+
     [Fact]
     public async Task AcknowledgeBatchAsync_MarksAllJobsAsSucceeded()
     {
