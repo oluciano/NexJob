@@ -34,6 +34,14 @@ public sealed class RabbitMqProducerOptions
     public string VirtualHost { get; set; } = "/";
 
     /// <summary>
+    /// Gets or sets an optional delegate that configures the underlying <see cref="global::RabbitMQ.Client.ConnectionFactory"/>:
+    /// TLS (<c>Ssl</c>), heartbeat, <c>ClientProvidedName</c> and any other property. It runs before
+    /// <see cref="HostName"/>, <see cref="Port"/>, <see cref="UserName"/>, <see cref="Password"/> and <see cref="VirtualHost"/>
+    /// are applied, so those five settings always win. A delegate that throws fails the connection attempt.
+    /// </summary>
+    public Action<global::RabbitMQ.Client.ConnectionFactory>? ConfigureConnection { get; set; }
+
+    /// <summary>
     /// Gets or sets the exchange used when the call names none (a <see langword="null"/> exchange).
     /// Defaults to empty string (RabbitMQ default direct exchange).
     /// </summary>
