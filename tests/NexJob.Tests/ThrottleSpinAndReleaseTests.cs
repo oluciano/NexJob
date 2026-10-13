@@ -101,29 +101,34 @@ public sealed class ThrottleSpinAndReleaseTests
         store.ReleaseCalls.Should().Be(0);
     }
 
-    /// <summary>N1/N3 (#515): Multiple acquisitions decrement distributed holds sequentially (holds - 1) and stop releasing when holds reach 0.</summary>
+    /// <summary>N1/N3 (#515): Multiple acquisitions decrement distributed holds sequentially (holds - 1) and only call distributed release when holds exist.</summary>
     [Fact]
     public async Task MultipleAcquisitions_ReleaseDecrementsHoldsCorrectly()
     {
         var store = new CountingStore { AcquireResult = true };
         var registry = new ThrottleRegistry(store, NullLogger<ThrottleRegistry>.Instance);
 
-        // Acquire 2 slots
+        // Acquire 2 slots with distributed store
         (await registry.TryAcquireAsync("res-multi", 5, CancellationToken.None)).Should().BeTrue();
         (await registry.TryAcquireAsync("res-multi", 5, CancellationToken.None)).Should().BeTrue();
 
-        // Release first slot -> release call 1
+        // Release first slot -> release call 1 (holds becomes 2 - 1 = 1)
         await registry.ReleaseAsync("res-multi", CancellationToken.None);
         store.ReleaseCalls.Should().Be(1);
 
-        // Release second slot -> release call 2
+        // Release second slot -> release call 2 (holds becomes 1 - 1 = 0)
         await registry.ReleaseAsync("res-multi", CancellationToken.None);
         store.ReleaseCalls.Should().Be(2);
 
-        // Third release: semaphore was created with maxConcurrent=5, so 3rd release when only 2 were acquired throws SemaphoreFullException
-        var act = () => registry.ReleaseAsync("res-multi", CancellationToken.None);
-        await act.Should().ThrowAsync<SemaphoreFullException>();
-        store.ReleaseCalls.Should().Be(2, "over-releasing local semaphore does not invoke distributed store");
+        // Now acquire with distributed store failing/offline -> local semaphore acquired, but 0 distributed holds added
+        var degradingStore = new CountingStore { AcquireThrows = true };
+        var degradingRegistry = new ThrottleRegistry(degradingStore, NullLogger<ThrottleRegistry>.Instance);
+
+        (await degradingRegistry.TryAcquireAsync("res-degraded", 2, CancellationToken.None)).Should().BeTrue();
+        // At this point, local semaphore has 1 permit in use, but distributed holds is 0.
+        // Releasing releases local semaphore, while TryTakeDistributedHold sees holds == 0 and returns false.
+        await degradingRegistry.ReleaseAsync("res-degraded", CancellationToken.None);
+        degradingStore.ReleaseCalls.Should().Be(0, "when holds is 0, TryTakeDistributedHold returns false and does not call distributed release");
     }
 
     // ─── N3: cancellation while waiting ──────────────────────────────────────

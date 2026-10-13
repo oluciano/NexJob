@@ -1,4 +1,5 @@
 using System.Net;
+using FluentAssertions;
 using Microsoft.Extensions.Time.Testing;
 using NexJob.Configuration;
 using NexJob.Internal;
@@ -469,9 +470,9 @@ public sealed class QueueCircuitBreakerTests
         Assert.Equal(QueueCircuitState.Closed, manager.GetState("PAYMENTS", out _));
     }
 
-    /// <summary>N1/N3 (#515): GetAllStatuses returns all configured statuses; status remaining duration is TimeSpan.Zero when now == NextProbeAt.</summary>
+    /// <summary>N1/N3 (#515): GetAllStatuses returns statuses for all configured queues, including open circuits.</summary>
     [Fact]
-    public void GetAllStatuses_And_RemainingDurationAtBoundary_HandledCorrectly()
+    public void GetAllStatuses_ReturnsAllConfiguredQueueStatuses()
     {
         var fakeTime = new FakeTimeProvider();
         var options = new QueueCircuitBreakerOptions
@@ -492,19 +493,42 @@ public sealed class QueueCircuitBreakerTests
         manager.RecordOutcome("payments", succeeded: false, new InvalidOperationException("boom"));
 
         var allStatuses = manager.GetAllStatuses();
-        Assert.Equal(2, allStatuses.Count);
+        allStatuses.Should().HaveCount(2);
+        allStatuses.Should().Contain(s => s.Queue == "payments" && s.State == QueueCircuitState.Open);
+        allStatuses.Should().Contain(s => s.Queue == "orders" && s.State == QueueCircuitState.Closed);
+    }
+
+    /// <summary>N3 (Boundary): RemainingCooldown returns TimeSpan.Zero when current time reaches or passes NextProbeAt.</summary>
+    [Fact]
+    public void GetStatus_RemainingDurationAtOrPastProbeTime_ReturnsZero()
+    {
+        var fakeTime = new FakeTimeProvider();
+        var options = new QueueCircuitBreakerOptions
+        {
+            ConsecutiveFailuresThreshold = 1,
+            OpenDuration = TimeSpan.FromSeconds(30),
+        };
+
+        var manager = new DefaultQueueCircuitBreakerManager(
+            new Dictionary<string, QueueCircuitBreakerOptions>
+            {
+                ["payments"] = options,
+            },
+            timeProvider: fakeTime);
+
+        manager.RecordOutcome("payments", succeeded: false, new InvalidOperationException("boom"));
 
         // Advance time to exactly NextProbeAt (diff == TimeSpan.Zero)
         fakeTime.Advance(TimeSpan.FromSeconds(30));
-        var status = manager.GetStatus("payments");
-        Assert.NotNull(status);
-        Assert.Equal(QueueCircuitState.Open, status.State);
-        Assert.Equal(TimeSpan.Zero, status.RemainingCooldown);
+        var statusAtBoundary = manager.GetStatus("payments");
+        statusAtBoundary.Should().NotBeNull();
+        statusAtBoundary!.State.Should().Be(QueueCircuitState.Open);
+        statusAtBoundary.RemainingCooldown.Should().Be(TimeSpan.Zero);
 
         // Advance further (diff < TimeSpan.Zero)
         fakeTime.Advance(TimeSpan.FromSeconds(5));
         var statusAfter = manager.GetStatus("payments");
-        Assert.NotNull(statusAfter);
-        Assert.Equal(TimeSpan.Zero, statusAfter.RemainingCooldown);
+        statusAfter.Should().NotBeNull();
+        statusAfter!.RemainingCooldown.Should().Be(TimeSpan.Zero);
     }
 }
