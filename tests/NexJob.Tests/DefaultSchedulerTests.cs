@@ -378,6 +378,54 @@ public sealed class DefaultSchedulerTests
             It.IsAny<CancellationToken>()), Times.Once);
     }
 
+    /// <summary>N1/N3 (#515): RecurringAsync with explicit timeZone preserves its TimeZoneId and computes NextExecution in that zone.</summary>
+    [Fact]
+    public async Task RecurringAsync_WithExplicitTimeZone_SetsTimeZoneIdAndComputesNextExecution()
+    {
+        var tz = TimeZoneInfo.FindSystemTimeZoneById("America/Sao_Paulo");
+        const string cron = "0 9 * * *";
+        var cronExpr = DefaultScheduler.ParseCron(cron);
+
+        var captured = new List<RecurringJobRecord>();
+        _recurringStorage
+            .Setup(x => x.UpsertRecurringJobAsync(It.IsAny<RecurringJobRecord>(), It.IsAny<CancellationToken>()))
+            .Callback<RecurringJobRecord, CancellationToken>((r, _) => captured.Add(r))
+            .Returns(Task.CompletedTask);
+
+        await _hardenedSut.RecurringAsync<TestJob>("rec-tz", cron, timeZone: tz);
+        await _hardenedSut.RecurringAsync<StubJob, string>("rec-tz-input", "payload", cron, timeZone: tz);
+
+        captured.Should().HaveCount(2);
+
+        foreach (var record in captured)
+        {
+            record.TimeZoneId.Should().Be(tz.Id);
+            record.NextExecution.Should().NotBeNull();
+
+            // Prove that NextExecution was calculated using `tz` and NOT `Utc` (kills timeZone ?? Utc mutants)
+            var expectedInTz = cronExpr.GetNextOccurrence(record.NextExecution!.Value.AddSeconds(-1), tz);
+            var expectedInUtc = cronExpr.GetNextOccurrence(record.NextExecution!.Value.AddSeconds(-1), TimeZoneInfo.Utc);
+
+            record.NextExecution.Value.Should().Be(expectedInTz);
+            record.NextExecution.Value.Should().NotBe(expectedInUtc, "NextExecution must differ when computed in America/Sao_Paulo vs UTC");
+        }
+    }
+
+    /// <summary>N1/N3 (#515): ScheduleAsync without input adds positive delay to ScheduledAt.</summary>
+    [Fact]
+    public async Task ScheduleAsync_NoInput_ComputesFutureScheduledAt()
+    {
+        var before = DateTimeOffset.UtcNow;
+        var delay = TimeSpan.FromHours(2);
+
+        var jobId = await _sut.ScheduleAsync<StubNoInputJob>(delay);
+
+        var job = await _storage.GetJobByIdAsync(jobId);
+        job.Should().NotBeNull();
+        job!.ScheduledAt.Should().NotBeNull();
+        job.ScheduledAt!.Value.Should().BeOnOrAfter(before.Add(delay));
+    }
+
     // ─── ParseCron Branches ────────────────────────────────────────────────
 
     /// <summary>Tests that ParseCron falls back to standard format on cron format error.</summary>
