@@ -307,35 +307,9 @@ internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
         JobRecord job,
         CancellationToken cancellationToken)
     {
-        var acquired = new List<ThrottleAttribute>();
-        var waitStarted = Stopwatch.StartNew();
-
-        try
+        var slots = await AcquireThrottleSlotsAsync(ctx, cancellationToken).ConfigureAwait(false);
+        await using (slots.ConfigureAwait(false))
         {
-            foreach (var attr in ctx.ThrottleAttributes)
-            {
-                _logger.LogDebug("Job waiting for throttle slot on resource '{Resource}' (max={Max})",
-                    attr.Resource, attr.MaxConcurrent);
-
-                while (!await _throttleRegistry.TryAcquireWithWaitAsync(
-                    attr.Resource,
-                    attr.MaxConcurrent,
-                    TimeSpan.FromMilliseconds(500),
-                    cancellationToken).ConfigureAwait(false))
-                {
-                    // Waiting keeps this job's worker slot, so the wait is bounded: past it, hand the slot back.
-                    if (waitStarted.Elapsed >= _options.ThrottleMaxWait)
-                    {
-                        throw new ThrottleDeferredException(attr.Resource, waitStarted.Elapsed);
-                    }
-
-                    // Slot still taken: back off (with jitter) instead of spinning against the throttle store.
-                    await Task.Delay(TimeSpan.FromMilliseconds(250 + System.Security.Cryptography.RandomNumberGenerator.GetInt32(100)), cancellationToken).ConfigureAwait(false);
-                }
-
-                acquired.Add(attr);
-            }
-
             // The limit starts here, after the throttle slots are held, so waiting for a throttled resource
             // never counts. It uses its own CTS: the heartbeat token and the shutdown token stay untouched.
             var timeout = ctx.ExecutionTimeoutAttribute?.Timeout ?? _options.DefaultExecutionTimeout;
@@ -408,13 +382,46 @@ internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
                 }
             }
         }
-        finally
+    }
+
+    private async Task<ThrottleSlots> AcquireThrottleSlotsAsync(JobInvocationContext ctx, CancellationToken cancellationToken)
+    {
+        var slots = new ThrottleSlots(_throttleRegistry);
+        var waitStarted = Stopwatch.StartNew();
+
+        try
         {
-            foreach (var attr in acquired)
+            foreach (var attr in ctx.ThrottleAttributes)
             {
-                await _throttleRegistry.ReleaseAsync(attr.Resource, CancellationToken.None).ConfigureAwait(false);
+                _logger.LogDebug("Job waiting for throttle slot on resource '{Resource}' (max={Max})",
+                    attr.Resource, attr.MaxConcurrent);
+
+                while (!await _throttleRegistry.TryAcquireWithWaitAsync(
+                    attr.Resource,
+                    attr.MaxConcurrent,
+                    TimeSpan.FromMilliseconds(500),
+                    cancellationToken).ConfigureAwait(false))
+                {
+                    // Waiting keeps this job's worker slot, so the wait is bounded: past it, hand the slot back.
+                    if (waitStarted.Elapsed >= _options.ThrottleMaxWait)
+                    {
+                        throw new ThrottleDeferredException(attr.Resource, waitStarted.Elapsed);
+                    }
+
+                    // Slot still taken: back off (with jitter) instead of spinning against the throttle store.
+                    await Task.Delay(TimeSpan.FromMilliseconds(250 + System.Security.Cryptography.RandomNumberGenerator.GetInt32(100)), cancellationToken).ConfigureAwait(false);
+                }
+
+                slots.Add(attr);
             }
         }
+        catch
+        {
+            await slots.DisposeAsync().ConfigureAwait(false);
+            throw;
+        }
+
+        return slots;
     }
 
     private DateTimeOffset? HandleFailureAsync(JobRecord job, Exception ex, Activity? activity)
@@ -478,5 +485,24 @@ internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
             _options.CancellationGracePeriod.TotalSeconds,
             timeout);
         NexJobMetrics.JobsCancellationIgnored.Add(1, new TagList { { "nexjob.job_type", job.JobType } });
+    }
+
+    /// <summary>The throttle slots a job holds; disposing releases every one of them.</summary>
+    private sealed class ThrottleSlots : IAsyncDisposable
+    {
+        private readonly ThrottleRegistry _registry;
+        private readonly List<ThrottleAttribute> _held = [];
+
+        public ThrottleSlots(ThrottleRegistry registry) => _registry = registry;
+
+        public void Add(ThrottleAttribute attribute) => _held.Add(attribute);
+
+        public async ValueTask DisposeAsync()
+        {
+            foreach (var attr in _held)
+            {
+                await _registry.ReleaseAsync(attr.Resource, CancellationToken.None).ConfigureAwait(false);
+            }
+        }
     }
 }
