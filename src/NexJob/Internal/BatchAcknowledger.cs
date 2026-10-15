@@ -31,7 +31,7 @@ internal sealed class BatchAcknowledger : IDisposable, IAsyncDisposable
         _logger = logger;
         _channel = Channel.CreateUnbounded<JobId>(new UnboundedChannelOptions { SingleReader = true });
         _cts = new CancellationTokenSource();
-        _flusherTask = Task.Run(RunFlusherAsync);
+        _flusherTask = Task.Run(RunFlusherAsync, CancellationToken.None);
     }
 
     /// <summary>
