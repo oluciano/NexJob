@@ -31,7 +31,7 @@ internal sealed class BatchAcknowledger : IDisposable, IAsyncDisposable
         _logger = logger;
         _channel = Channel.CreateUnbounded<JobId>(new UnboundedChannelOptions { SingleReader = true });
         _cts = new CancellationTokenSource();
-        _flusherTask = Task.Run(RunFlusherAsync, _cts.Token);
+        _flusherTask = Task.Run(RunFlusherAsync);
     }
 
     /// <summary>
@@ -40,18 +40,20 @@ internal sealed class BatchAcknowledger : IDisposable, IAsyncDisposable
     /// <param name="jobId">The job to acknowledge.</param>
     public void Enqueue(JobId jobId) => _channel.Writer.TryWrite(jobId);
 
-    /// <inheritdoc/>
-    public void Dispose()
-    {
-        // The flusher runs on the thread pool without a synchronization context, so blocking here cannot deadlock.
-        // Completing the drain is the point: cancelling without waiting loses the queued acknowledgments (#527).
-#pragma warning disable RS0030
-        DisposeAsync().AsTask().GetAwaiter().GetResult();
-#pragma warning restore RS0030
-    }
+    /// <summary>
+    /// Stops accepting ids and asks the flusher to finish. Does not wait: the flusher drains the queue and releases
+    /// its resources on its own, so a synchronous dispose no longer loses queued acknowledgments (#527).
+    /// </summary>
+    public void Dispose() => BeginShutdown();
 
     /// <inheritdoc/>
     public async ValueTask DisposeAsync()
+    {
+        BeginShutdown();
+        await _flusherTask.ConfigureAwait(false);
+    }
+
+    private void BeginShutdown()
     {
         if (Interlocked.Exchange(ref _disposed, 1) == 1)
         {
@@ -59,20 +61,26 @@ internal sealed class BatchAcknowledger : IDisposable, IAsyncDisposable
         }
 
         _channel.Writer.TryComplete();
-        await _cts.CancelAsync().ConfigureAwait(false);
-        try
-        {
-            await _flusherTask.ConfigureAwait(false);
-        }
-        catch
-        {
-            // Ignore cancel exceptions during shutdown
-        }
-
-        _cts.Dispose();
+        _cts.Cancel();
     }
 
     private async Task RunFlusherAsync()
+    {
+        try
+        {
+            await FlushUntilStoppedAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error draining batch acknowledgments to storage during shutdown");
+        }
+        finally
+        {
+            _cts.Dispose();
+        }
+    }
+
+    private async Task FlushUntilStoppedAsync()
     {
         var buffer = new List<JobId>(100);
         while (!_cts.Token.IsCancellationRequested)
