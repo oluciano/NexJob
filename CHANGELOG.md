@@ -6,6 +6,10 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- Disposing the executor synchronously (for example a manual `ServiceProvider.Dispose()`) no longer loses batch acknowledgments still queued: it now drains them like `DisposeAsync`. Disposal is also idempotent in every combination of `Dispose` and `DisposeAsync` (issue #527).
+
 ### Tests
 
 - Hardened unit tests covering core execution mutation survivors across `JobRecordFactory`, `DeadLetterDispatcherTests`, `JobDispatcherService`, `DefaultScheduler`, `DefaultQueueCircuitBreakerManager`, `ThrottleRegistry`, and `InMemoryStorageProvider` (issue #515).

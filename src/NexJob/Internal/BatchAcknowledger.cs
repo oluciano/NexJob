@@ -16,6 +16,7 @@ internal sealed class BatchAcknowledger : IDisposable, IAsyncDisposable
     private readonly Channel<JobId> _channel;
     private readonly CancellationTokenSource _cts;
     private readonly Task _flusherTask;
+    private int _disposed;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="BatchAcknowledger"/> class and starts its flusher.
@@ -42,15 +43,22 @@ internal sealed class BatchAcknowledger : IDisposable, IAsyncDisposable
     /// <inheritdoc/>
     public void Dispose()
     {
-        _channel.Writer.TryComplete();
-        _cts.Cancel();
-        _cts.Dispose();
+        // The flusher runs on the thread pool without a synchronization context, so blocking here cannot deadlock.
+        // Completing the drain is the point: cancelling without waiting loses the queued acknowledgments (#527).
+#pragma warning disable RS0030
+        DisposeAsync().AsTask().GetAwaiter().GetResult();
+#pragma warning restore RS0030
     }
 
     /// <inheritdoc/>
     public async ValueTask DisposeAsync()
     {
-        _channel.Writer.Complete();
+        if (Interlocked.Exchange(ref _disposed, 1) == 1)
+        {
+            return;
+        }
+
+        _channel.Writer.TryComplete();
         await _cts.CancelAsync().ConfigureAwait(false);
         try
         {
