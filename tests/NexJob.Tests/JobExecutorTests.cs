@@ -739,6 +739,54 @@ public sealed class JobExecutorTests
         _hardenedStorage.Verify(x => x.CommitJobResultAsync(job.Id, It.Is<JobExecutionResult>(r => r.Succeeded), It.IsAny<CancellationToken>()), Times.Once);
     }
 
+    /// <summary>The throttle slots a job held are free again once it ran.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task ExecuteJobAsync_WithThrottling_ReleasesTheSlotsAfterTheJobRan()
+    {
+        var job = new JobRecord { Id = JobId.New(), JobType = "TestJob" };
+        _ = SetupSuccessfulInvoker(job, new[] { new ThrottleAttribute("resource-ran", 1) });
+
+        await _hardenedSut.ExecuteJobAsync(job);
+
+        (await _hardenedThrottleregistry.TryAcquireAsync("resource-ran", 1, CancellationToken.None)).Should().BeTrue();
+    }
+
+    /// <summary>A job that fails still gives its throttle slots back.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task ExecuteJobAsync_WithThrottling_WhenTheJobFails_ReleasesTheSlots()
+    {
+        var job = new JobRecord { Id = JobId.New(), JobType = "TestJob" };
+        var context = new JobInvocationContext(
+            TestScopes.Create(),
+            new object(),
+            new object(),
+            (object j, object i, CancellationToken ct) => throw new InvalidOperationException("job failed"),
+            new[] { new ThrottleAttribute("resource-failed", 1) });
+        _hardenedInvokerfactory.Setup(x => x.PrepareAsync(job, It.IsAny<CancellationToken>())).ReturnsAsync(context);
+
+        await _hardenedSut.ExecuteJobAsync(job);
+
+        (await _hardenedThrottleregistry.TryAcquireAsync("resource-failed", 1, CancellationToken.None)).Should().BeTrue();
+    }
+
+    /// <summary>When a later resource stays saturated, the slots already taken on earlier ones are released and the job is deferred without consuming an attempt.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task ExecuteJobAsync_WithThrottling_WhenALaterResourceIsSaturated_ReleasesTheEarlierSlotsAndDefers()
+    {
+        var job = new JobRecord { Id = JobId.New(), JobType = "TestJob" };
+        _hardenedOptions.ThrottleMaxWait = TimeSpan.FromMilliseconds(1);
+        _ = SetupSuccessfulInvoker(job, new[] { new ThrottleAttribute("resource-first", 1), new ThrottleAttribute("resource-saturated", 1) });
+        (await _hardenedThrottleregistry.TryAcquireAsync("resource-saturated", 1, CancellationToken.None)).Should().BeTrue();
+
+        await _hardenedSut.ExecuteJobAsync(job);
+
+        (await _hardenedThrottleregistry.TryAcquireAsync("resource-first", 1, CancellationToken.None)).Should().BeTrue();
+        _hardenedStorage.Verify(x => x.CommitJobResultAsync(job.Id, It.Is<JobExecutionResult>(r => !r.Succeeded && r.RefundAttempt), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
     // ─── Filter Branches ───────────────────────────────────────────────────
 
     /// <summary>Tests that JobExecutor invokes filters in the correct order.</summary>
