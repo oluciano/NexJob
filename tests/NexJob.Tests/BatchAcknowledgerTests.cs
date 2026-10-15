@@ -101,10 +101,10 @@ public sealed class BatchAcknowledgerTests
         Batches()[1].Should().Equal(second);
     }
 
-    /// <summary>N1: a synchronous dispose drains the queued ids too, as the async one does (#527).</summary>
+    /// <summary>N1: a synchronous dispose does not wait, but the flusher still drains the queued ids on its own (#527).</summary>
     /// <returns>A task.</returns>
     [Fact]
-    public async Task Dispose_WithQueuedIds_DrainsThemBeforeReturning()
+    public async Task Dispose_WithQueuedIds_StillDrainsThem()
     {
         var firstFlushStarted = new TaskCompletionSource();
         var releaseFirstFlush = new TaskCompletionSource();
@@ -123,9 +123,9 @@ public sealed class BatchAcknowledgerTests
         sut.Enqueue(first);
         await firstFlushStarted.Task.WaitAsync(Bound);
         sut.Enqueue(second);
-        var disposing = Task.Run(sut.Dispose);
+        await DisposeSync(sut);
         releaseFirstFlush.SetResult();
-        await disposing.WaitAsync(Bound);
+        await WaitForBatchesAsync(2);
 
         Batches().Should().HaveCount(2);
         Batches()[0].Should().Equal(first);
@@ -257,7 +257,13 @@ public sealed class BatchAcknowledgerTests
     }
 
     private static Task DisposeWith(BatchAcknowledger sut, bool useAsync)
-        => useAsync ? sut.DisposeAsync().AsTask() : Task.Run(sut.Dispose);
+        => useAsync ? sut.DisposeAsync().AsTask() : DisposeSync(sut);
+
+    private static Task DisposeSync(BatchAcknowledger sut)
+    {
+        sut.Dispose();
+        return Task.CompletedTask;
+    }
 
     private BatchAcknowledger Create() => new(_storage.Object, _wakeUp, _logger);
 
