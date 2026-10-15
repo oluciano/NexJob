@@ -26,6 +26,7 @@ internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
     private readonly ILogger<JobExecutor> _logger;
     private readonly JobWakeUpChannel _wakeUp;
     private readonly TimeProvider _timeProvider;
+    private readonly JobHeartbeat _heartbeat;
     private readonly Channel<JobId> _ackChannel;
     private readonly CancellationTokenSource _ackCts;
     private readonly Task _ackFlusherTask;
@@ -62,6 +63,7 @@ internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
         _throttleRegistry = throttleRegistry;
         _options = options;
         _logger = logger;
+        _heartbeat = new JobHeartbeat(storage, options, logger);
 
         _ackChannel = Channel.CreateUnbounded<JobId>(new UnboundedChannelOptions { SingleReader = true });
         _ackCts = new CancellationTokenSource();
@@ -113,7 +115,7 @@ internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
             job.Id, job.JobType, job.Attempts, job.MaxAttempts);
 
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        var heartbeatTask = RunHeartbeatAsync(job.Id, cts.Token);
+        var heartbeatTask = _heartbeat.RunAsync(job.Id, cts.Token);
 
         using var loggingScope = _logger.BeginScope(new Dictionary<string, object?>(StringComparer.Ordinal)
         {
@@ -520,30 +522,6 @@ internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
             _options.CancellationGracePeriod.TotalSeconds,
             timeout);
         NexJobMetrics.JobsCancellationIgnored.Add(1, new TagList { { "nexjob.job_type", job.JobType } });
-    }
-
-    private async Task RunHeartbeatAsync(JobId jobId, CancellationToken cancellationToken)
-    {
-        try
-        {
-            while (!cancellationToken.IsCancellationRequested)
-            {
-                await Task.Delay(_options.HeartbeatInterval, cancellationToken).ConfigureAwait(false);
-                try
-                {
-                    await _storage.UpdateHeartbeatAsync(jobId, CancellationToken.None).ConfigureAwait(false);
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException)
-                {
-                    // A transient storage error must not end the heartbeat, or the orphan watcher would re-run a healthy job.
-                    _logger.LogWarning(ex, "Heartbeat update for job {JobId} failed; will retry on the next interval", jobId);
-                }
-            }
-        }
-        catch (OperationCanceledException)
-        {
-            // Expected on job completion
-        }
     }
 
     private async Task RunBatchAckFlusherAsync()
