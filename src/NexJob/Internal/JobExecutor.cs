@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Threading.Channels;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using NexJob.Exceptions;
@@ -27,9 +26,7 @@ internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
     private readonly JobWakeUpChannel _wakeUp;
     private readonly TimeProvider _timeProvider;
     private readonly JobHeartbeat _heartbeat;
-    private readonly Channel<JobId> _ackChannel;
-    private readonly CancellationTokenSource _ackCts;
-    private readonly Task _ackFlusherTask;
+    private readonly BatchAcknowledger _batchAck;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="JobExecutor"/> class.
@@ -65,9 +62,7 @@ internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
         _logger = logger;
         _heartbeat = new JobHeartbeat(storage, options, logger);
 
-        _ackChannel = Channel.CreateUnbounded<JobId>(new UnboundedChannelOptions { SingleReader = true });
-        _ackCts = new CancellationTokenSource();
-        _ackFlusherTask = Task.Run(RunBatchAckFlusherAsync, _ackCts.Token);
+        _batchAck = new BatchAcknowledger(storage, wakeUp, logger);
     }
 
     /// <summary>Gets the delays between retries of a failed success commit. Overridable for tests.</summary>
@@ -79,29 +74,10 @@ internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
     ];
 
     /// <inheritdoc/>
-    public void Dispose()
-    {
-        _ackChannel.Writer.TryComplete();
-        _ackCts.Cancel();
-        _ackCts.Dispose();
-    }
+    public void Dispose() => _batchAck.Dispose();
 
     /// <inheritdoc/>
-    public async ValueTask DisposeAsync()
-    {
-        _ackChannel.Writer.Complete();
-        await _ackCts.CancelAsync().ConfigureAwait(false);
-        try
-        {
-            await _ackFlusherTask.ConfigureAwait(false);
-        }
-        catch
-        {
-            // Ignore cancel exceptions during shutdown
-        }
-
-        _ackCts.Dispose();
-    }
+    public ValueTask DisposeAsync() => _batchAck.DisposeAsync();
 
     /// <inheritdoc/>
     public async Task ExecuteJobAsync(JobRecord job, CancellationToken cancellationToken = default)
@@ -290,7 +266,7 @@ internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
     {
         if (useBatchAck)
         {
-            _ackChannel.Writer.TryWrite(job.Id);
+            _batchAck.Enqueue(job.Id);
             _logger.LogDebug("Job {JobId} completed successfully", job.Id);
             return;
         }
@@ -522,50 +498,5 @@ internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
             _options.CancellationGracePeriod.TotalSeconds,
             timeout);
         NexJobMetrics.JobsCancellationIgnored.Add(1, new TagList { { "nexjob.job_type", job.JobType } });
-    }
-
-    private async Task RunBatchAckFlusherAsync()
-    {
-        var buffer = new List<JobId>(100);
-        while (!_ackCts.Token.IsCancellationRequested)
-        {
-            try
-            {
-                if (await _ackChannel.Reader.WaitToReadAsync(_ackCts.Token).ConfigureAwait(false))
-                {
-                    while (buffer.Count < 100 && _ackChannel.Reader.TryRead(out var id))
-                    {
-                        buffer.Add(id);
-                    }
-
-                    if (buffer.Count > 0)
-                    {
-                        await _storage.AcknowledgeBatchAsync(buffer, CancellationToken.None).ConfigureAwait(false);
-                        _wakeUp.Signal();
-                        buffer.Clear();
-                    }
-                }
-            }
-            catch (OperationCanceledException)
-            {
-                break;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error flushing batch acknowledgments to storage");
-                await Task.Delay(50, CancellationToken.None).ConfigureAwait(false);
-            }
-        }
-
-        // Drain any leftovers
-        while (_ackChannel.Reader.TryRead(out var leftoverId))
-        {
-            buffer.Add(leftoverId);
-        }
-
-        if (buffer.Count > 0)
-        {
-            await _storage.AcknowledgeBatchAsync(buffer, CancellationToken.None).ConfigureAwait(false);
-        }
     }
 }
