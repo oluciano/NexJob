@@ -101,6 +101,37 @@ public sealed class BatchAcknowledgerTests
         Batches()[1].Should().Equal(second);
     }
 
+    /// <summary>N1: a synchronous dispose drains the queued ids too, as the async one does (#527).</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task Dispose_WithQueuedIds_DrainsThemBeforeReturning()
+    {
+        var firstFlushStarted = new TaskCompletionSource();
+        var releaseFirstFlush = new TaskCompletionSource();
+        RecordBatches(async call =>
+        {
+            if (call == 1)
+            {
+                firstFlushStarted.SetResult();
+                await releaseFirstFlush.Task;
+            }
+        });
+        var first = JobId.New();
+        var second = JobId.New();
+        var sut = Create();
+
+        sut.Enqueue(first);
+        await firstFlushStarted.Task.WaitAsync(Bound);
+        sut.Enqueue(second);
+        var disposing = Task.Run(sut.Dispose);
+        releaseFirstFlush.SetResult();
+        await disposing.WaitAsync(Bound);
+
+        Batches().Should().HaveCount(2);
+        Batches()[0].Should().Equal(first);
+        Batches()[1].Should().Equal(second);
+    }
+
     // ─── N2: negative ──────────────────────────────────────────────────────
 
     /// <summary>N2: a failed flush is logged as an error and its ids are kept, so the next flush writes them with the new ones.</summary>
@@ -200,6 +231,33 @@ public sealed class BatchAcknowledgerTests
         await Task.Yield();
         Batches().Should().BeEmpty();
     }
+
+    /// <summary>N3: disposing twice, in any combination of sync and async, does not throw (#527).</summary>
+    /// <param name="firstAsync">Whether the first dispose is the async one.</param>
+    /// <param name="secondAsync">Whether the second dispose is the async one.</param>
+    /// <returns>A task.</returns>
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task Dispose_CalledTwice_DoesNotThrowAndAcknowledgesOnce(bool firstAsync, bool secondAsync)
+    {
+        RecordBatches();
+        var jobId = JobId.New();
+        var sut = Create();
+        sut.Enqueue(jobId);
+        await WaitForBatchesAsync(1);
+
+        await DisposeWith(sut, firstAsync);
+        var second = async () => await DisposeWith(sut, secondAsync);
+
+        await second.Should().NotThrowAsync();
+        Batches().Should().ContainSingle().Which.Should().Equal(jobId);
+    }
+
+    private static Task DisposeWith(BatchAcknowledger sut, bool useAsync)
+        => useAsync ? sut.DisposeAsync().AsTask() : Task.Run(sut.Dispose);
 
     private BatchAcknowledger Create() => new(_storage.Object, _wakeUp, _logger);
 
