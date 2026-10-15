@@ -149,15 +149,7 @@ internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
             activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             activity?.SetTag("nexjob.foreign_job", true);
 
-            await _storage.CommitJobResultAsync(job.Id, new JobExecutionResult
-            {
-                Succeeded = false,
-                Logs = logScope.Entries,
-                Exception = ex,
-                RetryAt = retryAt,
-                RecurringJobId = job.RecurringJobId,
-                RefundAttempt = true,
-            }, CancellationToken.None).ConfigureAwait(false);
+            await CommitFailureAsync(job, logScope.Entries, ex, retryAt, refundAttempt: true).ConfigureAwait(false);
         }
         catch (ThrottleDeferredException ex)
         {
@@ -180,15 +172,7 @@ internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
             activity?.SetTag("nexjob.throttle_deferred", true);
             NexJobMetrics.JobsThrottleDeferred.Add(1, new TagList { { "nexjob.job_type", job.JobType }, { "nexjob.resource", ex.Resource } });
 
-            await _storage.CommitJobResultAsync(job.Id, new JobExecutionResult
-            {
-                Succeeded = false,
-                Logs = logScope.Entries,
-                Exception = ex,
-                RetryAt = retryAt,
-                RecurringJobId = job.RecurringJobId,
-                RefundAttempt = true,
-            }, CancellationToken.None).ConfigureAwait(false);
+            await CommitFailureAsync(job, logScope.Entries, ex, retryAt, refundAttempt: true).ConfigureAwait(false);
         }
         catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
         {
@@ -204,29 +188,14 @@ internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
             activity?.SetStatus(ActivityStatusCode.Error, "interrupted by shutdown");
             activity?.SetTag("nexjob.interrupted", true);
 
-            await _storage.CommitJobResultAsync(job.Id, new JobExecutionResult
-            {
-                Succeeded = false,
-                Logs = logScope.Entries,
-                Exception = ex,
-                RetryAt = _timeProvider.GetUtcNow(),
-                RecurringJobId = job.RecurringJobId,
-                RefundAttempt = true,
-            }, CancellationToken.None).ConfigureAwait(false);
+            await CommitFailureAsync(job, logScope.Entries, ex, _timeProvider.GetUtcNow(), refundAttempt: true).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
             sw.Stop();
             var retryAt = HandleFailureAsync(job, ex, activity);
 
-            await _storage.CommitJobResultAsync(job.Id, new JobExecutionResult
-            {
-                Succeeded = false,
-                Logs = logScope.Entries,
-                Exception = ex,
-                RetryAt = retryAt,
-                RecurringJobId = job.RecurringJobId,
-            }, CancellationToken.None).ConfigureAwait(false);
+            await CommitFailureAsync(job, logScope.Entries, ex, retryAt, refundAttempt: false).ConfigureAwait(false);
 
             if (retryAt is null)
             {
@@ -261,6 +230,17 @@ internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
         NexJobMetrics.JobsSucceeded.Add(1,
             new TagList { { "nexjob.job_type", jobType } });
     }
+
+    private Task CommitFailureAsync(JobRecord job, IReadOnlyList<JobExecutionLog> logs, Exception exception, DateTimeOffset? retryAt, bool refundAttempt)
+        => _storage.CommitJobResultAsync(job.Id, new JobExecutionResult
+        {
+            Succeeded = false,
+            Logs = logs,
+            Exception = exception,
+            RetryAt = retryAt,
+            RecurringJobId = job.RecurringJobId,
+            RefundAttempt = refundAttempt,
+        }, CancellationToken.None);
 
     private async Task CommitSuccessAsync(JobRecord job, JobExecutionResult result, bool useBatchAck)
     {
