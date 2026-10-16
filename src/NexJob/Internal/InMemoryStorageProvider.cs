@@ -39,18 +39,10 @@ internal sealed class InMemoryStorageProvider : IStorageProvider, IOrphanedJobRe
 
                 if (existingJob is not null)
                 {
-                    if (IsActiveState(existingJob.Status))
+                    var existing = DuplicateRules.Resolve(existingJob.Id, existingJob.Status, duplicatePolicy);
+                    if (existing.WasRejected || DuplicateRules.IsActive(existingJob.Status))
                     {
-                        return Task.FromResult(new EnqueueResult(existingJob.Id, WasRejected: false));
-                    }
-
-                    var reject = existingJob.Status == JobStatus.Failed
-                        ? duplicatePolicy is DuplicatePolicy.RejectIfFailed or DuplicatePolicy.RejectAlways
-                        : duplicatePolicy == DuplicatePolicy.RejectAlways;
-
-                    if (reject)
-                    {
-                        return Task.FromResult(new EnqueueResult(existingJob.Id, WasRejected: true));
+                        return Task.FromResult(existing);
                     }
 
                     _idempotencyIndex.TryRemove(job.IdempotencyKey, out _);
@@ -957,9 +949,6 @@ internal sealed class InMemoryStorageProvider : IStorageProvider, IOrphanedJobRe
         JobPriority.Low => 3,
         _ => 2,
     };
-
-    private static bool IsActiveState(JobStatus status) =>
-        status is JobStatus.Enqueued or JobStatus.Processing or JobStatus.Scheduled or JobStatus.AwaitingContinuation;
 
     private static void ApplyRetry(JobRecord job, JobExecutionResult result)
     {

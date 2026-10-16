@@ -16,6 +16,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- The duplicate-handling rules (`ResolveDuplicate`, `IsActiveState`) live once in the core (`DuplicateRules`) instead of being copied into the five storage providers. No behaviour change (issue #521).
 - `JobExecutor` reads the clock through an injected `TimeProvider` (system clock by default) for the deadline check and the retry times it computes. No behaviour change; the deadline boundary and retry times can now be tested exactly (issue #517).
 
 ## [6.3.0] - 2026-10-12

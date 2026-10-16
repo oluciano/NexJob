@@ -3,6 +3,7 @@ using MongoDB.Bson.Serialization;
 using MongoDB.Bson.Serialization.Conventions;
 using MongoDB.Bson.Serialization.Serializers;
 using MongoDB.Driver;
+using NexJob.Internal;
 using NexJob.Storage;
 
 namespace NexJob.MongoDB;
@@ -86,8 +87,8 @@ public sealed class MongoStorageProvider : IStorageProvider, IOrphanedJobReporte
 
             if (existing is not null)
             {
-                var existingResult = ResolveDuplicate(existing.Id, existing.Status, duplicatePolicy);
-                if (existingResult.WasRejected || IsActiveState(existing.Status))
+                var existingResult = DuplicateRules.Resolve(existing.Id, existing.Status, duplicatePolicy);
+                if (existingResult.WasRejected || DuplicateRules.IsActive(existing.Status))
                 {
                     return existingResult;
                 }
@@ -113,7 +114,7 @@ public sealed class MongoStorageProvider : IStorageProvider, IOrphanedJobReporte
 
                 if (winner is not null)
                 {
-                    return ResolveDuplicate(winner.Id, winner.Status, duplicatePolicy);
+                    return DuplicateRules.Resolve(winner.Id, winner.Status, duplicatePolicy);
                 }
             }
         }
@@ -914,20 +915,6 @@ public sealed class MongoStorageProvider : IStorageProvider, IOrphanedJobReporte
 
     // ── Private helpers ───────────────────────────────────────────────────────
 
-    private static EnqueueResult ResolveDuplicate(JobId id, JobStatus status, DuplicatePolicy policy)
-    {
-        if (IsActiveState(status))
-        {
-            return new EnqueueResult(id, WasRejected: false);
-        }
-
-        var wasRejected = status == JobStatus.Failed
-            ? policy is DuplicatePolicy.RejectIfFailed or DuplicatePolicy.RejectAlways
-            : policy == DuplicatePolicy.RejectAlways;
-
-        return new EnqueueResult(id, WasRejected: wasRejected);
-    }
-
     private static bool IsTerminalStatus(JobStatus? status) =>
         status is null or JobStatus.Succeeded or JobStatus.Failed or JobStatus.Expired;
 
@@ -959,9 +946,6 @@ public sealed class MongoStorageProvider : IStorageProvider, IOrphanedJobReporte
             }
         },
     };
-
-    private static bool IsActiveState(JobStatus status) =>
-        status is JobStatus.Enqueued or JobStatus.Processing or JobStatus.Scheduled or JobStatus.AwaitingContinuation;
 
     private static FilterDefinition<JobDocument> ById(JobId id) =>
         Builders<JobDocument>.Filter.Eq(d => d.Id, id);
