@@ -8,6 +8,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Redis: force-deleting a recurring job now also deletes the jobs it created, as the other providers and the interface documentation say. They used to stay and run (issue #542).
 - Redis: updating, force-deleting or restoring a recurring job id that was never registered (and the scheduler's next-execution and last-result writes after a job was deleted) no longer creates a phantom definition. Reading it threw, and a recurring job registered afterwards was born disabled and deleted (issue #543).
 - RabbitMQ trigger: stopping the host now cancels an enqueue still waiting on the storage and gives the message back, instead of waiting for the storage to answer. The enqueue ignored the stopping token (issue #537).
 - Disposing the executor synchronously (for example a manual `ServiceProvider.Dispose()`) no longer loses batch acknowledgments still queued: it now drains them like `DisposeAsync`. Disposal is also idempotent in every combination of `Dispose` and `DisposeAsync` (issue #527).
