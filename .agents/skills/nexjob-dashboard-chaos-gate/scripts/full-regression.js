@@ -276,4 +276,26 @@ async function runFullRegression() {
   return report;
 }
 
-runFullRegression();
+// A gate that cannot reach the dashboard, or that sees any failure, must not exit 0.
+function failuresOf(report) {
+  const failures = [];
+  if (report.fatalError) failures.push(`fatal error: ${report.fatalError}`);
+  if (report.totalRoutesChecked === 0 || report.routesPassed !== report.totalRoutesChecked) {
+    failures.push(`routes passed ${report.routesPassed}/${report.totalRoutesChecked}`);
+  }
+  if (report.networkErrors.length > 0) failures.push(`${report.networkErrors.length} HTTP 500 errors`);
+  const notResisted = report.adversarialChaos.filter(c => !c.resisted).length;
+  if (notResisted > 0) failures.push(`${notResisted} adversarial cases not resisted`);
+  for (const [name, check] of Object.entries(report.threeNMatrix ?? {})) {
+    if (!check.passed) failures.push(`3N ${name} failed: ${check.description}`);
+  }
+  return failures;
+}
+
+runFullRegression().then(report => {
+  const failures = failuresOf(report);
+  if (failures.length > 0) {
+    console.error(`[FAILED] ${failures.join('; ')}`);
+    process.exit(1);
+  }
+});
