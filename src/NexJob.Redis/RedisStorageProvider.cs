@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using NexJob.Internal;
 using NexJob.Storage;
 using StackExchange.Redis;
 
@@ -497,9 +498,9 @@ public sealed class RedisStorageProvider : IStorageProvider, IOrphanedJobReporte
                         var jobHash = await _db.HashGetAllAsync(JobKey(returnedId!)).ConfigureAwait(false);
                         var existingStatus = GetStatusFromHash(jobHash);
 
-                        var enqueueResult = ResolveDuplicate(existingJobId, existingStatus, duplicatePolicy);
+                        var enqueueResult = DuplicateRules.Resolve(existingJobId, existingStatus, duplicatePolicy);
 
-                        if (enqueueResult.WasRejected || IsActiveState(existingStatus))
+                        if (enqueueResult.WasRejected || DuplicateRules.IsActive(existingStatus))
                         {
                             return enqueueResult;
                         }
@@ -1809,23 +1810,6 @@ public sealed class RedisStorageProvider : IStorageProvider, IOrphanedJobReporte
         new("progressMessage", job.ProgressMessage ?? string.Empty),
         new("expiresAt", job.ExpiresAt?.ToString("O", CultureInfo.InvariantCulture) ?? string.Empty),
     ];
-
-    private static bool IsActiveState(JobStatus status) =>
-        status is JobStatus.Enqueued or JobStatus.Processing or JobStatus.Scheduled or JobStatus.AwaitingContinuation;
-
-    private static EnqueueResult ResolveDuplicate(JobId id, JobStatus status, DuplicatePolicy policy)
-    {
-        if (IsActiveState(status))
-        {
-            return new EnqueueResult(id, WasRejected: false);
-        }
-
-        var wasRejected = status == JobStatus.Failed
-            ? policy is DuplicatePolicy.RejectIfFailed or DuplicatePolicy.RejectAlways
-            : policy == DuplicatePolicy.RejectAlways;
-
-        return new EnqueueResult(id, WasRejected: wasRejected);
-    }
 
     private static JobStatus GetStatusFromHash(HashEntry[] hash)
     {

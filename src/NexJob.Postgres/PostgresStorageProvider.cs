@@ -2,6 +2,7 @@
 using System.Data;
 using System.Text.Json;
 using Dapper;
+using NexJob.Internal;
 using NexJob.Storage;
 using Npgsql;
 
@@ -146,8 +147,8 @@ public sealed class PostgresStorageProvider : IStorageProvider, IOrphanedJobRepo
                     var existingId = new JobId(existing.Id);
                     var existingStatus = ParseStatus(existing.Status);
 
-                    var existingResult = ResolveDuplicate(existingId, existingStatus, duplicatePolicy);
-                    if (existingResult.WasRejected || IsActiveState(existingStatus))
+                    var existingResult = DuplicateRules.Resolve(existingId, existingStatus, duplicatePolicy);
+                    if (existingResult.WasRejected || DuplicateRules.IsActive(existingStatus))
                     {
                         await tx.RollbackAsync(cancellationToken).ConfigureAwait(false);
                         return existingResult;
@@ -177,7 +178,7 @@ public sealed class PostgresStorageProvider : IStorageProvider, IOrphanedJobRepo
 
                     if (winner.Id != Guid.Empty)
                     {
-                        return ResolveDuplicate(new JobId(winner.Id), ParseStatus(winner.Status), duplicatePolicy);
+                        return DuplicateRules.Resolve(new JobId(winner.Id), ParseStatus(winner.Status), duplicatePolicy);
                     }
                 }
             }
@@ -1168,25 +1169,8 @@ public sealed class PostgresStorageProvider : IStorageProvider, IOrphanedJobRepo
     private static bool IsTerminalStatus(string? status) =>
         status is "Succeeded" or "Failed" or "Expired" or null;
 
-    private static EnqueueResult ResolveDuplicate(JobId id, JobStatus status, DuplicatePolicy policy)
-    {
-        if (IsActiveState(status))
-        {
-            return new EnqueueResult(id, WasRejected: false);
-        }
-
-        var wasRejected = status == JobStatus.Failed
-            ? policy is DuplicatePolicy.RejectIfFailed or DuplicatePolicy.RejectAlways
-            : policy == DuplicatePolicy.RejectAlways;
-
-        return new EnqueueResult(id, WasRejected: wasRejected);
-    }
-
     private static JobStatus ParseStatus(string status) =>
         Enum.TryParse<JobStatus>(status, out var parsed) ? parsed : JobStatus.Failed;
-
-    private static bool IsActiveState(JobStatus status) =>
-        status is JobStatus.Enqueued or JobStatus.Processing or JobStatus.Scheduled or JobStatus.AwaitingContinuation;
 
     private static object ToInsertParameters(JobRecord job) =>
         new
