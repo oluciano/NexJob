@@ -55,6 +55,50 @@ Set `Authentication.AuthType`. The default is `OAuth2UsernamePassword`, so set i
 
 `AuthEndpoint` defaults to `https://login.salesforce.com/services/oauth2/token`. It, and `InstanceUrl`, must be `https` (plain `http` only for a loopback address), because credentials and tokens are sent to them. The settings of the chosen type are validated when the host starts. Keep secrets in a secret store.
 
+## Behind an API gateway
+
+Every CometD call carries `Authorization: Bearer <token>`. When the calls go through an API gateway that expects the credential in another header, rewrite it with a `DelegatingHandler` on the trigger's `HttpClient`: it removes `Authorization` and sends the token under the gateway's header name. Nothing else about the Bayeux exchange changes.
+
+```csharp
+public sealed class GatewayApiKeyHandler : DelegatingHandler
+{
+    private readonly string _headerName;
+
+    public GatewayApiKeyHandler(string headerName) => _headerName = headerName;
+
+    protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        if (request.Headers.Authorization is { } auth)
+        {
+            request.Headers.Authorization = null;
+            request.Headers.TryAddWithoutValidation(_headerName, auth.Parameter);
+        }
+
+        return base.SendAsync(request, cancellationToken);
+    }
+}
+```
+
+```csharp
+builder.Services.AddSalesforceStreamingTrigger<ProcessCdcJob>(options =>
+{
+    options.Channel = "/data/SomeObjectChangeEvent";
+    options.Authentication.AuthType = SalesforceStreamingAuthType.SessionId;
+    options.Authentication.InstanceUrl = gatewayBaseUrl;
+    options.Authentication.AccessToken = gatewayApiKey; // the handler moves it out of Authorization
+});
+
+// The same typed client the trigger registers, so the handler joins its pipeline.
+// Call it after AddSalesforceStreamingTrigger.
+builder.Services
+    .AddHttpClient<ISalesforceBayeuxClient, SalesforceBayeuxClient>()
+    .AddHttpMessageHandler(() => new GatewayApiKeyHandler("apiKey"));
+```
+
+The same handler is the place for any other header the gateway wants (a correlation id, a route key). The handler is exercised against the Bayeux client in `SalesforceBayeuxClientTests`; the registration against a real gateway was not.
+
+Replace `ISalesforceBayeuxClient` itself only when the protocol behaviour or the transport must differ, not just the HTTP headers.
+
 ## Options
 
 | Option | Default | Meaning |

@@ -14,6 +14,10 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - RabbitMQ trigger: stopping the host now cancels an enqueue still waiting on the storage and gives the message back, instead of waiting for the storage to answer. The enqueue ignored the stopping token (issue #537).
 - Disposing the executor synchronously (for example a manual `ServiceProvider.Dispose()`) no longer loses batch acknowledgments still queued: it now drains them like `DisposeAsync`. Disposal is also idempotent in every combination of `Dispose` and `DisposeAsync` (issue #527).
 
+### Documentation
+
+- Salesforce Streaming: a "Behind an API gateway" section shows how to send the access token in another header with a `DelegatingHandler`, with a test that runs the recipe against the Bayeux client (issue #550).
+
 ### Tests
 
 - SQL Server deadlock diagnostic: the load test lists every resource of a deadlock graph and the full XML, not only key and page locks. A graph from CI was empty because of that (issue #315).
