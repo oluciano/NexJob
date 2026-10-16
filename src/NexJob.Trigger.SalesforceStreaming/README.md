@@ -146,6 +146,8 @@ builder.Services.AddNexJob(options =>
 | `InstanceUrl` | `string?` | Salesforce base instance URL (e.g. `https://na1.salesforce.com`). With `SessionId` authentication it must be `https` (`http` is accepted only for a loopback address), because the access token is sent to it | `null` |
 | `AccessToken` (or `SessionId`) | `string?` | Direct bearer access token or Session ID | `null` |
 
+Behind an API gateway that expects the token in another header? See [Behind an API gateway](https://oluciano.github.io/NexJob/integrations/salesforce-streaming/#behind-an-api-gateway).
+
 ---
 
 ## Architecture & Guarantees
