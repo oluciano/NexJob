@@ -166,19 +166,15 @@ internal sealed class GooglePubSubTriggerHandler : IHostedService
             var traceparent = message.Attributes.TryGetValue("traceparent", out var tp) ? tp : null;
             var inputJson = message.Data.ToStringUtf8();
 
-            var job = JobRecordFactory.Build(
+            var job = TriggerJob.Build(
                 jobType: jobType,
-                inputType: typeof(string).AssemblyQualifiedName!,
-                inputJson: JsonSerializer.Serialize(inputJson),
+                body: inputJson,
+                idempotencyKey: messageId,
+                source: "googlepubsub",
+                traceParent: traceparent,
                 options: _nexJobOptions,
                 queue: _options.TargetQueue,
-                priority: _options.JobPriority,
-                idempotencyKey: messageId,
-                status: JobStatus.Enqueued,
-                scheduledAt: null,
-                tags: new[] { "trigger:googlepubsub" },
-                expiresAt: null,
-                traceParent: traceparent);
+                priority: _options.JobPriority);
 
             // Enqueue — wake-up signal handled internally by IScheduler
             await _scheduler.EnqueueAsync(job, DuplicatePolicy.AllowAfterFailed, ct)

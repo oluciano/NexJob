@@ -126,9 +126,6 @@ internal sealed class KafkaTriggerHandler : BackgroundService
     }
 
     // The message itself is unusable and retrying can never help: missing job type, malformed payload/format.
-    private static bool IsPermanent(Exception ex) =>
-        ex is FormatException or System.Text.Json.JsonException or ArgumentException;
-
     private static string? ExtractTraceparent(Headers headers)
     {
         var header = headers.FirstOrDefault(h => string.Equals(h.Key, "traceparent", StringComparison.Ordinal));
@@ -167,19 +164,15 @@ internal sealed class KafkaTriggerHandler : BackgroundService
         {
             var jobType = ExtractJobType(result.Message.Headers);
 
-            job = JobRecordFactory.Build(
+            job = TriggerJob.Build(
                 jobType: jobType,
-                inputType: typeof(string).AssemblyQualifiedName!,
-                inputJson: JsonSerializer.Serialize(result.Message.Value ?? string.Empty),
+                body: result.Message.Value ?? string.Empty,
+                idempotencyKey: idempotencyKey,
+                source: "kafka",
+                traceParent: traceparent,
                 options: _nexJobOptions,
                 queue: _options.TargetQueue,
-                priority: _options.JobPriority,
-                idempotencyKey: idempotencyKey,
-                status: JobStatus.Enqueued,
-                scheduledAt: null,
-                tags: new[] { "trigger:kafka" },
-                expiresAt: null,
-                traceParent: traceparent);
+                priority: _options.JobPriority);
         }
         catch (OperationCanceledException)
         {
@@ -207,7 +200,7 @@ internal sealed class KafkaTriggerHandler : BackgroundService
                 // Shutdown — do not commit, message reprocessed on restart
                 throw;
             }
-            catch (Exception ex) when (IsPermanent(ex))
+            catch (Exception ex) when (TriggerJob.IsPermanentFailure(ex))
             {
                 await HandlePermanentFailureAsync(result, messageId, ex, ct).ConfigureAwait(false);
                 return;

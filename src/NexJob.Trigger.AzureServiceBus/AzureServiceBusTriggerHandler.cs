@@ -123,19 +123,15 @@ internal sealed class AzureServiceBusTriggerHandler : IHostedService
             var inputJson = args.Message.Body.ToString();
 
             // Build JobRecord using factory
-            job = JobRecordFactory.Build(
+            job = TriggerJob.Build(
                 jobType: jobType,
-                inputType: typeof(string).AssemblyQualifiedName!,
-                inputJson: JsonSerializer.Serialize(inputJson),
+                body: inputJson,
+                idempotencyKey: messageId,
+                source: "azuresb",
+                traceParent: traceparent,
                 options: _nexJobOptions,
                 queue: _options.TargetQueue,
-                priority: _options.JobPriority,
-                idempotencyKey: messageId,
-                status: JobStatus.Enqueued,
-                scheduledAt: null,
-                tags: new[] { "trigger:azuresb" },
-                expiresAt: null,
-                traceParent: traceparent);
+                priority: _options.JobPriority);
         }
         catch (OperationCanceledException)
         {
@@ -167,7 +163,7 @@ internal sealed class AzureServiceBusTriggerHandler : IHostedService
             // Propagate cancellation — this is a shutdown signal
             throw;
         }
-        catch (Exception ex) when (IsPermanent(ex))
+        catch (Exception ex) when (TriggerJob.IsPermanentFailure(ex))
         {
             await DeadLetterAsync(args, ex).ConfigureAwait(false);
         }
@@ -210,8 +206,6 @@ internal sealed class AzureServiceBusTriggerHandler : IHostedService
     }
 
     // The message itself is unusable and redelivery can never help: malformed payload or format.
-    private static bool IsPermanent(Exception ex) =>
-        ex is FormatException or System.Text.Json.JsonException or ArgumentException;
 
     /// <summary>
     /// Extracts the W3C traceparent from message application properties.
