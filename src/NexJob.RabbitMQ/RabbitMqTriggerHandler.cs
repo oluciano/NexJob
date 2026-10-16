@@ -297,7 +297,7 @@ internal sealed class RabbitMqTriggerHandler : IHostedService, IAsyncDisposable
         try
         {
             // 3. Enqueue — wake-up signal is handled internally by IScheduler
-            await _scheduler.EnqueueAsync(job, DuplicatePolicy.AllowAfterFailed, CancellationToken.None)
+            await _scheduler.EnqueueAsync(job, DuplicatePolicy.AllowAfterFailed, _stoppingCts?.Token ?? CancellationToken.None)
                 .ConfigureAwait(false);
 
             // 4. Ack ONLY after successful enqueue

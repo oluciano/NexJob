@@ -187,6 +187,54 @@ public sealed class RabbitMqTriggerTests
     }
 
     /// <summary>
+    /// Verifies that stopping the trigger cancels an enqueue that is still waiting on the storage, so shutdown does not
+    /// wait for it and the message is never acknowledged (the broker redelivers it).
+    /// </summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task StopAsync_WhileTheEnqueueIsPending_CancelsItAndNeverAcks()
+    {
+        // Arrange
+        AsyncEventingBasicConsumer? consumer = null;
+        _channelMock.Setup(m => m.BasicConsume(It.IsAny<string>(), false, It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<IDictionary<string, object>>(), It.IsAny<IBasicConsumer>()))
+            .Callback<string, bool, string, bool, bool, IDictionary<string, object>, IBasicConsumer>((_, _, _, _, _, _, c) => consumer = (AsyncEventingBasicConsumer)c)
+            .Returns("consumer-tag");
+
+        var enqueueStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var mockScheduler = new Mock<IScheduler>();
+        mockScheduler.Setup(s => s.EnqueueAsync(It.IsAny<JobRecord>(), It.IsAny<DuplicatePolicy>(), It.IsAny<CancellationToken>()))
+            .Returns<JobRecord, DuplicatePolicy, CancellationToken>(async (_, _, ct) =>
+            {
+                enqueueStarted.SetResult();
+                await Task.Delay(Timeout.Infinite, ct); // a storage that never answers
+                return default!;
+            });
+
+        var handler = new RabbitMqTriggerHandler(
+            Options.Create(_triggerOptions),
+            _connectionFactoryMock.Object,
+            mockScheduler.Object,
+            _nexJobOptions,
+            _loggerMock.Object);
+        await handler.StartAsync(CancellationToken.None);
+
+        var props = new Mock<IBasicProperties>();
+        props.Setup(p => p.Headers).Returns(new Dictionary<string, object>
+        {
+            ["nexjob.job_type"] = Encoding.UTF8.GetBytes("TestJobType"),
+        });
+        var delivery = consumer!.HandleBasicDeliver("consumer-tag", 1, false, "exchange", "routing-key", props.Object, Encoding.UTF8.GetBytes("{}"));
+        await enqueueStarted.Task.WaitAsync(TimeSpan.FromSeconds(10));
+
+        // Act
+        await handler.StopAsync(CancellationToken.None);
+
+        // Assert
+        await delivery.WaitAsync(TimeSpan.FromSeconds(10));
+        _channelMock.Verify(m => m.BasicAck(It.IsAny<ulong>(), It.IsAny<bool>()), Times.Never);
+    }
+
+    /// <summary>
     /// Verifies that the traceparent header is correctly propagated to the JobRecord.
     /// </summary>
     [Fact]
