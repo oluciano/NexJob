@@ -6,6 +6,8 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [6.4.0] - 2026-10-16
+
 ### Fixed
 
 - SQL Server: the orphaned-job sweep no longer deadlocks with the job fetch. It locked every row it examined in index order while the fetch locks rows by priority, so under load SQL Server picked one of them as the victim (about 2% of load-test runs); the sweep now skips a row another transaction holds and takes it on the next pass (issue #315).
