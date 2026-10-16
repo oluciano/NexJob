@@ -785,6 +785,51 @@ public abstract class StorageProviderTestsBase
         all.Should().NotContain(r => r.RecurringJobId == record.RecurringJobId);
     }
 
+    // ── Tags ───────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetJobsByTagAsync_returns_the_jobs_that_carry_the_tag()
+    {
+        var (job, _, dashboard, _) = await CreateStorageAsync();
+        var tag = $"tag-{Guid.NewGuid():N}";
+        var withTag = MakeJob(tags: [tag, "other"]);
+        var alsoWithTag = MakeJob(tags: [tag]);
+        var without = MakeJob(tags: ["other"]);
+        await job.EnqueueAsync(withTag);
+        await job.EnqueueAsync(alsoWithTag);
+        await job.EnqueueAsync(without);
+
+        var found = await dashboard.GetJobsByTagAsync(tag);
+
+        found.Select(j => j.Id).Should().BeEquivalentTo([withTag.Id, alsoWithTag.Id]);
+    }
+
+    [Fact]
+    public async Task GetJobsByTagAsync_matches_the_whole_tag_not_a_part_of_it()
+    {
+        var (job, _, dashboard, _) = await CreateStorageAsync();
+        var tag = $"tag-{Guid.NewGuid():N}";
+        var longer = MakeJob(tags: [tag + "-longer"]);
+        var exact = MakeJob(tags: [tag]);
+        await job.EnqueueAsync(longer);
+        await job.EnqueueAsync(exact);
+
+        var found = await dashboard.GetJobsByTagAsync(tag);
+
+        found.Select(j => j.Id).Should().BeEquivalentTo([exact.Id], "a tag that merely starts with the searched one is another tag");
+    }
+
+    [Fact]
+    public async Task GetJobsByTagAsync_for_an_unknown_tag_returns_nothing()
+    {
+        var (job, _, dashboard, _) = await CreateStorageAsync();
+        await job.EnqueueAsync(MakeJob(tags: ["something"]));
+
+        var found = await dashboard.GetJobsByTagAsync($"unknown-{Guid.NewGuid():N}");
+
+        found.Should().BeEmpty();
+    }
+
     // ── Recurring job definition ───────────────────────────────────────────────
 
     [Fact]
@@ -1048,11 +1093,6 @@ public abstract class StorageProviderTestsBase
     public async Task RegisterServerAsync_AddsServer_WhenSupported()
     {
         var (storage, _, _, _) = await CreateStorageAsync();
-        if (IsServerTrackingNotSupported(storage))
-        {
-            return;
-        }
-
         var serverId = $"server-add-{Guid.NewGuid()}";
         var server = MakeServer(serverId);
 
@@ -1066,11 +1106,6 @@ public abstract class StorageProviderTestsBase
     public async Task HeartbeatServerAsync_UpdatesTimestamp_WhenSupported()
     {
         var (storage, _, _, _) = await CreateStorageAsync();
-        if (IsServerTrackingNotSupported(storage))
-        {
-            return;
-        }
-
         var serverId = $"server-hb-{Guid.NewGuid()}";
         var server = MakeServer(serverId, DateTimeOffset.UtcNow.AddMinutes(-5));
 
@@ -1088,11 +1123,6 @@ public abstract class StorageProviderTestsBase
     public async Task DeregisterServerAsync_RemovesServer_WhenSupported()
     {
         var (storage, _, _, _) = await CreateStorageAsync();
-        if (IsServerTrackingNotSupported(storage))
-        {
-            return;
-        }
-
         var serverId = $"server-dereg-{Guid.NewGuid()}";
         await storage.RegisterServerAsync(MakeServer(serverId));
 
@@ -1106,11 +1136,6 @@ public abstract class StorageProviderTestsBase
     public async Task GetActiveServersAsync_FiltersStaleServers_WhenSupported()
     {
         var (storage, _, _, _) = await CreateStorageAsync();
-        if (IsServerTrackingNotSupported(storage))
-        {
-            return;
-        }
-
         var activeId = $"active-{Guid.NewGuid()}";
         var staleId = $"stale-{Guid.NewGuid()}";
 
@@ -1873,7 +1898,8 @@ public abstract class StorageProviderTestsBase
         string jobType = "NexJob.IntegrationTests.FakeJob",
         string? inputJson = null,
         DateTimeOffset? expiresAt = null,
-        string? recurringJobId = null) =>
+        string? recurringJobId = null,
+        IReadOnlyList<string>? tags = null) =>
         new()
         {
             Id = new JobId(Guid.NewGuid()),
@@ -1889,6 +1915,7 @@ public abstract class StorageProviderTestsBase
             ParentJobId = parentJobId,
             ExpiresAt = expiresAt,
             RecurringJobId = recurringJobId,
+            Tags = tags ?? [],
         };
 
     private static RecurringJobRecord MakeRecurring(
@@ -1917,18 +1944,6 @@ public abstract class StorageProviderTestsBase
             StartedAt = DateTimeOffset.UtcNow,
             HeartbeatAt = heartbeatAt ?? DateTimeOffset.UtcNow,
         };
-
-    private static bool IsServerTrackingNotSupported(IJobStorage storage)
-    {
-        var name = storage.GetType().Name;
-        return name.Contains("Redis") || name.Contains("SqlServer");
-    }
-
-    private static bool IsAtomicDedupNotSupported(IJobStorage storage)
-    {
-        var name = storage.GetType().Name;
-        return name.Contains("Redis") || name.Contains("Mongo");
-    }
 
     [Fact]
     public async Task PurgeJobsAsync_DeletesTerminalJobsBeyondRetention()
@@ -2059,11 +2074,6 @@ public abstract class StorageProviderTestsBase
     public async Task EnqueueAsync_ConcurrentWithSameIdempotencyKey_OnlyOneJobCreated()
     {
         var (storage, _, dashboard, _) = await CreateStorageAsync();
-        if (IsAtomicDedupNotSupported(storage))
-        {
-            return;
-        }
-
         var key = $"concurrent-key-{Guid.NewGuid():N}";
         const int concurrency = 10;
 
@@ -2090,11 +2100,6 @@ public abstract class StorageProviderTestsBase
     public async Task EnqueueAsync_ConcurrentWithRejectAlways_AllRejectedAfterFirst()
     {
         var (storage, _, _, _) = await CreateStorageAsync();
-        if (IsAtomicDedupNotSupported(storage))
-        {
-            return;
-        }
-
         var key = $"reject-concurrent-{Guid.NewGuid():N}";
 
         // Seed a succeeded job with this key

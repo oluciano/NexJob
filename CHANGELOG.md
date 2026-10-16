@@ -17,6 +17,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Shared storage contract: the recurring-job lock (`TryAcquireRecurringJobLockAsync` / `ReleaseRecurringJobLockAsync`) is now tested on all five providers, not only in memory (issue #539).
 - Shared storage contract: recurring-job definitions (`GetRecurringJobByIdAsync`, `GetRecurringJobAsync`, `UpdateRecurringJobConfigAsync`, `ForceDeleteRecurringJobAsync`, `RestoreRecurringJobAsync`) are tested on all five providers. It found two Redis defects, tracked in #542 and #543 (issue #541).
+- Shared storage contract: the server-registry tests (Redis, SQL Server) and the concurrent-dedup tests (Redis, MongoDB) were skipped by provider name; they now run on all five providers and pass. `GetJobsByTagAsync` is tested on all five (issue #547).
 - Hardened unit tests covering core execution mutation survivors across `JobRecordFactory`, `DeadLetterDispatcherTests`, `JobDispatcherService`, `DefaultScheduler`, `DefaultQueueCircuitBreakerManager`, `ThrottleRegistry`, and `InMemoryStorageProvider` (issue #515).
 
 ### Changed
