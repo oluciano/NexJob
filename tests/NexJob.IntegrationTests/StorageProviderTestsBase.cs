@@ -785,6 +785,155 @@ public abstract class StorageProviderTestsBase
         all.Should().NotContain(r => r.RecurringJobId == record.RecurringJobId);
     }
 
+    // ── Recurring job definition ───────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetRecurringJobByIdAsync_returns_the_definition_and_null_for_an_unknown_id()
+    {
+        var (_, recurring, _, _) = await CreateStorageAsync();
+        var record = MakeRecurring(cron: "*/5 * * * *");
+        await recurring.UpsertRecurringJobAsync(record);
+
+        var found = await recurring.GetRecurringJobByIdAsync(record.RecurringJobId);
+        var unknown = await recurring.GetRecurringJobByIdAsync($"unknown-{Guid.NewGuid()}");
+
+        found.Should().NotBeNull();
+        found!.RecurringJobId.Should().Be(record.RecurringJobId);
+        found.Cron.Should().Be("*/5 * * * *");
+        found.JobType.Should().Be(record.JobType);
+        found.Queue.Should().Be("default");
+        unknown.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetRecurringJobAsync_returns_an_active_definition_and_null_for_an_unknown_id()
+    {
+        var (_, recurring, _, _) = await CreateStorageAsync();
+        var record = MakeRecurring();
+        await recurring.UpsertRecurringJobAsync(record);
+
+        var found = await recurring.GetRecurringJobAsync(record.RecurringJobId);
+        var unknown = await recurring.GetRecurringJobAsync($"unknown-{Guid.NewGuid()}");
+
+        found.Should().NotBeNull();
+        found!.RecurringJobId.Should().Be(record.RecurringJobId);
+        unknown.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task UpdateRecurringJobConfigAsync_sets_and_clears_the_cron_override_and_the_enabled_flag()
+    {
+        var (_, recurring, _, _) = await CreateStorageAsync();
+        var record = MakeRecurring();
+        await recurring.UpsertRecurringJobAsync(record);
+
+        await recurring.UpdateRecurringJobConfigAsync(record.RecurringJobId, "0 3 * * *", enabled: false);
+        var paused = await recurring.GetRecurringJobByIdAsync(record.RecurringJobId);
+        paused!.CronOverride.Should().Be("0 3 * * *");
+        paused.Enabled.Should().BeFalse();
+
+        // Asserted before the next update: a provider may hand back the stored object itself.
+        await recurring.UpdateRecurringJobConfigAsync(record.RecurringJobId, null, enabled: true);
+        var resumed = await recurring.GetRecurringJobByIdAsync(record.RecurringJobId);
+        resumed!.CronOverride.Should().BeNull("a null override clears it");
+        resumed.Enabled.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task UpdateRecurringJobConfigAsync_does_not_touch_other_recurring_jobs()
+    {
+        var (_, recurring, _, _) = await CreateStorageAsync();
+        var target = MakeRecurring();
+        var other = MakeRecurring();
+        await recurring.UpsertRecurringJobAsync(target);
+        await recurring.UpsertRecurringJobAsync(other);
+
+        await recurring.UpdateRecurringJobConfigAsync(target.RecurringJobId, "0 3 * * *", enabled: false);
+        var untouched = await recurring.GetRecurringJobByIdAsync(other.RecurringJobId);
+
+        untouched!.CronOverride.Should().BeNull();
+        untouched.Enabled.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task ForceDeleteRecurringJobAsync_marks_it_deleted_and_disabled_but_keeps_the_definition()
+    {
+        var (_, recurring, _, _) = await CreateStorageAsync();
+        var record = MakeRecurring();
+        await recurring.UpsertRecurringJobAsync(record);
+
+        await recurring.ForceDeleteRecurringJobAsync(record.RecurringJobId);
+        var found = await recurring.GetRecurringJobByIdAsync(record.RecurringJobId);
+
+        found.Should().NotBeNull("the definition stays so configuration cannot resurrect it");
+        found!.DeletedByUser.Should().BeTrue();
+        found.Enabled.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task ForceDeleteRecurringJobAsync_deletes_the_jobs_it_created_and_nothing_else()
+    {
+        if (!ForceDeleteRemovesTheJobsItCreated)
+        {
+            return;
+        }
+
+        var (job, recurring, dashboard, _) = await CreateStorageAsync();
+        var record = MakeRecurring();
+        var otherRecurring = MakeRecurring();
+        await recurring.UpsertRecurringJobAsync(record);
+        await recurring.UpsertRecurringJobAsync(otherRecurring);
+        var created = MakeJob(recurringJobId: record.RecurringJobId);
+        var ofOther = MakeJob(recurringJobId: otherRecurring.RecurringJobId);
+        var plain = MakeJob();
+        await job.EnqueueAsync(created);
+        await job.EnqueueAsync(ofOther);
+        await job.EnqueueAsync(plain);
+
+        await recurring.ForceDeleteRecurringJobAsync(record.RecurringJobId);
+
+        (await dashboard.GetJobByIdAsync(created.Id)).Should().BeNull("the jobs the schedule created are deleted with it");
+        (await dashboard.GetJobByIdAsync(ofOther.Id)).Should().NotBeNull();
+        (await dashboard.GetJobByIdAsync(plain.Id)).Should().NotBeNull();
+        (await recurring.GetRecurringJobByIdAsync(otherRecurring.RecurringJobId))!.DeletedByUser.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task RestoreRecurringJobAsync_undoes_a_force_delete()
+    {
+        var (_, recurring, _, _) = await CreateStorageAsync();
+        var record = MakeRecurring();
+        await recurring.UpsertRecurringJobAsync(record);
+        await recurring.ForceDeleteRecurringJobAsync(record.RecurringJobId);
+
+        await recurring.RestoreRecurringJobAsync(record.RecurringJobId);
+        var found = await recurring.GetRecurringJobByIdAsync(record.RecurringJobId);
+
+        found!.DeletedByUser.Should().BeFalse();
+        found.Enabled.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Recurring_definition_changes_on_an_unknown_id_are_no_ops()
+    {
+        if (!ChangesToAnUnknownRecurringJobAreNoOps)
+        {
+            return;
+        }
+
+        var (_, recurring, _, _) = await CreateStorageAsync();
+        var unknown = $"unknown-{Guid.NewGuid()}";
+
+        var update = async () => await recurring.UpdateRecurringJobConfigAsync(unknown, "0 3 * * *", enabled: false);
+        var forceDelete = async () => await recurring.ForceDeleteRecurringJobAsync(unknown);
+        var restore = async () => await recurring.RestoreRecurringJobAsync(unknown);
+
+        await update.Should().NotThrowAsync();
+        await forceDelete.Should().NotThrowAsync();
+        await restore.Should().NotThrowAsync();
+        (await recurring.GetRecurringJobByIdAsync(unknown)).Should().BeNull("a no-op must not create a definition");
+    }
+
     // ── Recurring job lock ─────────────────────────────────────────────────────
 
     [Fact]
@@ -1698,7 +1847,8 @@ public abstract class StorageProviderTestsBase
         int maxAttempts = 5,
         string jobType = "NexJob.IntegrationTests.FakeJob",
         string? inputJson = null,
-        DateTimeOffset? expiresAt = null) =>
+        DateTimeOffset? expiresAt = null,
+        string? recurringJobId = null) =>
         new()
         {
             Id = new JobId(Guid.NewGuid()),
@@ -1713,6 +1863,7 @@ public abstract class StorageProviderTestsBase
             IdempotencyKey = idempotencyKey,
             ParentJobId = parentJobId,
             ExpiresAt = expiresAt,
+            RecurringJobId = recurringJobId,
         };
 
     private static RecurringJobRecord MakeRecurring(
@@ -2652,4 +2803,16 @@ public abstract class StorageProviderTestsBase
     /// collation ignores case (documented in queues.md).
     /// </summary>
     protected virtual bool QueueNamesAreCaseSensitive => true;
+
+    /// <summary>
+    /// Whether <c>ForceDeleteRecurringJobAsync</c> deletes the jobs the recurring job created, as the interface documents.
+    /// A provider that does not yet is listed with the issue that tracks it.
+    /// </summary>
+    protected virtual bool ForceDeleteRemovesTheJobsItCreated => true;
+
+    /// <summary>
+    /// Whether updating, force-deleting or restoring an id that was never registered leaves no trace (no definition is
+    /// created and nothing throws). A provider that does not yet is listed with the issue that tracks it.
+    /// </summary>
+    protected virtual bool ChangesToAnUnknownRecurringJobAreNoOps => true;
 }

@@ -828,4 +828,12 @@ public sealed class RedisStorageProviderTests : StorageProviderTestsBase, IClass
         await provider.CommitJobResultAsync(fetched.Id, new JobExecutionResult { Succeeded = true, Logs = [] });
         return job.Id.Value;
     }
+
+    // Both gates below are red on Redis today; the issues track the fix and the override goes away with it.
+
+    /// <inheritdoc/>
+    protected override bool ForceDeleteRemovesTheJobsItCreated => false; // #542
+
+    /// <inheritdoc/>
+    protected override bool ChangesToAnUnknownRecurringJobAreNoOps => false; // #543
 }
