@@ -879,6 +879,25 @@ public sealed class RedisStorageProvider : IStorageProvider, IOrphanedJobReporte
             new HashEntry("enabled", "false"),
             new HashEntry("updatedAt", DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture)),
         }).ConfigureAwait(false);
+
+        // The jobs the schedule created go with it. The job index is walked once with a cursor, so it stays correct while
+        // jobs change. This is an operator action, not a hot path, and it needs no extra index kept in step with every
+        // enqueue and purge.
+        await EnsureIndexAsync().ConfigureAwait(false);
+        var created = new List<string>();
+        await foreach (var (key, hash) in ScanIndexedJobsAsync(cancellationToken).ConfigureAwait(false))
+        {
+            if (hash.Length > 0
+                && string.Equals(ParseHash(hash).GetValueOrDefault("recurringJobId"), recurringJobId, StringComparison.Ordinal))
+            {
+                created.Add(key.ToString()[JobKey(string.Empty).Length..]);
+            }
+        }
+
+        foreach (var id in created)
+        {
+            await DeleteJobAsync(new JobId(Guid.Parse(id)), cancellationToken).ConfigureAwait(false);
+        }
     }
 
     /// <inheritdoc/>
