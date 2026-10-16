@@ -215,19 +215,15 @@ internal sealed class AwsSqsTriggerHandler : IHostedService
             // is the responsibility of the job handler.
             // Support for custom <c>inputType</c> is planned for v2.2.
             // </remarks>
-            var job = JobRecordFactory.Build(
+            var job = TriggerJob.Build(
                 jobType: _options.JobName,
-                inputType: typeof(string).AssemblyQualifiedName!,
-                inputJson: JsonSerializer.Serialize(message.Body ?? string.Empty),
+                body: message.Body ?? string.Empty,
+                idempotencyKey: messageId,
+                source: "awssqs",
+                traceParent: traceparent,
                 options: _nexJobOptions,
                 queue: _options.TargetQueue,
-                priority: _options.JobPriority,
-                idempotencyKey: messageId,
-                status: JobStatus.Enqueued,
-                scheduledAt: null,
-                tags: new[] { "trigger:awssqs" },
-                expiresAt: null,
-                traceParent: traceparent);
+                priority: _options.JobPriority);
 
             // Enqueue the job using scheduler — wake-up signal is handled internally
             await _scheduler.EnqueueAsync(job, DuplicatePolicy.AllowAfterFailed, cancellationToken).ConfigureAwait(false);
