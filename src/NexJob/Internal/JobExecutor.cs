@@ -310,23 +310,12 @@ internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
         var slots = await AcquireThrottleSlotsAsync(ctx, cancellationToken).ConfigureAwait(false);
         await using (slots.ConfigureAwait(false))
         {
-            // The limit starts here, after the throttle slots are held, so waiting for a throttled resource
-            // never counts. It uses its own CTS: the heartbeat token and the shutdown token stay untouched.
-            var timeout = ctx.ExecutionTimeoutAttribute?.Timeout ?? _options.DefaultExecutionTimeout;
-            using var timeoutCts = timeout is null ? null : CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            timeoutCts?.CancelAfter(timeout!.Value);
-            var jobToken = timeoutCts?.Token ?? cancellationToken;
-
-            // A job that ignores the token keeps its worker slot. Make that visible once per run: the watchdog is armed by
-            // the timeout and stood down as soon as the job returns.
-            using var watchdogCts = timeoutCts is null ? null : new CancellationTokenSource();
-            using var watchdog = timeoutCts is null
-                ? default
-                : timeoutCts.Token.Register(() => _ = WarnIfCancellationIgnoredAsync(job, timeout!.Value, watchdogCts!.Token, cancellationToken));
-
-            // Only the limit fired (shutdown has priority and is handled by the caller): a normal failure, not an interruption.
-            bool TimedOut() => timeoutCts is { IsCancellationRequested: true } && !cancellationToken.IsCancellationRequested;
-            TimeoutException TimeoutFailure(OperationCanceledException ex) => new($"Job execution timed out after {timeout!.Value}.", ex);
+            // The limit starts here, after the throttle slots are held, so waiting for a throttled resource never counts.
+            using var timeout = new ExecutionTimeout(
+                ctx.ExecutionTimeoutAttribute?.Timeout ?? _options.DefaultExecutionTimeout,
+                cancellationToken,
+                (limit, watchdogToken) => _ = WarnIfCancellationIgnoredAsync(job, limit, watchdogToken, cancellationToken));
+            var jobToken = timeout.Token;
 
             // Terminal delegate: invokes the actual job. Converting here lets filters see the TimeoutException.
             JobExecutionDelegate jobInvoker = async ct =>
@@ -335,9 +324,9 @@ internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
                 {
                     await ctx.Invoker(ctx.JobInstance, ctx.Input, ct).ConfigureAwait(false);
                 }
-                catch (OperationCanceledException ex) when (TimedOut())
+                catch (OperationCanceledException ex) when (timeout.TimedOut)
                 {
-                    throw TimeoutFailure(ex);
+                    throw timeout.Failure(ex);
                 }
             };
 
@@ -369,17 +358,10 @@ internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
                     }
                 }
             }
-            catch (OperationCanceledException ex) when (TimedOut())
+            catch (OperationCanceledException ex) when (timeout.TimedOut)
             {
                 // A filter that observed the token itself, before the job ran.
-                throw TimeoutFailure(ex);
-            }
-            finally
-            {
-                if (watchdogCts is not null)
-                {
-                    await watchdogCts.CancelAsync().ConfigureAwait(false);
-                }
+                throw timeout.Failure(ex);
             }
         }
     }
@@ -503,6 +485,50 @@ internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
             {
                 await _registry.ReleaseAsync(attr.Resource, CancellationToken.None).ConfigureAwait(false);
             }
+        }
+    }
+
+    /// <summary>
+    /// The execution limit of one run. It uses its own CTS, so the heartbeat token and the shutdown token stay untouched,
+    /// and arms a watchdog: a job that ignores the token keeps its worker slot, which is made visible once per run.
+    /// </summary>
+    private sealed class ExecutionTimeout : IDisposable
+    {
+        private readonly TimeSpan? _limit;
+        private readonly CancellationToken _shutdown;
+        private readonly CancellationTokenSource? _cts;
+        private readonly CancellationTokenSource? _watchdogCts;
+        private readonly CancellationTokenRegistration _watchdog;
+
+        public ExecutionTimeout(TimeSpan? limit, CancellationToken shutdown, Action<TimeSpan, CancellationToken> onLimitReached)
+        {
+            _limit = limit;
+            _shutdown = shutdown;
+            if (limit is null)
+            {
+                return;
+            }
+
+            _cts = CancellationTokenSource.CreateLinkedTokenSource(shutdown);
+            _cts.CancelAfter(limit.Value);
+            _watchdogCts = new CancellationTokenSource();
+            _watchdog = _cts.Token.Register(() => onLimitReached(limit.Value, _watchdogCts.Token));
+        }
+
+        /// <summary>Gets the token the job runs under: the limit when there is one, the shutdown token otherwise.</summary>
+        public CancellationToken Token => _cts?.Token ?? _shutdown;
+
+        /// <summary>Gets a value indicating whether only the limit fired. Shutdown has priority and is handled by the caller: a normal failure, not an interruption.</summary>
+        public bool TimedOut => _cts is { IsCancellationRequested: true } && !_shutdown.IsCancellationRequested;
+
+        public TimeoutException Failure(OperationCanceledException ex) => new($"Job execution timed out after {_limit!.Value}.", ex);
+
+        public void Dispose()
+        {
+            _watchdog.Dispose();
+            _watchdogCts?.Cancel(); // stands the watchdog down as soon as the job returns
+            _watchdogCts?.Dispose();
+            _cts?.Dispose();
         }
     }
 }
