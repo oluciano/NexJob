@@ -8,6 +8,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- RabbitMQ trigger: stopping the host now cancels an enqueue still waiting on the storage and gives the message back, instead of waiting for the storage to answer. The enqueue ignored the stopping token (issue #537).
 - Disposing the executor synchronously (for example a manual `ServiceProvider.Dispose()`) no longer loses batch acknowledgments still queued: it now drains them like `DisposeAsync`. Disposal is also idempotent in every combination of `Dispose` and `DisposeAsync` (issue #527).
 
 ### Tests
