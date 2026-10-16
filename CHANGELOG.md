@@ -8,6 +8,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- SQL Server: the orphaned-job sweep no longer deadlocks with the job fetch. It locked every row it examined in index order while the fetch locks rows by priority, so under load SQL Server picked one of them as the victim (about 2% of load-test runs); the sweep now skips a row another transaction holds and takes it on the next pass (issue #315).
 - Redis: force-deleting a recurring job now also deletes the jobs it created, as the other providers and the interface documentation say. They used to stay and run (issue #542).
 - Redis: updating, force-deleting or restoring a recurring job id that was never registered (and the scheduler's next-execution and last-result writes after a job was deleted) no longer creates a phantom definition. Reading it threw, and a recurring job registered afterwards was born disabled and deleted (issue #543).
 - RabbitMQ trigger: stopping the host now cancels an enqueue still waiting on the storage and gives the message back, instead of waiting for the storage to answer. The enqueue ignored the stopping token (issue #537).
@@ -15,6 +16,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Tests
 
+- SQL Server deadlock diagnostic: the load test lists every resource of a deadlock graph and the full XML, not only key and page locks. A graph from CI was empty because of that (issue #315).
 - Shared storage contract: the recurring-job lock (`TryAcquireRecurringJobLockAsync` / `ReleaseRecurringJobLockAsync`) is now tested on all five providers, not only in memory (issue #539).
 - Shared storage contract: recurring-job definitions (`GetRecurringJobByIdAsync`, `GetRecurringJobAsync`, `UpdateRecurringJobConfigAsync`, `ForceDeleteRecurringJobAsync`, `RestoreRecurringJobAsync`) are tested on all five providers. It found two Redis defects, tracked in #542 and #543 (issue #541).
 - Shared storage contract: the server-registry tests (Redis, SQL Server) and the concurrent-dedup tests (Redis, MongoDB) were skipped by provider name; they now run on all five providers and pass. `GetJobsByTagAsync` is tested on all five (issue #547).
