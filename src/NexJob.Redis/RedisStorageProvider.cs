@@ -793,7 +793,7 @@ public sealed class RedisStorageProvider : IStorageProvider, IOrphanedJobReporte
         CancellationToken cancellationToken = default)
     {
         var now = DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture);
-        await _db.HashSetAsync(RecurringKey(recurringJobId), new[]
+        await HashSetIfRecurringExistsAsync(recurringJobId, new[]
         {
             new HashEntry("nextExecution", nextExecution.ToString("O", CultureInfo.InvariantCulture)),
             new HashEntry("lastExecution", now),
@@ -806,7 +806,7 @@ public sealed class RedisStorageProvider : IStorageProvider, IOrphanedJobReporte
         string recurringJobId, JobStatus status, string? errorMessage,
         CancellationToken cancellationToken = default)
     {
-        await _db.HashSetAsync(RecurringKey(recurringJobId), new[]
+        await HashSetIfRecurringExistsAsync(recurringJobId, new[]
         {
             new HashEntry("lastExecutionStatus", status.ToString()),
             new HashEntry("lastExecutionError", errorMessage ?? string.Empty),
@@ -861,7 +861,7 @@ public sealed class RedisStorageProvider : IStorageProvider, IOrphanedJobReporte
         string recurringJobId, string? cronOverride, bool enabled,
         CancellationToken cancellationToken = default)
     {
-        await _db.HashSetAsync(RecurringKey(recurringJobId), new[]
+        await HashSetIfRecurringExistsAsync(recurringJobId, new[]
         {
             new HashEntry("cronOverride", cronOverride ?? string.Empty),
             new HashEntry("enabled", enabled ? "true" : "false"),
@@ -873,7 +873,7 @@ public sealed class RedisStorageProvider : IStorageProvider, IOrphanedJobReporte
     public async Task ForceDeleteRecurringJobAsync(
         string recurringJobId, CancellationToken cancellationToken = default)
     {
-        await _db.HashSetAsync(RecurringKey(recurringJobId), new[]
+        await HashSetIfRecurringExistsAsync(recurringJobId, new[]
         {
             new HashEntry("deletedByUser", "true"),
             new HashEntry("enabled", "false"),
@@ -885,7 +885,7 @@ public sealed class RedisStorageProvider : IStorageProvider, IOrphanedJobReporte
     public async Task RestoreRecurringJobAsync(
         string recurringJobId, CancellationToken cancellationToken = default)
     {
-        await _db.HashSetAsync(RecurringKey(recurringJobId), new[]
+        await HashSetIfRecurringExistsAsync(recurringJobId, new[]
         {
             new HashEntry("deletedByUser", "false"),
             new HashEntry("enabled", "true"),
@@ -1972,6 +1972,19 @@ public sealed class RedisStorageProvider : IStorageProvider, IOrphanedJobReporte
     }
 
     // ── Private instance helpers ──────────────────────────────────────────────
+
+    /// <summary>
+    /// Writes fields to a recurring job's hash only if the job exists, in one atomic step. Writing to a missing key would
+    /// create a definition made of just these fields, which then fails to read and makes a later registration inherit them.
+    /// </summary>
+    private async Task HashSetIfRecurringExistsAsync(string recurringJobId, HashEntry[] fields)
+    {
+        var key = RecurringKey(recurringJobId);
+        var transaction = _db.CreateTransaction();
+        transaction.AddCondition(Condition.KeyExists(key));
+        _ = transaction.HashSetAsync(key, fields);
+        await transaction.ExecuteAsync().ConfigureAwait(false);
+    }
 
     // One sorted set exists per non-empty queue, so this scan is bounded by the number of queues.
     private async Task<List<string>> GetQueueKeysAsync()
