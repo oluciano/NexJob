@@ -161,6 +161,39 @@ public sealed class SqlServerContinuationReleaseTests : IClassFixture<SqlServerF
         Assert.Equal(JobStatus.Succeeded, (await ((IDashboardStorage)provider).GetJobByIdAsync(lonely.Id))!.Status);
     }
 
+    [Fact]
+    public async Task OrphanSweep_SkipsARowAnotherTransactionHolds_AndTakesItOnTheNextSweep()
+    {
+        // The sweep locks every row it examines. Held against a fetch that locks rows in another order it is a
+        // deadlock cycle; READPAST makes it skip a row in use, which the next sweep picks up.
+        var cs = await CreateDatabaseAsync();
+        var provider = new SqlServerStorageProvider(cs);
+        await provider.EnqueueAsync(NewJob());
+        var fetched = (await provider.FetchNextAsync(["default"]))!;
+
+        await using var holder = new SqlConnection(cs);
+        await holder.OpenAsync();
+        await using var tx = (SqlTransaction)await holder.BeginTransactionAsync();
+        await using (var cmd = holder.CreateCommand())
+        {
+            cmd.Transaction = tx;
+            cmd.CommandText = "UPDATE nexjob_jobs SET heartbeat_at = DATEADD(HOUR, -1, SYSUTCDATETIME()) WHERE id = @id";
+            cmd.Parameters.AddWithValue("@id", fetched.Id.Value);
+            await cmd.ExecuteNonQueryAsync();
+        }
+
+        var sweep = provider.RequeueOrphanedJobsAsync(TimeSpan.FromMinutes(5));
+        var finished = await Task.WhenAny(sweep, Task.Delay(TimeSpan.FromSeconds(5))) == sweep;
+        await tx.CommitAsync();
+        Assert.True(finished, "the sweep waited for a row another transaction holds");
+        await sweep;
+
+        Assert.Equal(JobStatus.Processing, (await ((IDashboardStorage)provider).GetJobByIdAsync(fetched.Id))!.Status);
+
+        await provider.RequeueOrphanedJobsAsync(TimeSpan.FromMinutes(5));
+        Assert.Equal(JobStatus.Enqueued, (await ((IDashboardStorage)provider).GetJobByIdAsync(fetched.Id))!.Status);
+    }
+
     private static JobRecord NewJob(JobStatus status = JobStatus.Enqueued, JobId? parent = null) => new()
     {
         Id = JobId.New(),
@@ -219,11 +252,20 @@ public sealed class SqlServerContinuationReleaseTests : IClassFixture<SqlServerF
         {
             var doc = XElement.Parse(reader.GetString(0));
             var statements = doc.Descendants("inputbuf").Select(e => string.Join(" ", e.Value.Split(new[] { '\r', '\n', ' ' }, StringSplitOptions.RemoveEmptyEntries)));
-            var resources = doc.Descendants()
-                .Where(e => e.Name.LocalName is "keylock" or "pagelock" or "objectlock" or "ridlock")
+
+            // Every kind of resource in the graph, not only row and page locks: a deadlock on a parallel exchange, a latch or
+            // a worker has no keylock, and a graph that lists nothing (as one in CI did) cannot be acted on.
+            var resources = doc.Descendants("resource-list").Elements()
                 .Select(e => $"{e.Name.LocalName} {e.Attribute("objectname")?.Value}.{e.Attribute("indexname")?.Value}")
                 .Distinct();
-            lines.Add($"statements=[{string.Join(" | ", statements)}] resources=[{string.Join(", ", resources)}]");
+
+            // The graph itself, without the native stack frames (noise), so the next occurrence can be read from the test output.
+            foreach (var frames in doc.Descendants("stackFrames").ToList())
+            {
+                frames.Remove();
+            }
+
+            lines.Add($"statements=[{string.Join(" | ", statements)}] resources=[{string.Join(", ", resources)}] raw={doc.ToString(SaveOptions.DisableFormatting)}");
         }
 
         return lines;
