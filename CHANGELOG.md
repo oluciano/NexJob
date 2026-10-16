@@ -13,6 +13,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Tests
 
+- Shared storage contract: the recurring-job lock (`TryAcquireRecurringJobLockAsync` / `ReleaseRecurringJobLockAsync`) is now tested on all five providers, not only in memory (issue #539).
 - Hardened unit tests covering core execution mutation survivors across `JobRecordFactory`, `DeadLetterDispatcherTests`, `JobDispatcherService`, `DefaultScheduler`, `DefaultQueueCircuitBreakerManager`, `ThrottleRegistry`, and `InMemoryStorageProvider` (issue #515).
 
 ### Changed

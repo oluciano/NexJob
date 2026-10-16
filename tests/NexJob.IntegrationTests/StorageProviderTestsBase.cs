@@ -785,6 +785,89 @@ public abstract class StorageProviderTestsBase
         all.Should().NotContain(r => r.RecurringJobId == record.RecurringJobId);
     }
 
+    // ── Recurring job lock ─────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task TryAcquireRecurringJobLockAsync_on_a_free_lock_succeeds_and_blocks_the_second_caller()
+    {
+        var (_, recurring, _, _) = await CreateStorageAsync();
+        var id = $"lock-{Guid.NewGuid()}";
+
+        var first = await recurring.TryAcquireRecurringJobLockAsync(id, TimeSpan.FromSeconds(30));
+        var second = await recurring.TryAcquireRecurringJobLockAsync(id, TimeSpan.FromSeconds(30));
+
+        first.Should().BeTrue("a free lock is acquired");
+        second.Should().BeFalse("the lock is held, so a second node must not fire the same schedule");
+    }
+
+    [Fact]
+    public async Task TryAcquireRecurringJobLockAsync_locks_are_independent_per_recurring_job()
+    {
+        var (_, recurring, _, _) = await CreateStorageAsync();
+        var idA = $"lock-a-{Guid.NewGuid()}";
+        var idB = $"lock-b-{Guid.NewGuid()}";
+
+        var a = await recurring.TryAcquireRecurringJobLockAsync(idA, TimeSpan.FromSeconds(30));
+        var b = await recurring.TryAcquireRecurringJobLockAsync(idB, TimeSpan.FromSeconds(30));
+
+        a.Should().BeTrue();
+        b.Should().BeTrue("holding one job's lock must not block another job");
+    }
+
+    [Fact]
+    public async Task ReleaseRecurringJobLockAsync_makes_the_lock_acquirable_again()
+    {
+        var (_, recurring, _, _) = await CreateStorageAsync();
+        var id = $"lock-{Guid.NewGuid()}";
+        (await recurring.TryAcquireRecurringJobLockAsync(id, TimeSpan.FromSeconds(30))).Should().BeTrue();
+
+        await recurring.ReleaseRecurringJobLockAsync(id);
+        var reacquired = await recurring.TryAcquireRecurringJobLockAsync(id, TimeSpan.FromSeconds(30));
+
+        reacquired.Should().BeTrue("a released lock is free");
+    }
+
+    [Fact]
+    public async Task TryAcquireRecurringJobLockAsync_an_expired_lock_is_acquirable_again()
+    {
+        var (_, recurring, _, _) = await CreateStorageAsync();
+        var id = $"lock-{Guid.NewGuid()}";
+        (await recurring.TryAcquireRecurringJobLockAsync(id, TimeSpan.FromMilliseconds(300))).Should().BeTrue();
+
+        // A node that crashed while holding the lock must not block the schedule forever.
+        await NexJob.Tests.TestWait.UntilAsync(
+            async () => await recurring.TryAcquireRecurringJobLockAsync(id, TimeSpan.FromSeconds(30)),
+            because: "the lock expires after its time-to-live");
+    }
+
+    [Fact]
+    public async Task TryAcquireRecurringJobLockAsync_under_contention_lets_exactly_one_caller_win()
+    {
+        var (_, recurring, _, _) = await CreateStorageAsync();
+        var id = $"lock-{Guid.NewGuid()}";
+        const int callers = 10;
+
+        var results = await Task.WhenAll(
+            Enumerable.Range(0, callers).Select(_ => recurring.TryAcquireRecurringJobLockAsync(id, TimeSpan.FromSeconds(30))));
+
+        results.Count(r => r).Should().Be(1, "exactly one concurrent node may fire the schedule");
+    }
+
+    [Fact]
+    public async Task ReleaseRecurringJobLockAsync_without_a_held_lock_is_a_no_op()
+    {
+        var (_, recurring, _, _) = await CreateStorageAsync();
+        var id = $"lock-{Guid.NewGuid()}";
+
+        var neverAcquired = async () => await recurring.ReleaseRecurringJobLockAsync(id);
+        await neverAcquired.Should().NotThrowAsync();
+
+        (await recurring.TryAcquireRecurringJobLockAsync(id, TimeSpan.FromSeconds(30))).Should().BeTrue();
+        await recurring.ReleaseRecurringJobLockAsync(id);
+        var twice = async () => await recurring.ReleaseRecurringJobLockAsync(id);
+        await twice.Should().NotThrowAsync();
+    }
+
     // ── Server Tracking ────────────────────────────────────────────────────────
 
     [Fact]
