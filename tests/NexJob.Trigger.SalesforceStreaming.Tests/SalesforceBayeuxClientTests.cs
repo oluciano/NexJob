@@ -279,6 +279,94 @@ public sealed class SalesforceBayeuxClientTests
         await Assert.ThrowsAsync<ArgumentException>(() => client.HandshakeAsync(url, ver, token));
     }
 
+    [Fact]
+    public async Task GatewayHandler_RewritesTheBearerTokenToTheGatewayHeader_OnEveryCometdCall()
+    {
+        // N1: the documented recipe (docs/wiki/integrations/salesforce-streaming.md, "Behind an API gateway").
+        var seen = await RunCometdCallsAsync(new GatewayApiKeyHandler("apiKey"));
+
+        seen.Should().HaveCount(3);
+        seen.Should().OnlyContain(h => h.Authorization == null && h.ApiKey == AccessToken);
+    }
+
+    [Fact]
+    public async Task WithoutTheGatewayHandler_EveryCometdCallStillSendsBearer()
+    {
+        // N2: the default is untouched.
+        var seen = await RunCometdCallsAsync(null);
+
+        seen.Should().HaveCount(3);
+        seen.Should().OnlyContain(h => h.Authorization == "Bearer " + AccessToken && h.ApiKey == null);
+    }
+
+    [Fact]
+    public async Task GatewayHandler_WithARequestWithoutAuthorization_PassesItThroughUnchanged()
+    {
+        // N3: nothing to rewrite, nothing thrown.
+        using var capture = new MockHttpMessageHandler((req, ct) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)));
+        using var invoker = new HttpMessageInvoker(new GatewayApiKeyHandler("apiKey") { InnerHandler = capture, });
+        using var request = new HttpRequestMessage(HttpMethod.Post, InstanceUrl);
+
+        using var response = await invoker.SendAsync(request, CancellationToken.None);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        request.Headers.Contains("apiKey").Should().BeFalse();
+    }
+
+    private static async Task<List<(string? Authorization, string? ApiKey)>> RunCometdCallsAsync(DelegatingHandler? gateway)
+    {
+        var seen = new List<(string? Authorization, string? ApiKey)>();
+        var capture = new MockHttpMessageHandler(async (req, ct) =>
+        {
+            seen.Add((req.Headers.Authorization?.ToString(), req.Headers.TryGetValues("apiKey", out var v) ? v.Single() : null));
+            var body = await req.Content!.ReadAsStringAsync(ct);
+            var channel = "/meta/connect";
+            foreach (var candidate in new[] { "/meta/handshake", "/meta/subscribe", })
+            {
+                if (body.Contains(candidate, StringComparison.Ordinal))
+                {
+                    channel = candidate;
+                }
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent($$"""[{"channel":"{{channel}}","clientId":"client-abc","successful":true}]""", Encoding.UTF8, "application/json"),
+            };
+        });
+        HttpMessageHandler pipeline = capture;
+        if (gateway is not null)
+        {
+            gateway.InnerHandler = capture;
+            pipeline = gateway;
+        }
+
+        using var client = new SalesforceBayeuxClient(new HttpClient(pipeline));
+        await client.HandshakeAsync(InstanceUrl, CometdVersion, AccessToken);
+        await client.SubscribeAsync(InstanceUrl, CometdVersion, AccessToken, "client-abc", "/data/Order__ChangeEvent", 1);
+        await client.ConnectAsync(InstanceUrl, CometdVersion, AccessToken, "client-abc");
+        return seen;
+    }
+
+    // Same code as the recipe in the docs.
+    private sealed class GatewayApiKeyHandler : DelegatingHandler
+    {
+        private readonly string _headerName;
+
+        public GatewayApiKeyHandler(string headerName) => _headerName = headerName;
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            if (request.Headers.Authorization is { } auth)
+            {
+                request.Headers.Authorization = null;
+                request.Headers.TryAddWithoutValidation(_headerName, auth.Parameter);
+            }
+
+            return base.SendAsync(request, cancellationToken);
+        }
+    }
+
     private sealed class MockHttpMessageHandler(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> sendAsyncFunc)
         : HttpMessageHandler
     {

@@ -137,6 +137,23 @@ public sealed class CancellationIgnoredWarningTests
         counter.Total.Should().Be(0);
     }
 
+    /// <summary>N3: a job that returns after the limit fired but before the grace period ends stands the watchdog down, so no warning arrives once the grace period has passed.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task ExecuteJobAsync_WhenJobReturnsAfterTheLimitButBeforeGrace_NoWarningAfterGraceEnds()
+    {
+        _options.CancellationGracePeriod = TimeSpan.FromMilliseconds(300);
+        var job = NewJob();
+        using var counter = new CounterCapture(job.JobType);
+        SetupInvoker(job, (_, _) => Task.Delay(TimeSpan.FromMilliseconds(150)), "00:00:00.050");
+
+        await NewSut().ExecuteJobAsync(job).WaitAsync(TimeSpan.FromSeconds(10));
+        await Task.Delay(TimeSpan.FromMilliseconds(600)); // past the grace period, which ends 300 ms after the limit
+
+        Warnings().Should().BeEmpty();
+        counter.Total.Should().Be(0);
+    }
+
     private static JobRecord NewJob() =>
         new() { Id = JobId.New(), JobType = $"TestJob-{Guid.NewGuid():N}", Attempts = 1, MaxAttempts = 3 };
 

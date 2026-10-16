@@ -18,9 +18,6 @@ public sealed class PostgresStorageProviderUnitTests
     private static readonly MethodInfo ParseStatusMethod = typeof(PostgresStorageProvider)
         .GetMethod("ParseStatus", BindingFlags.NonPublic | BindingFlags.Static)!;
 
-    private static readonly MethodInfo IsActiveStateMethod = typeof(PostgresStorageProvider)
-        .GetMethod("IsActiveState", BindingFlags.NonPublic | BindingFlags.Static)!;
-
     private static readonly MethodInfo OpenMethod = typeof(PostgresStorageProvider)
         .GetMethod("Open", BindingFlags.NonPublic | BindingFlags.Instance)!;
 
@@ -39,23 +36,6 @@ public sealed class PostgresStorageProviderUnitTests
     public void ParseStatus_MapsAllBranches(string input, JobStatus expected)
     {
         var result = (JobStatus)ParseStatusMethod.Invoke(null, new object[] { input })!;
-        result.Should().Be(expected);
-    }
-
-    /// <summary>Tests all active state identification branches.</summary>
-    /// <param name="status">The status.</param>
-    /// <param name="expected">If true, expected.</param>
-    [Theory]
-    [InlineData(JobStatus.Enqueued, true)]
-    [InlineData(JobStatus.Processing, true)]
-    [InlineData(JobStatus.Scheduled, true)]
-    [InlineData(JobStatus.AwaitingContinuation, true)]
-    [InlineData(JobStatus.Succeeded, false)]
-    [InlineData(JobStatus.Failed, false)]
-    [InlineData(JobStatus.Expired, false)]
-    public void IsActiveState_IdentifiesCorrectBranches(JobStatus status, bool expected)
-    {
-        var result = (bool)IsActiveStateMethod.Invoke(null, new object[] { status })!;
         result.Should().Be(expected);
     }
 

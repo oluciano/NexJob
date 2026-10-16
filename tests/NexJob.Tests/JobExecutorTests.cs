@@ -5,6 +5,7 @@ using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Time.Testing;
 using Moq;
 using NexJob.Exceptions;
 using NexJob.Internal;
@@ -390,7 +391,7 @@ public sealed class JobExecutorTests
                ?? throw new InvalidOperationException($"Cannot find ExecuteAsync method on {jobType.Name}");
     }
 
-    private static JobRecord MakeJob<TJob, TInput>(TInput input, int maxAttempts = 5, DateTimeOffset? expiresAt = null, string queue = "default", string? traceParent = null)
+    private static JobRecord MakeJob<TJob, TInput>(TInput input, int maxAttempts = 5, DateTimeOffset? expiresAt = null, string queue = "default", string? traceParent = null, string? recurringJobId = null, JobId? parentJobId = null)
     {
         return new JobRecord
         {
@@ -405,6 +406,8 @@ public sealed class JobExecutorTests
             Status = JobStatus.Enqueued,
             ExpiresAt = expiresAt,
             TraceParent = traceParent,
+            RecurringJobId = recurringJobId,
+            ParentJobId = parentJobId,
         };
     }
 
@@ -596,6 +599,78 @@ public sealed class JobExecutorTests
         _hardenedStorage.Verify(x => x.CommitJobResultAsync(job.Id, It.Is<JobExecutionResult>(r => r.Succeeded), It.IsAny<CancellationToken>()), Times.Once);
     }
 
+    /// <summary>N1 (#517): a job whose ExpiresAt equals the clock's now is not expired (boundary is inclusive).</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task ExecuteJobAsync_WhenExpiresAtEqualsNow_ExecutesNormally()
+    {
+        var clock = new FakeTimeProvider(new DateTimeOffset(2040, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        var job = new JobRecord { Id = JobId.New(), ExpiresAt = clock.GetUtcNow(), JobType = "TestJob" };
+        _ = SetupSuccessfulInvoker(job);
+
+        await MakeHardenedSut(clock).ExecuteJobAsync(job);
+
+        _hardenedStorage.Verify(x => x.SetExpiredAsync(job.Id, It.IsAny<CancellationToken>()), Times.Never);
+        _hardenedStorage.Verify(x => x.CommitJobResultAsync(job.Id, It.Is<JobExecutionResult>(r => r.Succeeded), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    /// <summary>N2 (#517): a job whose ExpiresAt is one tick before the clock's now is expired and never executes.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task ExecuteJobAsync_WhenExpiresAtOneTickBeforeNow_MarksExpiredWithoutExecuting()
+    {
+        var clock = new FakeTimeProvider(new DateTimeOffset(2040, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        var job = new JobRecord { Id = JobId.New(), ExpiresAt = clock.GetUtcNow().AddTicks(-1), JobType = "TestJob" };
+        _ = SetupSuccessfulInvoker(job);
+
+        await MakeHardenedSut(clock).ExecuteJobAsync(job);
+
+        _hardenedStorage.Verify(x => x.SetExpiredAsync(job.Id, It.IsAny<CancellationToken>()), Times.Once);
+        _hardenedStorage.Verify(x => x.CommitJobResultAsync(job.Id, It.IsAny<JobExecutionResult>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    /// <summary>N3 (#517): a job without ExpiresAt is never treated as expired, whatever the clock says.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task ExecuteJobAsync_WhenNoExpiresAt_ExecutesNormallyAtAnyTime()
+    {
+        var clock = new FakeTimeProvider(new DateTimeOffset(2040, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        var job = new JobRecord { Id = JobId.New(), ExpiresAt = null, JobType = "TestJob" };
+        _ = SetupSuccessfulInvoker(job);
+
+        await MakeHardenedSut(clock).ExecuteJobAsync(job);
+
+        _hardenedStorage.Verify(x => x.SetExpiredAsync(job.Id, It.IsAny<CancellationToken>()), Times.Never);
+        _hardenedStorage.Verify(x => x.CommitJobResultAsync(job.Id, It.Is<JobExecutionResult>(r => r.Succeeded), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    /// <summary>(#517): a foreign job is deferred to exactly the clock's now plus ForeignJobRetryDelay.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task ExecuteJobAsync_WhenForeignJob_DefersToClockNowPlusForeignRetryDelay()
+    {
+        var clock = new FakeTimeProvider(new DateTimeOffset(2040, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        var job = new JobRecord { Id = JobId.New(), JobType = "ForeignService.Job", Attempts = 1, MaxAttempts = 3 };
+        _hardenedInvokerfactory.Setup(x => x.PrepareAsync(job, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new ForeignJobTypeException(job.JobType, "Cannot load job type: ForeignService.Job"));
+
+        await MakeHardenedSut(clock).ExecuteJobAsync(job);
+
+        var expected = clock.GetUtcNow() + _hardenedOptions.ForeignJobRetryDelay;
+        _hardenedStorage.Verify(x => x.CommitJobResultAsync(job.Id, It.Is<JobExecutionResult>(r => r.RetryAt == expected), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    private JobExecutor MakeHardenedSut(TimeProvider clock) => new(
+        _hardenedStorage.Object,
+        _hardenedInvokerfactory.Object,
+        _hardenedRetrypolicy.Object,
+        _hardenedDeadletterdispatcher.Object,
+        _hardenedThrottleregistry,
+        _hardenedOptions,
+        new JobWakeUpChannel(),
+        NullLogger<JobExecutor>.Instance,
+        clock);
+
     // ─── Failure Path Branches ─────────────────────────────────────────────
 
     /// <summary>Tests that dead-letter dispatcher is invoked when retries are exhausted.</summary>
@@ -662,6 +737,54 @@ public sealed class JobExecutorTests
 
         // Assert
         _hardenedStorage.Verify(x => x.CommitJobResultAsync(job.Id, It.Is<JobExecutionResult>(r => r.Succeeded), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    /// <summary>The throttle slots a job held are free again once it ran.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task ExecuteJobAsync_WithThrottling_ReleasesTheSlotsAfterTheJobRan()
+    {
+        var job = new JobRecord { Id = JobId.New(), JobType = "TestJob" };
+        _ = SetupSuccessfulInvoker(job, new[] { new ThrottleAttribute("resource-ran", 1) });
+
+        await _hardenedSut.ExecuteJobAsync(job);
+
+        (await _hardenedThrottleregistry.TryAcquireAsync("resource-ran", 1, CancellationToken.None)).Should().BeTrue();
+    }
+
+    /// <summary>A job that fails still gives its throttle slots back.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task ExecuteJobAsync_WithThrottling_WhenTheJobFails_ReleasesTheSlots()
+    {
+        var job = new JobRecord { Id = JobId.New(), JobType = "TestJob" };
+        var context = new JobInvocationContext(
+            TestScopes.Create(),
+            new object(),
+            new object(),
+            (object j, object i, CancellationToken ct) => throw new InvalidOperationException("job failed"),
+            new[] { new ThrottleAttribute("resource-failed", 1) });
+        _hardenedInvokerfactory.Setup(x => x.PrepareAsync(job, It.IsAny<CancellationToken>())).ReturnsAsync(context);
+
+        await _hardenedSut.ExecuteJobAsync(job);
+
+        (await _hardenedThrottleregistry.TryAcquireAsync("resource-failed", 1, CancellationToken.None)).Should().BeTrue();
+    }
+
+    /// <summary>When a later resource stays saturated, the slots already taken on earlier ones are released and the job is deferred without consuming an attempt.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task ExecuteJobAsync_WithThrottling_WhenALaterResourceIsSaturated_ReleasesTheEarlierSlotsAndDefers()
+    {
+        var job = new JobRecord { Id = JobId.New(), JobType = "TestJob" };
+        _hardenedOptions.ThrottleMaxWait = TimeSpan.FromMilliseconds(1);
+        _ = SetupSuccessfulInvoker(job, new[] { new ThrottleAttribute("resource-first", 1), new ThrottleAttribute("resource-saturated", 1) });
+        (await _hardenedThrottleregistry.TryAcquireAsync("resource-saturated", 1, CancellationToken.None)).Should().BeTrue();
+
+        await _hardenedSut.ExecuteJobAsync(job);
+
+        (await _hardenedThrottleregistry.TryAcquireAsync("resource-first", 1, CancellationToken.None)).Should().BeTrue();
+        _hardenedStorage.Verify(x => x.CommitJobResultAsync(job.Id, It.Is<JobExecutionResult>(r => !r.Succeeded && r.RefundAttempt), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     // ─── Filter Branches ───────────────────────────────────────────────────
@@ -867,6 +990,217 @@ public sealed class JobExecutorTests
         await _hardenedSut.ExecuteJobAsync(job, shutdown.Token);
 
         job.Attempts.Should().BeGreaterOrEqualTo(0);
+    }
+
+    // ─── Mutation safety net (#524): batch acknowledgment and filter contract ──────────────────
+
+    /// <summary>N1: a plain successful job with batch acknowledgment on is acknowledged in a batch, not committed one by one.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task ExecuteJobAsync_BatchAckEnabled_PlainJob_AcknowledgesInBatchAndSkipsCommit()
+    {
+        _options.EnableBatchAcknowledgment = true;
+        var acked = new List<JobId>();
+        _storage
+            .Setup(x => x.AcknowledgeBatchAsync(It.IsAny<IReadOnlyList<JobId>>(), It.IsAny<CancellationToken>()))
+            .Callback<IReadOnlyList<JobId>, CancellationToken>((ids, _) =>
+            {
+                lock (acked)
+                {
+                    acked.AddRange(ids); // the executor reuses and clears its buffer, so copy at call time
+                }
+            })
+            .Returns(Task.CompletedTask);
+        var job = MakeJob<TestJob, TestInput>(new TestInput("batch"));
+
+        await _sut.ExecuteJobAsync(job);
+        await NexJob.Tests.TestWait.InvokedAsync(_storage, nameof(IJobStorage.AcknowledgeBatchAsync), 1);
+
+        lock (acked)
+        {
+            acked.Should().Equal(job.Id);
+        }
+
+        _storage.Verify(
+            x => x.CommitJobResultAsync(It.IsAny<JobId>(), It.IsAny<JobExecutionResult>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    /// <summary>
+    /// N2: every condition that rules a job out of batch acknowledgment sends it through the atomic commit instead, so
+    /// continuations, retention and recurring bookkeeping are never skipped.
+    /// </summary>
+    /// <param name="batchAck">Whether batch acknowledgment is enabled.</param>
+    /// <param name="recurring">Whether the job comes from a recurring definition.</param>
+    /// <param name="hasParent">Whether the job is a continuation of a parent job.</param>
+    /// <param name="purge">Whether the job type purges itself on success.</param>
+    /// <param name="trim">Whether the job type trims its payload on success.</param>
+    /// <param name="writesLogs">Whether the job emits a captured log line.</param>
+    /// <returns>A task.</returns>
+    [Theory]
+    [InlineData(false, false, false, false, false, false)]
+    [InlineData(true, true, false, false, false, false)]
+    [InlineData(true, false, true, false, false, false)]
+    [InlineData(true, false, false, true, false, false)]
+    [InlineData(true, false, false, false, true, false)]
+    [InlineData(true, false, false, false, false, true)]
+    public async Task ExecuteJobAsync_BatchAckRuledOut_CommitsAtomically(
+        bool batchAck, bool recurring, bool hasParent, bool purge, bool trim, bool writesLogs)
+    {
+        _options.EnableBatchAcknowledgment = batchAck;
+        var job = MakeJob<TestJob, TestInput>(
+            new TestInput("ruled-out"),
+            recurringJobId: recurring ? "daily" : null,
+            parentJobId: hasParent ? JobId.New() : null);
+        var retention = purge || trim ? new RetentionAttribute { PurgeOnSuccess = purge, TrimPayloadOnSuccess = trim } : null;
+        _invokerFactory
+            .Setup(x => x.PrepareAsync(job, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => new JobInvocationContext(
+                TestScopes.Create(),
+                new object(),
+                new object(),
+                (object _, object _, CancellationToken _) =>
+                {
+                    if (writesLogs)
+                    {
+                        JobExecutionLogScope.Current!.Capture(LogLevel.Information, "from the job");
+                    }
+
+                    return Task.CompletedTask;
+                },
+                Array.Empty<ThrottleAttribute>(),
+                retention));
+
+        await _sut.ExecuteJobAsync(job);
+
+        _storage.Verify(
+            x => x.CommitJobResultAsync(job.Id, It.Is<JobExecutionResult>(r => r.Succeeded), It.IsAny<CancellationToken>()),
+            Times.Once);
+        _storage.Verify(
+            x => x.AcknowledgeBatchAsync(It.IsAny<IReadOnlyList<JobId>>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    /// <summary>N1: an acknowledgment still queued when the executor is disposed is written to storage, not dropped.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task DisposeAsync_WithPendingAcknowledgments_DrainsThemToStorage()
+    {
+        _options.EnableBatchAcknowledgment = true;
+        var acked = new List<JobId[]>();
+        var firstFlushStarted = new TaskCompletionSource();
+        var releaseFirstFlush = new TaskCompletionSource();
+        _storage
+            .Setup(x => x.AcknowledgeBatchAsync(It.IsAny<IReadOnlyList<JobId>>(), It.IsAny<CancellationToken>()))
+            .Returns<IReadOnlyList<JobId>, CancellationToken>(async (ids, _) =>
+            {
+                lock (acked)
+                {
+                    acked.Add(ids.ToArray());
+                }
+
+                if (acked.Count == 1)
+                {
+                    firstFlushStarted.SetResult();
+                    await releaseFirstFlush.Task;
+                }
+            });
+        var first = MakeJob<TestJob, TestInput>(new TestInput("first"));
+        var second = MakeJob<TestJob, TestInput>(new TestInput("second"));
+
+        await _sut.ExecuteJobAsync(first);
+        await firstFlushStarted.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        await _sut.ExecuteJobAsync(second); // queued while the flusher is busy with the first batch
+        var disposing = _sut.DisposeAsync().AsTask();
+        releaseFirstFlush.SetResult();
+        await disposing.WaitAsync(TimeSpan.FromSeconds(10));
+
+        acked.Should().HaveCount(2);
+        acked[0].Should().Equal(first.Id);
+        acked[1].Should().Equal(second.Id);
+    }
+
+    /// <summary>N3: disposing with nothing pending writes no acknowledgment at all.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task DisposeAsync_WithNothingPending_DoesNotAcknowledge()
+    {
+        _options.EnableBatchAcknowledgment = true;
+
+        await _sut.DisposeAsync();
+
+        _storage.Verify(
+            x => x.AcknowledgeBatchAsync(It.IsAny<IReadOnlyList<JobId>>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    /// <summary>N1: a filter that keeps its context sees it marked succeeded, without an exception, after a good run.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task ExecuteJobAsync_FilterContext_AfterSuccessfulJob_IsSucceededWithoutException()
+    {
+        var job = MakeJob<TestJob, TestInput>(new TestInput("ok"));
+        var filter = new CapturingFilter();
+        _invokerFactory
+            .Setup(x => x.PrepareAsync(job, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => MakeContext(job, filter));
+
+        await _sut.ExecuteJobAsync(job);
+
+        filter.Seen.Should().NotBeNull();
+        filter.Seen!.Succeeded.Should().BeTrue();
+        filter.Seen.Exception.Should().BeNull();
+    }
+
+    /// <summary>N2: a filter that keeps its context sees it marked failed, with the job's exception, after a failing run.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task ExecuteJobAsync_FilterContext_AfterFailingJob_IsFailedWithTheException()
+    {
+        var job = MakeJob<FailingJob, TestInput>(new TestInput("boom"), maxAttempts: 3);
+        var filter = new CapturingFilter();
+        _invokerFactory
+            .Setup(x => x.PrepareAsync(job, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => MakeContext(job, filter));
+
+        await _sut.ExecuteJobAsync(job);
+
+        filter.Seen.Should().NotBeNull();
+        filter.Seen!.Succeeded.Should().BeFalse();
+        filter.Seen.Exception.Should().NotBeNull();
+    }
+
+    /// <summary>N2: a filter that observes the cancelled token when the limit fires, before the job runs, still records a timeout failure.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task ExecuteJobAsync_FilterObservesTimeoutToken_RecordsTimeoutFailure()
+    {
+        _options.DefaultExecutionTimeout = TimeSpan.FromMilliseconds(100);
+        var job = MakeJob<TestJob, TestInput>(new TestInput("slow-filter"), maxAttempts: 3);
+        var filter = new Mock<IJobExecutionFilter>();
+        filter
+            .Setup(x => x.OnExecutingAsync(It.IsAny<JobExecutingContext>(), It.IsAny<JobExecutionDelegate>(), It.IsAny<CancellationToken>()))
+            .Returns<JobExecutingContext, JobExecutionDelegate, CancellationToken>((_, _, ct) => Task.Delay(Timeout.Infinite, ct));
+        _invokerFactory
+            .Setup(x => x.PrepareAsync(job, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => MakeContext(job, filter.Object));
+
+        await _sut.ExecuteJobAsync(job);
+
+        _storage.Verify(
+            x => x.CommitJobResultAsync(job.Id, It.Is<JobExecutionResult>(r => !r.Succeeded && r.Exception is TimeoutException), It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    private sealed class CapturingFilter : IJobExecutionFilter
+    {
+        public JobExecutingContext? Seen { get; private set; }
+
+        public Task OnExecutingAsync(JobExecutingContext context, JobExecutionDelegate next, CancellationToken ct)
+        {
+            Seen = context;
+            return next(ct);
+        }
     }
 
     // ─── Helpers ───────────────────────────────────────────────────────────

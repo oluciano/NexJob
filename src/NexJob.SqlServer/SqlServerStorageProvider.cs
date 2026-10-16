@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using Dapper;
 using Microsoft.Data.SqlClient;
+using NexJob.Internal;
 using NexJob.Storage;
 
 namespace NexJob.SqlServer;
@@ -98,8 +99,8 @@ public sealed class SqlServerStorageProvider : IStorageProvider, IOrphanedJobRep
                     var existingId = new JobId(existing.Id);
                     var existingStatus = ParseStatus(existing.Status);
 
-                    var existingResult = ResolveDuplicate(existingId, existingStatus, duplicatePolicy);
-                    if (existingResult.WasRejected || IsActiveState(existingStatus))
+                    var existingResult = DuplicateRules.Resolve(existingId, existingStatus, duplicatePolicy);
+                    if (existingResult.WasRejected || DuplicateRules.IsActive(existingStatus))
                     {
                         await tx.RollbackAsync(cancellationToken).ConfigureAwait(false);
                         return existingResult;
@@ -128,7 +129,7 @@ public sealed class SqlServerStorageProvider : IStorageProvider, IOrphanedJobRep
 
                     if (winner.Id != Guid.Empty)
                     {
-                        return ResolveDuplicate(new JobId(winner.Id), ParseStatus(winner.Status), duplicatePolicy);
+                        return DuplicateRules.Resolve(new JobId(winner.Id), ParseStatus(winner.Status), duplicatePolicy);
                     }
                 }
             }
@@ -615,16 +616,18 @@ public sealed class SqlServerStorageProvider : IStorageProvider, IOrphanedJobRep
         // A job with no attempts left is failed only when this node can load its type. The types are asked first and the
         // statement is restricted to the accepted ones, so a type that shows up in between is skipped, never failed by mistake.
         var exhaustedTypes = await conn.QueryAsync<string>(
-            "SELECT DISTINCT job_type FROM nexjob_jobs WHERE status = 'Processing' AND heartbeat_at < @cutoff AND attempts >= max_attempts",
+            "SELECT DISTINCT job_type FROM nexjob_jobs WITH (READPAST) WHERE status = 'Processing' AND heartbeat_at < @cutoff AND attempts >= max_attempts",
             new { cutoff }).ConfigureAwait(false);
         var allowedTypes = exhaustedTypes.Where(canHandleJobType).ToArray();
 
+        // READPAST: a row another transaction holds is in use (the fetch, a commit); the next sweep takes it. Waiting on it
+        // is one half of a deadlock cycle with the fetch, which locks rows in another order (issue #315).
         // Only the jobs this statement moved to Failed come back, so another node scanning at the same time cannot report them too.
         var failedIds = (await conn.QueryAsync<Guid>(
             """
             DECLARE @moved TABLE (id UNIQUEIDENTIFIER, status NVARCHAR(32));
 
-            UPDATE nexjob_jobs
+            UPDATE nexjob_jobs WITH (READPAST)
             SET status = CASE WHEN attempts >= max_attempts THEN 'Failed' ELSE 'Enqueued' END,
                 completed_at = CASE WHEN attempts >= max_attempts THEN @now ELSE NULL END,
                 exception_message = CASE WHEN attempts >= max_attempts AND exception_message IS NULL THEN 'Orphaned execution exceeded maximum attempts.' ELSE exception_message END,
@@ -1195,25 +1198,8 @@ public sealed class SqlServerStorageProvider : IStorageProvider, IOrphanedJobRep
     private static bool IsTerminalStatus(string? status) =>
         status is "Succeeded" or "Failed" or "Expired" or null;
 
-    private static EnqueueResult ResolveDuplicate(JobId id, JobStatus status, DuplicatePolicy policy)
-    {
-        if (IsActiveState(status))
-        {
-            return new EnqueueResult(id, WasRejected: false);
-        }
-
-        var wasRejected = status == JobStatus.Failed
-            ? policy is DuplicatePolicy.RejectIfFailed or DuplicatePolicy.RejectAlways
-            : policy == DuplicatePolicy.RejectAlways;
-
-        return new EnqueueResult(id, WasRejected: wasRejected);
-    }
-
     private static JobStatus ParseStatus(string status) =>
         Enum.TryParse<JobStatus>(status, out var parsed) ? parsed : JobStatus.Failed;
-
-    private static bool IsActiveState(JobStatus status) =>
-        status is JobStatus.Enqueued or JobStatus.Processing or JobStatus.Scheduled or JobStatus.AwaitingContinuation;
 
     private static bool IsUniqueConstraintViolation(SqlException ex)
     {

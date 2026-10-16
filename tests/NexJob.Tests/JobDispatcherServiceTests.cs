@@ -630,6 +630,111 @@ public sealed class JobDispatcherServiceTests
         ran.Task.IsCompleted.Should().BeFalse();
     }
 
+    /// <summary>N1/N2 (#515): when circuit breaker for a queue is OPEN, that queue is skipped and other queues proceed.</summary>
+    [Fact]
+    public async Task OpenCircuitBreaker_SkipsOpenQueueAndExecutesOtherQueues()
+    {
+        var sink = new LevelLogSink();
+        var ran = new TaskCompletionSource<bool>();
+        using var host = Host.CreateDefaultBuilder()
+            .ConfigureLogging(l => l.AddProvider(sink))
+            .ConfigureServices(services =>
+            {
+                services.AddNexJob(o =>
+                {
+                    o.Workers = 2;
+                    o.PollingInterval = TimeSpan.FromMilliseconds(20);
+                    o.Queues = ["payments", "emails"];
+                    o.ConfigureQueue("payments", q => q.CircuitBreaker = new QueueCircuitBreakerOptions
+                    {
+                        ConsecutiveFailuresThreshold = 1,
+                        OpenDuration = TimeSpan.FromMinutes(5),
+                    });
+                });
+                services.AddTransient(_ => new QuickSuccessJob(ran));
+            })
+            .Build();
+
+        var breakerManager = host.Services.GetRequiredService<IQueueCircuitBreakerManager>();
+        breakerManager.RecordOutcome("payments", false, new InvalidOperationException("boom"));
+        breakerManager.GetState("payments", out _).Should().Be(QueueCircuitState.Open);
+
+        var storage = (InMemoryStorageProvider)host.Services.GetRequiredService<NexJob.Storage.IStorageProvider>();
+        var blockedPaymentJob = QuickRecord("payments");
+        var activeEmailJob = QuickRecord("emails");
+        await storage.EnqueueAsync(blockedPaymentJob);
+        await storage.EnqueueAsync(activeEmailJob);
+
+        await host.StartAsync();
+        await ran.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await TestWait.SucceededAsync(storage, 1);
+        await host.StopAsync();
+
+        (await storage.GetJobByIdAsync(blockedPaymentJob.Id))!.Status.Should().Be(JobStatus.Enqueued, "open circuit prevents fetching from payments");
+        (await storage.GetJobByIdAsync(activeEmailJob.Id))!.Status.Should().Be(JobStatus.Succeeded, "emails queue is not blocked");
+    }
+
+    /// <summary>N1/N2 (#515): when circuit is HalfOpen and allowed concurrency is 0 (probe in flight), queue is skipped.</summary>
+    [Fact]
+    public async Task HalfOpenCircuit_WithZeroAllowedConcurrency_SkipsQueue()
+    {
+        var sink = new LevelLogSink();
+        var ran = new TaskCompletionSource<bool>();
+        var fakeTime = new Microsoft.Extensions.Time.Testing.FakeTimeProvider();
+
+        using var host = Host.CreateDefaultBuilder()
+            .ConfigureLogging(l => l.AddProvider(sink))
+            .ConfigureServices(services =>
+            {
+                services.AddNexJob(o =>
+                {
+                    o.Workers = 2;
+                    o.PollingInterval = TimeSpan.FromMilliseconds(20);
+                    o.Queues = ["payments", "emails"];
+                    o.ConfigureQueue("payments", q => q.CircuitBreaker = new QueueCircuitBreakerOptions
+                    {
+                        ConsecutiveFailuresThreshold = 1,
+                        OpenDuration = TimeSpan.FromSeconds(10),
+                    });
+                });
+                services.AddSingleton<TimeProvider>(fakeTime);
+                services.AddTransient(_ => new QuickSuccessJob(ran));
+            })
+            .Build();
+
+        var breakerManager = host.Services.GetRequiredService<IQueueCircuitBreakerManager>();
+        // Trip breaker to Open
+        breakerManager.RecordOutcome("payments", false, new InvalidOperationException("boom"));
+        breakerManager.GetState("payments", out _).Should().Be(QueueCircuitState.Open);
+
+        // Advance time past OpenDuration to trigger transition to HalfOpen
+        fakeTime.Advance(TimeSpan.FromSeconds(15));
+
+        // First call transitions to HalfOpen with allowedConcurrency = 1 (probe dispatched)
+        var state1 = breakerManager.GetState("payments", out var allowed1);
+        state1.Should().Be(QueueCircuitState.HalfOpen);
+        allowed1.Should().Be(1);
+
+        // Second call while probe is in flight returns HalfOpen with allowedConcurrency = 0
+        var state2 = breakerManager.GetState("payments", out var allowed2);
+        state2.Should().Be(QueueCircuitState.HalfOpen);
+        allowed2.Should().Be(0);
+
+        var storage = (InMemoryStorageProvider)host.Services.GetRequiredService<NexJob.Storage.IStorageProvider>();
+        var blockedPaymentJob = QuickRecord("payments");
+        var activeEmailJob = QuickRecord("emails");
+        await storage.EnqueueAsync(blockedPaymentJob);
+        await storage.EnqueueAsync(activeEmailJob);
+
+        await host.StartAsync();
+        await ran.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await TestWait.SucceededAsync(storage, 1);
+        await host.StopAsync();
+
+        (await storage.GetJobByIdAsync(blockedPaymentJob.Id))!.Status.Should().Be(JobStatus.Enqueued, "half-open with allowed=0 prevents fetching");
+        (await storage.GetJobByIdAsync(activeEmailJob.Id))!.Status.Should().Be(JobStatus.Succeeded, "emails queue is not blocked");
+    }
+
     private static ExecutionWindowSettings AllDayWindow(string timeZone) => new()
     {
         StartTime = new TimeOnly(0, 0),

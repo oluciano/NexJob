@@ -23,7 +23,7 @@ public sealed class ThrottleSpinAndReleaseTests
 
         public bool AcquireResult { get; init; }
 
-        public bool AcquireThrows { get; init; }
+        public bool AcquireThrows { get; set; }
 
         public int AcquireCalls => Volatile.Read(ref _acquireCalls);
 
@@ -99,6 +99,32 @@ public sealed class ThrottleSpinAndReleaseTests
         await registry.ReleaseAsync("never-acquired", CancellationToken.None);
 
         store.ReleaseCalls.Should().Be(0);
+    }
+
+    /// <summary>N1/N3 (#515): Multiple acquisitions decrement distributed holds sequentially (holds - 1) and degraded acquire with hold=0 does not call store on release.</summary>
+    [Fact]
+    public async Task MultipleAcquisitions_ReleaseDecrementsHoldsCorrectly()
+    {
+        var store = new CountingStore { AcquireResult = true };
+        var registry = new ThrottleRegistry(store, NullLogger<ThrottleRegistry>.Instance);
+        const string resource = "res-multi";
+
+        // Step 1: Store functioning normally -> Acquire A (holds becomes 1) and Release A (holds becomes 0 in dictionary)
+        (await registry.TryAcquireAsync(resource, 5, CancellationToken.None)).Should().BeTrue();
+        await registry.ReleaseAsync(resource, CancellationToken.None);
+        store.ReleaseCalls.Should().Be(1);
+
+        // Step 2: Store degrades/fails -> Acquire B succeeds locally (slot taken), but does NOT add distributed hold
+        store.AcquireThrows = true;
+        (await registry.TryAcquireAsync(resource, 5, CancellationToken.None)).Should().BeTrue();
+
+        // Step 3: Store recovers -> Release B. Local slot is released.
+        // TryTakeDistributedHold finds the existing entry in dictionary with holds == 0.
+        // With holds <= 0, it returns false (killing holds <= 0 to < 0, and holds - 1 to holds + 1).
+        // Store.ReleaseCalls must remain 1 (no extra distributed release).
+        store.AcquireThrows = false;
+        await registry.ReleaseAsync(resource, CancellationToken.None);
+        store.ReleaseCalls.Should().Be(1, "releasing a degraded local slot when existing hold is 0 must not call distributed store");
     }
 
     // ─── N3: cancellation while waiting ──────────────────────────────────────

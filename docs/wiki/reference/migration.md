@@ -6,6 +6,23 @@ description: "Step-by-step migration guides for NexJob major version upgrades, i
 
 This page covers every breaking change between NexJob releases and tells you exactly what to update in your code. Schema migrations for PostgreSQL and SQL Server apply automatically at startup. Follow the steps in order for each version jump you're crossing.
 
+## v6.3.0 → v6.4.0
+
+No schema migration, no new public API and no stored format change: the Redis keys, the MongoDB documents and the SQL tables are the same. These changes can need an action or a look:
+
+- **Redis: force-deleting a recurring job now deletes the jobs it created.** The interface and the other providers always did; Redis left them in place and they still ran. If you relied on those jobs surviving a force-delete, stop calling force-delete for that purpose. The delete walks the job index once, so on a very large dataset it takes longer than before; it is an operator action, not a hot path.
+- **Redis: updating, force-deleting or restoring a recurring id that was never registered no longer creates a definition.** The scheduler's own next-execution and last-result writes after a job was deleted behave the same way. A definition fragment an older node already stored is not looked for or removed by this change.
+- **SQL Server: the orphaned-job sweep skips a row another transaction holds** and takes it on the next pass, instead of waiting for it. A job whose row is busy at the moment of a sweep is recovered one sweep interval later. This removes a rare deadlock (error 1205) between the sweep and the job fetch under heavy concurrency.
+- **RabbitMQ trigger: stopping the host cancels an enqueue still waiting on the storage** and gives the message back to the broker, instead of waiting for the storage to answer.
+- **A synchronous dispose of the executor (for example a manual `ServiceProvider.Dispose()`) drains the queued batch acknowledgments** like `DisposeAsync`, instead of dropping them. Disposing twice, or `Dispose` then `DisposeAsync`, is safe.
+
+**Rolling upgrade.** No stored data changes, so 6.3.0 and 6.4.0 nodes can run together. While they do, each node behaves by its own version: a 6.3.0 Redis node can still create a recurring definition fragment or leave created jobs after a force-delete, and a 6.3.0 SQL Server node can still deadlock in the sweep.
+
+**Rollout and rollback.**
+
+- **Roll out:** upgrade one node first. On SQL Server, watch for error 1205 in the database log (it should not appear); on RabbitMQ, restart that node and check that the message in flight is requeued, not lost.
+- **Roll back:** go back to 6.3.0; there is no schema migration to undo and nothing 6.4.0 stores is unreadable by 6.3.0.
+
 ## v6.2.1 → v6.3.0
 
 No schema migration and no stored format change. These changes can need an action:

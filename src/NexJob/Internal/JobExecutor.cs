@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Threading.Channels;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using NexJob.Exceptions;
@@ -25,9 +24,9 @@ internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
     private readonly NexJobOptions _options;
     private readonly ILogger<JobExecutor> _logger;
     private readonly JobWakeUpChannel _wakeUp;
-    private readonly Channel<JobId> _ackChannel;
-    private readonly CancellationTokenSource _ackCts;
-    private readonly Task _ackFlusherTask;
+    private readonly TimeProvider _timeProvider;
+    private readonly JobHeartbeat _heartbeat;
+    private readonly BatchAcknowledger _batchAck;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="JobExecutor"/> class.
@@ -40,6 +39,7 @@ internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
     /// <param name="options">The nex job options.</param>
     /// <param name="wakeUp">The wake-up channel signalled after a successful commit, so promoted continuations are fetched without waiting a poll.</param>
     /// <param name="logger">The logger.</param>
+    /// <param name="timeProvider">The clock used for deadlines and retry times; the system clock when omitted.</param>
     public JobExecutor(
         IJobStorage storage,
         IJobInvokerFactory invokerFactory,
@@ -48,8 +48,10 @@ internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
         ThrottleRegistry throttleRegistry,
         NexJobOptions options,
         JobWakeUpChannel wakeUp,
-        ILogger<JobExecutor> logger)
+        ILogger<JobExecutor> logger,
+        TimeProvider? timeProvider = null)
     {
+        _timeProvider = timeProvider ?? TimeProvider.System;
         _wakeUp = wakeUp;
         _storage = storage;
         _invokerFactory = invokerFactory;
@@ -58,10 +60,9 @@ internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
         _throttleRegistry = throttleRegistry;
         _options = options;
         _logger = logger;
+        _heartbeat = new JobHeartbeat(storage, options, logger);
 
-        _ackChannel = Channel.CreateUnbounded<JobId>(new UnboundedChannelOptions { SingleReader = true });
-        _ackCts = new CancellationTokenSource();
-        _ackFlusherTask = Task.Run(RunBatchAckFlusherAsync, _ackCts.Token);
+        _batchAck = new BatchAcknowledger(storage, wakeUp, logger);
     }
 
     /// <summary>Gets the delays between retries of a failed success commit. Overridable for tests.</summary>
@@ -73,29 +74,10 @@ internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
     ];
 
     /// <inheritdoc/>
-    public void Dispose()
-    {
-        _ackChannel.Writer.TryComplete();
-        _ackCts.Cancel();
-        _ackCts.Dispose();
-    }
+    public void Dispose() => _batchAck.Dispose();
 
     /// <inheritdoc/>
-    public async ValueTask DisposeAsync()
-    {
-        _ackChannel.Writer.Complete();
-        await _ackCts.CancelAsync().ConfigureAwait(false);
-        try
-        {
-            await _ackFlusherTask.ConfigureAwait(false);
-        }
-        catch
-        {
-            // Ignore cancel exceptions during shutdown
-        }
-
-        _ackCts.Dispose();
-    }
+    public ValueTask DisposeAsync() => _batchAck.DisposeAsync();
 
     /// <inheritdoc/>
     public async Task ExecuteJobAsync(JobRecord job, CancellationToken cancellationToken = default)
@@ -109,7 +91,7 @@ internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
             job.Id, job.JobType, job.Attempts, job.MaxAttempts);
 
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        var heartbeatTask = RunHeartbeatAsync(job.Id, cts.Token);
+        var heartbeatTask = _heartbeat.RunAsync(job.Id, cts.Token);
 
         using var loggingScope = _logger.BeginScope(new Dictionary<string, object?>(StringComparer.Ordinal)
         {
@@ -156,7 +138,7 @@ internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
             // Foreign job: the job type or input type cannot be resolved in this process/service.
             // Do not penalize attempts or move to dead-letter. Defer with backoff so the owning service can execute it.
             // The attempt is given back by the storage (RefundAttempt): editing the local copy is not persisted.
-            var retryAt = DateTimeOffset.UtcNow + _options.ForeignJobRetryDelay;
+            var retryAt = _timeProvider.GetUtcNow() + _options.ForeignJobRetryDelay;
             _logger.LogWarning(
                 ex,
                 "Job {JobId} references foreign type '{TypeName}' not available in this host. Deferring until {RetryAt} without penalizing attempts.",
@@ -167,22 +149,14 @@ internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
             activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             activity?.SetTag("nexjob.foreign_job", true);
 
-            await _storage.CommitJobResultAsync(job.Id, new JobExecutionResult
-            {
-                Succeeded = false,
-                Logs = logScope.Entries,
-                Exception = ex,
-                RetryAt = retryAt,
-                RecurringJobId = job.RecurringJobId,
-                RefundAttempt = true,
-            }, CancellationToken.None).ConfigureAwait(false);
+            await CommitFailureAsync(job, logScope.Entries, ex, retryAt, refundAttempt: true).ConfigureAwait(false);
         }
         catch (ThrottleDeferredException ex)
         {
             sw.Stop();
             // The throttled resource stayed saturated: free the worker slot instead of keeping it while waiting.
             // The attempt is refunded by the storage, so this never counts towards MaxAttempts or dead-letter.
-            var retryAt = DateTimeOffset.UtcNow
+            var retryAt = _timeProvider.GetUtcNow()
                 + ThrottleRequeueDelay
                 + TimeSpan.FromMilliseconds(System.Security.Cryptography.RandomNumberGenerator.GetInt32(500));
 
@@ -198,15 +172,7 @@ internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
             activity?.SetTag("nexjob.throttle_deferred", true);
             NexJobMetrics.JobsThrottleDeferred.Add(1, new TagList { { "nexjob.job_type", job.JobType }, { "nexjob.resource", ex.Resource } });
 
-            await _storage.CommitJobResultAsync(job.Id, new JobExecutionResult
-            {
-                Succeeded = false,
-                Logs = logScope.Entries,
-                Exception = ex,
-                RetryAt = retryAt,
-                RecurringJobId = job.RecurringJobId,
-                RefundAttempt = true,
-            }, CancellationToken.None).ConfigureAwait(false);
+            await CommitFailureAsync(job, logScope.Entries, ex, retryAt, refundAttempt: true).ConfigureAwait(false);
         }
         catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
         {
@@ -222,29 +188,14 @@ internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
             activity?.SetStatus(ActivityStatusCode.Error, "interrupted by shutdown");
             activity?.SetTag("nexjob.interrupted", true);
 
-            await _storage.CommitJobResultAsync(job.Id, new JobExecutionResult
-            {
-                Succeeded = false,
-                Logs = logScope.Entries,
-                Exception = ex,
-                RetryAt = DateTimeOffset.UtcNow,
-                RecurringJobId = job.RecurringJobId,
-                RefundAttempt = true,
-            }, CancellationToken.None).ConfigureAwait(false);
+            await CommitFailureAsync(job, logScope.Entries, ex, _timeProvider.GetUtcNow(), refundAttempt: true).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
             sw.Stop();
             var retryAt = HandleFailureAsync(job, ex, activity);
 
-            await _storage.CommitJobResultAsync(job.Id, new JobExecutionResult
-            {
-                Succeeded = false,
-                Logs = logScope.Entries,
-                Exception = ex,
-                RetryAt = retryAt,
-                RecurringJobId = job.RecurringJobId,
-            }, CancellationToken.None).ConfigureAwait(false);
+            await CommitFailureAsync(job, logScope.Entries, ex, retryAt, refundAttempt: false).ConfigureAwait(false);
 
             if (retryAt is null)
             {
@@ -280,11 +231,22 @@ internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
             new TagList { { "nexjob.job_type", jobType } });
     }
 
+    private Task CommitFailureAsync(JobRecord job, IReadOnlyList<JobExecutionLog> logs, Exception exception, DateTimeOffset? retryAt, bool refundAttempt)
+        => _storage.CommitJobResultAsync(job.Id, new JobExecutionResult
+        {
+            Succeeded = false,
+            Logs = logs,
+            Exception = exception,
+            RetryAt = retryAt,
+            RecurringJobId = job.RecurringJobId,
+            RefundAttempt = refundAttempt,
+        }, CancellationToken.None);
+
     private async Task CommitSuccessAsync(JobRecord job, JobExecutionResult result, bool useBatchAck)
     {
         if (useBatchAck)
         {
-            _ackChannel.Writer.TryWrite(job.Id);
+            _batchAck.Enqueue(job.Id);
             _logger.LogDebug("Job {JobId} completed successfully", job.Id);
             return;
         }
@@ -324,7 +286,7 @@ internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
 
     private async Task<bool> TryHandleExpirationAsync(JobRecord job)
     {
-        if (!job.ExpiresAt.HasValue || DateTimeOffset.UtcNow <= job.ExpiresAt.Value)
+        if (!job.ExpiresAt.HasValue || _timeProvider.GetUtcNow() <= job.ExpiresAt.Value)
         {
             return false;
         }
@@ -345,52 +307,15 @@ internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
         JobRecord job,
         CancellationToken cancellationToken)
     {
-        var acquired = new List<ThrottleAttribute>();
-        var waitStarted = Stopwatch.StartNew();
-
-        try
+        var slots = await AcquireThrottleSlotsAsync(ctx, cancellationToken).ConfigureAwait(false);
+        await using (slots.ConfigureAwait(false))
         {
-            foreach (var attr in ctx.ThrottleAttributes)
-            {
-                _logger.LogDebug("Job waiting for throttle slot on resource '{Resource}' (max={Max})",
-                    attr.Resource, attr.MaxConcurrent);
-
-                while (!await _throttleRegistry.TryAcquireWithWaitAsync(
-                    attr.Resource,
-                    attr.MaxConcurrent,
-                    TimeSpan.FromMilliseconds(500),
-                    cancellationToken).ConfigureAwait(false))
-                {
-                    // Waiting keeps this job's worker slot, so the wait is bounded: past it, hand the slot back.
-                    if (waitStarted.Elapsed >= _options.ThrottleMaxWait)
-                    {
-                        throw new ThrottleDeferredException(attr.Resource, waitStarted.Elapsed);
-                    }
-
-                    // Slot still taken: back off (with jitter) instead of spinning against the throttle store.
-                    await Task.Delay(TimeSpan.FromMilliseconds(250 + System.Security.Cryptography.RandomNumberGenerator.GetInt32(100)), cancellationToken).ConfigureAwait(false);
-                }
-
-                acquired.Add(attr);
-            }
-
-            // The limit starts here, after the throttle slots are held, so waiting for a throttled resource
-            // never counts. It uses its own CTS: the heartbeat token and the shutdown token stay untouched.
-            var timeout = ctx.ExecutionTimeoutAttribute?.Timeout ?? _options.DefaultExecutionTimeout;
-            using var timeoutCts = timeout is null ? null : CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            timeoutCts?.CancelAfter(timeout!.Value);
-            var jobToken = timeoutCts?.Token ?? cancellationToken;
-
-            // A job that ignores the token keeps its worker slot. Make that visible once per run: the watchdog is armed by
-            // the timeout and stood down as soon as the job returns.
-            using var watchdogCts = timeoutCts is null ? null : new CancellationTokenSource();
-            using var watchdog = timeoutCts is null
-                ? default
-                : timeoutCts.Token.Register(() => _ = WarnIfCancellationIgnoredAsync(job, timeout!.Value, watchdogCts!.Token, cancellationToken));
-
-            // Only the limit fired (shutdown has priority and is handled by the caller): a normal failure, not an interruption.
-            bool TimedOut() => timeoutCts is { IsCancellationRequested: true } && !cancellationToken.IsCancellationRequested;
-            TimeoutException TimeoutFailure(OperationCanceledException ex) => new($"Job execution timed out after {timeout!.Value}.", ex);
+            // The limit starts here, after the throttle slots are held, so waiting for a throttled resource never counts.
+            using var timeout = new ExecutionTimeout(
+                ctx.ExecutionTimeoutAttribute?.Timeout ?? _options.DefaultExecutionTimeout,
+                cancellationToken,
+                (limit, watchdogToken) => _ = WarnIfCancellationIgnoredAsync(job, limit, watchdogToken, cancellationToken));
+            var jobToken = timeout.Token;
 
             // Terminal delegate: invokes the actual job. Converting here lets filters see the TimeoutException.
             JobExecutionDelegate jobInvoker = async ct =>
@@ -399,9 +324,9 @@ internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
                 {
                     await ctx.Invoker(ctx.JobInstance, ctx.Input, ct).ConfigureAwait(false);
                 }
-                catch (OperationCanceledException ex) when (TimedOut())
+                catch (OperationCanceledException ex) when (timeout.TimedOut)
                 {
-                    throw TimeoutFailure(ex);
+                    throw timeout.Failure(ex);
                 }
             };
 
@@ -433,26 +358,52 @@ internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
                     }
                 }
             }
-            catch (OperationCanceledException ex) when (TimedOut())
+            catch (OperationCanceledException ex) when (timeout.TimedOut)
             {
                 // A filter that observed the token itself, before the job ran.
-                throw TimeoutFailure(ex);
-            }
-            finally
-            {
-                if (watchdogCts is not null)
-                {
-                    await watchdogCts.CancelAsync().ConfigureAwait(false);
-                }
+                throw timeout.Failure(ex);
             }
         }
-        finally
+    }
+
+    private async Task<ThrottleSlots> AcquireThrottleSlotsAsync(JobInvocationContext ctx, CancellationToken cancellationToken)
+    {
+        var slots = new ThrottleSlots(_throttleRegistry);
+        var waitStarted = Stopwatch.StartNew();
+
+        try
         {
-            foreach (var attr in acquired)
+            foreach (var attr in ctx.ThrottleAttributes)
             {
-                await _throttleRegistry.ReleaseAsync(attr.Resource, CancellationToken.None).ConfigureAwait(false);
+                _logger.LogDebug("Job waiting for throttle slot on resource '{Resource}' (max={Max})",
+                    attr.Resource, attr.MaxConcurrent);
+
+                while (!await _throttleRegistry.TryAcquireWithWaitAsync(
+                    attr.Resource,
+                    attr.MaxConcurrent,
+                    TimeSpan.FromMilliseconds(500),
+                    cancellationToken).ConfigureAwait(false))
+                {
+                    // Waiting keeps this job's worker slot, so the wait is bounded: past it, hand the slot back.
+                    if (waitStarted.Elapsed >= _options.ThrottleMaxWait)
+                    {
+                        throw new ThrottleDeferredException(attr.Resource, waitStarted.Elapsed);
+                    }
+
+                    // Slot still taken: back off (with jitter) instead of spinning against the throttle store.
+                    await Task.Delay(TimeSpan.FromMilliseconds(250 + System.Security.Cryptography.RandomNumberGenerator.GetInt32(100)), cancellationToken).ConfigureAwait(false);
+                }
+
+                slots.Add(attr);
             }
         }
+        catch
+        {
+            await slots.DisposeAsync().ConfigureAwait(false);
+            throw;
+        }
+
+        return slots;
     }
 
     private DateTimeOffset? HandleFailureAsync(JobRecord job, Exception ex, Activity? activity)
@@ -518,72 +469,66 @@ internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
         NexJobMetrics.JobsCancellationIgnored.Add(1, new TagList { { "nexjob.job_type", job.JobType } });
     }
 
-    private async Task RunHeartbeatAsync(JobId jobId, CancellationToken cancellationToken)
+    /// <summary>The throttle slots a job holds; disposing releases every one of them.</summary>
+    private sealed class ThrottleSlots : IAsyncDisposable
     {
-        try
+        private readonly ThrottleRegistry _registry;
+        private readonly List<ThrottleAttribute> _held = [];
+
+        public ThrottleSlots(ThrottleRegistry registry) => _registry = registry;
+
+        public void Add(ThrottleAttribute attribute) => _held.Add(attribute);
+
+        public async ValueTask DisposeAsync()
         {
-            while (!cancellationToken.IsCancellationRequested)
+            foreach (var attr in _held)
             {
-                await Task.Delay(_options.HeartbeatInterval, cancellationToken).ConfigureAwait(false);
-                try
-                {
-                    await _storage.UpdateHeartbeatAsync(jobId, CancellationToken.None).ConfigureAwait(false);
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException)
-                {
-                    // A transient storage error must not end the heartbeat, or the orphan watcher would re-run a healthy job.
-                    _logger.LogWarning(ex, "Heartbeat update for job {JobId} failed; will retry on the next interval", jobId);
-                }
+                await _registry.ReleaseAsync(attr.Resource, CancellationToken.None).ConfigureAwait(false);
             }
-        }
-        catch (OperationCanceledException)
-        {
-            // Expected on job completion
         }
     }
 
-    private async Task RunBatchAckFlusherAsync()
+    /// <summary>
+    /// The execution limit of one run. It uses its own CTS, so the heartbeat token and the shutdown token stay untouched,
+    /// and arms a watchdog: a job that ignores the token keeps its worker slot, which is made visible once per run.
+    /// </summary>
+    private sealed class ExecutionTimeout : IDisposable
     {
-        var buffer = new List<JobId>(100);
-        while (!_ackCts.Token.IsCancellationRequested)
-        {
-            try
-            {
-                if (await _ackChannel.Reader.WaitToReadAsync(_ackCts.Token).ConfigureAwait(false))
-                {
-                    while (buffer.Count < 100 && _ackChannel.Reader.TryRead(out var id))
-                    {
-                        buffer.Add(id);
-                    }
+        private readonly TimeSpan? _limit;
+        private readonly CancellationToken _shutdown;
+        private readonly CancellationTokenSource? _cts;
+        private readonly CancellationTokenSource? _watchdogCts;
+        private readonly CancellationTokenRegistration _watchdog;
 
-                    if (buffer.Count > 0)
-                    {
-                        await _storage.AcknowledgeBatchAsync(buffer, CancellationToken.None).ConfigureAwait(false);
-                        _wakeUp.Signal();
-                        buffer.Clear();
-                    }
-                }
-            }
-            catch (OperationCanceledException)
+        public ExecutionTimeout(TimeSpan? limit, CancellationToken shutdown, Action<TimeSpan, CancellationToken> onLimitReached)
+        {
+            _limit = limit;
+            _shutdown = shutdown;
+            if (limit is null)
             {
-                break;
+                return;
             }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error flushing batch acknowledgments to storage");
-                await Task.Delay(50, CancellationToken.None).ConfigureAwait(false);
-            }
+
+            _cts = CancellationTokenSource.CreateLinkedTokenSource(shutdown);
+            _cts.CancelAfter(limit.Value);
+            _watchdogCts = new CancellationTokenSource();
+            _watchdog = _cts.Token.Register(() => onLimitReached(limit.Value, _watchdogCts.Token));
         }
 
-        // Drain any leftovers
-        while (_ackChannel.Reader.TryRead(out var leftoverId))
-        {
-            buffer.Add(leftoverId);
-        }
+        /// <summary>Gets the token the job runs under: the limit when there is one, the shutdown token otherwise.</summary>
+        public CancellationToken Token => _cts?.Token ?? _shutdown;
 
-        if (buffer.Count > 0)
+        /// <summary>Gets a value indicating whether only the limit fired. Shutdown has priority and is handled by the caller: a normal failure, not an interruption.</summary>
+        public bool TimedOut => _cts is { IsCancellationRequested: true } && !_shutdown.IsCancellationRequested;
+
+        public TimeoutException Failure(OperationCanceledException ex) => new($"Job execution timed out after {_limit!.Value}.", ex);
+
+        public void Dispose()
         {
-            await _storage.AcknowledgeBatchAsync(buffer, CancellationToken.None).ConfigureAwait(false);
+            _watchdog.Dispose();
+            _watchdogCts?.Cancel(); // stands the watchdog down as soon as the job returns
+            _watchdogCts?.Dispose();
+            _cts?.Dispose();
         }
     }
 }

@@ -19,19 +19,4 @@ public sealed class MongoStorageProviderUnitTests
 
         result.Should().NotBeNull();
     }
-
-    /// <summary>Tests which statuses count as active.</summary>
-    /// <param name="status">The status.</param>
-    /// <param name="expected">Whether it is active.</param>
-    [Theory]
-    [InlineData(JobStatus.Enqueued, true)]
-    [InlineData(JobStatus.Processing, true)]
-    [InlineData(JobStatus.Succeeded, false)]
-    [InlineData(JobStatus.Failed, false)]
-    public void IsActiveState_IdentifiesCorrectly(JobStatus status, bool expected)
-    {
-        var method = typeof(MongoStorageProvider).GetMethod("IsActiveState", BindingFlags.NonPublic | BindingFlags.Static)!;
-        var result = (bool)method.Invoke(null, new object[] { status })!;
-        result.Should().Be(expected);
-    }
 }

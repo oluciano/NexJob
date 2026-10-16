@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using NexJob.Internal;
 using NexJob.Storage;
 using StackExchange.Redis;
 
@@ -497,9 +498,9 @@ public sealed class RedisStorageProvider : IStorageProvider, IOrphanedJobReporte
                         var jobHash = await _db.HashGetAllAsync(JobKey(returnedId!)).ConfigureAwait(false);
                         var existingStatus = GetStatusFromHash(jobHash);
 
-                        var enqueueResult = ResolveDuplicate(existingJobId, existingStatus, duplicatePolicy);
+                        var enqueueResult = DuplicateRules.Resolve(existingJobId, existingStatus, duplicatePolicy);
 
-                        if (enqueueResult.WasRejected || IsActiveState(existingStatus))
+                        if (enqueueResult.WasRejected || DuplicateRules.IsActive(existingStatus))
                         {
                             return enqueueResult;
                         }
@@ -792,7 +793,7 @@ public sealed class RedisStorageProvider : IStorageProvider, IOrphanedJobReporte
         CancellationToken cancellationToken = default)
     {
         var now = DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture);
-        await _db.HashSetAsync(RecurringKey(recurringJobId), new[]
+        await HashSetIfRecurringExistsAsync(recurringJobId, new[]
         {
             new HashEntry("nextExecution", nextExecution.ToString("O", CultureInfo.InvariantCulture)),
             new HashEntry("lastExecution", now),
@@ -805,7 +806,7 @@ public sealed class RedisStorageProvider : IStorageProvider, IOrphanedJobReporte
         string recurringJobId, JobStatus status, string? errorMessage,
         CancellationToken cancellationToken = default)
     {
-        await _db.HashSetAsync(RecurringKey(recurringJobId), new[]
+        await HashSetIfRecurringExistsAsync(recurringJobId, new[]
         {
             new HashEntry("lastExecutionStatus", status.ToString()),
             new HashEntry("lastExecutionError", errorMessage ?? string.Empty),
@@ -860,7 +861,7 @@ public sealed class RedisStorageProvider : IStorageProvider, IOrphanedJobReporte
         string recurringJobId, string? cronOverride, bool enabled,
         CancellationToken cancellationToken = default)
     {
-        await _db.HashSetAsync(RecurringKey(recurringJobId), new[]
+        await HashSetIfRecurringExistsAsync(recurringJobId, new[]
         {
             new HashEntry("cronOverride", cronOverride ?? string.Empty),
             new HashEntry("enabled", enabled ? "true" : "false"),
@@ -872,19 +873,38 @@ public sealed class RedisStorageProvider : IStorageProvider, IOrphanedJobReporte
     public async Task ForceDeleteRecurringJobAsync(
         string recurringJobId, CancellationToken cancellationToken = default)
     {
-        await _db.HashSetAsync(RecurringKey(recurringJobId), new[]
+        await HashSetIfRecurringExistsAsync(recurringJobId, new[]
         {
             new HashEntry("deletedByUser", "true"),
             new HashEntry("enabled", "false"),
             new HashEntry("updatedAt", DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture)),
         }).ConfigureAwait(false);
+
+        // The jobs the schedule created go with it. The job index is walked once with a cursor, so it stays correct while
+        // jobs change. This is an operator action, not a hot path, and it needs no extra index kept in step with every
+        // enqueue and purge.
+        await EnsureIndexAsync().ConfigureAwait(false);
+        var created = new List<string>();
+        await foreach (var (key, hash) in ScanIndexedJobsAsync(cancellationToken).ConfigureAwait(false))
+        {
+            if (hash.Length > 0
+                && string.Equals(ParseHash(hash).GetValueOrDefault("recurringJobId"), recurringJobId, StringComparison.Ordinal))
+            {
+                created.Add(key.ToString()[JobKey(string.Empty).Length..]);
+            }
+        }
+
+        foreach (var id in created)
+        {
+            await DeleteJobAsync(new JobId(Guid.Parse(id)), cancellationToken).ConfigureAwait(false);
+        }
     }
 
     /// <inheritdoc/>
     public async Task RestoreRecurringJobAsync(
         string recurringJobId, CancellationToken cancellationToken = default)
     {
-        await _db.HashSetAsync(RecurringKey(recurringJobId), new[]
+        await HashSetIfRecurringExistsAsync(recurringJobId, new[]
         {
             new HashEntry("deletedByUser", "false"),
             new HashEntry("enabled", "true"),
@@ -1810,23 +1830,6 @@ public sealed class RedisStorageProvider : IStorageProvider, IOrphanedJobReporte
         new("expiresAt", job.ExpiresAt?.ToString("O", CultureInfo.InvariantCulture) ?? string.Empty),
     ];
 
-    private static bool IsActiveState(JobStatus status) =>
-        status is JobStatus.Enqueued or JobStatus.Processing or JobStatus.Scheduled or JobStatus.AwaitingContinuation;
-
-    private static EnqueueResult ResolveDuplicate(JobId id, JobStatus status, DuplicatePolicy policy)
-    {
-        if (IsActiveState(status))
-        {
-            return new EnqueueResult(id, WasRejected: false);
-        }
-
-        var wasRejected = status == JobStatus.Failed
-            ? policy is DuplicatePolicy.RejectIfFailed or DuplicatePolicy.RejectAlways
-            : policy == DuplicatePolicy.RejectAlways;
-
-        return new EnqueueResult(id, WasRejected: wasRejected);
-    }
-
     private static JobStatus GetStatusFromHash(HashEntry[] hash)
     {
         var statusEntry = Array.Find(hash, e => e.Name == "status");
@@ -1988,6 +1991,19 @@ public sealed class RedisStorageProvider : IStorageProvider, IOrphanedJobReporte
     }
 
     // ── Private instance helpers ──────────────────────────────────────────────
+
+    /// <summary>
+    /// Writes fields to a recurring job's hash only if the job exists, in one atomic step. Writing to a missing key would
+    /// create a definition made of just these fields, which then fails to read and makes a later registration inherit them.
+    /// </summary>
+    private async Task HashSetIfRecurringExistsAsync(string recurringJobId, HashEntry[] fields)
+    {
+        var key = RecurringKey(recurringJobId);
+        var transaction = _db.CreateTransaction();
+        transaction.AddCondition(Condition.KeyExists(key));
+        _ = transaction.HashSetAsync(key, fields);
+        await transaction.ExecuteAsync().ConfigureAwait(false);
+    }
 
     // One sorted set exists per non-empty queue, so this scan is bounded by the number of queues.
     private async Task<List<string>> GetQueueKeysAsync()

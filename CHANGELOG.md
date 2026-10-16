@@ -6,6 +6,34 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [6.4.0] - 2026-10-16
+
+### Fixed
+
+- SQL Server: the orphaned-job sweep no longer deadlocks with the job fetch. It locked every row it examined in index order while the fetch locks rows by priority, so under load SQL Server picked one of them as the victim (about 2% of load-test runs); the sweep now skips a row another transaction holds and takes it on the next pass (issue #315).
+- Redis: force-deleting a recurring job now also deletes the jobs it created, as the other providers and the interface documentation say. They used to stay and run (issue #542).
+- Redis: updating, force-deleting or restoring a recurring job id that was never registered (and the scheduler's next-execution and last-result writes after a job was deleted) no longer creates a phantom definition. Reading it threw, and a recurring job registered afterwards was born disabled and deleted (issue #543).
+- RabbitMQ trigger: stopping the host now cancels an enqueue still waiting on the storage and gives the message back, instead of waiting for the storage to answer. The enqueue ignored the stopping token (issue #537).
+- Disposing the executor synchronously (for example a manual `ServiceProvider.Dispose()`) no longer loses batch acknowledgments still queued: it now drains them like `DisposeAsync`. Disposal is also idempotent in every combination of `Dispose` and `DisposeAsync` (issue #527).
+
+### Documentation
+
+- Salesforce Streaming: a "Behind an API gateway" section shows how to send the access token in another header with a `DelegatingHandler`, with a test that runs the recipe against the Bayeux client (issue #550).
+
+### Tests
+
+- SQL Server deadlock diagnostic: the load test lists every resource of a deadlock graph and the full XML, not only key and page locks. A graph from CI was empty because of that (issue #315).
+- Shared storage contract: the recurring-job lock (`TryAcquireRecurringJobLockAsync` / `ReleaseRecurringJobLockAsync`) is now tested on all five providers, not only in memory (issue #539).
+- Shared storage contract: recurring-job definitions (`GetRecurringJobByIdAsync`, `GetRecurringJobAsync`, `UpdateRecurringJobConfigAsync`, `ForceDeleteRecurringJobAsync`, `RestoreRecurringJobAsync`) are tested on all five providers. It found two Redis defects, tracked in #542 and #543 (issue #541).
+- Shared storage contract: the server-registry tests (Redis, SQL Server) and the concurrent-dedup tests (Redis, MongoDB) were skipped by provider name; they now run on all five providers and pass. `GetJobsByTagAsync` is tested on all five (issue #547).
+- Hardened unit tests covering core execution mutation survivors across `JobRecordFactory`, `DeadLetterDispatcherTests`, `JobDispatcherService`, `DefaultScheduler`, `DefaultQueueCircuitBreakerManager`, `ThrottleRegistry`, and `InMemoryStorageProvider` (issue #515).
+
+### Changed
+
+- The five broker triggers (Kafka, RabbitMQ, AWS SQS, Azure Service Bus, Google Pub/Sub) build the job for a received message, and Kafka, RabbitMQ and Service Bus classify permanent failures, through one shared internal `TriggerJob` instead of five copies. No behaviour change (issue #534).
+- The duplicate-handling rules (`ResolveDuplicate`, `IsActiveState`) live once in the core (`DuplicateRules`) instead of being copied into the five storage providers. No behaviour change (issue #521).
+- `JobExecutor` reads the clock through an injected `TimeProvider` (system clock by default) for the deadline check and the retry times it computes. No behaviour change; the deadline boundary and retry times can now be tested exactly (issue #517).
+
 ## [6.3.0] - 2026-10-12
 
 ### Added

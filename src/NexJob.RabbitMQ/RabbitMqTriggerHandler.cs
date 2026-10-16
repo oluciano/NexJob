@@ -130,9 +130,6 @@ internal sealed class RabbitMqTriggerHandler : IHostedService, IAsyncDisposable
     }
 
     // The message itself is unusable and redelivery can never help: malformed payload or format.
-    private static bool IsPermanent(Exception ex) =>
-        ex is FormatException or System.Text.Json.JsonException or ArgumentException;
-
     private static string? ExtractTraceparent(IBasicProperties props)
     {
         if (props.Headers is not null &&
@@ -273,19 +270,15 @@ internal sealed class RabbitMqTriggerHandler : IHostedService, IAsyncDisposable
             var inputJson = Encoding.UTF8.GetString(ea.Body.ToArray());
 
             // 2. Build job record
-            job = JobRecordFactory.Build(
+            job = TriggerJob.Build(
                 jobType: jobType,
-                inputType: typeof(string).AssemblyQualifiedName!,
-                inputJson: JsonSerializer.Serialize(inputJson),
+                body: inputJson,
+                idempotencyKey: idempotencyKey,
+                source: "rabbitmq",
+                traceParent: traceparent,
                 options: _nexJobOptions,
                 queue: _options.TargetQueue,
-                priority: _options.JobPriority,
-                idempotencyKey: idempotencyKey,
-                status: JobStatus.Enqueued,
-                scheduledAt: null,
-                tags: new[] { "trigger:rabbitmq" },
-                expiresAt: null,
-                traceParent: traceparent);
+                priority: _options.JobPriority);
         }
         catch (OperationCanceledException)
         {
@@ -304,7 +297,7 @@ internal sealed class RabbitMqTriggerHandler : IHostedService, IAsyncDisposable
         try
         {
             // 3. Enqueue — wake-up signal is handled internally by IScheduler
-            await _scheduler.EnqueueAsync(job, DuplicatePolicy.AllowAfterFailed, CancellationToken.None)
+            await _scheduler.EnqueueAsync(job, DuplicatePolicy.AllowAfterFailed, _stoppingCts?.Token ?? CancellationToken.None)
                 .ConfigureAwait(false);
 
             // 4. Ack ONLY after successful enqueue
@@ -320,7 +313,7 @@ internal sealed class RabbitMqTriggerHandler : IHostedService, IAsyncDisposable
             // Shutdown in progress — nack with requeue so message is not lost
             _channel?.BasicNack(deliveryTag, multiple: false, requeue: true);
         }
-        catch (Exception ex) when (IsPermanent(ex))
+        catch (Exception ex) when (TriggerJob.IsPermanentFailure(ex))
         {
             _logger.LogWarning(ex, "RabbitMQ message can never be enqueued. Nacking with requeue: false.");
             _channel?.BasicNack(deliveryTag, multiple: false, requeue: false);
