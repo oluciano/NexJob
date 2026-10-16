@@ -927,11 +927,36 @@ public abstract class StorageProviderTestsBase
         var update = async () => await recurring.UpdateRecurringJobConfigAsync(unknown, "0 3 * * *", enabled: false);
         var forceDelete = async () => await recurring.ForceDeleteRecurringJobAsync(unknown);
         var restore = async () => await recurring.RestoreRecurringJobAsync(unknown);
+        var next = async () => await recurring.SetRecurringJobNextExecutionAsync(unknown, DateTimeOffset.UtcNow);
+        var result = async () => await recurring.SetRecurringJobLastExecutionResultAsync(unknown, JobStatus.Failed, "boom");
 
         await update.Should().NotThrowAsync();
         await forceDelete.Should().NotThrowAsync();
         await restore.Should().NotThrowAsync();
+        await next.Should().NotThrowAsync();
+        await result.Should().NotThrowAsync();
         (await recurring.GetRecurringJobByIdAsync(unknown)).Should().BeNull("a no-op must not create a definition");
+    }
+
+    [Fact]
+    public async Task A_recurring_job_registered_after_a_change_on_its_unknown_id_gets_the_normal_defaults()
+    {
+        if (!ChangesToAnUnknownRecurringJobAreNoOps)
+        {
+            return;
+        }
+
+        var (_, recurring, _, _) = await CreateStorageAsync();
+        var record = MakeRecurring();
+        await recurring.ForceDeleteRecurringJobAsync(record.RecurringJobId);
+        await recurring.UpdateRecurringJobConfigAsync(record.RecurringJobId, "0 3 * * *", enabled: false);
+
+        await recurring.UpsertRecurringJobAsync(record);
+        var found = await recurring.GetRecurringJobByIdAsync(record.RecurringJobId);
+
+        found!.Enabled.Should().BeTrue("a change on an id that did not exist must leave nothing behind");
+        found.DeletedByUser.Should().BeFalse();
+        found.CronOverride.Should().BeNull();
     }
 
     // ── Recurring job lock ─────────────────────────────────────────────────────

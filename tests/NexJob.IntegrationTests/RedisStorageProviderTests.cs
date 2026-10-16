@@ -829,11 +829,8 @@ public sealed class RedisStorageProviderTests : StorageProviderTestsBase, IClass
         return job.Id.Value;
     }
 
-    // Both gates below are red on Redis today; the issues track the fix and the override goes away with it.
+    // The gate below is red on Redis today; the issue tracks the fix and the override goes away with it.
 
     /// <inheritdoc/>
     protected override bool ForceDeleteRemovesTheJobsItCreated => false; // #542
-
-    /// <inheritdoc/>
-    protected override bool ChangesToAnUnknownRecurringJobAreNoOps => false; // #543
 }
