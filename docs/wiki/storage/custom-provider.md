@@ -79,7 +79,7 @@ Every method is abstract except the four that have a default, marked below: `Fet
 | `SetRecurringJobNextExecutionAsync`, `SetRecurringJobLastExecutionResultAsync` | Records the next and the last execution. |
 | `UpdateRecurringJobConfigAsync` | Applies a change an operator made at runtime. |
 | `DeleteRecurringJobAsync` | Removes a definition. |
-| `ForceDeleteRecurringJobAsync`, `RestoreRecurringJobAsync` | Soft-deletes a definition so configuration cannot recreate it, and undoes that. |
+| `ForceDeleteRecurringJobAsync`, `RestoreRecurringJobAsync` | Soft-deletes a definition so configuration cannot recreate it, and deletes the jobs it created; restore undoes the flag, not the deleted jobs. |
 | `TryAcquireRecurringJobLockAsync`, `ReleaseRecurringJobLockAsync` | The lock that keeps two nodes from firing the same schedule. |
 
 ## `IDashboardStorage`
