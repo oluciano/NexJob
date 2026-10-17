@@ -347,7 +347,7 @@ internal sealed class RecurringJobDetailPage : IComponent
                 var shortId = idStr[..Math.Min(8, idStr.Length)];
 
                 return
-                    $"<tr>" +
+                    $"<tr data-href=\"{PathPrefix}/jobs/{idStr}{clusterSuffix}\">" +
                     $"<td style=\"color:var(--text-tertiary);font-size:12px\">{rowNum}</td>" +
                     $"<td>{Helpers.BadgeHtml(exec.Status)}</td>" +
                     $"<td><a href=\"{PathPrefix}/jobs/{idStr}{clusterSuffix}\" style=\"color:var(--primary);font-family:monospace;font-size:12px;text-decoration:none;font-weight:500\">{shortId}…</a></td>" +
