@@ -561,6 +561,39 @@ public sealed class JobDispatcherServiceTests
         await act.Should().ThrowAsync<InvalidOperationException>();
     }
 
+    /// <summary>
+    /// N1 (#579): an unreadable time zone is rejected before the service starts, so it never logs "started" nor reaches the
+    /// loop. Validating inside ExecuteAsync only fails the start on hosts where StartAsync runs its first part (Hosting 8).
+    /// </summary>
+    [Fact]
+    public async Task ExecutionWindow_WithUnknownTimeZone_RejectsTheStartBeforeTheServiceStarts()
+    {
+        var sink = new LevelLogSink();
+        using var host = BuildQueueHost(sink, new TaskCompletionSource<bool>(), o =>
+            o.ConfigureQueue("default", q => q.ExecutionWindow = AllDayWindow("Not/AZone")));
+
+        var act = () => host.StartAsync();
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+        sink.Entries.Should().NotContain(e => e.Message.Contains("JobDispatcherService started", StringComparison.Ordinal));
+    }
+
+    /// <summary>N3 (#579): a host that does not fetch jobs (Workers = 0) does not read the zones, so it starts.</summary>
+    [Fact]
+    public async Task ExecutionWindow_WithUnknownTimeZoneAndNoWorkers_StartsTheHost()
+    {
+        using var host = BuildQueueHost(new LevelLogSink(), new TaskCompletionSource<bool>(), o =>
+        {
+            o.Workers = 0;
+            o.ConfigureQueue("default", q => q.ExecutionWindow = AllDayWindow("Not/AZone"));
+        });
+
+        var act = () => host.StartAsync();
+
+        await act.Should().NotThrowAsync();
+        await host.StopAsync();
+    }
+
     /// <summary>N1 (#472): IANA and UTC ids still start, so the validation does not reject what worked.</summary>
     [Theory]
     [InlineData("UTC")]
