@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Net.Http.Headers;
 using NexJob.Configuration;
 using NexJob.Dashboard.Pages;
 using NexJob.Internal;
@@ -103,9 +104,18 @@ public sealed class DashboardMiddleware
         }
 
         // Handle API actions (POST)
-        if (string.Equals(context.Request.Method, HttpMethods.Post, StringComparison.Ordinal) && await HandleActionsAsync(context, subPath, activeCluster).ConfigureAwait(false))
+        if (string.Equals(context.Request.Method, HttpMethods.Post, StringComparison.Ordinal))
         {
-            return;
+            if (IsCrossSite(context.Request))
+            {
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                return;
+            }
+
+            if (await HandleActionsAsync(context, subPath, activeCluster).ConfigureAwait(false))
+            {
+                return;
+            }
         }
 
         // Render page
@@ -153,6 +163,37 @@ public sealed class DashboardMiddleware
             return output.ToHtmlString();
 #pragma warning restore MA0004
         }).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Tells whether a request comes from another site (CSRF). <c>Sec-Fetch-Site</c> is set by the browser and a page
+    /// cannot forge it: only <c>same-origin</c> and <c>none</c> pass. Without it (older browsers) the <c>Origin</c> must be
+    /// the origin of this request. Without both there is no browser involved (scripts, tests), so the request is accepted.
+    /// </summary>
+    private static bool IsCrossSite(HttpRequest request)
+    {
+        if (request.Headers.TryGetValue("Sec-Fetch-Site", out var site) && site.Count > 0)
+        {
+            var value = site.ToString();
+            return !string.Equals(value, "same-origin", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(value, "none", StringComparison.OrdinalIgnoreCase);
+        }
+
+        if (!request.Headers.TryGetValue(HeaderNames.Origin, out var origin) || origin.Count == 0)
+        {
+            return false;
+        }
+
+        if (!Uri.TryCreate(origin.ToString(), UriKind.Absolute, out var uri)
+            || !(string.Equals(uri.Scheme, Uri.UriSchemeHttp, StringComparison.Ordinal) || string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.Ordinal)))
+        {
+            return true;
+        }
+
+        var defaultPort = string.Equals(request.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) ? 443 : 80;
+        return !string.Equals(uri.Scheme, request.Scheme, StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(uri.Host, request.Host.Host, StringComparison.OrdinalIgnoreCase)
+            || uri.Port != (request.Host.Port ?? defaultPort);
     }
 
 #pragma warning disable SCS0027
