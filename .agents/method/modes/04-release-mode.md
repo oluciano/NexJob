@@ -95,7 +95,7 @@ Every release validates the full catalog of packages:
 ### Post-Release & Deployment Gates
 - [ ] Release PR merged into `main` using **Merge Commit** (`--no-ff`)
 - [ ] Tag synced back to `develop` (`git merge origin/main --no-ff`)
-- [ ] Live Demo deployed to Fly.io if Dashboard or samples were updated (`fly deploy`)
+- [ ] Live Demo deployed to Fly.io if Dashboard or samples were updated (`fly deploy -c deploy/fly.toml`, from the repository root)
 
 ### Prohibited Actions (Non-Negotiable)
 - ❌ **NEVER** push directly to `main`
