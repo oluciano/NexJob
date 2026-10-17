@@ -46,6 +46,8 @@ public sealed class DashboardMiddleware
             return;
         }
 
+        DashboardSecurityHeaders.Apply(context.Response.Headers);
+
         var authHandler = context.RequestServices.GetService<IDashboardAuthorizationHandler>();
         if (authHandler is not null && !await authHandler.AuthorizeAsync(context).ConfigureAwait(false))
         {

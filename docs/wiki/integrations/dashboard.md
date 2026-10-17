@@ -260,6 +260,12 @@ builder.Services.AddSingleton<IDashboardAuthorizationHandler, BasicAuthDashboard
 !!! warning
     Always put a TLS-terminating proxy in front when using HTTP Basic, because credentials are sent in plaintext. A handler that throws an exception never grants access.
 
+### What the dashboard protects on its own
+
+- **Requests from another site are refused.** Every action (`POST`) is checked: the browser header `Sec-Fetch-Site` must be `same-origin` or `none`; for a browser that does not send it, the `Origin` header must be the origin of the request. Anything else gets `403` and changes nothing. A page on another site can therefore not submit a form to the dashboard, with the credentials of the operator (HTTP Basic, a cookie) or, on the default standalone host, with none. Requests that carry neither header (scripts, `curl`) are accepted. Behind a reverse proxy that changes the host, current browsers are not affected because they send `Sec-Fetch-Site`; very old browsers send only `Origin`, which must then match the host the dashboard sees.
+- **Security headers.** Every dashboard response carries `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: same-origin` and a `Content-Security-Policy` that forbids framing (`frame-ancestors 'none'`), plugins, a changed `<base>` and forms that post to another site, and keeps loads on the same origin except the font stylesheet from `fonts.googleapis.com`. The pages use inline scripts, so `script-src` allows `'unsafe-inline'`. A header that your application or proxy has already set is not overwritten.
+- **What the pages show.** The job detail page shows the input JSON, the checkpoint, the error messages and the stack traces exactly as stored: whoever can open the dashboard sees whatever those payloads contain, so keep identifiers, personal data and secrets out of job inputs, or restrict who can reach the dashboard.
+
 
 ---
 
