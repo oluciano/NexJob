@@ -6,6 +6,19 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [6.5.0] - 2026-10-17
+
+### Added
+- **Dashboard: clickable rows.** Catalog, Recent Jobs on the Overview and the Execution History of a recurring schedule open the related page on click; buttons and links inside a row keep their own action (#555).
+- **Dashboard: Recurring detail.** A status filter on the Execution History and the total, succeeded and failed runs of the job type, from the catalog (#555).
+
+### Fixed
+- **Dashboard: the Queues page lists a queue that an active worker polls even when it has no job**, instead of "No active queues." (#554).
+- **Dashboard: the logo in the `semi-dark` theme is readable** (#562).
+
+### Changed
+- Dependencies: `Grpc.Net.Client`, `Grpc.Tools`, `Grpc.AspNetCore` 2.84; `Google.Protobuf` 3.36 (Salesforce trigger); `Hangfire.InMemory` 0.11 (benchmarks); GitHub Actions and Docker base images.
+
 ## [6.4.0] - 2026-10-16
 
 ### Fixed
