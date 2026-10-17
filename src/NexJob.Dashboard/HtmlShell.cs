@@ -119,6 +119,7 @@ internal static class HtmlShell
             --bg-secondary: #f4f5f7;
             --bg-tertiary: #ebeef2;
             --header-bg: #1b1e2e;
+            --header-text: #f8fafc;
             --sidebar-bg: #131623;
             --sidebar-text: #cfd3db;
             --sidebar-hover: #1b1e2e;
@@ -171,7 +172,7 @@ internal static class HtmlShell
         }
         .header-left { display: flex; align-items: center; gap: 16px; }
         .header-logo { display: flex; align-items: center; gap: 10px; text-decoration: none; color: inherit; width: calc(var(--sidebar-width) - 40px); }
-        .header-logo h1 { font-size: 20px; font-weight: 700; color: var(--text-primary); letter-spacing: -0.5px; }
+        .header-logo h1 { font-size: 20px; font-weight: 700; color: var(--header-text, var(--text-primary)); letter-spacing: -0.5px; }
         .env-badge { display: inline-flex; align-items: center; max-width: 160px; padding: 4px 10px; border-radius: 6px; font-size: 12px; font-weight: 700; letter-spacing: 0.4px; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .env-prod { background: #dc2626; color: #ffffff; }
         .env-stage { background: #f59e0b; color: #1f2937; }
