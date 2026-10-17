@@ -79,4 +79,45 @@ public sealed class DashboardMiddlewareTests
             return (response.StatusCode, after is not null);
         });
     }
+
+    [Theory]
+    [InlineData("/dashboard")]
+    [InlineData("/dashboard/jobs")]
+    [InlineData("/dashboard/queues")]
+    [InlineData("/dashboard/catalog")]
+    [InlineData("/dashboard/recurring")]
+    [InlineData("/dashboard/nope")]
+    public async Task Responses_CarryTheSecurityHeaders(string route)
+    {
+        // N1 + N3 (#595): every response of the dashboard, a page or a 404, forbids framing and sniffing.
+        var headers = await HeadersOfAsync(route);
+
+        headers["X-Content-Type-Options"].Should().Be("nosniff");
+        headers["X-Frame-Options"].Should().Be("DENY");
+        headers["Referrer-Policy"].Should().Be("same-origin");
+        var csp = headers["Content-Security-Policy"];
+        csp.Should().Contain("frame-ancestors 'none'").And.Contain("object-src 'none'")
+            .And.Contain("base-uri 'self'").And.Contain("form-action 'self'").And.Contain("default-src 'self'");
+    }
+
+    [Fact]
+    public void SecurityHeaders_AlreadySetByTheHost_AreKept()
+    {
+        // N2 (Negative, #595): a header that the application or a proxy set is not overwritten.
+        var context = new Microsoft.AspNetCore.Http.DefaultHttpContext();
+        context.Response.Headers["X-Frame-Options"] = "SAMEORIGIN";
+
+        NexJob.Dashboard.DashboardSecurityHeaders.Apply(context.Response.Headers);
+
+        context.Response.Headers["X-Frame-Options"].ToString().Should().Be("SAMEORIGIN");
+        context.Response.Headers["X-Content-Type-Options"].ToString().Should().Be("nosniff");
+    }
+
+    private static Task<Dictionary<string, string>> HeadersOfAsync(string route) =>
+        DashboardTestHost.UseAsync<Dictionary<string, string>>(null, async (client, _) =>
+        {
+            using var response = await client.GetAsync(route);
+            return response.Headers.Concat(response.Content.Headers)
+                .ToDictionary(h => h.Key, h => string.Join(", ", h.Value), StringComparer.OrdinalIgnoreCase);
+        });
 }
