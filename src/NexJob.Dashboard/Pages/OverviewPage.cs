@@ -168,7 +168,7 @@ internal sealed class OverviewPage : IComponent
                     duration = d.TotalSeconds < 1 ? "< 1s" : $"{(int)d.TotalSeconds}s";
                 }
 
-                recentJobsSb.Append("<tr>")
+                recentJobsSb.Append("<tr data-href=\"").Append(PathPrefix).Append("/jobs/").Append(j.Id.Value).Append("\">")
                     .Append("<td style=\"font-family:monospace;font-size:12px\">#").Append(j.Id.Value.ToString()[..8]).Append("</td>")
                     .Append("<td>").Append(System.Web.HttpUtility.HtmlEncode(Helpers.ShortType(j.JobType))).Append("</td>")
                     .Append("<td>").Append(HtmlFragments.StatusBadge(j.Status.ToString())).Append("</td>")
