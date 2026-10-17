@@ -112,6 +112,26 @@ internal sealed class JobDispatcherService : BackgroundService
     }
 
     /// <inheritdoc/>
+    public override Task StartAsync(CancellationToken cancellationToken)
+    {
+        // Validated here, not in ExecuteAsync: since .NET 10 BackgroundService.StartAsync no longer runs the first
+        // part of ExecuteAsync, so a throw there stopped the host after the start instead of failing it.
+        if (_options.Workers > 0)
+        {
+            foreach (var q in _options.PolledQueues)
+            {
+                if (_options.SettingsFor(q)?.ExecutionWindow is { } window && !window.TryIsWithinWindow(DateTimeOffset.UtcNow, out _))
+                {
+                    throw new InvalidOperationException(
+                        $"The execution window of queue '{q}' uses the time zone '{window.TimeZone}', which this machine does not know. Use an IANA id such as 'America/Sao_Paulo' or 'UTC' (on a minimal container image, install the tzdata package).");
+                }
+            }
+        }
+
+        return base.StartAsync(cancellationToken);
+    }
+
+    /// <inheritdoc/>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         _polledQueues = _options.PolledQueues;
@@ -154,15 +174,6 @@ internal sealed class JobDispatcherService : BackgroundService
         {
             _logger.LogInformation("Workers = 0: this host does not fetch or execute jobs.");
             return;
-        }
-
-        foreach (var q in _polledQueues)
-        {
-            if (_options.SettingsFor(q)?.ExecutionWindow is { } window && !window.TryIsWithinWindow(DateTimeOffset.UtcNow, out _))
-            {
-                throw new InvalidOperationException(
-                    $"The execution window of queue '{q}' uses the time zone '{window.TimeZone}', which this machine does not know. Use an IANA id such as 'America/Sao_Paulo' or 'UTC' (on a minimal container image, install the tzdata package).");
-            }
         }
 
         // Outlives ExecuteAsync: jobs still draining during shutdown release their slot after the loop exits.

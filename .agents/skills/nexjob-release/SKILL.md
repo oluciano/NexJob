@@ -245,7 +245,9 @@ Since release PRs are merged into `main` using **Merge Commit (`--no-ff`)** (the
    When the release includes changes to `NexJob.Dashboard`, `NexJob.Dashboard.Standalone`, `NexJob.Sample.WorkerService`, or for any official minor/major release:
    - Deploy the released code from `main` to Fly.io:
      ```bash
-     fly deploy
+     # Run from the repository root: the Docker build context is the working directory.
+     # Running it from deploy/ fails with "Project file does not exist".
+     fly deploy -c deploy/fly.toml
      ```
    - Verify that the live playground is healthy and reflects the newly released version:
      ```bash

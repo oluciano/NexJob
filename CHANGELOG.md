@@ -6,6 +6,11 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [6.5.1] - 2026-10-17
+
+### Fixed
+- **An unknown time zone in a queue execution window fails `StartAsync` again on .NET 10.** The dispatcher validated it inside `ExecuteAsync`; with `Microsoft.Extensions.Hosting` 10 the start no longer failed (the host stopped right after, with the same error in the log). It is now validated in `StartAsync`, on Hosting 8 and 10 (#579).
+
 ## [6.5.0] - 2026-10-17
 
 ### Added
