@@ -1,3 +1,5 @@
+using System.Net;
+using System.Text.Json;
 using FluentAssertions;
 using NexJob.Dashboard.Pages;
 using Xunit;
@@ -37,5 +39,31 @@ public sealed class HelpersTests
     {
         // N3 (Invalid Input): no value, no card.
         Helpers.ParseTraceParent(value).Should().Be(((string?)null, (string?)null, false));
+    }
+
+    [Theory]
+    [InlineData("plain")]
+    [InlineData("a'b\"c\\d<e>&f")]
+    [InlineData("line one\nline two")]
+    [InlineData("päge ✓ 日本")]
+    public void JsAttr_RoundTripsThroughTheAttributeAndTheScript(string value)
+    {
+        // N1 + N2: browser order (the attribute ends at the first double quote, entities decode, then the script reads the literal).
+        var markup = $"onclick=\"return confirm('{Helpers.JsAttr(value)}')\"";
+
+        markup.Count(c => c == '"').Should().Be(2, "the value must not end the attribute");
+        var attribute = WebUtility.HtmlDecode(markup["onclick=\"".Length..^1]);
+        attribute.Should().StartWith("return confirm('").And.EndWith("')");
+        var literal = attribute["return confirm('".Length..^2];
+        JsonSerializer.Deserialize<string>($"\"{literal}\"").Should().Be(value);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    public void JsAttr_NullOrEmpty_IsAnEmptyLiteral(string? value)
+    {
+        // N3 (Invalid Input): null and empty give an empty literal, never the text "null".
+        Helpers.JsAttr(value).Should().BeEmpty();
     }
 }

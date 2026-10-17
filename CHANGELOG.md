@@ -7,6 +7,9 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Fixed
+- **Dashboard: the confirmation dialogs of Trigger Now (Recurring list and detail), Requeue All (Failed), Run Now and Requeue (Job detail) appear again.** The inline `onclick` was cut after `confirm(` (a double-quoted string inside a double-quoted attribute), so the browser raised a syntax error and the action ran without asking. This also made the blocking warning for queues without active workers (#227) invisible since v5.6.0. Run Now was also missing its closing parenthesis (#592).
+- **Dashboard: values placed inside inline handlers are encoded for JavaScript and then for the attribute** (the queue name in the Pause and Reset Circuit confirmations, the idempotency key and the TraceParent in the copy buttons). A new `Helpers.JsAttr` does both, in that order (#592).
+- **Dashboard: a TraceParent that is not W3C is not shown.** The job detail page printed the trace and span ids as they were stored, and the Kafka trigger stores the `traceparent` header of the message. Only version `00`, 32 hex and 16 hex are shown (#592).
 - **Dashboard: the queue name in the filter dropdown of the Jobs and Failed pages is HTML-encoded.** The `value` attribute was encoded and the option text was not, so a queue name with markup was rendered as markup (#589).
 
 ## [6.5.1] - 2026-10-17
