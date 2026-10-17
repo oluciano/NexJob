@@ -229,7 +229,7 @@ internal static class HtmlFragments
             queueOptions += string.Join(string.Empty, queues.Select(q =>
             {
                 var selected = string.Equals(queueVal, q.Queue, StringComparison.Ordinal) ? " selected" : string.Empty;
-                return $"<option value=\"{HttpUtility.HtmlAttributeEncode(q.Queue)}\"{selected}>{q.Queue} ({q.Enqueued + q.Processing})</option>";
+                return $"<option value=\"{HttpUtility.HtmlAttributeEncode(q.Queue)}\"{selected}>{HttpUtility.HtmlEncode(q.Queue)} ({q.Enqueued + q.Processing})</option>";
             }));
         }
 
