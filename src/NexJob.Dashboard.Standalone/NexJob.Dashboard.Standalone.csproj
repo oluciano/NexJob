@@ -1,7 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
     <PackageId>NexJob.Dashboard.Standalone</PackageId>
     <IsPackable>true</IsPackable>
     <Description>Standalone dashboard for NexJob — self-hosted monitoring for Worker Services and Console Apps.</Description>
@@ -18,7 +17,7 @@
   <ItemGroup>
     <ProjectReference Include="..\NexJob.Dashboard\NexJob.Dashboard.csproj" />
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
-    <PackageReference Include="System.Text.Encodings.Web" Version="8.0.0" />
+    <PackageReference Include="System.Text.Encodings.Web" Version="8.0.0" Condition="'$(TargetFramework)' == 'net8.0'" />
   </ItemGroup>
   
 </Project>

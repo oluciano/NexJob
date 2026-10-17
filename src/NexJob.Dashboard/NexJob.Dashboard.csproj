@@ -21,7 +21,7 @@
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <ProjectReference Include="..\NexJob\NexJob.csproj" />
-    <PackageReference Include="System.Text.Encodings.Web" Version="8.0.0" />
+    <PackageReference Include="System.Text.Encodings.Web" Version="8.0.0" Condition="'$(TargetFramework)' == 'net8.0'" />
   </ItemGroup>
 
 </Project>

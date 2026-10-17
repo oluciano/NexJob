@@ -69,7 +69,7 @@ public sealed class PackagePinsTests : IClassFixture<PackagePinsTests.PackedPack
         expected.Where(pin =>
         {
             var parts = pin.Split(':');
-            return !group.TryGetValue(parts[0], out var range) || !range.StartsWith($"[{parts[1]}", StringComparison.Ordinal);
+            return !group.TryGetValue(parts[0], out var range) || range.Trim('[', ' ', ',', ')') != parts[1];
         });
 
     private static Dictionary<string, Dictionary<string, string>> Groups(XDocument nuspec)

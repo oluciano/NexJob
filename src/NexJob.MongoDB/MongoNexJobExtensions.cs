@@ -14,7 +14,11 @@ namespace NexJob.MongoDB;
 public static class MongoNexJobExtensions
 {
     private static bool _serializersRegistered;
+#if NET9_0_OR_GREATER
+    private static readonly Lock _lock = new();
+#else
     private static readonly object _lock = new();
+#endif
 
     /// <summary>
     /// Registers <see cref="MongoStorageProvider"/> as the <see cref="IStorageProvider"/>

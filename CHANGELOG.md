@@ -6,6 +6,9 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **The packages target `net8.0` and `net10.0`** (additive, no breaking change). .NET 8 and 9 leave support on 2026-11-10. Each package holds `lib/net8.0` and `lib/net10.0`; the security pins (`System.Text.Json`, `System.Text.Encodings.Web`, `System.Diagnostics.DiagnosticSource`) stay in the `net8.0` dependency group only, and the `net10.0` group takes `Microsoft.Extensions.*` 10.x. `System.Threading.Lock` is used on .NET 9 and later (issue #582, part of #439).
+
 ### Tests
 - **Dashboard: one test proves every stored value is encoded on every page.** It stores markup (text, attribute and script-string breakouts) in the job, recurring job, server and listener fields, reads 14 routes including the reflected `search`, `tag` and `queue` queries, and fails if any raw fragment appears; it fails with the #589 fix reverted (issue #590).
 

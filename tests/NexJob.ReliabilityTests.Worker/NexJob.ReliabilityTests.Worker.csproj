@@ -3,7 +3,6 @@
   <!-- A real NexJob node for the crash tests: it runs as its own process so a test can kill it. -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net8.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <IsPackable>false</IsPackable>

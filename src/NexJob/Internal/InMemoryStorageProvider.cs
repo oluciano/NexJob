@@ -13,7 +13,11 @@ internal sealed class InMemoryStorageProvider : IStorageProvider, IOrphanedJobRe
 {
     // ─── state ───────────────────────────────────────────────────────────────
 
+#if NET9_0_OR_GREATER
+    private readonly Lock _lock = new();
+#else
     private readonly object _lock = new();
+#endif
     private readonly ConcurrentDictionary<Guid, JobRecord> _jobs = new();
     private readonly ConcurrentDictionary<string, Guid> _idempotencyIndex = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, RecurringJobRecord> _recurringJobs = new(StringComparer.Ordinal);
