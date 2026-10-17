@@ -102,13 +102,13 @@ internal sealed class RecurringJobDetailPage : IComponent
         else
         {
             var queueOrphanWarning = ActiveWorkerQueues is { Count: > 0 } && !ActiveWorkerQueues.Contains(job.Queue, StringComparer.OrdinalIgnoreCase)
-                ? $"\\n\\n⚠ Warning: Queue '{job.Queue}' has no active workers. The job will remain queued until a worker starts."
+                ? $"\n\n⚠ Warning: Queue '{job.Queue}' has no active workers. The job will remain queued until a worker starts."
                 : string.Empty;
-            var triggerConfirm = System.Web.HttpUtility.JavaScriptStringEncode($"Trigger '{job.RecurringJobId}' now?{queueOrphanWarning}", addDoubleQuotes: true);
+            var triggerConfirm = $"Trigger '{job.RecurringJobId}' now?{queueOrphanWarning}";
 
             var triggerButton =
                 $"<form method=\"post\" action=\"{PathPrefix}/recurring/{encodedIdUrl}/trigger{clusterSuffix}\" style=\"display:inline\">" +
-                $"<button type=\"submit\" class=\"btn btn-primary btn-sm\" onclick=\"return confirm({triggerConfirm})\">" +
+                $"<button type=\"submit\" class=\"btn btn-primary btn-sm\" onclick=\"return confirm('{Helpers.JsAttr(triggerConfirm)}')\">" +
                 $"<svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><path d=\"M13 2L3 14h9l-1 8 10-12h-9l1-8z\"/></svg> Trigger Now</button></form>";
 
             var pauseResumeButton = job.Enabled

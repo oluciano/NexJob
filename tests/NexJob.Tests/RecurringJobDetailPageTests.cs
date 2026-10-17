@@ -101,4 +101,39 @@ public sealed class RecurringJobDetailPageTests
                 await s.EnqueueAsync(DashboardTestHost.Job(JobType, "reports", JobStatus.Failed, RecurringId));
             }
         });
+
+    private const string Hostile = "a'b\"c\\d<e>&f";
+
+    [Theory]
+    [InlineData("daily-report")]
+    [InlineData(Hostile)]
+    public async Task TriggerNow_Confirmation_IsACompleteHandlerWithTheScheduleId(string id)
+    {
+        // N1 + N2 (#592): the confirmation is a complete handler and its text carries the id as it was stored.
+        var html = await DashboardTestHost.GetAsync($"/dashboard/recurring/{Uri.EscapeDataString(id)}", s => SeedAsync(s, id));
+
+        var confirms = InlineHandlers.Confirms(html);
+        confirms.Should().NotContain(h => InlineHandlers.ConfirmMessage(h) == null);
+        confirms.Select(h => InlineHandlers.ConfirmMessage(h)).Should().Contain($"Trigger '{id}' now?");
+    }
+
+    [Fact]
+    public async Task TriggerNow_ConfirmationOfAnEmptyHistory_IsStillACompleteHandler()
+    {
+        // N3 (Boundary): a schedule that never ran still renders a complete handler.
+        var html = await DashboardTestHost.GetAsync("/dashboard/recurring/never-ran", s => SeedAsync(s, "never-ran"));
+
+        InlineHandlers.Confirms(html).Should().NotBeEmpty();
+        InlineHandlers.Confirms(html).Should().NotContain(h => InlineHandlers.ConfirmMessage(h) == null);
+    }
+
+    private static Task SeedAsync(NexJob.Storage.IStorageProvider s, string id) =>
+        s.UpsertRecurringJobAsync(new RecurringJobRecord
+        {
+            RecurringJobId = id,
+            JobType = "Acme.Jobs.ReportJob",
+            Cron = "0 3 * * *",
+            Queue = "default",
+            CreatedAt = DateTimeOffset.UtcNow,
+        });
 }

@@ -39,4 +39,33 @@ public sealed class HtmlFragmentsTests
         html.Should().Contain("name=\"queue\"");
         html.Should().NotContain("<option value=\"reports\"");
     }
+
+    [Theory]
+    [InlineData("daily-report")]
+    [InlineData("a'b\"c\\d<e>&f")]
+    public async Task RecurringRow_TriggerNowConfirmation_IsACompleteHandlerWithTheScheduleId(string id)
+    {
+        // N1 + N2 (#592): the Trigger Now button of the list asks for confirmation with the stored id.
+        var html = await DashboardTestHost.GetAsync("/dashboard/recurring", s => s.UpsertRecurringJobAsync(new RecurringJobRecord
+        {
+            RecurringJobId = id,
+            JobType = JobType,
+            Cron = "0 3 * * *",
+            Queue = "default",
+            CreatedAt = DateTimeOffset.UtcNow,
+        }));
+
+        var confirms = InlineHandlers.Confirms(html);
+        confirms.Should().NotContain(h => InlineHandlers.ConfirmMessage(h) == null);
+        confirms.Select(h => InlineHandlers.ConfirmMessage(h)).Should().Contain($"Trigger '{id}' now?");
+    }
+
+    [Fact]
+    public async Task RecurringRow_WithNoSchedules_RendersNoConfirmation()
+    {
+        // N3 (Boundary): an empty list has no handler to break.
+        var html = await DashboardTestHost.GetAsync("/dashboard/recurring");
+
+        InlineHandlers.Confirms(html).Should().BeEmpty();
+    }
 }

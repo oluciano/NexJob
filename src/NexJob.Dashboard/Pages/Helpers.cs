@@ -495,14 +495,22 @@ internal static class Helpers
             return (null, null, false);
         }
 
+        // The value can come from a message header (the Kafka trigger stores the "traceparent" header), so only the
+        // W3C shape is accepted: version 00, 32 hex for the trace, 16 hex for the span.
         var parts = traceparent.Trim().Split('-');
-        if (parts.Length >= 4 && string.Equals(parts[0], "00", StringComparison.Ordinal))
+        if (parts.Length >= 4
+            && string.Equals(parts[0], "00", StringComparison.Ordinal)
+            && IsHex(parts[1], 32)
+            && IsHex(parts[2], 16))
         {
             return (parts[1], parts[2], string.Equals(parts[3], "01", StringComparison.Ordinal));
         }
 
         return (null, null, false);
     }
+
+    private static bool IsHex(string value, int length) =>
+        value.Length == length && value.All(Uri.IsHexDigit);
 
     internal static string FormatServerId(string? serverId)
     {
@@ -537,4 +545,14 @@ internal static class Helpers
 
         return System.Web.HttpUtility.HtmlEncode(serverId);
     }
+
+    /// <summary>
+    /// Encodes a value for a single-quoted JavaScript string inside a double-quoted HTML attribute (an inline handler):
+    /// JavaScript-escapes it first, then attribute-encodes the result. The order matters: the browser decodes the
+    /// entities before it runs the script.
+    /// </summary>
+    /// <param name="value">The text to place inside <c>'...'</c> in the handler.</param>
+    /// <returns>The text to write between the single quotes.</returns>
+    internal static string JsAttr(string? value) =>
+        System.Web.HttpUtility.HtmlAttributeEncode(System.Web.HttpUtility.JavaScriptStringEncode(value ?? string.Empty));
 }
