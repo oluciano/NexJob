@@ -6,6 +6,23 @@ description: "Step-by-step migration guides for NexJob major version upgrades, i
 
 This page covers every breaking change between NexJob releases and tells you exactly what to update in your code. Schema migrations for PostgreSQL and SQL Server apply automatically at startup. Follow the steps in order for each version jump you're crossing.
 
+## v6.4.0 → v6.5.0
+
+No schema migration, no new public API and no stored format change. The changes are in the dashboard and in the dependencies of the Salesforce trigger:
+
+- **Queues page:** a queue that an active worker polls is listed even when it has no job, with 0 enqueued and 0 processing. Before, the page said "No active queues" once every job had finished.
+- **Dashboard rows are clickable:** Catalog, Recent Jobs on the Overview, and the Execution History of a recurring schedule open the related page on click. Buttons and links inside a row keep their own action.
+- **Recurring schedule page:** a status filter on the Execution History and the total, succeeded and failed runs of the job type (not of the schedule: the catalog groups by job type and queue).
+- **`semi-dark` theme:** the logo in the top bar is readable.
+- **Salesforce trigger dependencies:** `Grpc.Net.Client` 2.84, `Grpc.Tools` 2.84 and `Google.Protobuf` 3.36 (were 2.62, 2.62 and 3.26). If your application pins an older `Grpc.*` or `Google.Protobuf`, NuGet restores the higher version or reports a downgrade (NU1605); raise your pin.
+
+**Rolling upgrade.** No stored data changes, so 6.4.0 and 6.5.0 nodes can run together. The dashboard behaves by the version of the node that serves it.
+
+**Rollout and rollback.**
+
+- **Roll out:** upgrade one node first. If you use the Salesforce trigger, check that it still connects and receives events.
+- **Roll back:** go back to 6.4.0; there is no schema migration to undo.
+
 ## v6.3.0 → v6.4.0
 
 No schema migration, no new public API and no stored format change: the Redis keys, the MongoDB documents and the SQL tables are the same. These changes can need an action or a look:
