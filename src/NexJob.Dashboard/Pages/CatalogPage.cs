@@ -178,7 +178,7 @@ internal sealed class CatalogPage : IComponent
                 "</div>";
 
             return $"""
-                <tr>
+                <tr data-href="{HttpUtility.HtmlAttributeEncode(historyUrl)}">
                     <td>
                         <div style="font-weight:600;color:var(--text-primary)">{WebUtility.HtmlEncode(shortName)}</div>
                         <div style="font-family:monospace;font-size:11px;color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:280px" title="{HttpUtility.HtmlAttributeEncode(item.JobType)}">

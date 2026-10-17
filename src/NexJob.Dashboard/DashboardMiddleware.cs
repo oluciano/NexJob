@@ -1126,13 +1126,22 @@ public sealed class DashboardMiddleware
 
             var pageNum = context.Request.Query.TryGetValue("page", out var pg) && int.TryParse(pg, NumberStyles.Integer, CultureInfo.InvariantCulture, out var pn) ? pn : 1;
             var pageSize = int.TryParse(context.Request.Query["pageSize"], NumberStyles.Integer, CultureInfo.InvariantCulture, out var ps) && (ps == 10 || ps == 20 || ps == 50) ? ps : 20;
-            var jobFilter = new JobFilter { RecurringJobId = recurringId };
+            var statusFilter = Enum.TryParse<JobStatus>(context.Request.Query["status"], ignoreCase: true, out var st) && Enum.IsDefined(st)
+                ? st
+                : (JobStatus?)null;
+            var jobFilter = new JobFilter { RecurringJobId = recurringId, Status = statusFilter };
             var executions = await dashboardStorage.GetJobsAsync(jobFilter, pageNum, pageSize, context.RequestAborted).ConfigureAwait(false);
+            var catalog = await dashboardStorage.GetJobCatalogAsync(context.RequestAborted).ConfigureAwait(false);
+            var catalogItem = catalog.FirstOrDefault(c =>
+                string.Equals(c.JobType, recurringJob.JobType, StringComparison.Ordinal) &&
+                string.Equals(c.Queue, recurringJob.Queue, StringComparison.OrdinalIgnoreCase));
 
             parameters = ParameterView.FromDictionary(new Dictionary<string, object?>(StringComparer.Ordinal)
             {
                 ["Job"] = recurringJob,
                 ["Executions"] = executions,
+                ["StatusFilter"] = statusFilter,
+                ["CatalogItem"] = catalogItem,
                 ["PageSize"] = pageSize,
                 ["PathPrefix"] = _pathPrefix,
                 ["Title"] = _options.Title,
