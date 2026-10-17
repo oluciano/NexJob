@@ -6,6 +6,19 @@ description: "Step-by-step migration guides for NexJob major version upgrades, i
 
 This page covers every breaking change between NexJob releases and tells you exactly what to update in your code. Schema migrations for PostgreSQL and SQL Server apply automatically at startup. Follow the steps in order for each version jump you're crossing.
 
+## v6.5.0 → v6.5.1
+
+No schema migration, no new public API and no stored format change. One fix:
+
+- **An unknown time zone in a queue execution window fails `StartAsync` again on .NET 10.** On a host with `Microsoft.Extensions.Hosting` 10, 6.5.0 and earlier started, logged the error and stopped the host right after, instead of failing the start. 6.5.1 validates in `StartAsync`, on Hosting 8 and 10, with the same message. If your host called `StartAsync` and ignored the failure on .NET 10, it now sees the exception; fix the `TimeZone` id (see [execution windows](../guides/execution-windows.md)).
+
+**Rolling upgrade.** No stored data changes, so 6.5.0 and 6.5.1 nodes can run together.
+
+**Rollout and rollback.**
+
+- **Roll out:** upgrade one node first. Only a host with a queue execution window and a time zone id the machine does not know changes behaviour.
+- **Roll back:** go back to 6.5.0; there is nothing to undo.
+
 ## v6.4.0 → v6.5.0
 
 No schema migration, no new public API and no stored format change. The changes are in the dashboard and in the dependencies of the Salesforce trigger:
