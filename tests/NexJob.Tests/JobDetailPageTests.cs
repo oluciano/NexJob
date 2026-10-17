@@ -45,12 +45,11 @@ public sealed class JobDetailPageTests
         InlineHandlers.All(html).Select(h => InlineHandlers.CopyValue(h)).Should().Contain(key);
     }
 
-    [Theory]
-    [InlineData("00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01")]
-    [InlineData(Hostile)]
-    public async Task CopyTraceParent_CopiesTheStoredValue(string trace)
+    [Fact]
+    public async Task CopyTraceParent_CopiesTheStoredValue()
     {
-        // N1 + N2 (#592): the TraceParent copy button copies the stored value.
+        // N1 (#592): the TraceParent copy button copies the stored value.
+        const string trace = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01";
         var job = Job(JobStatus.Failed, traceParent: trace);
         var html = await DashboardTestHost.GetAsync($"/dashboard/jobs/{job.Id.Value}", s => s.EnqueueAsync(job));
 
@@ -66,5 +65,20 @@ public sealed class JobDetailPageTests
 
         InlineHandlers.Confirms(html).Should().NotContain(h => InlineHandlers.ConfirmMessage(h) == null);
         InlineHandlers.All(html).Where(h => h.Contains("writeText('", StringComparison.Ordinal)).Should().NotContain(h => InlineHandlers.CopyValue(h) == null);
+    }
+
+    [Theory]
+    [InlineData("00-<b id=\"injected\">x</b>-b7ad6b7169203331-01")]
+    [InlineData("00-0af7651916cd43dd8448eb211c80319c-<i id=\"injected\">y</i>-01")]
+    [InlineData("00-short-b7ad6b7169203331-01")]
+    public async Task TraceParent_ThatIsNotW3C_IsNotRenderedAsMarkup(string trace)
+    {
+        // N2 (Negative, #592): the Kafka trigger stores the "traceparent" header of the message as the job's TraceParent,
+        // so it is not trusted: a value that is not W3C is not shown, and never as markup.
+        var job = Job(JobStatus.Failed, traceParent: trace);
+        var html = await DashboardTestHost.GetAsync($"/dashboard/jobs/{job.Id.Value}", s => s.EnqueueAsync(job));
+
+        html.Should().NotContain("<b id=\"injected\">").And.NotContain("<i id=\"injected\">");
+        html.Should().NotContain("W3C Traceparent Header");
     }
 }
