@@ -6,6 +6,9 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Tests
+- **Dashboard: one test proves every stored value is encoded on every page.** It stores markup (text, attribute and script-string breakouts) in the job, recurring job, server and listener fields, reads 14 routes including the reflected `search`, `tag` and `queue` queries, and fails if any raw fragment appears; it fails with the #589 fix reverted (issue #590).
+
 ### Fixed
 - **Dashboard: every response carries security headers** (`X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy` and a `Content-Security-Policy` with `frame-ancestors 'none'`, `object-src 'none'`, `base-uri` and `form-action` restricted); headers already set by the host are kept. The pages can no longer be framed by another site (#595).
 - **Dashboard: the POST actions reject requests that come from another site (CSRF).** A cross-site `Sec-Fetch-Site`, or an `Origin` that is not the origin of the request, gets 403 and changes nothing; requests with no browser metadata (scripts, tests) and the dashboard's own forms are unchanged. Before, a form on any other site could delete, requeue, pause or trigger as the operator, with no credentials at all on the default standalone host (#594).

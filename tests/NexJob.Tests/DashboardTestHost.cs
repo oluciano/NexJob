@@ -12,7 +12,10 @@ internal static class DashboardTestHost
         UseAsync(seed, (client, _) => client.GetStringAsync(route));
 
     /// <summary>Boots the host, seeds it and runs <paramref name="act"/> with a client pointed at it.</summary>
-    public static async Task<T> UseAsync<T>(Func<IStorageProvider, Task>? seed, Func<HttpClient, IStorageProvider, Task<T>> act)
+    public static async Task<T> UseAsync<T>(
+        Func<IStorageProvider, Task>? seed,
+        Func<HttpClient, IStorageProvider, Task<T>> act,
+        Action<IServiceProvider>? seedServices = null)
     {
         var port = TestPorts.Next();
         using var host = Host.CreateDefaultBuilder()
@@ -36,6 +39,8 @@ internal static class DashboardTestHost
             {
                 await seed(storage);
             }
+
+            seedServices?.Invoke(host.Services);
 
             using var client = new HttpClient
             {
