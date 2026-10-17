@@ -20,6 +20,27 @@ public sealed class RecurringJobDetailPageTests
     }
 
     [Fact]
+    public async Task ExecutionRow_OpensTheJobDetail_LikeTheJobIdLink()
+    {
+        // N1 (Positive, #555): clicking an execution row goes where the Job ID link goes.
+        var html = await GetDetailAsync(string.Empty, succeeded: 1, failed: 0);
+
+        var start = html.IndexOf("data-href=\"/dashboard/jobs/", StringComparison.Ordinal);
+        start.Should().BeGreaterThan(0);
+        var url = html.Substring(start + "data-href=\"".Length, "/dashboard/jobs/".Length + 36);
+        html.Should().Contain($"<a href=\"{url}\"");
+    }
+
+    [Fact]
+    public async Task ExecutionRow_WithNoExecutions_HasNoClickableRow()
+    {
+        // N2 (Negative): an empty history renders no row link.
+        var html = await GetDetailAsync(string.Empty, succeeded: 0, failed: 0);
+
+        html.Should().NotContain("data-href=\"/dashboard/jobs/");
+    }
+
+    [Fact]
     public async Task StatusFilter_NarrowsTheExecutionHistory()
     {
         // N1 (Positive): ?status=Failed keeps only the failed run and the select reflects it.
