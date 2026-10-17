@@ -6,6 +6,9 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- **Dashboard: the queue name in the filter dropdown of the Jobs and Failed pages is HTML-encoded.** The `value` attribute was encoded and the option text was not, so a queue name with markup was rendered as markup (#589).
+
 ## [6.5.1] - 2026-10-17
 
 ### Fixed
