@@ -119,6 +119,7 @@ internal static class HtmlShell
             --bg-secondary: #f4f5f7;
             --bg-tertiary: #ebeef2;
             --header-bg: #1b1e2e;
+            --header-text: #f8fafc;
             --sidebar-bg: #131623;
             --sidebar-text: #cfd3db;
             --sidebar-hover: #1b1e2e;
@@ -171,7 +172,7 @@ internal static class HtmlShell
         }
         .header-left { display: flex; align-items: center; gap: 16px; }
         .header-logo { display: flex; align-items: center; gap: 10px; text-decoration: none; color: inherit; width: calc(var(--sidebar-width) - 40px); }
-        .header-logo h1 { font-size: 20px; font-weight: 700; color: var(--text-primary); letter-spacing: -0.5px; }
+        .header-logo h1 { font-size: 20px; font-weight: 700; color: var(--header-text, var(--text-primary)); letter-spacing: -0.5px; }
         .env-badge { display: inline-flex; align-items: center; max-width: 160px; padding: 4px 10px; border-radius: 6px; font-size: 12px; font-weight: 700; letter-spacing: 0.4px; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .env-prod { background: #dc2626; color: #ffffff; }
         .env-stage { background: #f59e0b; color: #1f2937; }
@@ -427,6 +428,7 @@ internal static class HtmlShell
         .table td { padding: 12px 24px; border-bottom: 1px solid var(--border); color: var(--text-primary); vertical-align: middle; }
         .table tbody tr:last-child td { border-bottom: none; }
         .table tbody tr:hover { background: var(--bg-secondary); }
+        .table tbody tr[data-href] { cursor: pointer; }
 
         .badge { padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; }
         .badge-success { background: var(--success-light); color: var(--success); }
@@ -789,6 +791,13 @@ internal static class HtmlShell
         <script>
         (function(){
             var h = document.documentElement;
+
+            document.addEventListener('click', function(e) {
+                var row = e.target.closest('tr[data-href]');
+                if (row && !e.target.closest('a,button,form,input,select,textarea,summary')) {
+                    window.location.href = row.getAttribute('data-href');
+                }
+            });
 
             window.nexJobSetTheme = function(theme, save) {
                 if(save!==false) localStorage.setItem('nexjob-theme', theme);

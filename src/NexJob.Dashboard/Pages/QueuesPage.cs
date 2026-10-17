@@ -32,6 +32,20 @@ internal sealed class QueuesPage : IComponent
 
         // NOTE (Blazor Dispatcher Invariant):
         // Do NOT use .ConfigureAwait(false) here. Rendering via _handle.Render requires execution on the Dispatcher.
+        var activeWorkerQueues = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var effectiveJobStorage = JobStorage ?? ActiveCluster?.JobStorage ?? (Storage as IJobStorage);
+        if (effectiveJobStorage != null)
+        {
+            var activeServers = await effectiveJobStorage.GetActiveServersAsync(TimeSpan.FromMinutes(1));
+            foreach (var s in activeServers)
+            {
+                foreach (var q in s.Queues)
+                {
+                    activeWorkerQueues.Add(q);
+                }
+            }
+        }
+
         var rawQueues = await Storage.GetQueueMetricsAsync();
         IReadOnlyList<QueueMetrics> queues;
         if (Queues is { Count: > 0 })
@@ -43,7 +57,13 @@ internal sealed class QueuesPage : IComponent
         }
         else
         {
-            queues = rawQueues;
+            // A queue served by an active worker is listed even when it has no job (0/0).
+            var known = rawQueues.Select(q => q.Queue).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            queues = rawQueues
+                .Concat(activeWorkerQueues
+                    .Where(known.Add)
+                    .Select(qName => new QueueMetrics { Queue = qName, Enqueued = 0, Processing = 0 }))
+                .ToList();
         }
 
         var processingJobs = await Storage.GetJobsAsync(
@@ -58,20 +78,6 @@ internal sealed class QueuesPage : IComponent
             foreach (var pq in rt.PausedQueues)
             {
                 pausedQueues.Add(pq);
-            }
-        }
-
-        var activeWorkerQueues = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var effectiveJobStorage = JobStorage ?? ActiveCluster?.JobStorage ?? (Storage as IJobStorage);
-        if (effectiveJobStorage != null)
-        {
-            var activeServers = await effectiveJobStorage.GetActiveServersAsync(TimeSpan.FromMinutes(1));
-            foreach (var s in activeServers)
-            {
-                foreach (var q in s.Queues)
-                {
-                    activeWorkerQueues.Add(q);
-                }
             }
         }
 

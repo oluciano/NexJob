@@ -268,7 +268,7 @@ builder.Services.AddSingleton<IDashboardAuthorizationHandler, BasicAuthDashboard
 <div class="grid cards" markdown>
   -   **Overview**
 
-    The dashboard home page: cluster health, the cluster pipeline topology map, the 24h hourly throughput chart, and CPU and RAM gauges for the host process.
+    The dashboard home page: cluster health, the cluster pipeline topology map, the 24h hourly throughput chart, and CPU and RAM gauges for the host process. Click a row of **Recent Jobs** to open that job.
 
   -   **/servers**
 
@@ -280,7 +280,7 @@ builder.Services.AddSingleton<IDashboardAuthorizationHandler, BasicAuthDashboard
 
   -   **/queues**
 
-    Per-queue depth, active worker count, and pause/resume controls. Queues with enqueued jobs but no active workers show a `⚠️ NO WORKERS` warning badge that links to the Servers page; its tooltip and the Servers banner list the queues the live nodes poll and, for a queue named `X.default`, suggest `QueuePrefix = X` (see [the default queue](../concepts/default-queue.md)). Queues with a [circuit breaker](../guides/circuit-breaker.md) show the current circuit state and a **Reset Circuit** button.
+    Per-queue depth, active worker count, and pause/resume controls. A queue that an active worker polls is listed even when it has no job (0 enqueued, 0 processing); a queue with no job and no worker is not listed. Queues with enqueued jobs but no active workers show a `⚠️ NO WORKERS` warning badge that links to the Servers page; its tooltip and the Servers banner list the queues the live nodes poll and, for a queue named `X.default`, suggest `QueuePrefix = X` (see [the default queue](../concepts/default-queue.md)). Queues with a [circuit breaker](../guides/circuit-breaker.md) show the current circuit state and a **Reset Circuit** button.
 
   -   **/failed**
 
@@ -288,7 +288,7 @@ builder.Services.AddSingleton<IDashboardAuthorizationHandler, BasicAuthDashboard
 
   -   **/recurring**
 
-    Every registered recurring schedule with its status (active, paused, or deleted), cron schedule, queue, last run, and next run. Open a schedule to see its execution history.
+    Every registered recurring schedule with its status (active, paused, or deleted), cron schedule, queue, last run, and next run. Open a schedule to see its execution history, filter it by status, and click a run to open that job. The schedule page also shows the total, succeeded and failed runs of its job type; they come from the job catalog, which groups by job type and queue, so two schedules of the same job type and queue show the same totals.
 
   -   **/listeners**
 
@@ -296,7 +296,7 @@ builder.Services.AddSingleton<IDashboardAuthorizationHandler, BasicAuthDashboard
 
   -   **/catalog**
 
-    Distinct job types with aggregated telemetry (executions, success/failure counts, failure rate, average duration). Trigger parameterless jobs on demand and jump to filtered job history.
+    Distinct job types with aggregated telemetry (executions, success/failure counts, failure rate, average duration). Trigger parameterless jobs on demand, or click a row to jump to its filtered job history.
 
   -   **/settings**
 
