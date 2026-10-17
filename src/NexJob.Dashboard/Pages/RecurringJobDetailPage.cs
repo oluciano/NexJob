@@ -15,6 +15,12 @@ internal sealed class RecurringJobDetailPage : IComponent
     /// <summary>Gets or sets the paginated list of job execution records for this recurring job.</summary>
     [Parameter] public PagedResult<JobRecord> Executions { get; set; } = default!;
 
+    /// <summary>Gets or sets the status the execution history is filtered by, or <see langword="null"/> for all.</summary>
+    [Parameter] public JobStatus? StatusFilter { get; set; }
+
+    /// <summary>Gets or sets the catalog item of the job type and queue (totals are per job type, not per recurring id).</summary>
+    [Parameter] public JobCatalogItem? CatalogItem { get; set; }
+
     /// <summary>Gets or sets the number of executions shown per page.</summary>
     [Parameter] public int PageSize { get; set; } = 20;
 
@@ -154,6 +160,16 @@ internal sealed class RecurringJobDetailPage : IComponent
             $"<div style=\"font-size:11px;color:var(--text-tertiary);margin-top:8px\">Default configuration: <code>{System.Web.HttpUtility.HtmlEncode(job.Cron)}</code>. Supports standard 5-field and 6-field (with seconds).</div>" +
             $"</div></div>";
 
+        string Count(long? n) => (n ?? 0).ToString("N0", System.Globalization.CultureInfo.InvariantCulture);
+        var totalsHtml =
+            "<div style=\"border-top:1px solid var(--border);padding-top:10px\">" +
+            "<div style=\"font-size:11px;color:var(--text-tertiary);text-transform:uppercase;font-weight:600;margin-bottom:6px\">Total Runs <span style=\"text-transform:none;font-weight:400\">(for this job type)</span></div>" +
+            "<div style=\"display:flex;gap:16px;font-size:13px;font-weight:600\">" +
+            $"<span title=\"Total\">{Count(CatalogItem?.TotalRuns)}</span>" +
+            $"<span title=\"Succeeded\" style=\"color:var(--success)\">{Count(CatalogItem?.SucceededRuns)} ok</span>" +
+            $"<span title=\"Failed\" style=\"color:var(--error)\">{Count(CatalogItem?.FailedRuns)} failed</span>" +
+            "</div></div>";
+
         // ── Overview Cards (Schedule, Queue, Health) ──────────────────────────
         var cronOverrideTag = job.CronOverride is not null
             ? "<span class=\"badge badge-warning\" style=\"font-size:10px;margin-left:6px\" title=\"Overridden by operator\">custom</span>"
@@ -251,6 +267,7 @@ internal sealed class RecurringJobDetailPage : IComponent
             $"</div>" +
             (string.IsNullOrEmpty(lastExactUtc) ? string.Empty : $"<div style=\"font-size:11px;color:var(--text-tertiary);margin-top:2px\">{lastExactUtc}</div>") +
             $"</div>" +
+            totalsHtml +
             $"<div style=\"border-top:1px solid var(--border);padding-top:10px\">" +
             $"<div style=\"font-size:11px;color:var(--text-tertiary);text-transform:uppercase;font-weight:600;margin-bottom:4px\">Job Implementation</div>" +
             $"<div style=\"font-size:12px;color:var(--text-primary);font-family:monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis\" title=\"{System.Web.HttpUtility.HtmlAttributeEncode(job.JobType)}\">{System.Web.HttpUtility.HtmlEncode(Helpers.ShortType(job.JobType))}</div>" +
@@ -274,8 +291,30 @@ internal sealed class RecurringJobDetailPage : IComponent
         }
 
         // ── Executions table ──────────────────────────────────────────────────
+        var statusParam = StatusFilter is { } sf ? $"&status={sf}" : string.Empty;
+        var statusForm =
+            $"<form method=\"get\" action=\"{PathPrefix}/recurring/{encodedIdUrl}\" style=\"display:inline-flex;align-items:center;gap:8px\">" +
+            (ActiveCluster is not null ? $"<input type=\"hidden\" name=\"cluster\" value=\"{System.Web.HttpUtility.HtmlAttributeEncode(ActiveCluster.Id)}\" />" : string.Empty) +
+            $"<input type=\"hidden\" name=\"pageSize\" value=\"{PageSize}\" />" +
+            "<label style=\"color:var(--text-secondary);font-size:12px\">Status:</label>" +
+            "<select name=\"status\" onchange=\"this.form.submit()\" style=\"padding:4px 8px;font-size:12px\">" +
+            $"<option value=\"\"{(StatusFilter is null ? " selected" : string.Empty)}>All</option>" +
+            string.Join(string.Empty, new[] { JobStatus.Succeeded, JobStatus.Failed, JobStatus.Processing, JobStatus.Enqueued, JobStatus.Scheduled }
+                .Select(x => $"<option value=\"{x}\"{(StatusFilter == x ? " selected" : string.Empty)}>{x}</option>")) +
+            "</select>" +
+            "</form>";
+
         string executionsSection;
-        if (Executions.Items.Count == 0)
+        if (Executions.Items.Count == 0 && StatusFilter is not null)
+        {
+            executionsSection =
+                "<div class=\"card\">" +
+                "<div class=\"card-header\" style=\"display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px\"><h3 style=\"margin:0;font-size:15px;font-weight:600\">Execution History</h3>" + statusForm + "</div>" +
+                "<div style=\"padding:32px 24px;text-align:center;color:var(--text-tertiary)\"><p style=\"font-size:14px;margin:0\">" +
+                $"No executions match status {StatusFilter}.</p></div>" +
+                "</div>";
+        }
+        else if (Executions.Items.Count == 0)
         {
             executionsSection =
                 "<div class=\"card\">" +
@@ -308,7 +347,7 @@ internal sealed class RecurringJobDetailPage : IComponent
                 var shortId = idStr[..Math.Min(8, idStr.Length)];
 
                 return
-                    $"<tr>" +
+                    $"<tr data-href=\"{PathPrefix}/jobs/{idStr}{clusterSuffix}\">" +
                     $"<td style=\"color:var(--text-tertiary);font-size:12px\">{rowNum}</td>" +
                     $"<td>{Helpers.BadgeHtml(exec.Status)}</td>" +
                     $"<td><a href=\"{PathPrefix}/jobs/{idStr}{clusterSuffix}\" style=\"color:var(--primary);font-family:monospace;font-size:12px;text-decoration:none;font-weight:500\">{shortId}…</a></td>" +
@@ -340,6 +379,7 @@ internal sealed class RecurringJobDetailPage : IComponent
                 $"<option value=\"50\"{opt50}>50</option>" +
                 "</select>" +
                 "<input type=\"hidden\" name=\"page\" value=\"1\" />" +
+                (StatusFilter is { } hs ? $"<input type=\"hidden\" name=\"status\" value=\"{hs}\" />" : string.Empty) +
                 "<label style=\"color:var(--text-secondary);font-size:12px\">per page</label>" +
                 "</form>";
 
@@ -348,13 +388,13 @@ internal sealed class RecurringJobDetailPage : IComponent
                 "<th style=\"width:40px\">#</th><th>Status</th><th>Job ID</th><th>Started</th><th>Duration</th><th>Attempts</th><th style=\"text-align:right\">Logs</th>" +
                 $"</tr></thead><tbody>{rows}</tbody></table></div>";
 
-            var paginationHtml = BuildPagination(Executions, encodedIdUrl, clusterParam);
+            var paginationHtml = BuildPagination(Executions, encodedIdUrl, clusterParam, statusParam);
 
             executionsSection =
                 "<div class=\"card\">" +
                 "<div class=\"card-header\" style=\"display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px\">" +
                 $"<div style=\"display:flex;align-items:center;gap:12px\"><h3 style=\"margin:0;font-size:15px;font-weight:600\">Execution History</h3><span style=\"font-size:12px;color:var(--text-tertiary);background:var(--bg-tertiary);padding:2px 8px;border-radius:12px;border:1px solid var(--border)\">{Executions.TotalCount} total runs</span></div>" +
-                pageSizeSelector +
+                $"<div style=\"display:flex;align-items:center;gap:16px;flex-wrap:wrap\">{statusForm}{pageSizeSelector}</div>" +
                 "</div>" +
                 tableHtml +
                 paginationHtml +
@@ -454,7 +494,7 @@ internal sealed class RecurringJobDetailPage : IComponent
         return HtmlShell.Wrap(Title, PathPrefix, "recurring", body, Counters, clusters: Clusters, activeCluster: ActiveCluster);
     }
 
-    private string BuildPagination(PagedResult<JobRecord> result, string encodedIdUrl, string clusterParam)
+    private string BuildPagination(PagedResult<JobRecord> result, string encodedIdUrl, string clusterParam, string statusParam)
     {
         var totalPages = (int)Math.Ceiling((double)result.TotalCount / result.PageSize);
         if (totalPages <= 1)
@@ -463,11 +503,11 @@ internal sealed class RecurringJobDetailPage : IComponent
         }
 
         var prev = result.Page > 1
-            ? $"<a href=\"{PathPrefix}/recurring/{encodedIdUrl}?page={result.Page - 1}&pageSize={PageSize}{clusterParam}\" class=\"btn btn-secondary btn-sm\">← Prev</a>"
+            ? $"<a href=\"{PathPrefix}/recurring/{encodedIdUrl}?page={result.Page - 1}&pageSize={PageSize}{statusParam}{clusterParam}\" class=\"btn btn-secondary btn-sm\">← Prev</a>"
             : string.Empty;
 
         var next = result.Page < totalPages
-            ? $"<a href=\"{PathPrefix}/recurring/{encodedIdUrl}?page={result.Page + 1}&pageSize={PageSize}{clusterParam}\" class=\"btn btn-secondary btn-sm\">Next →</a>"
+            ? $"<a href=\"{PathPrefix}/recurring/{encodedIdUrl}?page={result.Page + 1}&pageSize={PageSize}{statusParam}{clusterParam}\" class=\"btn btn-secondary btn-sm\">Next →</a>"
             : string.Empty;
 
         return

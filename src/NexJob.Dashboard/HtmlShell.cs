@@ -428,6 +428,7 @@ internal static class HtmlShell
         .table td { padding: 12px 24px; border-bottom: 1px solid var(--border); color: var(--text-primary); vertical-align: middle; }
         .table tbody tr:last-child td { border-bottom: none; }
         .table tbody tr:hover { background: var(--bg-secondary); }
+        .table tbody tr[data-href] { cursor: pointer; }
 
         .badge { padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; }
         .badge-success { background: var(--success-light); color: var(--success); }
@@ -790,6 +791,13 @@ internal static class HtmlShell
         <script>
         (function(){
             var h = document.documentElement;
+
+            document.addEventListener('click', function(e) {
+                var row = e.target.closest('tr[data-href]');
+                if (row && !e.target.closest('a,button,form,input,select,textarea,summary')) {
+                    window.location.href = row.getAttribute('data-href');
+                }
+            });
 
             window.nexJobSetTheme = function(theme, save) {
                 if(save!==false) localStorage.setItem('nexjob-theme', theme);
