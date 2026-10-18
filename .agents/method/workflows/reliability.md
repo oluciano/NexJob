@@ -27,7 +27,7 @@
 - Real storage providers (PostgreSQL 16, SQL Server 2022, MongoDB 7, Redis 7)
 - Docker via Testcontainers
 - xUnit with full isolation per fixture
-- `.NET 8 SDK` required
+- `.NET 8 and .NET 10 SDKs supported`
 
 **Location:** `tests/NexJob.ReliabilityTests/`
 
@@ -163,10 +163,11 @@ dotnet test tests/NexJob.ReliabilityTests -c Release \
 ## Determinism Requirements
 
 - [ ] No timing-dependent assertions
-- [ ] No sleep-based waits (use events/channels)
+- [ ] No sleep-based waits (`Task.Delay` banned; use `TestWait.UntilAsync`, `PauseObservedSignal`, or `TaskCompletionSource`)
 - [ ] All state changes persisted and observable
 - [ ] Same test run produces same result every time
-- [ ] Works reliably in CI (no flakes)
+- [ ] Works reliably in CI (no flakes under CPU load)
+- [ ] MongoDB fixtures use `MongoSerializerBootstrap` to prevent serializer caching conflicts (v6.2.1)
 
 ---
 

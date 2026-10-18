@@ -145,6 +145,10 @@ services.AddHostedService<BrokerTriggerHandler>();
 Extension method naming standard:
 `AddNexJob{Broker}Trigger(this IServiceCollection services, Action<{Broker}TriggerOptions>? configure = null)`
 
+> **Hosting 10 Lifecycle Rule (v6.5.1):**  
+> In `Microsoft.Extensions.Hosting` 10, `BackgroundService.StartAsync` no longer runs `ExecuteAsync` up to the first `await`.  
+> If the trigger handler requires fail-fast startup validation (e.g. invalid connection string or credential check), it **MUST** override `StartAsync` and execute those checks there before delegating to `base.StartAsync(cancellationToken)`. Never place fail-fast startup validations inside `ExecuteAsync`.
+
 ---
 
 ## 7. Testing Requirements (3N Matrix + Testcontainers)

@@ -11,6 +11,8 @@
 - **Deadline enforced before execution** — expired jobs never execute
 - **Dead-letter handlers must never crash** — errors logged and swallowed
 - **Wake-up signaling never blocks** — bounded channel, collapses signals
+- **Storage contracts are segregated** — `IJobStorage` (execution), `IRecurringStorage` (cron), `IDashboardStorage` (queries)
+- **Multi-targeting baseline** — dual-target `net8.0;net10.0`; all code must compile on both with zero warnings
 
 ---
 
@@ -64,16 +66,19 @@ Terminal states (`Failed`, `Succeeded`, `Expired`) are governed by `DuplicatePol
 2. **Retry** — on failure: record attempt → evaluate policy → reschedule OR dead-letter
 3. **Cancellation** — always propagate `CancellationToken`, never ignore
 4. **Async** — never use `.Result` or `.Wait()`
+5. **ConfigureAwait** — always use `.ConfigureAwait(false)` in library projects, except in Blazor component rendering lifecycle (`src/NexJob.Dashboard/`)
+6. **Banned APIs** — `DateTime.Now` (always use `DateTime.UtcNow`), `.Result`, `.Wait()`
 
 ---
 
 ## Code Quality (Enforced at Build)
 
-- Zero compiler warnings in `Release` builds
+- Zero compiler warnings in `Release` builds (`TreatWarningsAsErrors = true`)
 - Zero `NotImplementedException`
 - Classes `sealed` by default
 - Public APIs have XML docs (`///`)
 - Production-ready code only
+- **Add Overloads, Never Parameters (v5.9.0):** Never add optional parameters to public interfaces; always add new overloads to preserve binary and mock compatibility
 
 ---
 
@@ -112,9 +117,15 @@ public void Method()
 
 ## Test Suite Shape
 
-- One canonical test file per production class: `FooTests.cs`. Twin files (`FooHardeningTests.cs`) are banned and enforced by `TestSuiteConventionTests`.
-- Never weaken, invert or delete an assertion. Moving, merging into a `[Theory]` and deleting a proven duplicate are allowed.
-- Internal code is not a contract: simplify the existing method instead of adding a `*WithX` / `*V2` sibling.
+- **3N Mandatory Matrix:** Every feature or bug fix must produce minimum 3 tests:
+  - **N1 — Positive:** happy path works as expected
+  - **N2 — Negative:** failure path fails as expected
+  - **N3 — Invalid Input:** null, empty, boundary handled gracefully
+- **One canonical test file per production class:** `FooTests.cs`. Twin files (`FooHardeningTests.cs`) are banned and enforced by `TestSuiteConventionTests`.
+- **Existing tests are contracts:** NEVER weaken, invert or delete an assertion. Moving, merging into a `[Theory]` and deleting a proven duplicate are allowed.
+- **No Fixed Sleeps:** A test never waits a fixed time (`Task.Delay(50)` is banned). Poll with `TestWait.UntilAsync`, `TaskCompletionSource`, or `PauseObservedSignal`.
+- **Red-First Proof:** Write tests first, watch them fail for the right reason, and commit them alone (`test(scope): <what>, red (#id)`) before touching production code.
+- **Internal code is not a contract:** simplify the existing method instead of adding a `*WithX` / `*V2` sibling.
 
 ---
 

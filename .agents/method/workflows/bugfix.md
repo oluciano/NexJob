@@ -7,6 +7,7 @@
 ## 1. Pre-Flight & Context Warmup Gate (Phase 1)
 - **WIP Limit = 1:** Verify no other issue has the `in-progress` label (`gh issue list --label in-progress`).
 - **Warmup Check:** Inspect the target code on `develop` to verify whether the defect still reproduces or was already resolved.
+- **Milestone Guard (v6.5.0):** Bug fixes belong strictly to a **PATCH** milestone (`vX.Y.Z`). If the fix requires new public APIs or behavioral changes, it must be escalated to a **MINOR** milestone (`vX.Y.0`).
 - **Mark in-progress:** Add `in-progress` label to the issue and post kickoff comment.
 - **Branch Isolation:** Always branch off `develop`: `git checkout -b bugfix/<issue-id>-<description>`.
 
@@ -16,10 +17,11 @@
 - Identify the exact root cause: logic error, invariant breach, race condition, or deadlock.
 - **Mandatory Reproduction Test:** Write a targeted regression test reproducing the exact failure before touching production code.
 - **Red-First Proof:** Execute the test, watch it fail with the specific error, and commit the red test alone (`test(scope): reproduce <bug>, red (#id)`).
+- **No Fixed Sleeps:** Tests must never use `Task.Delay(50)` to wait for state. Use `TestWait.UntilAsync`, `TaskCompletionSource`, or `PauseObservedSignal`.
 - **Mandatory 3N Matrix:**
   - **N1 — Positive:** Normal execution works as expected.
   - **N2 — Negative:** The bug scenario is handled without unhandled crash or state corruption.
-  - **N3 — Boundary/Input:** Edge cases (null, empty, cancellation) handled cleanly.
+  - **N3 — Boundary/Input:** Edge cases (null, empty, cancellation, extreme bounds) handled cleanly.
 
 ---
 
@@ -34,8 +36,13 @@
 
 ## 4. Automated Verification & Gates (Phase 4, 4.5, 4.6)
 - **Formatting:** `dotnet format --verify-no-changes`.
-- **Build:** `dotnet build -c Release` (0 warnings, `TreatWarningsAsErrors = true`).
-- **Test Suite:** `dotnet test --no-build` (regression test and full test suite pass).
+- **Build:** `dotnet build -c Release` (0 warnings, `TreatWarningsAsErrors = true`, validating both `net8.0` and `net10.0`).
+- **Test Suite:** `dotnet test --no-build` (regression test and full test suite pass on all target frameworks).
+- **Test Contract Self-Audit:**
+  ```bash
+  git diff develop -- tests | grep -E '^-' | grep -E 'Should\(|Assert\.|Verify\(|Times\.|\[Fact|\[Theory|Skip ='
+  ```
+  Every deleted/modified assertion line must be justified (moved, merged duplicate, or explicit architect decision).
 - **Continuous Changelog (Phase 4.5):** Add entry under `## [Unreleased]` -> `### Fixed` referencing issue/PR.
 - **Documentation Truth Gate (Phase 4.6):** If the fix alters documented defaults or behavior, update the Wiki / README immediately.
 
@@ -44,8 +51,9 @@
 ## 5. Exit Criteria
 - [ ] Root cause identified and documented
 - [ ] Red-first reproduction test committed and green after fix
-- [ ] 3N matrix satisfied
+- [ ] 3N matrix satisfied without fixed sleeps (`Task.Delay` banned)
 - [ ] All tests pass without modifying existing passing tests
-- [ ] Zero compiler warnings in Release build
+- [ ] Zero compiler warnings in Release build on both `net8.0` and `net10.0`
 - [ ] `dotnet format` verified
+- [ ] Test contract self-audit verified (no unexplained assertion drops)
 - [ ] `CHANGELOG.md` updated under `[Unreleased]`

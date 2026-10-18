@@ -9,6 +9,7 @@ A refactor **MUST NOT** alter observable behavior or public API contracts:
 - Zero changes to public method signatures or types.
 - Zero changes to storage schemas or serialization formats.
 - All existing tests MUST pass completely unmodified.
+- **Prefer Simplification Over Accumulation:** Simplify and improve existing methods instead of adding `*WithX` / `*V2` sibling methods. Leave the code with fewer lines than you found it.
 
 ---
 
@@ -22,7 +23,7 @@ A refactor **MUST NOT** alter observable behavior or public API contracts:
 ## 3. Execution (Phase 3)
 - Mode: `.agents/method/modes/02-execution-mode.md`.
 - Refactor code in small, incremental steps.
-- Maintain StyleCop compliance, XML documentation, and async conventions.
+- Maintain StyleCop compliance, XML documentation, and async conventions (`.ConfigureAwait(false)`).
 - Do NOT rewrite or modify any existing passing tests.
 
 ---
@@ -36,6 +37,7 @@ A refactor **MUST NOT** alter observable behavior or public API contracts:
 
 ## 5. Automated Verification & Exit Criteria
 - [ ] All existing unit, integration, and reliability tests pass 100% unmodified
-- [ ] Zero compiler warnings in Release build (`TreatWarningsAsErrors = true`)
+- [ ] Test contract self-audit verified (`git diff develop -- tests` shows no dropped assertions)
+- [ ] Zero compiler warnings in Release build (`TreatWarningsAsErrors = true`) on both `net8.0` and `net10.0`
 - [ ] `dotnet format --verify-no-changes` passes cleanly
-- [ ] Public API surface unchanged
+- [ ] Public API surface completely unchanged
