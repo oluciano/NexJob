@@ -51,6 +51,7 @@ jobs:
           STATUS=0
           for dir in tests/*/; do
             name=$(basename "$dir")
+            [ -f "${dir}${name}.csproj" ] || continue
             # The filter excludes these projects entirely: do not build them.
             case "$name" in *IntegrationTests|*ReliabilityTests|*StressTests) continue ;; esac
             # Only the projects that target this runtime.
