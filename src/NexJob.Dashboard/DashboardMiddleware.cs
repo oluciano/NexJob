@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Net.Http.Headers;
 using NexJob.Configuration;
 using NexJob.Dashboard.Pages;
 using NexJob.Internal;
@@ -44,6 +45,8 @@ public sealed class DashboardMiddleware
             await _next(context).ConfigureAwait(false);
             return;
         }
+
+        DashboardSecurityHeaders.Apply(context.Response.Headers);
 
         var authHandler = context.RequestServices.GetService<IDashboardAuthorizationHandler>();
         if (authHandler is not null && !await authHandler.AuthorizeAsync(context).ConfigureAwait(false))
@@ -103,9 +106,18 @@ public sealed class DashboardMiddleware
         }
 
         // Handle API actions (POST)
-        if (string.Equals(context.Request.Method, HttpMethods.Post, StringComparison.Ordinal) && await HandleActionsAsync(context, subPath, activeCluster).ConfigureAwait(false))
+        if (string.Equals(context.Request.Method, HttpMethods.Post, StringComparison.Ordinal))
         {
-            return;
+            if (IsCrossSite(context.Request))
+            {
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                return;
+            }
+
+            if (await HandleActionsAsync(context, subPath, activeCluster).ConfigureAwait(false))
+            {
+                return;
+            }
         }
 
         // Render page
@@ -155,10 +167,41 @@ public sealed class DashboardMiddleware
         }).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Tells whether a request comes from another site (CSRF). <c>Sec-Fetch-Site</c> is set by the browser and a page
+    /// cannot forge it: only <c>same-origin</c> and <c>none</c> pass. Without it (older browsers) the <c>Origin</c> must be
+    /// the origin of this request. Without both there is no browser involved (scripts, tests), so the request is accepted.
+    /// </summary>
+    private static bool IsCrossSite(HttpRequest request)
+    {
+        if (request.Headers.TryGetValue("Sec-Fetch-Site", out var site) && site.Count > 0)
+        {
+            var value = site.ToString();
+            return !string.Equals(value, "same-origin", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(value, "none", StringComparison.OrdinalIgnoreCase);
+        }
+
+        if (!request.Headers.TryGetValue(HeaderNames.Origin, out var origin) || origin.Count == 0)
+        {
+            return false;
+        }
+
+        if (!Uri.TryCreate(origin.ToString(), UriKind.Absolute, out var uri)
+            || !(string.Equals(uri.Scheme, Uri.UriSchemeHttp, StringComparison.Ordinal) || string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.Ordinal)))
+        {
+            return true;
+        }
+
+        var defaultPort = string.Equals(request.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) ? 443 : 80;
+        return !string.Equals(uri.Scheme, request.Scheme, StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(uri.Host, request.Host.Host, StringComparison.OrdinalIgnoreCase)
+            || uri.Port != (request.Host.Port ?? defaultPort);
+    }
+
 #pragma warning disable SCS0027
     private static void LocalRedirect(HttpContext context, string location, DashboardCluster? activeCluster = null)
     {
-        if (location.StartsWith("/", StringComparison.Ordinal) && !location.StartsWith("//", StringComparison.Ordinal))
+        if (location.StartsWith('/') && !location.StartsWith("//", StringComparison.Ordinal))
         {
             if (activeCluster is not null)
             {
@@ -258,7 +301,7 @@ public sealed class DashboardMiddleware
             }
         }
 
-        return catalog.FirstOrDefault() ?? anyJob;
+        return catalog.Count > 0 ? catalog[0] : anyJob;
     }
 
     private void RedirectAfterQueueAction(HttpContext context, DashboardCluster? activeCluster)

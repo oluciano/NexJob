@@ -6,6 +6,26 @@ description: "Step-by-step migration guides for NexJob major version upgrades, i
 
 This page covers every breaking change between NexJob releases and tells you exactly what to update in your code. Schema migrations for PostgreSQL and SQL Server apply automatically at startup. Follow the steps in order for each version jump you're crossing.
 
+## v6.5.1 → v6.6.0
+
+No schema migration and no breaking change. The packages now ship two targets, `net8.0` and `net10.0`; NuGet picks the one that matches your application, so there is nothing to change.
+
+- **Runtimes:** .NET 8 and .NET 10 are supported (see [Supported runtimes](../quickstart.md#supported-runtimes)). An application on .NET 9 uses the `net8.0` target.
+- **What the `net10.0` target requires:** `Microsoft.Extensions.*` 10.0.0 or newer, which a .NET 10 host already has. The `net8.0` target keeps the `8.x` floors, and the pinned security fixes (`System.Text.Json`, `System.Text.Encodings.Web`, `System.Diagnostics.DiagnosticSource`) stay in the `net8.0` dependency group only.
+- **PostgreSQL and SQL Server:** the schema migration that the constructor runs no longer risks a deadlock in a host with a `SynchronizationContext` (WinForms, WPF, legacy ASP.NET). No API change.
+- **`GetCheckpoint<TState>()`:** a saved checkpoint that cannot be read as `TState` still returns `null`, and now logs a warning with the job id, job type and state type.
+- **Dashboard, requests from another site:** a `POST` action whose `Sec-Fetch-Site` is not `same-origin` or `none`, or (without that header) whose `Origin` is not the origin of the request, now gets `403` and changes nothing. Scripts and `curl` that send neither header are accepted. If the dashboard sits behind a reverse proxy that rewrites the host and a very old browser sends only `Origin`, the `Origin` must match the host the dashboard sees (see [what the dashboard protects](../integrations/dashboard.md#what-the-dashboard-protects-on-its-own)).
+- **Dashboard, security headers:** every response now carries `X-Content-Type-Options`, `X-Frame-Options: DENY`, `Referrer-Policy: same-origin` and a `Content-Security-Policy` with `frame-ancestors 'none'`. **If you embed the dashboard in an `<iframe>`, it stops rendering:** serve it in its own tab, or set your own `X-Frame-Options` / CSP on the response (a header already set by your application or proxy is not overwritten).
+- **Dashboard, other fixes:** the confirmation dialogs of Trigger Now, Requeue All, Run Now and Requeue appear again; values in inline handlers and the queue name in the filter dropdown are encoded; a `TraceParent` that is not W3C version `00` is no longer shown on the job detail page.
+- **Samples, benchmarks and the playground image** run on .NET 10; they are not packages.
+
+**Rolling upgrade.** No stored data changes, so 6.5.1 and 6.6.0 nodes can run together.
+
+**Rollout and rollback.**
+
+- **Roll out:** upgrade one node first. If it is on .NET 10, check that `dotnet list package` shows the `net10.0` assets resolved.
+- **Roll back:** go back to 6.5.1; there is nothing to undo.
+
 ## v6.5.0 → v6.5.1
 
 No schema migration, no new public API and no stored format change. One fix:

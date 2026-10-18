@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using NexJob.Storage;
 
 namespace NexJob.Internal;
@@ -9,13 +11,17 @@ namespace NexJob.Internal;
 internal sealed class JobContext : IJobContext
 {
     private readonly IJobStorage _storage;
+    private readonly ILogger _logger;
+    private readonly string _jobType;
     private string? _checkpointJson;
 
     /// <summary>
     /// Initializes a new <see cref="JobContext"/> from the fetched <paramref name="job"/> record.
     /// </summary>
-    public JobContext(JobRecord job, IJobStorage storage)
+    public JobContext(JobRecord job, IJobStorage storage, ILogger? logger = null)
     {
+        _logger = logger ?? NullLogger.Instance;
+        _jobType = job.JobType;
         JobId = job.Id;
         Attempt = job.Attempts;
         MaxAttempts = job.MaxAttempts;
@@ -56,7 +62,7 @@ internal sealed class JobContext : IJobContext
     public TState? GetCheckpoint<TState>()
         where TState : class
     {
-        if (string.IsNullOrEmpty(_checkpointJson))
+        if (string.IsNullOrWhiteSpace(_checkpointJson))
         {
             return null;
         }
@@ -65,8 +71,15 @@ internal sealed class JobContext : IJobContext
         {
             return System.Text.Json.JsonSerializer.Deserialize<TState>(_checkpointJson);
         }
-        catch
+        catch (Exception ex)
         {
+            // A checkpoint that exists but cannot be read is not the first attempt: the job starts over, so say so.
+            _logger.LogWarning(
+                ex,
+                "The checkpoint of job {JobId} ({JobType}) cannot be read as {StateType}; GetCheckpoint returns null and the job starts from the beginning.",
+                JobId,
+                _jobType,
+                typeof(TState).Name);
             return null;
         }
     }

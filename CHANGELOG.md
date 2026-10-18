@@ -6,6 +6,37 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [6.6.0] - 2026-10-18
+
+### Changed
+
+- **Dependency updates:** StackExchange.Redis 2.13.17 (Redis provider) and System.Text.Json 8.0.6 (the pin in the `net8.0` group of the Azure Service Bus trigger). (issue #626, PRs #618, #620)
+- **Samples, benchmarks and the playground image run on .NET 10.** `samples/*`, `benchmarks/*` and `NexJob.Samples.Tests` target `net10.0` only (the libraries keep `net8.0` and `net10.0`), and the playground `Dockerfile` uses the `10.0-alpine` SDK and ASP.NET images, pinned by digest. This also fixes the 500 (`PipeWriter ... UnflushedBytes`) the sample tests hit on a .NET 10 host. The published benchmark tables were measured on .NET 8 and are unchanged. (issue #584)
+- **Dependabot no longer proposes `Microsoft.Extensions.*` or `Microsoft.CodeAnalysis.CSharp*`.** It ignored the per-framework `Condition` and moved the net8.0 references to 10.x, which would raise the dependency floor of the net8.0 package; the floors are moved by hand. (issue #615)
+- **Dependency updates:** Npgsql 8.0.9, Microsoft.Data.SqlClient 5.2.3, Microsoft.AspNetCore.Http.Abstractions 2.3.13, Newtonsoft.Json 13.0.4 (benchmarks) and the GitHub Actions of the CodeQL and Scorecard workflows. (PRs #605, #607, #610, #611, #612)
+- **Analyzers moved to their current versions** (NetAnalyzers 10.0, Sonar 10.35, Meziantou 3.0, StyleCop 1.3, BannedApiAnalyzers 5.6) with `AnalysisLevel=latest` and `AnalysisMode=Recommended`. No behaviour change in the libraries, except that the Dashboard now formats the numbers and times in its HTML with the invariant culture and lower-cases the status in a confirmation text with `ToLowerInvariant`. Every rule turned off in `.editorconfig` carries its reason, and a test fails when one does not. `RuntimeSettings` moved to its own file. (issue #586)
+- **CI runs the unit and integration tests on net8.0 and net10.0** (one leg per runtime), builds the `Dockerfile` when it changes, and packs with SDK 10. The tests that expected a startup log or a listener status right after `StartAsync` now wait for it: on .NET 10 `BackgroundService.StartAsync` does not run `ExecuteAsync` up to its first await (issue #583).
+
+### Added
+- **The packages target `net8.0` and `net10.0`** (additive, no breaking change). .NET 8 and 9 leave support on 2026-11-10. Each package holds `lib/net8.0` and `lib/net10.0`; the security pins (`System.Text.Json`, `System.Text.Encodings.Web`, `System.Diagnostics.DiagnosticSource`) stay in the `net8.0` dependency group only, and the `net10.0` group takes `Microsoft.Extensions.*` 10.x. `System.Threading.Lock` is used on .NET 9 and later (issue #582, part of #439).
+
+### Documentation
+- **The supported runtimes are stated: `net8.0` and `net10.0`**, with the policy for dropping `net8.0` (a later major, not before .NET 8 has been out of support for 6 months or a dependency requires it). It is in the Quick Start of the wiki, the README and `SECURITY.md`; the migration guide has a v6.6.0 section; the wiki changelog now covers up to v6.5.1. Tests keep the `SECURITY.md` table equal to `TargetFrameworks` and fail on a "for .NET 8+" or "net8.0 only" statement. (issue #585)
+
+### Tests
+- **Dashboard: one test proves every stored value is encoded on every page.** It stores markup (text, attribute and script-string breakouts) in the job, recurring job, server and listener fields, reads 14 routes including the reflected `search`, `tag` and `queue` queries, and fails if any raw fragment appears; it fails with the #589 fix reverted (issue #590).
+
+### Fixed
+- **`JobDispatcherService.StopAsync` no longer throws `ObjectDisposedException` when the host is disposed before it is stopped** (`WebApplicationFactory`, `TestServer`). It made the cleanup of a test class fail intermittently. (issue #623)
+- **`IJobContext.GetCheckpoint<TState>()` now logs a warning when a saved checkpoint cannot be read** (the shape of `TState` changed between attempts, damaged JSON). It still returns `null`, but the job id, job type and state type are in the log, so a job that silently starts over is visible. A blank checkpoint stays the quiet "first attempt". (issue #588)
+- **PostgreSQL and SQL Server providers: every `await` now uses `ConfigureAwait(false)`, and the rule (`MA0004`) is on for both projects.** The SQL Server schema migration, which the constructor runs synchronously, deadlocked in a host with a `SynchronizationContext` (WinForms, WPF, legacy ASP.NET); the PostgreSQL migration already left the context. No API change. (issue #587)
+- **Dashboard: every response carries security headers** (`X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy` and a `Content-Security-Policy` with `frame-ancestors 'none'`, `object-src 'none'`, `base-uri` and `form-action` restricted); headers already set by the host are kept. The pages can no longer be framed by another site (#595).
+- **Dashboard: the POST actions reject requests that come from another site (CSRF).** A cross-site `Sec-Fetch-Site`, or an `Origin` that is not the origin of the request, gets 403 and changes nothing; requests with no browser metadata (scripts, tests) and the dashboard's own forms are unchanged. Before, a form on any other site could delete, requeue, pause or trigger as the operator, with no credentials at all on the default standalone host (#594).
+- **Dashboard: the confirmation dialogs of Trigger Now (Recurring list and detail), Requeue All (Failed), Run Now and Requeue (Job detail) appear again.** The inline `onclick` was cut after `confirm(` (a double-quoted string inside a double-quoted attribute), so the browser raised a syntax error and the action ran without asking. This also made the blocking warning for queues without active workers (#227) invisible since v5.6.0. Run Now was also missing its closing parenthesis (#592).
+- **Dashboard: values placed inside inline handlers are encoded for JavaScript and then for the attribute** (the queue name in the Pause and Reset Circuit confirmations, the idempotency key and the TraceParent in the copy buttons). A new `Helpers.JsAttr` does both, in that order (#592).
+- **Dashboard: a TraceParent that is not W3C is not shown.** The job detail page printed the trace and span ids as they were stored, and the Kafka trigger stores the `traceparent` header of the message. Only version `00`, 32 hex and 16 hex are shown (#592).
+- **Dashboard: the queue name in the filter dropdown of the Jobs and Failed pages is HTML-encoded.** The `value` attribute was encoded and the option text was not, so a queue name with markup was rendered as markup (#589).
+
 ## [6.5.1] - 2026-10-17
 
 ### Fixed

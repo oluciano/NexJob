@@ -71,7 +71,7 @@ public sealed class StandaloneDashboardOptions
     /// Defaults to <see langword="false"/>.
     /// Override via <c>NexJob:Dashboard:DisableWorkers</c> in appsettings.json.
     /// </summary>
-    public bool DisableWorkers { get; set; } = false;
+    public bool DisableWorkers { get; set; }
 
     /// <summary>
     /// Optional collection of queue names to scope the dashboard view to.

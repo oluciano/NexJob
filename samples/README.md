@@ -86,7 +86,7 @@ Every web sample ships a `Properties/launchSettings.json` with its own port, so 
 ## Sample Guides
 
 ### 1. Minimal API (`NexJob.Sample.MinimalApi`)
-Focuses on dead-simple background job invocation in modern .NET 8 Minimal APIs.
+Focuses on dead-simple background job invocation in modern .NET Minimal APIs.
 ```bash
 dotnet run --project samples/NexJob.Sample.MinimalApi/NexJob.Sample.MinimalApi.csproj
 ```

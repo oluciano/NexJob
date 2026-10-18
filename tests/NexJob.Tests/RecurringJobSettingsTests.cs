@@ -124,7 +124,7 @@ public sealed class RecurringJobSettingsTests
 
         // Assert - both should register with unique IDs (TestJob1 and TestJob1-1)
         var all = await storage.GetRecurringJobsAsync();
-        var jobs = all.Where(r => r.RecurringJobId.StartsWith("TestJob1")).ToList();
+        var jobs = all.Where(r => r.RecurringJobId.StartsWith("TestJob1", StringComparison.Ordinal)).ToList();
         jobs.Should().HaveCount(2);
         jobs.Select(r => r.RecurringJobId).Should().BeEquivalentTo("TestJob1", "TestJob1-1");
     }

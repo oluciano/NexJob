@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Moq;
 using NexJob.Internal;
+using NexJob.Tests;
 using Xunit;
 
 namespace NexJob.Trigger.Kafka.Tests;
@@ -715,6 +716,10 @@ public sealed class KafkaTriggerTests
         // Act: Start handler
         await handler.StartAsync(CancellationToken.None);
 
+        // Behavior changed in net10.0: BackgroundService.StartAsync no longer guarantees ExecuteAsync ran up to its first await.
+        await TestWait.UntilAsync(
+            () => Task.FromResult(registry.Get($"kafka:{_triggerOptions.Topic}")!.Status == ListenerStatus.Listening),
+            because: "the handler reports Listening");
         var listening = registry.Get($"kafka:{_triggerOptions.Topic}");
         listening!.Status.Should().Be(ListenerStatus.Listening);
 

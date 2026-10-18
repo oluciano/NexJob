@@ -169,7 +169,7 @@ public sealed class MockSalesforceServer : IAsyncDisposable
                 PendingNumRequested = 99,
             };
 
-            await responseStream.WriteAsync(response);
+            await responseStream.WriteAsync(response, context.CancellationToken);
 
             // Keep the stream open until client cancels
             try

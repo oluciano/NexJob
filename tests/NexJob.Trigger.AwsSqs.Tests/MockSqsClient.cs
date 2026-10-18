@@ -8,7 +8,11 @@ namespace NexJob.Trigger.AwsSqs.Tests;
 internal sealed class MockSqsClient : ISqsClient
 {
     private readonly Queue<Message> _testMessages = new();
+#if NET9_0_OR_GREATER
+    private readonly Lock _lock = new();
+#else
     private readonly object _lock = new();
+#endif
 
     public TimeSpan SimulateProcessingDelay { get; set; } = TimeSpan.Zero;
     public bool BlockOnReceive { get; set; }

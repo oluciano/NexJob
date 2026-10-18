@@ -28,6 +28,10 @@ dotnet add package NexJob
 
 ---
 
+## Requirements
+
+.NET 8 or .NET 10: the packages target `net8.0` and `net10.0`. The policy for dropping a runtime is in the [Quick Start](https://oluciano.github.io/NexJob/quickstart/#supported-runtimes).
+
 ## Quick Start
 
 ```csharp

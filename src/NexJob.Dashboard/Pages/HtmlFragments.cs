@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.Text;
 using System.Web;
 using NexJob.Configuration;
@@ -229,7 +230,7 @@ internal static class HtmlFragments
             queueOptions += string.Join(string.Empty, queues.Select(q =>
             {
                 var selected = string.Equals(queueVal, q.Queue, StringComparison.Ordinal) ? " selected" : string.Empty;
-                return $"<option value=\"{HttpUtility.HtmlAttributeEncode(q.Queue)}\"{selected}>{q.Queue} ({q.Enqueued + q.Processing})</option>";
+                return $"<option value=\"{HttpUtility.HtmlAttributeEncode(q.Queue)}\"{selected}>{HttpUtility.HtmlEncode(q.Queue)} ({q.Enqueued + q.Processing})</option>";
             }));
         }
 
@@ -475,14 +476,14 @@ internal static class HtmlFragments
             var resetForm = string.Empty;
             if (circuitStatus is not null && circuitStatus.State != QueueCircuitState.Closed)
             {
-                resetForm = $"<form method=\"post\" action=\"{pathPrefix}/queues/{Uri.EscapeDataString(queue.Queue)}/reset-circuit{clusterSuffix}\" style=\"display:inline\" onclick=\"return confirm('Reset circuit breaker for queue {HtmlEncode(queue.Queue)}? This will immediately resume traffic to downstream API.')\">" +
+                resetForm = $"<form method=\"post\" action=\"{pathPrefix}/queues/{Uri.EscapeDataString(queue.Queue)}/reset-circuit{clusterSuffix}\" style=\"display:inline\" onclick=\"return confirm('Reset circuit breaker for queue {Helpers.JsAttr(queue.Queue)}? This will immediately resume traffic to downstream API.')\">" +
                     $"<button type=\"submit\" class=\"btn btn-secondary btn-sm\" title=\"Reset Circuit Breaker\">⚡ Reset Circuit</button></form>";
             }
 
             pauseForm = isPaused
                 ? $"<form method=\"post\" action=\"{pathPrefix}/queues/{Uri.EscapeDataString(queue.Queue)}/resume{clusterSuffix}\" style=\"display:inline\">" +
                   $"<button type=\"submit\" class=\"btn btn-primary btn-sm\" title=\"Resume Queue\">▶ Resume</button></form>"
-                : $"<form method=\"post\" action=\"{pathPrefix}/queues/{Uri.EscapeDataString(queue.Queue)}/pause{clusterSuffix}\" style=\"display:inline\" onclick=\"return confirm('Pause queue {HtmlEncode(queue.Queue)}?')\">" +
+                : $"<form method=\"post\" action=\"{pathPrefix}/queues/{Uri.EscapeDataString(queue.Queue)}/pause{clusterSuffix}\" style=\"display:inline\" onclick=\"return confirm('Pause queue {Helpers.JsAttr(queue.Queue)}?')\">" +
                   $"<button type=\"submit\" class=\"btn btn-secondary btn-sm\" title=\"Pause Queue\">⏸ Pause</button></form>";
 
             if (!string.IsNullOrEmpty(resetForm))
@@ -645,13 +646,13 @@ internal static class HtmlFragments
                 : $"<form method=\"post\" action=\"{pathPrefix}/recurring/{encodedIdUrl}/resume{clusterSuffix}\" style=\"display:inline\" onclick=\"event.stopPropagation()\"><button type=\"submit\" class=\"btn-icon-sm\" title=\"Resume Schedule\" style=\"color:var(--success)\">{playIcon}</button></form>";
 
             var queueOrphanWarning = activeWorkerQueues is { Count: > 0 } && !activeWorkerQueues.Contains(job.Queue, StringComparer.OrdinalIgnoreCase)
-                ? $"\\n\\n⚠ Warning: Queue '{job.Queue}' has no active workers. The job will remain queued until a worker starts."
+                ? $"\n\n⚠ Warning: Queue '{job.Queue}' has no active workers. The job will remain queued until a worker starts."
                 : string.Empty;
-            var triggerConfirmJs = System.Web.HttpUtility.JavaScriptStringEncode($"Trigger '{job.RecurringJobId}' now?{queueOrphanWarning}", addDoubleQuotes: true);
+            var triggerConfirm = $"Trigger '{job.RecurringJobId}' now?{queueOrphanWarning}";
 
             actionsHtml =
                 $"<form method=\"post\" action=\"{pathPrefix}/recurring/{encodedIdUrl}/trigger{clusterSuffix}\" style=\"display:inline\" onclick=\"event.stopPropagation()\">" +
-                $"<button type=\"submit\" class=\"btn-icon-sm\" title=\"Trigger Now\" style=\"color:var(--primary)\" onclick=\"return confirm({triggerConfirmJs})\">{boltIcon}</button></form> " +
+                $"<button type=\"submit\" class=\"btn-icon-sm\" title=\"Trigger Now\" style=\"color:var(--primary)\" onclick=\"return confirm('{Helpers.JsAttr(triggerConfirm)}')\">{boltIcon}</button></form> " +
                 pauseResume;
         }
 
@@ -749,14 +750,14 @@ internal static class HtmlFragments
         sb.Append("</div>");
 
         sb.Append("<div style=\"display:flex;gap:8px;align-items:center;flex-wrap:wrap\">");
-        sb.Append($"<span class=\"badge\" style=\"background:var(--bg-tertiary);color:var(--text-secondary);border:1px solid var(--border)\">Age: {totalAge}</span>");
+        sb.Append(CultureInfo.InvariantCulture, $"<span class=\"badge\" style=\"background:var(--bg-tertiary);color:var(--text-secondary);border:1px solid var(--border)\">Age: {totalAge}</span>");
         if (job.Attempts > 1)
         {
-            sb.Append($"<span class=\"badge\" style=\"background:var(--warning-light);color:var(--warning);border:1px solid var(--warning)\">🔁 Attempt {job.Attempts}/{effectiveMax}</span>");
+            sb.Append(CultureInfo.InvariantCulture, $"<span class=\"badge\" style=\"background:var(--warning-light);color:var(--warning);border:1px solid var(--warning)\">🔁 Attempt {job.Attempts}/{effectiveMax}</span>");
         }
         else
         {
-            sb.Append($"<span class=\"badge\" style=\"background:var(--bg-tertiary);color:var(--text-tertiary);border:1px solid var(--border)\">Attempt 1/{effectiveMax}</span>");
+            sb.Append(CultureInfo.InvariantCulture, $"<span class=\"badge\" style=\"background:var(--bg-tertiary);color:var(--text-tertiary);border:1px solid var(--border)\">Attempt 1/{effectiveMax}</span>");
         }
 
         if (job.ExpiresAt.HasValue)
@@ -768,7 +769,7 @@ internal static class HtmlFragments
             var deadlineStyle = isExpired
                 ? "background:rgba(234, 84, 85, 0.15);color:var(--error);border:1px solid var(--error)"
                 : "background:rgba(245, 158, 11, 0.15);color:var(--warning);border:1px solid var(--warning)";
-            sb.Append($"<span class=\"badge\" style=\"{deadlineStyle}\" title=\"Deadline: {job.ExpiresAt.Value:yyyy-MM-dd HH:mm:ss} UTC\">{deadlineText}</span>");
+            sb.Append(CultureInfo.InvariantCulture, $"<span class=\"badge\" style=\"{deadlineStyle}\" title=\"Deadline: {job.ExpiresAt.Value:yyyy-MM-dd HH:mm:ss} UTC\">{deadlineText}</span>");
         }
 
         sb.Append("</div></div>");
@@ -781,10 +782,10 @@ internal static class HtmlFragments
         {
             var isPassed = now >= job.ScheduledAt.Value;
             var schedClass = isPassed ? "success" : "active";
-            sb.Append($"<div class=\"lifecycle-node {schedClass}\">");
-            sb.Append($"<div style=\"display:flex;justify-content:space-between;align-items:center;margin-bottom:4px\"><span style=\"font-size:11px;font-weight:700;color:var(--primary);text-transform:uppercase\">⏰ Scheduled</span><span style=\"font-size:11px;color:var(--text-tertiary);font-family:monospace\">{job.CreatedAt:HH:mm:ss}</span></div>");
-            sb.Append($"<div style=\"font-size:13px;font-weight:600;color:var(--text-primary)\">Run at {job.ScheduledAt.Value:HH:mm:ss}</div>");
-            sb.Append($"<div style=\"font-size:11px;color:var(--text-secondary)\">{(isPassed ? "Released to queue" : "Due in " + Helpers.CountdownFriendly(job.ScheduledAt.Value - now))}</div>");
+            sb.Append(CultureInfo.InvariantCulture, $"<div class=\"lifecycle-node {schedClass}\">");
+            sb.Append(CultureInfo.InvariantCulture, $"<div style=\"display:flex;justify-content:space-between;align-items:center;margin-bottom:4px\"><span style=\"font-size:11px;font-weight:700;color:var(--primary);text-transform:uppercase\">⏰ Scheduled</span><span style=\"font-size:11px;color:var(--text-tertiary);font-family:monospace\">{job.CreatedAt:HH:mm:ss}</span></div>");
+            sb.Append(CultureInfo.InvariantCulture, $"<div style=\"font-size:13px;font-weight:600;color:var(--text-primary)\">Run at {job.ScheduledAt.Value:HH:mm:ss}</div>");
+            sb.Append(CultureInfo.InvariantCulture, $"<div style=\"font-size:11px;color:var(--text-secondary)\">{(isPassed ? "Released to queue" : "Due in " + Helpers.CountdownFriendly(job.ScheduledAt.Value - now))}</div>");
             sb.Append("</div>");
 
             // Connector to Enqueued
@@ -796,14 +797,14 @@ internal static class HtmlFragments
 
         // Node: Enqueued
         sb.Append("<div class=\"lifecycle-node success\">");
-        sb.Append($"<div style=\"display:flex;justify-content:space-between;align-items:center;margin-bottom:4px\"><span style=\"font-size:11px;font-weight:700;color:var(--info);text-transform:uppercase\">📥 Enqueued</span><span style=\"font-size:11px;color:var(--text-tertiary);font-family:monospace\">{enqueuedAt:HH:mm:ss}</span></div>");
-        sb.Append($"<div style=\"font-size:13px;font-weight:600;color:var(--text-primary)\">Queue: {HtmlEncode(job.Queue)}</div>");
-        sb.Append($"<div style=\"font-size:11px;color:var(--text-secondary)\">Priority: {job.Priority}</div>");
+        sb.Append(CultureInfo.InvariantCulture, $"<div style=\"display:flex;justify-content:space-between;align-items:center;margin-bottom:4px\"><span style=\"font-size:11px;font-weight:700;color:var(--info);text-transform:uppercase\">📥 Enqueued</span><span style=\"font-size:11px;color:var(--text-tertiary);font-family:monospace\">{enqueuedAt:HH:mm:ss}</span></div>");
+        sb.Append(CultureInfo.InvariantCulture, $"<div style=\"font-size:13px;font-weight:600;color:var(--text-primary)\">Queue: {HtmlEncode(job.Queue)}</div>");
+        sb.Append(CultureInfo.InvariantCulture, $"<div style=\"font-size:11px;color:var(--text-secondary)\">Priority: {job.Priority}</div>");
         sb.Append("</div>");
 
         // Connector: Enqueued -> Processing
         sb.Append("<div class=\"lifecycle-connector\">");
-        sb.Append($"<span class=\"lifecycle-metric-badge\" style=\"background:var(--bg-tertiary);color:var(--text-secondary);border:1px solid var(--border)\">{waitTimeStr}</span>");
+        sb.Append(CultureInfo.InvariantCulture, $"<span class=\"lifecycle-metric-badge\" style=\"background:var(--bg-tertiary);color:var(--text-secondary);border:1px solid var(--border)\">{waitTimeStr}</span>");
         sb.Append("<div class=\"lifecycle-arrow\"><svg width=\"24\" height=\"16\" viewBox=\"0 0 24 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><line x1=\"2\" y1=\"8\" x2=\"20\" y2=\"8\"></line><polyline points=\"14 2 20 8 14 14\"></polyline></svg></div>");
         sb.Append("</div>");
 
@@ -832,10 +833,10 @@ internal static class HtmlFragments
             ? $"Attempt {job.Attempts} of {effectiveMax} (retried)"
             : $"Attempt {Math.Max(1, job.Attempts)} of {effectiveMax}";
 
-        sb.Append($"<div class=\"lifecycle-node {procClass}\">");
-        sb.Append($"<div style=\"display:flex;justify-content:space-between;align-items:center;margin-bottom:4px\"><span style=\"font-size:11px;font-weight:700;color:var(--warning);text-transform:uppercase\">{procTitle}</span><span style=\"font-size:11px;color:var(--text-tertiary);font-family:monospace\">{procTime}</span></div>");
-        sb.Append($"<div style=\"font-size:13px;font-weight:600;color:var(--text-primary)\">{procDetail}</div>");
-        sb.Append($"<div style=\"font-size:11px;color:var(--text-secondary)\">{(job.ProcessingStartedAt.HasValue ? "Worker slot claimed" : "Waiting for worker")}</div>");
+        sb.Append(CultureInfo.InvariantCulture, $"<div class=\"lifecycle-node {procClass}\">");
+        sb.Append(CultureInfo.InvariantCulture, $"<div style=\"display:flex;justify-content:space-between;align-items:center;margin-bottom:4px\"><span style=\"font-size:11px;font-weight:700;color:var(--warning);text-transform:uppercase\">{procTitle}</span><span style=\"font-size:11px;color:var(--text-tertiary);font-family:monospace\">{procTime}</span></div>");
+        sb.Append(CultureInfo.InvariantCulture, $"<div style=\"font-size:13px;font-weight:600;color:var(--text-primary)\">{procDetail}</div>");
+        sb.Append(CultureInfo.InvariantCulture, $"<div style=\"font-size:11px;color:var(--text-secondary)\">{(job.ProcessingStartedAt.HasValue ? "Worker slot claimed" : "Waiting for worker")}</div>");
         sb.Append("</div>");
 
         // Connector: Processing -> Result
@@ -843,7 +844,7 @@ internal static class HtmlFragments
         string resultBadge = !string.Equals(durationStr, "—", StringComparison.Ordinal)
             ? durationStr
             : "outcome";
-        sb.Append($"<span class=\"lifecycle-metric-badge\" style=\"background:var(--bg-tertiary);color:var(--text-secondary);border:1px solid var(--border)\">{resultBadge}</span>");
+        sb.Append(CultureInfo.InvariantCulture, $"<span class=\"lifecycle-metric-badge\" style=\"background:var(--bg-tertiary);color:var(--text-secondary);border:1px solid var(--border)\">{resultBadge}</span>");
         sb.Append("<div class=\"lifecycle-arrow\"><svg width=\"24\" height=\"16\" viewBox=\"0 0 24 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><line x1=\"2\" y1=\"8\" x2=\"20\" y2=\"8\"></line><polyline points=\"14 2 20 8 14 14\"></polyline></svg></div>");
         sb.Append("</div>");
 
@@ -852,25 +853,25 @@ internal static class HtmlFragments
         {
             var compTime = job.CompletedAt.HasValue ? $"{job.CompletedAt.Value:HH:mm:ss}" : "—";
             sb.Append("<div class=\"lifecycle-node success\">");
-            sb.Append($"<div style=\"display:flex;justify-content:space-between;align-items:center;margin-bottom:4px\"><span style=\"font-size:11px;font-weight:700;color:var(--success);text-transform:uppercase\">✅ Succeeded</span><span style=\"font-size:11px;color:var(--text-tertiary);font-family:monospace\">{compTime}</span></div>");
+            sb.Append(CultureInfo.InvariantCulture, $"<div style=\"display:flex;justify-content:space-between;align-items:center;margin-bottom:4px\"><span style=\"font-size:11px;font-weight:700;color:var(--success);text-transform:uppercase\">✅ Succeeded</span><span style=\"font-size:11px;color:var(--text-tertiary);font-family:monospace\">{compTime}</span></div>");
             sb.Append("<div style=\"font-size:13px;font-weight:600;color:var(--text-primary)\">Completed with success</div>");
-            sb.Append($"<div style=\"font-size:11px;color:var(--text-secondary)\">Execution duration: {durationStr}</div>");
+            sb.Append(CultureInfo.InvariantCulture, $"<div style=\"font-size:11px;color:var(--text-secondary)\">Execution duration: {durationStr}</div>");
             sb.Append("</div>");
         }
         else if (job.Status == JobStatus.Failed)
         {
             var compTime = job.CompletedAt.HasValue ? $"{job.CompletedAt.Value:HH:mm:ss}" : "—";
             sb.Append("<div class=\"lifecycle-node failed\">");
-            sb.Append($"<div style=\"display:flex;justify-content:space-between;align-items:center;margin-bottom:4px\"><span style=\"font-size:11px;font-weight:700;color:var(--error);text-transform:uppercase\">❌ Dead-Letter / Failed</span><span style=\"font-size:11px;color:var(--text-tertiary);font-family:monospace\">{compTime}</span></div>");
+            sb.Append(CultureInfo.InvariantCulture, $"<div style=\"display:flex;justify-content:space-between;align-items:center;margin-bottom:4px\"><span style=\"font-size:11px;font-weight:700;color:var(--error);text-transform:uppercase\">❌ Dead-Letter / Failed</span><span style=\"font-size:11px;color:var(--text-tertiary);font-family:monospace\">{compTime}</span></div>");
             sb.Append("<div style=\"font-size:13px;font-weight:600;color:var(--text-primary)\">Attempts exhausted</div>");
-            sb.Append($"<div style=\"font-size:11px;color:var(--text-secondary)\">{job.Attempts}/{effectiveMax} failed attempts</div>");
+            sb.Append(CultureInfo.InvariantCulture, $"<div style=\"font-size:11px;color:var(--text-secondary)\">{job.Attempts}/{effectiveMax} failed attempts</div>");
             sb.Append("</div>");
         }
         else if (job.Status == JobStatus.Expired)
         {
             var expTime = job.ExpiresAt.HasValue ? $"{job.ExpiresAt.Value:HH:mm:ss}" : "—";
             sb.Append("<div class=\"lifecycle-node warning\">");
-            sb.Append($"<div style=\"display:flex;justify-content:space-between;align-items:center;margin-bottom:4px\"><span style=\"font-size:11px;font-weight:700;color:var(--warning);text-transform:uppercase\">⚠️ Expired</span><span style=\"font-size:11px;color:var(--text-tertiary);font-family:monospace\">{expTime}</span></div>");
+            sb.Append(CultureInfo.InvariantCulture, $"<div style=\"display:flex;justify-content:space-between;align-items:center;margin-bottom:4px\"><span style=\"font-size:11px;font-weight:700;color:var(--warning);text-transform:uppercase\">⚠️ Expired</span><span style=\"font-size:11px;color:var(--text-tertiary);font-family:monospace\">{expTime}</span></div>");
             sb.Append("<div style=\"font-size:13px;font-weight:600;color:var(--text-primary)\">Deadline exceeded</div>");
             sb.Append("<div style=\"font-size:11px;color:var(--text-secondary)\">Skipped before execution</div>");
             sb.Append("</div>");
@@ -880,9 +881,9 @@ internal static class HtmlFragments
             var retryTime = $"{job.RetryAt.Value:HH:mm:ss}";
             var waitCountdown = Helpers.CountdownFriendly(job.RetryAt.Value - now);
             sb.Append("<div class=\"lifecycle-node warning\">");
-            sb.Append($"<div style=\"display:flex;justify-content:space-between;align-items:center;margin-bottom:4px\"><span style=\"font-size:11px;font-weight:700;color:var(--warning);text-transform:uppercase\">⏳ Awaiting Retry</span><span style=\"font-size:11px;color:var(--text-tertiary);font-family:monospace\">{retryTime}</span></div>");
+            sb.Append(CultureInfo.InvariantCulture, $"<div style=\"display:flex;justify-content:space-between;align-items:center;margin-bottom:4px\"><span style=\"font-size:11px;font-weight:700;color:var(--warning);text-transform:uppercase\">⏳ Awaiting Retry</span><span style=\"font-size:11px;color:var(--text-tertiary);font-family:monospace\">{retryTime}</span></div>");
             sb.Append($"<div style=\"font-size:13px;font-weight:600;color:var(--text-primary)\">Backoff in progress</div>");
-            sb.Append($"<div style=\"font-size:11px;color:var(--text-secondary)\">Retrying in {waitCountdown}</div>");
+            sb.Append(CultureInfo.InvariantCulture, $"<div style=\"font-size:11px;color:var(--text-secondary)\">Retrying in {waitCountdown}</div>");
             sb.Append("</div>");
         }
         else if (job.Status == JobStatus.Processing)
@@ -890,7 +891,7 @@ internal static class HtmlFragments
             sb.Append("<div class=\"lifecycle-node active\">");
             sb.Append("<div style=\"display:flex;justify-content:space-between;align-items:center;margin-bottom:4px\"><span style=\"font-size:11px;font-weight:700;color:var(--primary);text-transform:uppercase\">🔄 In Progress</span><span class=\"pulse-live\"></span></div>");
             sb.Append("<div style=\"font-size:13px;font-weight:600;color:var(--text-primary)\">Worker executing job</div>");
-            sb.Append($"<div style=\"font-size:11px;color:var(--text-secondary)\">{durationStr}</div>");
+            sb.Append(CultureInfo.InvariantCulture, $"<div style=\"font-size:11px;color:var(--text-secondary)\">{durationStr}</div>");
             sb.Append("</div>");
         }
         else
@@ -940,18 +941,18 @@ internal static class HtmlFragments
                 attemptBadgeStyle = "font-size:11px;background:var(--warning-light);color:var(--warning);border:1px solid var(--warning);padding:2px 8px;border-radius:12px;font-weight:600";
             }
 
-            sb.Append($"<div class=\"{bannerClass}\">");
-            sb.Append($"<div style=\"font-size:24px;line-height:1;flex-shrink:0\">{headerIcon}</div>");
+            sb.Append(CultureInfo.InvariantCulture, $"<div class=\"{bannerClass}\">");
+            sb.Append(CultureInfo.InvariantCulture, $"<div style=\"font-size:24px;line-height:1;flex-shrink:0\">{headerIcon}</div>");
             sb.Append("<div style=\"flex:1\">");
             sb.Append("<div style=\"display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:8px\">");
             sb.Append("<div style=\"display:flex;align-items:center;gap:8px\">");
-            sb.Append($"<span style=\"font-size:14px;font-weight:700;color:{titleColor}\">{headerTitle}</span>");
-            sb.Append($"<span style=\"{attemptBadgeStyle}\">Attempt {job.Attempts} of {effectiveMax}</span>");
+            sb.Append(CultureInfo.InvariantCulture, $"<span style=\"font-size:14px;font-weight:700;color:{titleColor}\">{headerTitle}</span>");
+            sb.Append(CultureInfo.InvariantCulture, $"<span style=\"{attemptBadgeStyle}\">Attempt {job.Attempts} of {effectiveMax}</span>");
             sb.Append("</div>");
 
             if (isSucceeded)
             {
-                sb.Append($"<span style=\"font-size:11px;font-weight:700;color:var(--success);background:var(--success-light);border:1px solid var(--success);padding:2px 10px;border-radius:12px\">🎉 Recovered on Attempt {job.Attempts}</span>");
+                sb.Append(CultureInfo.InvariantCulture, $"<span style=\"font-size:11px;font-weight:700;color:var(--success);background:var(--success-light);border:1px solid var(--success);padding:2px 10px;border-radius:12px\">🎉 Recovered on Attempt {job.Attempts}</span>");
             }
             else if (isFailed)
             {
@@ -959,7 +960,7 @@ internal static class HtmlFragments
             }
             else if (job.RetryAt.HasValue && job.RetryAt.Value > now)
             {
-                sb.Append($"<span style=\"font-size:11px;font-weight:700;color:var(--info);background:var(--info-light);border:1px solid var(--info);padding:2px 10px;border-radius:12px\">⏳ Next Retry in {Helpers.CountdownFriendly(job.RetryAt.Value - now)}</span>");
+                sb.Append(CultureInfo.InvariantCulture, $"<span style=\"font-size:11px;font-weight:700;color:var(--info);background:var(--info-light);border:1px solid var(--info);padding:2px 10px;border-radius:12px\">⏳ Next Retry in {Helpers.CountdownFriendly(job.RetryAt.Value - now)}</span>");
             }
 
             sb.Append("</div>");
@@ -973,7 +974,7 @@ internal static class HtmlFragments
             int maxStep = Math.Min(job.Attempts, effectiveMax);
             for (int i = 1; i < maxStep; i++)
             {
-                sb.Append($"<span style=\"padding:3px 8px;border-radius:6px;background:rgba(234,84,85,0.12);color:var(--error);border:1px solid rgba(234,84,85,0.3);font-weight:600\">Attempt {i}: Failed</span>");
+                sb.Append(CultureInfo.InvariantCulture, $"<span style=\"padding:3px 8px;border-radius:6px;background:rgba(234,84,85,0.12);color:var(--error);border:1px solid rgba(234,84,85,0.3);font-weight:600\">Attempt {i}: Failed</span>");
                 sb.Append(arrowHtml);
                 sb.Append(backoffBadgeHtml);
                 sb.Append(arrowHtml);
@@ -981,34 +982,34 @@ internal static class HtmlFragments
 
             if (isFailed)
             {
-                sb.Append($"<span style=\"padding:3px 8px;border-radius:6px;background:rgba(234,84,85,0.18);color:var(--error);border:1px solid var(--error);font-weight:700\">Attempt {maxStep}: Dead-Letter</span>");
+                sb.Append(CultureInfo.InvariantCulture, $"<span style=\"padding:3px 8px;border-radius:6px;background:rgba(234,84,85,0.18);color:var(--error);border:1px solid var(--error);font-weight:700\">Attempt {maxStep}: Dead-Letter</span>");
             }
             else if (isSucceeded)
             {
-                sb.Append($"<span style=\"padding:3px 8px;border-radius:6px;background:rgba(40,199,111,0.15);color:var(--success);border:1px solid var(--success);font-weight:700\">Attempt {maxStep}: Succeeded</span>");
+                sb.Append(CultureInfo.InvariantCulture, $"<span style=\"padding:3px 8px;border-radius:6px;background:rgba(40,199,111,0.15);color:var(--success);border:1px solid var(--success);font-weight:700\">Attempt {maxStep}: Succeeded</span>");
             }
             else if (job.Status == JobStatus.Processing)
             {
-                sb.Append($"<span style=\"padding:3px 8px;border-radius:6px;background:rgba(0,207,213,0.15);color:var(--primary);border:1px solid var(--primary);font-weight:700\">Attempt {maxStep}: Running</span>");
+                sb.Append(CultureInfo.InvariantCulture, $"<span style=\"padding:3px 8px;border-radius:6px;background:rgba(0,207,213,0.15);color:var(--primary);border:1px solid var(--primary);font-weight:700\">Attempt {maxStep}: Running</span>");
             }
             else if (job.RetryAt.HasValue && job.RetryAt.Value > now)
             {
-                sb.Append($"<span style=\"padding:3px 8px;border-radius:6px;background:rgba(234,84,85,0.12);color:var(--error);border:1px solid rgba(234,84,85,0.3);font-weight:600\">Attempt {maxStep}: Failed</span>");
+                sb.Append(CultureInfo.InvariantCulture, $"<span style=\"padding:3px 8px;border-radius:6px;background:rgba(234,84,85,0.12);color:var(--error);border:1px solid rgba(234,84,85,0.3);font-weight:600\">Attempt {maxStep}: Failed</span>");
                 sb.Append(arrowHtml);
                 sb.Append(backoffBadgeHtml);
                 sb.Append(arrowHtml);
-                sb.Append($"<span style=\"padding:3px 8px;border-radius:6px;background:rgba(245,158,11,0.15);color:var(--warning);border:1px solid var(--warning);font-weight:700\">Attempt {maxStep + 1}: Scheduled</span>");
+                sb.Append(CultureInfo.InvariantCulture, $"<span style=\"padding:3px 8px;border-radius:6px;background:rgba(245,158,11,0.15);color:var(--warning);border:1px solid var(--warning);font-weight:700\">Attempt {maxStep + 1}: Scheduled</span>");
             }
             else
             {
-                sb.Append($"<span style=\"padding:3px 8px;border-radius:6px;background:var(--bg-secondary);color:var(--text-secondary);border:1px solid var(--border);font-weight:600\">Attempt {maxStep}</span>");
+                sb.Append(CultureInfo.InvariantCulture, $"<span style=\"padding:3px 8px;border-radius:6px;background:var(--bg-secondary);color:var(--text-secondary);border:1px solid var(--border);font-weight:600\">Attempt {maxStep}</span>");
             }
 
             sb.Append("</div>");
 
             if (!string.IsNullOrEmpty(job.LastErrorMessage))
             {
-                sb.Append($"<div style=\"font-size:12px;color:var(--error);margin-top:6px;font-family:monospace;background:rgba(234, 84, 85, 0.08);padding:8px 12px;border-radius:6px;border-left:3px solid var(--error)\"><strong>Last Error:</strong> {HtmlEncode(job.LastErrorMessage)}</div>");
+                sb.Append(CultureInfo.InvariantCulture, $"<div style=\"font-size:12px;color:var(--error);margin-top:6px;font-family:monospace;background:rgba(234, 84, 85, 0.08);padding:8px 12px;border-radius:6px;border-left:3px solid var(--error)\"><strong>Last Error:</strong> {HtmlEncode(job.LastErrorMessage)}</div>");
             }
 
             sb.Append("</div></div>");
@@ -1020,7 +1021,7 @@ internal static class HtmlFragments
         {
             sb.Append("<details style=\"margin-top:18px;border-top:1px solid var(--border);padding-top:14px\">");
             sb.Append("<summary style=\"font-size:12px;font-weight:600;color:var(--text-secondary);cursor:pointer;display:flex;align-items:center;gap:6px\">");
-            sb.Append($"<span>📜 Chronological Execution Events ({events.Count})</span>");
+            sb.Append(CultureInfo.InvariantCulture, $"<span>📜 Chronological Execution Events ({events.Count})</span>");
             sb.Append("</summary>");
 
             sb.Append("<div class=\"timeline\" style=\"position:relative;padding-left:32px;margin-top:16px\">");
@@ -1033,21 +1034,21 @@ internal static class HtmlFragments
 
                 if (!isLast)
                 {
-                    sb.Append($"<div style=\"position:absolute;left:11px;top:{(i * 54) + 16}px;bottom:0;width:2px;background:var(--border);height:38px\"></div>");
+                    sb.Append(CultureInfo.InvariantCulture, $"<div style=\"position:absolute;left:11px;top:{(i * 54) + 16}px;bottom:0;width:2px;background:var(--border);height:38px\"></div>");
                 }
 
                 sb.Append("<div class=\"timeline-item\" style=\"margin-bottom:18px;position:relative\">");
-                sb.Append($"<div style=\"position:absolute;left:-28px;top:4px;width:10px;height:10px;border-radius:50%;background:{color};box-shadow:0 0 0 4px var(--bg-primary)\"></div>");
+                sb.Append(CultureInfo.InvariantCulture, $"<div style=\"position:absolute;left:-28px;top:4px;width:10px;height:10px;border-radius:50%;background:{color};box-shadow:0 0 0 4px var(--bg-primary)\"></div>");
                 sb.Append("<div class=\"timeline-content\">");
-                sb.Append($"<div style=\"font-weight:700;font-size:13px;color:var(--text-primary)\">{HtmlEncode(@event.Label)} <span style=\"font-weight:400;color:var(--text-tertiary);float:right;font-size:11px\">{timeStr}</span></div>");
+                sb.Append(CultureInfo.InvariantCulture, $"<div style=\"font-weight:700;font-size:13px;color:var(--text-primary)\">{HtmlEncode(@event.Label)} <span style=\"font-weight:400;color:var(--text-tertiary);float:right;font-size:11px\">{timeStr}</span></div>");
                 if (!string.IsNullOrEmpty(@event.Subtitle))
                 {
-                    sb.Append($"<div style=\"font-size:11px;color:var(--text-secondary)\">{HtmlEncode(@event.Subtitle)}</div>");
+                    sb.Append(CultureInfo.InvariantCulture, $"<div style=\"font-size:11px;color:var(--text-secondary)\">{HtmlEncode(@event.Subtitle)}</div>");
                 }
 
                 if (!string.IsNullOrEmpty(@event.Error))
                 {
-                    sb.Append($"<div style=\"font-size:11px;color:var(--error);margin-top:4px;padding:6px 10px;background:var(--error-light);border-radius:4px\">{HtmlEncode(@event.Error)}</div>");
+                    sb.Append(CultureInfo.InvariantCulture, $"<div style=\"font-size:11px;color:var(--error);margin-top:4px;padding:6px 10px;background:var(--error-light);border-radius:4px\">{HtmlEncode(@event.Error)}</div>");
                 }
 
                 sb.Append("</div></div>");

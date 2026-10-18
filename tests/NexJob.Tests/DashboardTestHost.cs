@@ -8,7 +8,14 @@ namespace NexJob.Tests;
 /// <summary>Boots the standalone dashboard on the in-memory provider, seeds it and returns one page.</summary>
 internal static class DashboardTestHost
 {
-    public static async Task<string> GetAsync(string route, Func<IStorageProvider, Task>? seed = null)
+    public static Task<string> GetAsync(string route, Func<IStorageProvider, Task>? seed = null) =>
+        UseAsync(seed, (client, _) => client.GetStringAsync(route));
+
+    /// <summary>Boots the host, seeds it and runs <paramref name="act"/> with a client pointed at it.</summary>
+    public static async Task<T> UseAsync<T>(
+        Func<IStorageProvider, Task>? seed,
+        Func<HttpClient, IStorageProvider, Task<T>> act,
+        Action<IServiceProvider>? seedServices = null)
     {
         var port = TestPorts.Next();
         using var host = Host.CreateDefaultBuilder()
@@ -27,17 +34,20 @@ internal static class DashboardTestHost
         try
         {
             await host.StartAsync();
+            var storage = host.Services.GetRequiredService<IStorageProvider>();
             if (seed is not null)
             {
-                await seed(host.Services.GetRequiredService<IStorageProvider>());
+                await seed(storage);
             }
+
+            seedServices?.Invoke(host.Services);
 
             using var client = new HttpClient
             {
                 BaseAddress = new Uri($"http://localhost:{port}"),
                 Timeout = TimeSpan.FromSeconds(5),
             };
-            return await client.GetStringAsync(route);
+            return await act(client, storage);
         }
         finally
         {

@@ -81,7 +81,11 @@ public static class NexJobMetrics
             "Total number of worker slots configured.");
 
     /// <summary>Synchronization lock used for safe provider registration and metric observation.</summary>
+#if NET9_0_OR_GREATER
+    internal static readonly Lock SyncLock = new();
+#else
     internal static readonly object SyncLock = new();
+#endif
 
     private static Func<int>? _activeWorkersProvider;
     private static Func<int>? _totalWorkersProvider;

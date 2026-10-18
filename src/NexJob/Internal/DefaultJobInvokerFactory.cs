@@ -3,6 +3,7 @@ using System.Linq.Expressions;
 using System.Reflection;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using NexJob.Storage;
 
 namespace NexJob.Internal;
@@ -36,7 +37,7 @@ internal sealed class DefaultJobInvokerFactory : IJobInvokerFactory
         try
         {
             scope.ServiceProvider.GetRequiredService<IJobContextAccessor>().Context =
-                new JobContext(job, _storage);
+                new JobContext(job, _storage, scope.ServiceProvider.GetService<ILogger<JobContext>>());
 
             var jobType = JobTypeResolver.ResolveJobType(job.JobType)
                           ?? throw new Exceptions.ForeignJobTypeException(job.JobType, $"Cannot load job type: {job.JobType}");

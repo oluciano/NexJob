@@ -1,4 +1,3 @@
-#pragma warning disable MA0004
 using Dapper;
 using Microsoft.Data.SqlClient;
 
@@ -35,20 +34,23 @@ internal sealed class SchemaMigrator
     /// <param name="ct">Token to cancel the operation.</param>
     public async Task MigrateAsync(string connectionString, CancellationToken ct = default)
     {
-        await using var conn = new SqlConnection(connectionString);
-        await conn.OpenAsync(ct).ConfigureAwait(false);
-        await using var tx = (SqlTransaction)await conn.BeginTransactionAsync(ct);
-
-        try
+        var conn = new SqlConnection(connectionString);
+        await using (conn.ConfigureAwait(false))
         {
-            // Acquire exclusive app lock (scoped to transaction)
-            await conn.ExecuteAsync(
-                "EXEC sp_getapplock @Resource = 'nexjob_migration', @LockMode = 'Exclusive', @LockOwner = 'Transaction', @LockTimeout = 30000",
-                transaction: tx);
+            await conn.OpenAsync(ct).ConfigureAwait(false);
+            var tx = (SqlTransaction)await conn.BeginTransactionAsync(ct).ConfigureAwait(false);
+            await using (tx.ConfigureAwait(false))
+            {
+                try
+                {
+                    // Acquire exclusive app lock (scoped to transaction)
+                    await conn.ExecuteAsync(
+                        "EXEC sp_getapplock @Resource = 'nexjob_migration', @LockMode = 'Exclusive', @LockOwner = 'Transaction', @LockTimeout = 30000",
+                        transaction: tx).ConfigureAwait(false);
 
-            // Bootstrap version table
-            await conn.ExecuteAsync(
-                """
+                    // Bootstrap version table
+                    await conn.ExecuteAsync(
+                        """
                 IF OBJECT_ID('nexjob_schema_version', 'U') IS NULL
                 CREATE TABLE nexjob_schema_version (
                     version     INT           PRIMARY KEY,
@@ -56,44 +58,46 @@ internal sealed class SchemaMigrator
                     description NVARCHAR(500) NOT NULL
                 )
                 """,
-                transaction: tx);
+                        transaction: tx).ConfigureAwait(false);
 
-            var applied = (await conn.QueryAsync<int>(
-                "SELECT version FROM nexjob_schema_version", transaction: tx))
-                .ToHashSet();
+                    var applied = (await conn.QueryAsync<int>(
+                        "SELECT version FROM nexjob_schema_version", transaction: tx).ConfigureAwait(false))
+                        .ToHashSet();
 
-            foreach (var migration in AllMigrations)
-            {
-                if (applied.Contains(migration.Version))
-                {
-                    continue;
-                }
-
-                // Each migration SQL may contain multiple statements — split on GO
-                var statements = migration.Sql
-                    .Split(["\nGO\n", "\r\nGO\r\n"], StringSplitOptions.RemoveEmptyEntries);
-
-                foreach (var statement in statements)
-                {
-                    var trimmed = statement.Trim();
-                    if (trimmed.Length > 0)
+                    foreach (var migration in AllMigrations)
                     {
-                        await conn.ExecuteAsync(trimmed, transaction: tx).ConfigureAwait(false);
+                        if (applied.Contains(migration.Version))
+                        {
+                            continue;
+                        }
+
+                        // Each migration SQL may contain multiple statements — split on GO
+                        var statements = migration.Sql
+                            .Split(["\nGO\n", "\r\nGO\r\n"], StringSplitOptions.RemoveEmptyEntries);
+
+                        foreach (var statement in statements)
+                        {
+                            var trimmed = statement.Trim();
+                            if (trimmed.Length > 0)
+                            {
+                                await conn.ExecuteAsync(trimmed, transaction: tx).ConfigureAwait(false);
+                            }
+                        }
+
+                        await conn.ExecuteAsync(
+                            "INSERT INTO nexjob_schema_version (version, description) VALUES (@v, @d)",
+                            new { v = migration.Version, d = migration.Description },
+                            transaction: tx).ConfigureAwait(false);
                     }
+
+                    await tx.CommitAsync(ct).ConfigureAwait(false);
                 }
-
-                await conn.ExecuteAsync(
-                    "INSERT INTO nexjob_schema_version (version, description) VALUES (@v, @d)",
-                    new { v = migration.Version, d = migration.Description },
-                    transaction: tx);
+                catch
+                {
+                    await tx.RollbackAsync(ct).ConfigureAwait(false);
+                    throw;
+                }
             }
-
-            await tx.CommitAsync(ct).ConfigureAwait(false);
-        }
-        catch
-        {
-            await tx.RollbackAsync(ct).ConfigureAwait(false);
-            throw;
         }
     }
 
@@ -109,4 +113,3 @@ internal sealed class SchemaMigrator
         => all.Where(m => !applied.Contains(m.Version))
               .OrderBy(m => m.Version);
 }
-#pragma warning restore MA0004

@@ -8,7 +8,11 @@ namespace NexJob.Trigger.AzureServiceBus.Tests;
 internal sealed class MockScheduler : IScheduler
 {
     private readonly List<JobRecord> _enqueueCalls = [];
+#if NET9_0_OR_GREATER
+    private readonly Lock _lock = new();
+#else
     private readonly object _lock = new();
+#endif
 
     private int _enqueueAttempts;
 

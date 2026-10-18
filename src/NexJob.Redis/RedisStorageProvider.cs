@@ -494,8 +494,8 @@ public sealed class RedisStorageProvider : IStorageProvider, IOrphanedJobReporte
 
                     if (string.Equals(resultType, "EXISTS", StringComparison.Ordinal))
                     {
-                        var existingJobId = new JobId(Guid.Parse(returnedId!));
-                        var jobHash = await _db.HashGetAllAsync(JobKey(returnedId!)).ConfigureAwait(false);
+                        var existingJobId = new JobId(Guid.Parse(returnedId));
+                        var jobHash = await _db.HashGetAllAsync(JobKey(returnedId)).ConfigureAwait(false);
                         var existingStatus = GetStatusFromHash(jobHash);
 
                         var enqueueResult = DuplicateRules.Resolve(existingJobId, existingStatus, duplicatePolicy);
@@ -1359,7 +1359,7 @@ public sealed class RedisStorageProvider : IStorageProvider, IOrphanedJobReporte
     {
         var results = new List<JobRecord>();
         await EnsureIndexAsync().ConfigureAwait(false);
-        await foreach (var (key, hash) in ScanIndexedJobsAsync(cancellationToken).ConfigureAwait(false))
+        await foreach (var (_, hash) in ScanIndexedJobsAsync(cancellationToken).ConfigureAwait(false))
         {
             if (hash.Length == 0)
             {
@@ -1384,7 +1384,7 @@ public sealed class RedisStorageProvider : IStorageProvider, IOrphanedJobReporte
         var grouped = new Dictionary<(string JobType, string Queue), List<JobRecord>>();
 
         await EnsureIndexAsync().ConfigureAwait(false);
-        await foreach (var (key, hash) in ScanIndexedJobsAsync(cancellationToken).ConfigureAwait(false))
+        await foreach (var (_, hash) in ScanIndexedJobsAsync(cancellationToken).ConfigureAwait(false))
         {
             if (hash.Length == 0)
             {

@@ -1,3 +1,4 @@
+using FluentAssertions;
 using NexJob.SqlServer;
 using NexJob.Storage;
 using Testcontainers.MsSql;
@@ -40,6 +41,31 @@ public sealed class SqlServerStorageProviderTests : StorageProviderTestsBase, IC
         var provider = new SqlServerStorageProvider(builder.ConnectionString);
         // O próprio provider deve criar as tabelas no banco novo
         return (provider, provider, provider, provider);
+    }
+
+    // Issue #587: the constructor migrates the schema synchronously. On a host with a SynchronizationContext every
+    // await in the migration must leave it (ConfigureAwait(false)), or the blocked constructor waits for itself.
+    [Fact]
+    public async Task Constructor_OnHostWithSynchronizationContext_MigratesWithoutDeadlock()
+    {
+        var baseConn = _fixture.Container.GetConnectionString();
+        var dbName = $"NexJob_{Guid.NewGuid():N}";
+        await using (var conn = new Microsoft.Data.SqlClient.SqlConnection(baseConn))
+        {
+            await conn.OpenAsync();
+            await using var cmd = conn.CreateCommand();
+            cmd.CommandText = $"CREATE DATABASE [{dbName}];";
+            await cmd.ExecuteNonQueryAsync();
+        }
+
+        var connectionString = new Microsoft.Data.SqlClient.SqlConnectionStringBuilder(baseConn) { InitialCatalog = dbName }.ConnectionString;
+
+        var first = SingleThreadedSynchronizationContext.Run(() => new SqlServerStorageProvider(connectionString), TimeSpan.FromSeconds(30));
+        (await first.GetJobCatalogAsync(default)).Should().BeEmpty("the schema was created and is queryable");
+
+        // N3: the second construction finds an up-to-date schema and migrates nothing.
+        var second = SingleThreadedSynchronizationContext.Run(() => new SqlServerStorageProvider(connectionString), TimeSpan.FromSeconds(30));
+        (await second.GetJobCatalogAsync(default)).Should().BeEmpty();
     }
 
     /// <inheritdoc/>

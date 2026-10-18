@@ -49,6 +49,39 @@ public sealed class PostgresStorageProviderTests : StorageProviderTestsBase, ICl
         return (provider, provider, provider, provider);
     }
 
+    // Issue #587: the constructor migrates the schema synchronously. On a host with a SynchronizationContext every
+    // await in the migration must leave it (ConfigureAwait(false)), or the blocked constructor waits for itself.
+    [Fact]
+    public async Task Constructor_OnHostWithSynchronizationContext_MigratesWithoutDeadlock()
+    {
+        var connectionString = await CreateEmptyDatabaseAsync();
+
+        var first = SingleThreadedSynchronizationContext.Run(() => new PostgresStorageProvider(connectionString), TimeSpan.FromSeconds(30));
+        await using (first)
+        {
+            (await first.GetJobCatalogAsync(default)).Should().BeEmpty("the schema was created and is queryable");
+        }
+
+        // N3: the second construction finds an up-to-date schema and migrates nothing.
+        var second = SingleThreadedSynchronizationContext.Run(() => new PostgresStorageProvider(connectionString), TimeSpan.FromSeconds(30));
+        await using (second)
+        {
+            (await second.GetJobCatalogAsync(default)).Should().BeEmpty();
+        }
+    }
+
+    private async Task<string> CreateEmptyDatabaseAsync()
+    {
+        var baseConn = _fixture.Container.GetConnectionString();
+        var dbName = $"nexjob_{Guid.NewGuid():N}";
+        await using var conn = new Npgsql.NpgsqlConnection(baseConn);
+        await conn.OpenAsync();
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = $"CREATE DATABASE {dbName};";
+        await cmd.ExecuteNonQueryAsync();
+        return new Npgsql.NpgsqlConnectionStringBuilder(baseConn) { Database = dbName, MaxPoolSize = 5 }.ConnectionString;
+    }
+
     [Fact]
     public async Task FetchBatchAsync_with_several_queues_reads_the_fetch_index_not_the_whole_backlog()
     {

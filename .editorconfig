@@ -123,6 +123,37 @@ dotnet_diagnostic.SA1201.severity = warning
 dotnet_diagnostic.SA1202.severity = warning
 dotnet_diagnostic.SA1204.severity = warning
 
+# SA1504 (StyleCop 1.3) — all accessors single-line or multi-line.
+# Off: it rejects the `get => field;` + `set { validation }` pair used by the options classes; the rewrite
+# (`get { return field; }`) is noisier and fixes nothing.
+dotnet_diagnostic.SA1504.severity = none
+
+# SA1143 (StyleCop 1.3) — consistent layout of a conditional expression.
+# Off: formatting only; the layouts in use follow line length and readability, and `dotnet format` does not fix it.
+dotnet_diagnostic.SA1143.severity = none
+
+# ── Microsoft.CodeAnalysis.NetAnalyzers (AnalysisMode=Recommended) ───────────
+
+# CA1848 / CA1873 — use LoggerMessage / avoid evaluating log arguments when the level is off.
+# Suggestion: ~200 call sites. Moving them to source-generated LoggerMessage is a separate piece of work,
+# not part of the analyzer upgrade.
+dotnet_diagnostic.CA1848.severity = suggestion
+dotnet_diagnostic.CA1873.severity = suggestion
+
+# CA1859 — prefer concrete types for private members. Suggestion: the private helpers take the interface on
+# purpose (the callers pass lists and arrays); a concrete type brings no measurable gain on these paths.
+dotnet_diagnostic.CA1859.severity = suggestion
+
+# CA1822 — member can be static. Suggestion: `SchemaMigrator.MigrateAsync` is public API (static would be a breaking
+# change) and making the private `Apply*Async` helpers static trips SA1204 (static members first) and reorders ~600 lines.
+dotnet_diagnostic.CA1822.severity = suggestion
+
+# CA1716 / CA1711 / CA1068 — rename a public member, type or parameter (`Get`, `OnExecutingAsync(..., next)`,
+# `JobExecutionDelegate`, a parameter order). Suggestion: each is a public API change, which needs a major version.
+dotnet_diagnostic.CA1716.severity = suggestion
+dotnet_diagnostic.CA1711.severity = suggestion
+dotnet_diagnostic.CA1068.severity = suggestion
+
 # ── Meziantou.Analyzer ────────────────────────────────────────────────────────
 
 # MA0051 — Method is too long.
@@ -154,14 +185,27 @@ dotnet_diagnostic.SA1600.severity = none
 dotnet_diagnostic.SA1601.severity = none
 dotnet_diagnostic.SA1602.severity = none
 
-# Suppress MA0004 (ConfigureAwait) for Postgres due to type conflicts with await using and Dapper
-[src/NexJob.Postgres/**/*.cs]
-dotnet_diagnostic.MA0004.severity = none
-
 # ── Test project overrides ────────────────────────────────────────────────────
 # Tests have different style requirements: readability > formality.
 # StyleCop and async result rules are suppressed; Sonar rules remain.
 [tests/**/*.cs]
+# CA1707: test names follow Method_Scenario_Expected.
+dotnet_diagnostic.CA1707.severity = none
+# CA2201: tests throw a plain Exception on purpose to prove how the code handles an arbitrary failure.
+dotnet_diagnostic.CA2201.severity = none
+# CA1001: xunit test classes release their fields in IAsyncLifetime / IDisposable hooks the analyzer does not follow.
+dotnet_diagnostic.CA1001.severity = none
+# CA2016 / CA2012 / CA1806: tests ignore a token, read a ValueTask or build an object without using it on purpose,
+# to prove behaviour (a job that ignores cancellation, a constructor that throws).
+dotnet_diagnostic.CA2016.severity = none
+dotnet_diagnostic.CA2012.severity = none
+dotnet_diagnostic.CA1806.severity = none
+# CA2263 / CA1826 / CA1860 / CA1861 / CA1822 / CA1000: performance and API-shape hints that do not matter in test code.
+dotnet_diagnostic.CA2263.severity = none
+dotnet_diagnostic.CA1826.severity = none
+dotnet_diagnostic.CA1860.severity = none
+dotnet_diagnostic.CA1861.severity = none
+dotnet_diagnostic.CA1000.severity = none
 dotnet_diagnostic.SA0001.severity = none
 dotnet_diagnostic.SA1402.severity = none
 dotnet_diagnostic.MA0004.severity = none
@@ -178,6 +222,10 @@ dotnet_diagnostic.SA1202.severity = none
 dotnet_diagnostic.SA1204.severity = none
 
 [benchmarks/**/*.cs]
+# CA1707: benchmark method names are the labels of the published tables.
+dotnet_diagnostic.CA1707.severity = none
+# CA1001: the BenchmarkDotNet lifecycle ([GlobalCleanup]) releases the fields, not IDisposable.
+dotnet_diagnostic.CA1001.severity = none
 dotnet_diagnostic.SA0001.severity = none
 dotnet_diagnostic.SA1402.severity = none
 dotnet_diagnostic.MA0004.severity = none
@@ -192,15 +240,38 @@ dotnet_diagnostic.SA1201.severity = none
 dotnet_diagnostic.SA1202.severity = none
 dotnet_diagnostic.SA1204.severity = none
 
-[src/NexJob.Dashboard.Standalone/**/*.cs]
+# MA0004 (ConfigureAwait) off in the standalone host: it is an ASP.NET Core app, there is no synchronization context.
+[src/NexJob.Dashboard.Standalone/{*,**/*}.cs]
 dotnet_diagnostic.MA0004.severity = none
+# S5332: the standalone dashboard listens on http by design; TLS is terminated by the reverse proxy (see the wiki).
+dotnet_diagnostic.S5332.severity = none
 
-[src/NexJob.Dashboard.Standalone/*.cs]
-dotnet_diagnostic.MA0004.severity = none
+# CA1001: the handlers dispose the field in StopAsync, which is the lifecycle of an IHostedService.
+[src/NexJob.Trigger.*/*TriggerHandler.cs]
+dotnet_diagnostic.CA1001.severity = none
 
+# S8969: false positive on the explicit `RedisResult` to array/value conversions, whose operators return null for a nil reply.
+[src/NexJob.Redis/RedisStorageProvider.cs]
+dotnet_diagnostic.S8969.severity = none
+
+# S1313: the "403::" / "401::" / "402::" strings are Salesforce error-code prefixes, not IP addresses.
+[src/NexJob.Trigger.SalesforceStreaming/SalesforceBayeuxClient.cs]
+dotnet_diagnostic.S1313.severity = none
+
+# Samples are demos: documentation, member ordering and file layout rules would only add noise to the code a reader copies.
 [samples/**/*.cs]
 dotnet_diagnostic.SA0001.severity = none
 dotnet_diagnostic.SA1402.severity = none
+# CA1050 / CA1852 / CA1861 / CA1869: a sample keeps its job in the global namespace, unsealed, with inline arrays and
+# options, for readability; none of it is library API.
+dotnet_diagnostic.CA1050.severity = none
+dotnet_diagnostic.CA1852.severity = none
+dotnet_diagnostic.CA1861.severity = none
+dotnet_diagnostic.CA1869.severity = none
+# S2068: the "guest" credentials are the broker defaults of the docker-compose files the samples start.
+dotnet_diagnostic.S2068.severity = none
+# S2245: Random only picks demo payloads, nothing security-related.
+dotnet_diagnostic.S2245.severity = none
 dotnet_diagnostic.MA0004.severity = none
 dotnet_diagnostic.MA0006.severity = none
 dotnet_diagnostic.MA0002.severity = none

@@ -4,6 +4,7 @@ namespace NexJob;
 /// Strongly-typed identifier for a job. Wraps a <see cref="Guid"/> to prevent accidental
 /// mixing with other identifiers.
 /// </summary>
+/// <param name="Value">The underlying GUID.</param>
 public readonly record struct JobId(Guid Value)
 {
     /// <summary>Creates a new <see cref="JobId"/> with a fresh random GUID.</summary>

@@ -42,4 +42,19 @@ public sealed class QueuesPageTests
             StartedAt = DateTimeOffset.UtcNow,
             HeartbeatAt = DateTimeOffset.UtcNow,
         }));
+
+    [Theory]
+    [InlineData("tracker-idle")]
+    [InlineData("a'b\"c\\d<e>&f")]
+    [InlineData("'")]
+    [InlineData("\\")]
+    public async Task PauseConfirmation_IsACompleteHandlerWithTheQueueName(string queue)
+    {
+        // N1 + N2 (#592): the Pause confirmation carries the queue name as stored, even with quotes and a backslash.
+        var html = await GetQueuesPageAsync(queue);
+
+        var confirms = InlineHandlers.Confirms(html);
+        confirms.Should().NotContain(h => InlineHandlers.ConfirmMessage(h) == null);
+        confirms.Select(h => InlineHandlers.ConfirmMessage(h)).Should().Contain($"Pause queue {queue}?");
+    }
 }

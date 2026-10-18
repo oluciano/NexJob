@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.Web;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Rendering;
@@ -56,7 +57,7 @@ internal sealed class JobDetailPage : IComponent
         if (!IsReadOnly)
         {
             var queueOrphanWarning = ActiveWorkerQueues is { Count: > 0 } && !ActiveWorkerQueues.Contains(job.Queue, StringComparer.OrdinalIgnoreCase)
-                ? $"\\n\\n⚠ Warning: Queue '{job.Queue}' has no active workers. The job will remain queued until a worker starts."
+                ? $"\n\n⚠ Warning: Queue '{job.Queue}' has no active workers. The job will remain queued until a worker starts."
                 : string.Empty;
 
             if (job.Status == JobStatus.Scheduled)
@@ -64,7 +65,7 @@ internal sealed class JobDetailPage : IComponent
                 var runNowConfirm = $"Run this job now (bypass schedule)?{queueOrphanWarning}";
                 actions +=
                     $"<form method=\"post\" action=\"{PathPrefix}/jobs/{job.Id.Value}/runnow{clusterSuffix}\" style=\"display:inline\">" +
-                    $"<button type=\"submit\" class=\"btn btn-primary btn-sm\" onclick=\"return confirm({System.Web.HttpUtility.JavaScriptStringEncode(runNowConfirm, addDoubleQuotes: true)}\">▶ Run Now</button></form> " +
+                    $"<button type=\"submit\" class=\"btn btn-primary btn-sm\" onclick=\"return confirm('{Helpers.JsAttr(runNowConfirm)}')\">▶ Run Now</button></form> " +
                     $"<form method=\"post\" action=\"{PathPrefix}/jobs/{job.Id.Value}/delete{clusterSuffix}\" style=\"display:inline\">" +
                     "<button type=\"submit\" class=\"btn btn-danger btn-sm\" onclick=\"return confirm('Cancel and delete this scheduled job?')\">Delete</button></form>";
             }
@@ -79,7 +80,7 @@ internal sealed class JobDetailPage : IComponent
                 var requeueConfirm = $"Requeue this job?{queueOrphanWarning}";
                 actions +=
                     $"<form method=\"post\" action=\"{PathPrefix}/jobs/{job.Id.Value}/requeue{clusterSuffix}\" style=\"display:inline\">" +
-                    $"<button type=\"submit\" class=\"btn btn-primary btn-sm\" onclick=\"return confirm({System.Web.HttpUtility.JavaScriptStringEncode(requeueConfirm, addDoubleQuotes: true)})\">↺ Requeue</button></form> " +
+                    $"<button type=\"submit\" class=\"btn btn-primary btn-sm\" onclick=\"return confirm('{Helpers.JsAttr(requeueConfirm)}')\">↺ Requeue</button></form> " +
                     $"<form method=\"post\" action=\"{PathPrefix}/jobs/{job.Id.Value}/delete{clusterSuffix}\" style=\"display:inline\">" +
                     "<button type=\"submit\" class=\"btn btn-danger btn-sm\" onclick=\"return confirm('Delete this job?')\">Delete</button></form>";
             }
@@ -148,7 +149,7 @@ internal sealed class JobDetailPage : IComponent
                 segColor = "var(--border)";
             }
 
-            budgetSegments.Append($"<span style=\"flex:1;height:6px;background:{segColor};border-radius:3px;transition:var(--transition)\" title=\"Attempt {i}\"></span>");
+            budgetSegments.Append(CultureInfo.InvariantCulture, $"<span style=\"flex:1;height:6px;background:{segColor};border-radius:3px;transition:var(--transition)\" title=\"Attempt {i}\"></span>");
         }
 
         var remainingAttempts = Math.Max(0, effectiveMax - job.Attempts);
@@ -170,7 +171,6 @@ internal sealed class JobDetailPage : IComponent
         string idempotencyHtml;
         if (job.IdempotencyKey is not null)
         {
-            var encKeyJs = HttpUtility.JavaScriptStringEncode(job.IdempotencyKey);
             idempotencyHtml =
                 $"<div style=\"padding:10px 12px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:6px\">" +
                 $"<div style=\"display:flex;align-items:center;justify-content:space-between;margin-bottom:6px\">" +
@@ -179,7 +179,7 @@ internal sealed class JobDetailPage : IComponent
                 $"</div>" +
                 $"<div style=\"display:flex;align-items:center;gap:8px\">" +
                 $"<code style=\"font-size:12px;font-family:monospace;color:var(--text-primary);background:var(--bg-tertiary);padding:4px 8px;border-radius:4px;border:1px solid var(--border);word-break:break-all;flex:1\">{HttpUtility.HtmlEncode(job.IdempotencyKey)}</code>" +
-                $"<button class=\"btn btn-secondary btn-sm\" onclick=\"navigator.clipboard.writeText('{encKeyJs}');this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1200)\" title=\"Copy idempotency key\" style=\"font-size:11px;padding:3px 8px;flex-shrink:0\">Copy</button>" +
+                $"<button class=\"btn btn-secondary btn-sm\" onclick=\"navigator.clipboard.writeText('{Helpers.JsAttr(job.IdempotencyKey)}');this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1200)\" title=\"Copy idempotency key\" style=\"font-size:11px;padding:3px 8px;flex-shrink:0\">Copy</button>" +
                 $"</div>" +
                 $"</div>";
         }
@@ -239,7 +239,6 @@ internal sealed class JobDetailPage : IComponent
         string telemetryHtml;
         if (!string.IsNullOrEmpty(traceId))
         {
-            var encTraceJs = HttpUtility.JavaScriptStringEncode(job.TraceParent ?? string.Empty);
             var sampleBadge = sampled
                 ? "<span class=\"badge badge-success\" style=\"font-size:10px;padding:1px 6px\">Sampled (Recorded)</span>"
                 : "<span class=\"badge\" style=\"font-size:10px;padding:1px 6px;background:var(--bg-tertiary);color:var(--text-tertiary)\">Not Sampled</span>";
@@ -258,7 +257,7 @@ internal sealed class JobDetailPage : IComponent
                 $"</div>" +
                 $"<div style=\"display:flex;justify-content:space-between;align-items:center;margin-top:10px;padding-top:8px;border-top:1px solid var(--border)\">" +
                 $"<div>{sampleBadge}</div>" +
-                $"<button class=\"btn btn-secondary btn-sm\" onclick=\"navigator.clipboard.writeText('{encTraceJs}');this.textContent='Copied!';setTimeout(()=>this.textContent='Copy TraceParent',1500)\" style=\"font-size:11px;padding:2px 8px\">Copy TraceParent</button>" +
+                $"<button class=\"btn btn-secondary btn-sm\" onclick=\"navigator.clipboard.writeText('{Helpers.JsAttr(job.TraceParent)}');this.textContent='Copied!';setTimeout(()=>this.textContent='Copy TraceParent',1500)\" style=\"font-size:11px;padding:2px 8px\">Copy TraceParent</button>" +
                 $"</div>" +
                 $"</div>";
         }
@@ -420,7 +419,7 @@ internal sealed class JobDetailPage : IComponent
                         "Debug" or "Trace" => "var(--text-tertiary)",
                         _ => "var(--text-secondary)",
                     };
-                    var ts = entry.Timestamp.ToString("HH:mm:ss.fff");
+                    var ts = entry.Timestamp.ToString("HH:mm:ss.fff", CultureInfo.InvariantCulture);
                     var msg = HttpUtility.HtmlEncode(entry.Message).Replace("\n", "&#10;");
                     return $"<div style=\"display:flex;gap:10px;line-height:1.6\"><span style=\"color:var(--terminal-subtext);flex-shrink:0\">[{ts}]</span><span style=\"color:{color};font-weight:600;min-width:70px;flex-shrink:0\">[{entry.Level}]</span><span style=\"color:var(--terminal-text);word-break:break-all\">{msg}</span></div>";
                 }))

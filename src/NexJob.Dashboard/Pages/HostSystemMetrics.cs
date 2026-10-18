@@ -10,7 +10,11 @@ namespace NexJob.Dashboard.Pages;
 [ExcludeFromCodeCoverage]
 internal static class HostSystemMetrics
 {
+#if NET9_0_OR_GREATER
+    private static readonly Lock SyncLock = new();
+#else
     private static readonly object SyncLock = new();
+#endif
     private static DateTimeOffset _lastCpuSampleTime = DateTimeOffset.UtcNow;
     private static TimeSpan _lastTotalProcessorTime = GetCurrentProcessorTime();
     private static int _lastCpuPercent;
@@ -33,7 +37,7 @@ internal static class HostSystemMetrics
     /// </summary>
     internal static (int CpuPercent, int WorkingSetMb, int MemoryPercent, long ManagedHeapBytes) GetCurrent()
     {
-        var cpu = _lastCpuPercent;
+        int cpu;
         long workingSetBytes = 0;
         long totalAvailableBytes = 0;
         long managedHeapBytes = 0;

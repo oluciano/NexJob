@@ -1,3 +1,4 @@
+using System.Globalization;
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Containers;
 using DotNet.Testcontainers.Networks;
@@ -38,7 +39,7 @@ public sealed class KafkaClusterFixture : IAsyncLifetime
                 .WithNetworkAliases($"kafka-{id}")
                 .WithPortBinding(_hostPorts[i], 9094)
                 .WithEnvironment("CLUSTER_ID", ClusterId)
-                .WithEnvironment("KAFKA_NODE_ID", id.ToString())
+                .WithEnvironment("KAFKA_NODE_ID", id.ToString(CultureInfo.InvariantCulture))
                 .WithEnvironment("KAFKA_PROCESS_ROLES", "broker,controller")
                 .WithEnvironment("KAFKA_CONTROLLER_QUORUM_VOTERS", "1@kafka-1:9093,2@kafka-2:9093,3@kafka-3:9093")
                 .WithEnvironment("KAFKA_LISTENERS", "INTERNAL://:9092,CONTROLLER://:9093,EXTERNAL://:9094")

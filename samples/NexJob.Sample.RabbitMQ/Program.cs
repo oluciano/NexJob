@@ -6,7 +6,7 @@ using RabbitMQ.Client;
 
 var builder = WebApplication.CreateBuilder(args);
 
-var rabbitHost = builder.Configuration.GetValue("RabbitMQ:HostName", "localhost")!;
+var rabbitHost = builder.Configuration.GetValue("RabbitMQ:HostName", "localhost");
 var rabbitPort = builder.Configuration.GetValue("RabbitMQ:Port", 5672);
 var queueName = "orders.incoming";
 var exhaustedQueueName = "orders.exhausted";
