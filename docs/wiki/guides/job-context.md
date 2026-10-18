@@ -166,7 +166,7 @@ public record SyncCheckpoint(long LastProcessedId, int TotalBatches);
 Call `GetCheckpoint<TState>()` at the start of `ExecuteAsync`. It returns `null` on the first attempt (no checkpoint saved yet) and the deserialised state object on subsequent attempts.
 
 !!! warning
-    `GetCheckpoint` also returns `null` when the saved checkpoint cannot be deserialised into `TState`, and it raises no error. If you change the shape of the state type while jobs are in flight, a retried job silently starts over. Keep checkpoint types backward compatible, or add a version field you can check.
+    `GetCheckpoint` also returns `null` when the saved checkpoint cannot be deserialised into `TState`, and it raises no error. It logs a warning with the job id, the job type and the state type, so a retried job that starts over is visible in the logs. If you change the shape of the state type while jobs are in flight, a retried job starts over. Keep checkpoint types backward compatible, or add a version field you can check.
 
 ```csharp
 var state = _context.GetCheckpoint<SyncCheckpoint>()

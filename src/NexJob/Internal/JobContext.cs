@@ -11,10 +11,8 @@ namespace NexJob.Internal;
 internal sealed class JobContext : IJobContext
 {
     private readonly IJobStorage _storage;
-#pragma warning disable S4487 // red commit only: the fields are read by the fix
     private readonly ILogger _logger;
     private readonly string _jobType;
-#pragma warning restore S4487
     private string? _checkpointJson;
 
     /// <summary>
@@ -64,7 +62,7 @@ internal sealed class JobContext : IJobContext
     public TState? GetCheckpoint<TState>()
         where TState : class
     {
-        if (string.IsNullOrEmpty(_checkpointJson))
+        if (string.IsNullOrWhiteSpace(_checkpointJson))
         {
             return null;
         }
@@ -73,8 +71,15 @@ internal sealed class JobContext : IJobContext
         {
             return System.Text.Json.JsonSerializer.Deserialize<TState>(_checkpointJson);
         }
-        catch
+        catch (Exception ex)
         {
+            // A checkpoint that exists but cannot be read is not the first attempt: the job starts over, so say so.
+            _logger.LogWarning(
+                ex,
+                "The checkpoint of job {JobId} ({JobType}) cannot be read as {StateType}; GetCheckpoint returns null and the job starts from the beginning.",
+                JobId,
+                _jobType,
+                typeof(TState).Name);
             return null;
         }
     }
