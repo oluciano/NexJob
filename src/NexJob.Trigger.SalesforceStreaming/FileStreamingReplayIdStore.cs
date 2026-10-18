@@ -10,7 +10,11 @@ public sealed class FileStreamingReplayIdStore : IStreamingReplayIdStore
 {
     private static readonly char[] DisallowedChars = ['/', '\\', ':', '*', '?', '"', '<', '>', '|'];
     private readonly string _storageDirectory;
+#if NET9_0_OR_GREATER
+    private readonly Lock _syncLock = new();
+#else
     private readonly object _syncLock = new();
+#endif
 
     /// <summary>
     /// Initializes a new instance of the <see cref="FileStreamingReplayIdStore"/> class.
