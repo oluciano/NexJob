@@ -87,22 +87,16 @@ public sealed class PackagePinsTests : IClassFixture<PackagePinsTests.PackedPack
     {
         private readonly string _output = Path.Combine(Path.GetTempPath(), "nexjob-pack-" + Guid.NewGuid().ToString("N"));
 
+        private readonly FileStream _lock;
+
         public PackedPackages()
         {
             Directory.CreateDirectory(_output);
+            _lock = AcquireLock();
             var root = FindRepoRoot();
             foreach (var project in ExpectedPins.Keys)
             {
-                var start = new ProcessStartInfo("dotnet", $"pack \"{Path.Combine(root, "src", project, project + ".csproj")}\" -c Release -o \"{_output}\" -p:MinVerVersionOverride=0.0.0-test")
-                {
-                    UseShellExecute = false,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                };
-                using var process = Process.Start(start)!;
-                var output = process.StandardOutput.ReadToEnd() + process.StandardError.ReadToEnd();
-                process.WaitForExit();
-                process.ExitCode.Should().Be(0, output);
+                Pack(Path.Combine(root, "src", project, project + ".csproj"));
             }
         }
 
@@ -119,7 +113,52 @@ public sealed class PackagePinsTests : IClassFixture<PackagePinsTests.PackedPack
             return zip.Entries.Select(e => e.FullName).ToList();
         }
 
-        public void Dispose() => Directory.Delete(_output, recursive: true);
+        public void Dispose()
+        {
+            _lock.Dispose();
+            Directory.Delete(_output, recursive: true);
+        }
+
+        // The net8.0 and net10.0 test hosts run at the same time and `dotnet pack` builds the same projects: one at a time.
+        private static FileStream AcquireLock()
+        {
+            var path = Path.Combine(Path.GetTempPath(), "nexjob-package-pins.lock");
+            var deadline = DateTime.UtcNow.AddMinutes(10);
+            while (true)
+            {
+                try
+                {
+                    return new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+                }
+                catch (IOException) when (DateTime.UtcNow < deadline)
+                {
+                    Thread.Sleep(500);
+                }
+            }
+        }
+
+        private void Pack(string project)
+        {
+            var start = new ProcessStartInfo("dotnet", $"pack \"{project}\" -c Release -o \"{_output}\" -p:MinVerVersionOverride=0.0.0-test --disable-build-servers -p:UseSharedCompilation=false -nodeReuse:false")
+            {
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+            };
+            using var process = Process.Start(start)!;
+            var output = new System.Text.StringBuilder();
+            process.OutputDataReceived += (_, e) => output.AppendLine(e.Data);
+            process.ErrorDataReceived += (_, e) => output.AppendLine(e.Data);
+            process.BeginOutputReadLine();
+            process.BeginErrorReadLine();
+            if (!process.WaitForExit(TimeSpan.FromMinutes(5)))
+            {
+                process.Kill(entireProcessTree: true);
+                throw new TimeoutException($"dotnet pack of {project} did not finish in 5 minutes:\n{output}");
+            }
+
+            process.ExitCode.Should().Be(0, output.ToString());
+        }
 
         private static string FindRepoRoot()
         {
