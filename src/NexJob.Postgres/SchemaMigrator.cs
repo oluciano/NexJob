@@ -1,4 +1,3 @@
-#pragma warning disable MA0004
 using Dapper;
 using Npgsql;
 
@@ -39,9 +38,12 @@ internal static class SchemaMigrator
     public static async Task MigrateAsync(NpgsqlDataSource dataSource, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(dataSource);
-        await using var conn = dataSource.CreateConnection();
-        await conn.OpenAsync(ct).ConfigureAwait(false);
-        await MigrateInternalAsync(conn, ct).ConfigureAwait(false);
+        var conn = dataSource.CreateConnection();
+        await using (conn.ConfigureAwait(false))
+        {
+            await conn.OpenAsync(ct).ConfigureAwait(false);
+            await MigrateInternalAsync(conn, ct).ConfigureAwait(false);
+        }
     }
 
     /// <summary>
@@ -52,9 +54,12 @@ internal static class SchemaMigrator
     /// <param name="ct">Token to cancel the operation.</param>
     public static async Task MigrateAsync(string connectionString, CancellationToken ct = default)
     {
-        await using var conn = new NpgsqlConnection(connectionString);
-        await conn.OpenAsync(ct).ConfigureAwait(false);
-        await MigrateInternalAsync(conn, ct).ConfigureAwait(false);
+        var conn = new NpgsqlConnection(connectionString);
+        await using (conn.ConfigureAwait(false))
+        {
+            await conn.OpenAsync(ct).ConfigureAwait(false);
+            await MigrateInternalAsync(conn, ct).ConfigureAwait(false);
+        }
     }
 
     /// <summary>
@@ -97,20 +102,23 @@ internal static class SchemaMigrator
                     continue;
                 }
 
-                await using var tx = await conn.BeginTransactionAsync(ct).ConfigureAwait(false);
-                try
+                var tx = await conn.BeginTransactionAsync(ct).ConfigureAwait(false);
+                await using (tx.ConfigureAwait(false))
                 {
-                    await conn.ExecuteAsync(migration.Sql, transaction: tx).ConfigureAwait(false);
-                    await conn.ExecuteAsync(
-                        "INSERT INTO nexjob_schema_version (version, description) VALUES (@v, @d)",
-                        new { v = migration.Version, d = migration.Description },
-                        transaction: tx).ConfigureAwait(false);
-                    await tx.CommitAsync(ct).ConfigureAwait(false);
-                }
-                catch
-                {
-                    await tx.RollbackAsync(ct).ConfigureAwait(false);
-                    throw;
+                    try
+                    {
+                        await conn.ExecuteAsync(migration.Sql, transaction: tx).ConfigureAwait(false);
+                        await conn.ExecuteAsync(
+                            "INSERT INTO nexjob_schema_version (version, description) VALUES (@v, @d)",
+                            new { v = migration.Version, d = migration.Description },
+                            transaction: tx).ConfigureAwait(false);
+                        await tx.CommitAsync(ct).ConfigureAwait(false);
+                    }
+                    catch
+                    {
+                        await tx.RollbackAsync(ct).ConfigureAwait(false);
+                        throw;
+                    }
                 }
             }
         }
@@ -120,4 +128,3 @@ internal static class SchemaMigrator
         }
     }
 }
-#pragma warning restore MA0004

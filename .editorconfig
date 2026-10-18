@@ -185,10 +185,6 @@ dotnet_diagnostic.SA1600.severity = none
 dotnet_diagnostic.SA1601.severity = none
 dotnet_diagnostic.SA1602.severity = none
 
-# Suppress MA0004 (ConfigureAwait) for Postgres due to type conflicts with await using and Dapper
-[src/NexJob.Postgres/**/*.cs]
-dotnet_diagnostic.MA0004.severity = none
-
 # ── Test project overrides ────────────────────────────────────────────────────
 # Tests have different style requirements: readability > formality.
 # StyleCop and async result rules are suppressed; Sonar rules remain.

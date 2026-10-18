@@ -1,4 +1,3 @@
-#pragma warning disable MA0004
 using System.Text.Json;
 using Dapper;
 using Microsoft.Data.SqlClient;
@@ -25,16 +24,19 @@ public sealed class SqlServerRuntimeSettingsStore : IRuntimeSettingsStore
     /// <inheritdoc/>
     public async Task<RuntimeSettings> GetAsync(CancellationToken ct = default)
     {
-        await using var conn = new SqlConnection(_connectionString);
-        await conn.OpenAsync(ct).ConfigureAwait(false);
+        var conn = new SqlConnection(_connectionString);
+        await using (conn.ConfigureAwait(false))
+        {
+            await conn.OpenAsync(ct).ConfigureAwait(false);
 
-        var json = await conn.ExecuteScalarAsync<string?>(
-            "SELECT value FROM nexjob_settings WHERE [key] = @key",
-            new { key = SettingsKey, }).ConfigureAwait(false);
+            var json = await conn.ExecuteScalarAsync<string?>(
+                "SELECT value FROM nexjob_settings WHERE [key] = @key",
+                new { key = SettingsKey, }).ConfigureAwait(false);
 
-        return json is null
-            ? new RuntimeSettings()
-            : JsonSerializer.Deserialize<RuntimeSettings>(json) ?? new RuntimeSettings();
+            return json is null
+                ? new RuntimeSettings()
+                : JsonSerializer.Deserialize<RuntimeSettings>(json) ?? new RuntimeSettings();
+        }
     }
 
     /// <inheritdoc/>
@@ -43,11 +45,13 @@ public sealed class SqlServerRuntimeSettingsStore : IRuntimeSettingsStore
         settings.UpdatedAt = DateTimeOffset.UtcNow;
         var json = JsonSerializer.Serialize(settings);
 
-        await using var conn = new SqlConnection(_connectionString);
-        await conn.OpenAsync(ct).ConfigureAwait(false);
+        var conn = new SqlConnection(_connectionString);
+        await using (conn.ConfigureAwait(false))
+        {
+            await conn.OpenAsync(ct).ConfigureAwait(false);
 
-        await conn.ExecuteAsync(
-            """
+            await conn.ExecuteAsync(
+                """
             MERGE nexjob_settings WITH (HOLDLOCK) AS target
             USING (SELECT @key AS [key], @value AS [value]) AS source
                 ON target.[key] = source.[key]
@@ -57,6 +61,7 @@ public sealed class SqlServerRuntimeSettingsStore : IRuntimeSettingsStore
                 INSERT ([key], [value], updated_at)
                 VALUES (source.[key], source.[value], SYSDATETIMEOFFSET());
             """,
-            new { key = SettingsKey, value = json, }).ConfigureAwait(false);
+                new { key = SettingsKey, value = json, }).ConfigureAwait(false);
+        }
     }
 }
