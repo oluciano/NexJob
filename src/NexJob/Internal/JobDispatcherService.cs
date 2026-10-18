@@ -52,7 +52,15 @@ internal sealed class JobDispatcherService : BackgroundService
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
         // Stop pulling new work first; running jobs keep the host stoppingToken and are only cancelled after the drain.
-        await _stopFetching.CancelAsync().ConfigureAwait(false);
+        try
+        {
+            await _stopFetching.CancelAsync().ConfigureAwait(false);
+        }
+        catch (ObjectDisposedException)
+        {
+            // The host was disposed before it was stopped (WebApplicationFactory, TestServer): the fetch loop is already
+            // gone, and a stopping service must not throw.
+        }
 
         _logger.LogInformation(
             "NexJob shutting down. Waiting for {Count} active job(s) to complete (timeout: {Timeout}s)...",
