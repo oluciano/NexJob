@@ -12,3 +12,4 @@ ENV PORT=8080
 ENV NexJob__Dashboard__LocalhostOnly=false
 EXPOSE 8080
 ENTRYPOINT ["dotnet", "NexJob.Sample.WorkerService.dll"]
+# proof #583 N3
