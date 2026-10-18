@@ -1,4 +1,3 @@
-#pragma warning disable MA0004
 using System.Data;
 using System.Globalization;
 using System.Text;
@@ -41,7 +40,9 @@ public sealed class SqlServerStorageProvider : IStorageProvider, IOrphanedJobRep
         _connectionString = connectionString;
         Dapper.DefaultTypeMap.MatchNamesWithUnderscores = true;
 #pragma warning disable RS0030
-        // Sync-over-async is acceptable here: runs once at startup, before any requests are served.
+        // Sync-over-async, once at startup: construct the provider during host startup. Every await in the migration
+        // uses ConfigureAwait(false), so a host with a SynchronizationContext (WinForms, WPF, legacy ASP.NET) does not
+        // deadlock here (issue #587).
         new SchemaMigrator().MigrateAsync(_connectionString).GetAwaiter().GetResult();
 #pragma warning restore RS0030
     }
@@ -74,73 +75,78 @@ public sealed class SqlServerStorageProvider : IStorageProvider, IOrphanedJobRep
     /// <inheritdoc/>
     public async Task<EnqueueResult> EnqueueAsync(JobRecord job, DuplicatePolicy duplicatePolicy = DuplicatePolicy.AllowAfterFailed, CancellationToken cancellationToken = default)
     {
-        await using var conn = Open();
-        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
-
-        if (job.IdempotencyKey is not null)
+        var conn = Open();
+        await using (conn.ConfigureAwait(false))
         {
-            // The unique index only covers active jobs. A conflict means another enqueue won the race; if that
-            // job already finished by the time we look, the key is free again, so try once more.
-            for (var attempt = 0; attempt < MaxEnqueueAttempts; attempt++)
-            {
-                await using var tx = await conn.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+            await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
 
-                var existing = await conn.QueryFirstOrDefaultAsync<(Guid Id, string Status)>(
-                    """
+            if (job.IdempotencyKey is not null)
+            {
+                // The unique index only covers active jobs. A conflict means another enqueue won the race; if that
+                // job already finished by the time we look, the key is free again, so try once more.
+                for (var attempt = 0; attempt < MaxEnqueueAttempts; attempt++)
+                {
+                    var tx = await conn.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+                    await using (tx.ConfigureAwait(false))
+                    {
+                        var existing = await conn.QueryFirstOrDefaultAsync<(Guid Id, string Status)>(
+                        """
                     SELECT TOP 1 id, status FROM nexjob_jobs WITH (UPDLOCK, ROWLOCK)
                     WHERE idempotency_key = @key
                     ORDER BY created_at DESC
                     """,
-                    new { key = job.IdempotencyKey },
-                    tx);
+                        new { key = job.IdempotencyKey },
+                        tx).ConfigureAwait(false);
 
-                if (existing.Id != Guid.Empty)
-                {
-                    var existingId = new JobId(existing.Id);
-                    var existingStatus = ParseStatus(existing.Status);
+                        if (existing.Id != Guid.Empty)
+                        {
+                            var existingId = new JobId(existing.Id);
+                            var existingStatus = ParseStatus(existing.Status);
 
-                    var existingResult = DuplicateRules.Resolve(existingId, existingStatus, duplicatePolicy);
-                    if (existingResult.WasRejected || DuplicateRules.IsActive(existingStatus))
-                    {
-                        await tx.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                        return existingResult;
-                    }
-                }
+                            var existingResult = DuplicateRules.Resolve(existingId, existingStatus, duplicatePolicy);
+                            if (existingResult.WasRejected || DuplicateRules.IsActive(existingStatus))
+                            {
+                                await tx.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                                return existingResult;
+                            }
+                        }
 
-                try
-                {
-                    await conn.ExecuteAsync(InsertJobSql, ToInsertParameters(job), tx);
+                        try
+                        {
+                            await conn.ExecuteAsync(InsertJobSql, ToInsertParameters(job), tx).ConfigureAwait(false);
 
-                    await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
-                    return new EnqueueResult(job.Id, WasRejected: false);
-                }
-                catch (SqlException ex) when (IsUniqueConstraintViolation(ex))
-                {
-                    await tx.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                            await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
+                            return new EnqueueResult(job.Id, WasRejected: false);
+                        }
+                        catch (SqlException ex) when (IsUniqueConstraintViolation(ex))
+                        {
+                            await tx.RollbackAsync(cancellationToken).ConfigureAwait(false);
 
-                    var winner = await conn.QueryFirstOrDefaultAsync<(Guid Id, string Status)>(
-                        """
+                            var winner = await conn.QueryFirstOrDefaultAsync<(Guid Id, string Status)>(
+                                """
                         SELECT TOP 1 id, status FROM nexjob_jobs
                         WHERE idempotency_key = @key
                           AND status IN ('Enqueued', 'Processing', 'Scheduled', 'AwaitingContinuation')
                         ORDER BY created_at DESC
                         """,
-                        new { key = job.IdempotencyKey });
+                                new { key = job.IdempotencyKey }).ConfigureAwait(false);
 
-                    if (winner.Id != Guid.Empty)
-                    {
-                        return DuplicateRules.Resolve(new JobId(winner.Id), ParseStatus(winner.Status), duplicatePolicy);
+                            if (winner.Id != Guid.Empty)
+                            {
+                                return DuplicateRules.Resolve(new JobId(winner.Id), ParseStatus(winner.Status), duplicatePolicy);
+                            }
+                        }
                     }
                 }
+
+                throw new InvalidOperationException(
+                    $"Could not enqueue a job with idempotency key '{job.IdempotencyKey}' after {MaxEnqueueAttempts} attempts.");
             }
 
-            throw new InvalidOperationException(
-                $"Could not enqueue a job with idempotency key '{job.IdempotencyKey}' after {MaxEnqueueAttempts} attempts.");
+            await conn.ExecuteAsync(InsertJobSql, ToInsertParameters(job)).ConfigureAwait(false);
+
+            return new EnqueueResult(job.Id, WasRejected: false);
         }
-
-        await conn.ExecuteAsync(InsertJobSql, ToInsertParameters(job));
-
-        return new EnqueueResult(job.Id, WasRejected: false);
     }
 
     // ── FetchNextAsync ────────────────────────────────────────────────────────
@@ -154,13 +160,16 @@ public sealed class SqlServerStorageProvider : IStorageProvider, IOrphanedJobRep
             return null;
         }
 
-        await using var conn = Open();
-        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var tx = await conn.BeginTransactionAsync(cancellationToken);
-
-        // Promote due scheduled/retry jobs first (guarded by non-blocking app lock so concurrent workers don't deadlock)
-        await conn.ExecuteAsync(
-            """
+        var conn = Open();
+        await using (conn.ConfigureAwait(false))
+        {
+            await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+            var tx = await conn.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+            await using (tx.ConfigureAwait(false))
+            {
+                // Promote due scheduled/retry jobs first (guarded by non-blocking app lock so concurrent workers don't deadlock)
+                await conn.ExecuteAsync(
+                """
             DECLARE @lockResult INT;
             EXEC @lockResult = sp_getapplock @Resource = 'nexjob_promote_scheduled', @LockMode = 'Exclusive', @LockOwner = 'Transaction', @LockTimeout = 0;
             IF @lockResult >= 0
@@ -175,13 +184,13 @@ public sealed class SqlServerStorageProvider : IStorageProvider, IOrphanedJobRep
             END
             """, transaction: tx).ConfigureAwait(false);
 
-        // Build queue priority list for ordering
-        var parameters = new DynamicParameters();
-        var queueValues = BuildQueueValues(queues, parameters);
+                // Build queue priority list for ordering
+                var parameters = new DynamicParameters();
+                var queueValues = BuildQueueValues(queues, parameters);
 
 #pragma warning disable S2077 // Only the generated @q0, @q1, ... names are interpolated; queue names travel as parameters.
-        var row = await conn.QuerySingleOrDefaultAsync<JobRow>(
-            $"""
+                var row = await conn.QuerySingleOrDefaultAsync<JobRow>(
+                    $"""
             UPDATE nexjob_jobs
             SET status                = 'Processing',
                 processing_started_at = SYSUTCDATETIME(),
@@ -200,12 +209,14 @@ public sealed class SqlServerStorageProvider : IStorageProvider, IOrphanedJobRep
                 ORDER BY q.ord ASC, j.priority ASC, j.created_at ASC
             )
             """,
-            parameters,
-            transaction: tx);
+                    parameters,
+                    transaction: tx).ConfigureAwait(false);
 #pragma warning restore S2077
 
-        await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
-        return row?.ToRecord();
+                await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
+                return row?.ToRecord();
+            }
+        }
     }
 
     /// <inheritdoc/>
@@ -219,13 +230,16 @@ public sealed class SqlServerStorageProvider : IStorageProvider, IOrphanedJobRep
             return Array.Empty<JobRecord>();
         }
 
-        await using var conn = Open();
-        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var tx = await conn.BeginTransactionAsync(cancellationToken);
-
-        // Promote due scheduled/retry jobs first (guarded by non-blocking app lock so concurrent workers don't deadlock)
-        await conn.ExecuteAsync(
-            """
+        var conn = Open();
+        await using (conn.ConfigureAwait(false))
+        {
+            await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+            var tx = await conn.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+            await using (tx.ConfigureAwait(false))
+            {
+                // Promote due scheduled/retry jobs first (guarded by non-blocking app lock so concurrent workers don't deadlock)
+                await conn.ExecuteAsync(
+                """
             DECLARE @lockResult INT;
             EXEC @lockResult = sp_getapplock @Resource = 'nexjob_promote_scheduled', @LockMode = 'Exclusive', @LockOwner = 'Transaction', @LockTimeout = 0;
             IF @lockResult >= 0
@@ -240,15 +254,15 @@ public sealed class SqlServerStorageProvider : IStorageProvider, IOrphanedJobRep
             END
             """, transaction: tx).ConfigureAwait(false);
 
-        // Build queue priority list for ordering
-        var parameters = new DynamicParameters();
-        var queueValues = BuildQueueValues(queues, parameters);
+                // Build queue priority list for ordering
+                var parameters = new DynamicParameters();
+                var queueValues = BuildQueueValues(queues, parameters);
 
-        parameters.Add("maxBatchSize", maxBatchSize);
+                parameters.Add("maxBatchSize", maxBatchSize);
 
 #pragma warning disable S2077 // Only the generated @q0, @q1, ... names are interpolated; queue names travel as parameters.
-        var rows = await conn.QueryAsync<JobRow>(
-            $"""
+                var rows = await conn.QueryAsync<JobRow>(
+                    $"""
             UPDATE nexjob_jobs
             SET status                = 'Processing',
                 processing_started_at = SYSUTCDATETIME(),
@@ -267,12 +281,14 @@ public sealed class SqlServerStorageProvider : IStorageProvider, IOrphanedJobRep
                 ORDER BY q.ord ASC, j.priority ASC, j.created_at ASC
             )
             """,
-            parameters,
-            transaction: tx);
+                    parameters,
+                    transaction: tx).ConfigureAwait(false);
 #pragma warning restore S2077
 
-        await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
-        return rows.Select(r => r.ToRecord()).ToList();
+                await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
+                return rows.Select(r => r.ToRecord()).ToList();
+            }
+        }
     }
 
     // ── AcknowledgeAsync ──────────────────────────────────────────────────────
@@ -280,10 +296,14 @@ public sealed class SqlServerStorageProvider : IStorageProvider, IOrphanedJobRep
     /// <inheritdoc/>
     public async Task AcknowledgeAsync(JobId jobId, CancellationToken cancellationToken = default)
     {
-        await using var conn = Open();
-        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var tx = await conn.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
-        await conn.ExecuteAsync(
+        var conn = Open();
+        await using (conn.ConfigureAwait(false))
+        {
+            await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+            var tx = await conn.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+            await using (tx.ConfigureAwait(false))
+            {
+                await conn.ExecuteAsync(
             """
             UPDATE nexjob_jobs
             SET status = 'Succeeded', completed_at = SYSUTCDATETIME(), heartbeat_at = NULL, checkpoint_json = NULL
@@ -292,21 +312,23 @@ public sealed class SqlServerStorageProvider : IStorageProvider, IOrphanedJobRep
             new { id = jobId.Value },
             transaction: tx).ConfigureAwait(false);
 
-        // The index hint and the redundant 'parent_job_id IS NOT NULL' are deliberate. idx_nexjob_jobs_parent is a filtered
-        // index, and the plan is chosen on first use: with a small table SQL Server prefers a clustered index scan, which is
-        // then reused and takes update locks on other jobs' rows (deadlocks under concurrent workers, issue #279). The
-        // predicate makes the filtered index eligible and the hint makes the seek independent of the table size.
-        // A parent acknowledged outside CommitJobResultAsync must still release its continuations.
-        await conn.ExecuteAsync(
-            """
+                // The index hint and the redundant 'parent_job_id IS NOT NULL' are deliberate. idx_nexjob_jobs_parent is a filtered
+                // index, and the plan is chosen on first use: with a small table SQL Server prefers a clustered index scan, which is
+                // then reused and takes update locks on other jobs' rows (deadlocks under concurrent workers, issue #279). The
+                // predicate makes the filtered index eligible and the hint makes the seek independent of the table size.
+                // A parent acknowledged outside CommitJobResultAsync must still release its continuations.
+                await conn.ExecuteAsync(
+                    """
             UPDATE j
             SET j.status = 'Enqueued', j.scheduled_at = NULL
             FROM nexjob_jobs AS j WITH (INDEX(idx_nexjob_jobs_parent))
             WHERE j.parent_job_id = @id AND j.parent_job_id IS NOT NULL AND j.status = 'AwaitingContinuation'
             """,
-            new { id = jobId.Value },
-            transaction: tx).ConfigureAwait(false);
-        await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
+                    new { id = jobId.Value },
+                    transaction: tx).ConfigureAwait(false);
+                await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
+            }
+        }
     }
 
     /// <inheritdoc/>
@@ -323,30 +345,36 @@ public sealed class SqlServerStorageProvider : IStorageProvider, IOrphanedJobRep
             return;
         }
 
-        await using var conn = Open();
-        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var tx = await conn.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
-        var idList = jobIds.Select(j => j.Value).ToArray();
+        var conn = Open();
+        await using (conn.ConfigureAwait(false))
+        {
+            await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+            var tx = await conn.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+            await using (tx.ConfigureAwait(false))
+            {
+                var idList = jobIds.Select(j => j.Value).ToArray();
 
-        await conn.ExecuteAsync(
-            """
+                await conn.ExecuteAsync(
+                    """
             UPDATE nexjob_jobs
             SET status = 'Succeeded', completed_at = SYSUTCDATETIME(), heartbeat_at = NULL, checkpoint_json = NULL
             WHERE id IN @Ids
             """,
-            new { Ids = idList },
-            transaction: tx).ConfigureAwait(false);
+                    new { Ids = idList },
+                    transaction: tx).ConfigureAwait(false);
 
-        await conn.ExecuteAsync(
-            """
+                await conn.ExecuteAsync(
+                    """
             UPDATE j
             SET j.status = 'Enqueued', j.scheduled_at = NULL
             FROM nexjob_jobs AS j WITH (INDEX(idx_nexjob_jobs_parent))
             WHERE j.parent_job_id IN @Ids AND j.parent_job_id IS NOT NULL AND j.status = 'AwaitingContinuation'
             """,
-            new { Ids = idList },
-            transaction: tx).ConfigureAwait(false);
-        await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
+                    new { Ids = idList },
+                    transaction: tx).ConfigureAwait(false);
+                await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
+            }
+        }
     }
 
     // ── SetFailedAsync ────────────────────────────────────────────────────────
@@ -356,48 +384,54 @@ public sealed class SqlServerStorageProvider : IStorageProvider, IOrphanedJobRep
         JobId jobId, Exception exception, DateTimeOffset? retryAt,
         CancellationToken cancellationToken = default)
     {
-        await using var conn = Open();
-        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
-
-        if (retryAt.HasValue)
+        var conn = Open();
+        await using (conn.ConfigureAwait(false))
         {
-            await conn.ExecuteAsync(
-                """
+            await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+
+            if (retryAt.HasValue)
+            {
+                await conn.ExecuteAsync(
+                    """
                 UPDATE nexjob_jobs
                 SET status = 'Scheduled', retry_at = @retryAt,
                     exception_message = @msg, exception_stack_trace = @stack,
                     heartbeat_at = NULL
                 WHERE id = @id
                 """,
-                new { id = jobId.Value, retryAt = retryAt.Value, msg = exception.Message, stack = exception.StackTrace });
-        }
-        else
-        {
-            await conn.ExecuteAsync(
-                """
+                    new { id = jobId.Value, retryAt = retryAt.Value, msg = exception.Message, stack = exception.StackTrace }).ConfigureAwait(false);
+            }
+            else
+            {
+                await conn.ExecuteAsync(
+                    """
                 UPDATE nexjob_jobs
                 SET status = 'Failed', completed_at = SYSUTCDATETIME(),
                     exception_message = @msg, exception_stack_trace = @stack,
                     heartbeat_at = NULL
                 WHERE id = @id
                 """,
-                new { id = jobId.Value, msg = exception.Message, stack = exception.StackTrace });
+                    new { id = jobId.Value, msg = exception.Message, stack = exception.StackTrace }).ConfigureAwait(false);
+            }
         }
     }
 
     /// <inheritdoc/>
     public async Task SetExpiredAsync(JobId jobId, CancellationToken cancellationToken = default)
     {
-        await using var conn = Open();
-        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+        var conn = Open();
+        await using (conn.ConfigureAwait(false))
+        {
+            await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
 
-        await conn.ExecuteAsync(
-            """
+            await conn.ExecuteAsync(
+                """
             UPDATE nexjob_jobs
             SET status = 'Expired', completed_at = SYSUTCDATETIME(), heartbeat_at = NULL
             WHERE id = @id
             """,
-            new { id = jobId.Value });
+                new { id = jobId.Value }).ConfigureAwait(false);
+        }
     }
 
     // ── UpdateHeartbeatAsync ──────────────────────────────────────────────────
@@ -405,11 +439,14 @@ public sealed class SqlServerStorageProvider : IStorageProvider, IOrphanedJobRep
     /// <inheritdoc/>
     public async Task UpdateHeartbeatAsync(JobId jobId, CancellationToken cancellationToken = default)
     {
-        await using var conn = Open();
-        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await conn.ExecuteAsync(
-            "UPDATE nexjob_jobs SET heartbeat_at = SYSUTCDATETIME() WHERE id = @id",
-            new { id = jobId.Value });
+        var conn = Open();
+        await using (conn.ConfigureAwait(false))
+        {
+            await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+            await conn.ExecuteAsync(
+                "UPDATE nexjob_jobs SET heartbeat_at = SYSUTCDATETIME() WHERE id = @id",
+                new { id = jobId.Value }).ConfigureAwait(false);
+        }
     }
 
     // ── Recurring jobs ────────────────────────────────────────────────────────
@@ -418,10 +455,12 @@ public sealed class SqlServerStorageProvider : IStorageProvider, IOrphanedJobRep
     public async Task UpsertRecurringJobAsync(
         RecurringJobRecord recurringJob, CancellationToken cancellationToken = default)
     {
-        await using var conn = Open();
-        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await conn.ExecuteAsync(
-            """
+        var conn = Open();
+        await using (conn.ConfigureAwait(false))
+        {
+            await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+            await conn.ExecuteAsync(
+                """
             MERGE nexjob_recurring_jobs WITH (HOLDLOCK) AS target
             USING (SELECT @RecurringJobId AS recurring_job_id) AS source
             ON target.recurring_job_id = source.recurring_job_id
@@ -444,31 +483,35 @@ public sealed class SqlServerStorageProvider : IStorageProvider, IOrphanedJobRep
                         @TimeZoneId, @Queue, @NextExecution, @ConcurrencyPolicy, SYSUTCDATETIME(), SYSUTCDATETIME(),
                         NULL, 1, 0);
             """,
-            new
-            {
-                recurringJob.RecurringJobId,
-                recurringJob.JobType,
-                recurringJob.InputType,
-                recurringJob.InputJson,
-                recurringJob.Cron,
-                TimeZoneId = recurringJob.TimeZoneId ?? "UTC",
-                recurringJob.Queue,
-                recurringJob.NextExecution,
-                recurringJob.CreatedAt,
-                ConcurrencyPolicy = recurringJob.ConcurrencyPolicy.ToString(),
-            });
+                new
+                {
+                    recurringJob.RecurringJobId,
+                    recurringJob.JobType,
+                    recurringJob.InputType,
+                    recurringJob.InputJson,
+                    recurringJob.Cron,
+                    TimeZoneId = recurringJob.TimeZoneId ?? "UTC",
+                    recurringJob.Queue,
+                    recurringJob.NextExecution,
+                    recurringJob.CreatedAt,
+                    ConcurrencyPolicy = recurringJob.ConcurrencyPolicy.ToString(),
+                }).ConfigureAwait(false);
+        }
     }
 
     /// <inheritdoc/>
     public async Task<IReadOnlyList<RecurringJobRecord>> GetDueRecurringJobsAsync(
         DateTimeOffset utcNow, CancellationToken cancellationToken = default)
     {
-        await using var conn = Open();
-        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
-        var rows = await conn.QueryAsync<RecurringJobRow>(
-            "SELECT * FROM nexjob_recurring_jobs WHERE next_execution <= @now",
-            new { now = utcNow });
-        return rows.Select(r => r.ToRecord()).ToList();
+        var conn = Open();
+        await using (conn.ConfigureAwait(false))
+        {
+            await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+            var rows = await conn.QueryAsync<RecurringJobRow>(
+                "SELECT * FROM nexjob_recurring_jobs WHERE next_execution <= @now",
+                new { now = utcNow }).ConfigureAwait(false);
+            return rows.Select(r => r.ToRecord()).ToList();
+        }
     }
 
     /// <inheritdoc/>
@@ -476,15 +519,18 @@ public sealed class SqlServerStorageProvider : IStorageProvider, IOrphanedJobRep
         string recurringJobId, DateTimeOffset nextExecution,
         CancellationToken cancellationToken = default)
     {
-        await using var conn = Open();
-        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await conn.ExecuteAsync(
-            """
+        var conn = Open();
+        await using (conn.ConfigureAwait(false))
+        {
+            await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+            await conn.ExecuteAsync(
+                """
             UPDATE nexjob_recurring_jobs
             SET next_execution = @next, last_execution = SYSUTCDATETIME(), updated_at = SYSUTCDATETIME()
             WHERE recurring_job_id = @id
             """,
-            new { id = recurringJobId, next = nextExecution });
+                new { id = recurringJobId, next = nextExecution }).ConfigureAwait(false);
+        }
     }
 
     /// <inheritdoc/>
@@ -492,36 +538,45 @@ public sealed class SqlServerStorageProvider : IStorageProvider, IOrphanedJobRep
         string recurringJobId, JobStatus status, string? errorMessage,
         CancellationToken cancellationToken = default)
     {
-        await using var conn = Open();
-        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await conn.ExecuteAsync(
-            """
+        var conn = Open();
+        await using (conn.ConfigureAwait(false))
+        {
+            await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+            await conn.ExecuteAsync(
+                """
             UPDATE nexjob_recurring_jobs
             SET last_execution_status = @status, last_execution_error = @error, updated_at = SYSUTCDATETIME()
             WHERE recurring_job_id = @id
             """,
-            new { id = recurringJobId, status = status.ToString(), error = errorMessage });
+                new { id = recurringJobId, status = status.ToString(), error = errorMessage }).ConfigureAwait(false);
+        }
     }
 
     /// <inheritdoc/>
     public async Task DeleteRecurringJobAsync(
         string recurringJobId, CancellationToken cancellationToken = default)
     {
-        await using var conn = Open();
-        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await conn.ExecuteAsync(
-            "DELETE FROM nexjob_recurring_jobs WHERE recurring_job_id = @id",
-            new { id = recurringJobId });
+        var conn = Open();
+        await using (conn.ConfigureAwait(false))
+        {
+            await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+            await conn.ExecuteAsync(
+                "DELETE FROM nexjob_recurring_jobs WHERE recurring_job_id = @id",
+                new { id = recurringJobId }).ConfigureAwait(false);
+        }
     }
 
     /// <inheritdoc/>
     public async Task<IReadOnlyList<RecurringJobRecord>> GetRecurringJobsAsync(CancellationToken cancellationToken = default)
     {
-        await using var conn = Open();
-        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
-        var rows = await conn.QueryAsync<RecurringJobRow>(
-            "SELECT * FROM nexjob_recurring_jobs ORDER BY recurring_job_id");
-        return rows.Select(r => r.ToRecord()).ToList();
+        var conn = Open();
+        await using (conn.ConfigureAwait(false))
+        {
+            await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+            var rows = await conn.QueryAsync<RecurringJobRow>(
+                "SELECT * FROM nexjob_recurring_jobs ORDER BY recurring_job_id").ConfigureAwait(false);
+            return rows.Select(r => r.ToRecord()).ToList();
+        }
     }
 
     /// <inheritdoc/>
@@ -533,12 +588,15 @@ public sealed class SqlServerStorageProvider : IStorageProvider, IOrphanedJobRep
     /// <inheritdoc/>
     public async Task<RecurringJobRecord?> GetRecurringJobAsync(string recurringJobId, CancellationToken cancellationToken = default)
     {
-        await using var conn = Open();
-        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
-        var row = await conn.QuerySingleOrDefaultAsync<RecurringJobRow>(
-            "SELECT * FROM nexjob_recurring_jobs WHERE recurring_job_id = @Id",
-            new { Id = recurringJobId });
-        return row?.ToRecord();
+        var conn = Open();
+        await using (conn.ConfigureAwait(false))
+        {
+            await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+            var row = await conn.QuerySingleOrDefaultAsync<RecurringJobRow>(
+                "SELECT * FROM nexjob_recurring_jobs WHERE recurring_job_id = @Id",
+                new { Id = recurringJobId }).ConfigureAwait(false);
+            return row?.ToRecord();
+        }
     }
 
     /// <inheritdoc/>
@@ -546,48 +604,57 @@ public sealed class SqlServerStorageProvider : IStorageProvider, IOrphanedJobRep
         string recurringJobId, string? cronOverride, bool enabled,
         CancellationToken cancellationToken = default)
     {
-        await using var conn = Open();
-        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await conn.ExecuteAsync(
-            """
+        var conn = Open();
+        await using (conn.ConfigureAwait(false))
+        {
+            await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+            await conn.ExecuteAsync(
+                """
             UPDATE nexjob_recurring_jobs
             SET cron_override = @CronOverride, enabled = @Enabled, updated_at = SYSUTCDATETIME()
             WHERE recurring_job_id = @Id
             """,
-            new { Id = recurringJobId, CronOverride = cronOverride, Enabled = enabled });
+                new { Id = recurringJobId, CronOverride = cronOverride, Enabled = enabled }).ConfigureAwait(false);
+        }
     }
 
     /// <inheritdoc/>
     public async Task ForceDeleteRecurringJobAsync(
         string recurringJobId, CancellationToken cancellationToken = default)
     {
-        await using var conn = Open();
-        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await conn.ExecuteAsync(
-            "DELETE FROM nexjob_jobs WHERE recurring_job_id = @id",
-            new { id = recurringJobId });
-        await conn.ExecuteAsync(
-            """
+        var conn = Open();
+        await using (conn.ConfigureAwait(false))
+        {
+            await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+            await conn.ExecuteAsync(
+                "DELETE FROM nexjob_jobs WHERE recurring_job_id = @id",
+                new { id = recurringJobId }).ConfigureAwait(false);
+            await conn.ExecuteAsync(
+                """
             UPDATE nexjob_recurring_jobs
             SET deleted_by_user = 1, enabled = 0, updated_at = SYSUTCDATETIME()
             WHERE recurring_job_id = @id
             """,
-            new { id = recurringJobId });
+                new { id = recurringJobId }).ConfigureAwait(false);
+        }
     }
 
     /// <inheritdoc/>
     public async Task RestoreRecurringJobAsync(
         string recurringJobId, CancellationToken cancellationToken = default)
     {
-        await using var conn = Open();
-        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await conn.ExecuteAsync(
-            """
+        var conn = Open();
+        await using (conn.ConfigureAwait(false))
+        {
+            await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+            await conn.ExecuteAsync(
+                """
             UPDATE nexjob_recurring_jobs
             SET deleted_by_user = 0, enabled = 1, updated_at = SYSUTCDATETIME()
             WHERE recurring_job_id = @id
             """,
-            new { id = recurringJobId });
+                new { id = recurringJobId }).ConfigureAwait(false);
+        }
     }
 
     // ── Orphan requeue ────────────────────────────────────────────────────────
@@ -610,21 +677,23 @@ public sealed class SqlServerStorageProvider : IStorageProvider, IOrphanedJobRep
     {
         var now = DateTimeOffset.UtcNow;
         var cutoff = now - heartbeatTimeout;
-        await using var conn = Open();
-        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+        var conn = Open();
+        await using (conn.ConfigureAwait(false))
+        {
+            await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
 
-        // A job with no attempts left is failed only when this node can load its type. The types are asked first and the
-        // statement is restricted to the accepted ones, so a type that shows up in between is skipped, never failed by mistake.
-        var exhaustedTypes = await conn.QueryAsync<string>(
-            "SELECT DISTINCT job_type FROM nexjob_jobs WITH (READPAST) WHERE status = 'Processing' AND heartbeat_at < @cutoff AND attempts >= max_attempts",
-            new { cutoff }).ConfigureAwait(false);
-        var allowedTypes = exhaustedTypes.Where(canHandleJobType).ToArray();
+            // A job with no attempts left is failed only when this node can load its type. The types are asked first and the
+            // statement is restricted to the accepted ones, so a type that shows up in between is skipped, never failed by mistake.
+            var exhaustedTypes = await conn.QueryAsync<string>(
+                "SELECT DISTINCT job_type FROM nexjob_jobs WITH (READPAST) WHERE status = 'Processing' AND heartbeat_at < @cutoff AND attempts >= max_attempts",
+                new { cutoff }).ConfigureAwait(false);
+            var allowedTypes = exhaustedTypes.Where(canHandleJobType).ToArray();
 
-        // READPAST: a row another transaction holds is in use (the fetch, a commit); the next sweep takes it. Waiting on it
-        // is one half of a deadlock cycle with the fetch, which locks rows in another order (issue #315).
-        // Only the jobs this statement moved to Failed come back, so another node scanning at the same time cannot report them too.
-        var failedIds = (await conn.QueryAsync<Guid>(
-            """
+            // READPAST: a row another transaction holds is in use (the fetch, a commit); the next sweep takes it. Waiting on it
+            // is one half of a deadlock cycle with the fetch, which locks rows in another order (issue #315).
+            // Only the jobs this statement moved to Failed come back, so another node scanning at the same time cannot report them too.
+            var failedIds = (await conn.QueryAsync<Guid>(
+                """
             DECLARE @moved TABLE (id UNIQUEIDENTIFIER, status NVARCHAR(32));
 
             UPDATE nexjob_jobs WITH (READPAST)
@@ -639,9 +708,10 @@ public sealed class SqlServerStorageProvider : IStorageProvider, IOrphanedJobRep
 
             SELECT id FROM @moved WHERE status = 'Failed';
             """,
-            new { cutoff, now, allowedTypes }).ConfigureAwait(false)).ToList();
+                new { cutoff, now, allowedTypes }).ConfigureAwait(false)).ToList();
 
-        return failedIds.ConvertAll(id => new JobId(id));
+            return failedIds.ConvertAll(id => new JobId(id));
+        }
     }
 
     // ── Continuations ─────────────────────────────────────────────────────────
@@ -650,16 +720,19 @@ public sealed class SqlServerStorageProvider : IStorageProvider, IOrphanedJobRep
     public async Task EnqueueContinuationsAsync(
         JobId parentJobId, CancellationToken cancellationToken = default)
     {
-        await using var conn = Open();
-        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await conn.ExecuteAsync(
-            """
+        var conn = Open();
+        await using (conn.ConfigureAwait(false))
+        {
+            await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+            await conn.ExecuteAsync(
+                """
             UPDATE j
             SET j.status = 'Enqueued'
             FROM nexjob_jobs AS j WITH (INDEX(idx_nexjob_jobs_parent))
             WHERE j.status = 'AwaitingContinuation' AND j.parent_job_id = @parentId AND j.parent_job_id IS NOT NULL
             """,
-            new { parentId = parentJobId.Value });
+                new { parentId = parentJobId.Value }).ConfigureAwait(false);
+        }
     }
 
     // ── Server / Worker node tracking ─────────────────────────────────────────
@@ -667,10 +740,12 @@ public sealed class SqlServerStorageProvider : IStorageProvider, IOrphanedJobRep
     /// <inheritdoc/>
     public async Task RegisterServerAsync(ServerRecord server, CancellationToken cancellationToken = default)
     {
-        await using var conn = Open();
-        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await conn.ExecuteAsync(
-            """
+        var conn = Open();
+        await using (conn.ConfigureAwait(false))
+        {
+            await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+            await conn.ExecuteAsync(
+                """
             MERGE nexjob_servers WITH (HOLDLOCK) AS target
             USING (SELECT @Id AS id) AS source
             ON target.id = source.id
@@ -683,55 +758,65 @@ public sealed class SqlServerStorageProvider : IStorageProvider, IOrphanedJobRep
                 INSERT (id, worker_count, queues, started_at, heartbeat_at)
                 VALUES (@Id, @WorkerCount, @Queues, @StartedAt, @HeartbeatAt);
             """,
-            new
-            {
-                server.Id,
-                server.WorkerCount,
-                Queues = System.Text.Json.JsonSerializer.Serialize(server.Queues),
-                server.StartedAt,
-                server.HeartbeatAt,
-            });
+                new
+                {
+                    server.Id,
+                    server.WorkerCount,
+                    Queues = JsonSerializer.Serialize(server.Queues),
+                    server.StartedAt,
+                    server.HeartbeatAt,
+                }).ConfigureAwait(false);
+        }
     }
 
     /// <inheritdoc/>
     public async Task HeartbeatServerAsync(string serverId, CancellationToken cancellationToken = default)
     {
-        await using var conn = Open();
-        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await conn.ExecuteAsync(
-            "UPDATE nexjob_servers SET heartbeat_at = SYSUTCDATETIME() WHERE id = @Id",
-            new { Id = serverId });
+        var conn = Open();
+        await using (conn.ConfigureAwait(false))
+        {
+            await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+            await conn.ExecuteAsync(
+                "UPDATE nexjob_servers SET heartbeat_at = SYSUTCDATETIME() WHERE id = @Id",
+                new { Id = serverId }).ConfigureAwait(false);
+        }
     }
 
     /// <inheritdoc/>
     public async Task DeregisterServerAsync(string serverId, CancellationToken cancellationToken = default)
     {
-        await using var conn = Open();
-        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await conn.ExecuteAsync(
-            "DELETE FROM nexjob_servers WHERE id = @Id",
-            new { Id = serverId });
+        var conn = Open();
+        await using (conn.ConfigureAwait(false))
+        {
+            await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+            await conn.ExecuteAsync(
+                "DELETE FROM nexjob_servers WHERE id = @Id",
+                new { Id = serverId }).ConfigureAwait(false);
+        }
     }
 
     /// <inheritdoc/>
     public async Task<IReadOnlyList<ServerRecord>> GetActiveServersAsync(TimeSpan activeTimeout, CancellationToken cancellationToken = default)
     {
         var cutoff = DateTimeOffset.UtcNow - activeTimeout;
-        await using var conn = Open();
-        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
-
-        var rows = await conn.QueryAsync(
-            "SELECT id, worker_count, queues, started_at, heartbeat_at FROM nexjob_servers WHERE heartbeat_at >= @Cutoff ORDER BY id",
-            new { Cutoff = cutoff });
-
-        return rows.Select(r => new ServerRecord
+        var conn = Open();
+        await using (conn.ConfigureAwait(false))
         {
-            Id = r.id,
-            WorkerCount = r.worker_count,
-            Queues = System.Text.Json.JsonSerializer.Deserialize<string[]>(r.queues ?? "[]") ?? Array.Empty<string>(),
-            StartedAt = r.started_at,
-            HeartbeatAt = r.heartbeat_at,
-        }).ToList();
+            await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+
+            var rows = await conn.QueryAsync(
+                "SELECT id, worker_count, queues, started_at, heartbeat_at FROM nexjob_servers WHERE heartbeat_at >= @Cutoff ORDER BY id",
+                new { Cutoff = cutoff }).ConfigureAwait(false);
+
+            return rows.Select(r => new ServerRecord
+            {
+                Id = r.id,
+                WorkerCount = r.worker_count,
+                Queues = System.Text.Json.JsonSerializer.Deserialize<string[]>(r.queues ?? "[]") ?? Array.Empty<string>(),
+                StartedAt = r.started_at,
+                HeartbeatAt = r.heartbeat_at,
+            }).ToList();
+        }
     }
 
     // ── Dashboard support ─────────────────────────────────────────────────────
@@ -739,15 +824,17 @@ public sealed class SqlServerStorageProvider : IStorageProvider, IOrphanedJobRep
     /// <inheritdoc/>
     public async Task<JobMetrics> GetMetricsAsync(CancellationToken cancellationToken = default)
     {
-        await using var conn = Open();
-        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+        var conn = Open();
+        await using (conn.ConfigureAwait(false))
+        {
+            await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
 
-        var counts = (await conn.QueryAsync<(string Status, int Count)>(
-            "SELECT status, COUNT(*) AS count FROM nexjob_jobs GROUP BY status"))
-            .ToDictionary(x => x.Status, x => x.Count, StringComparer.Ordinal);
+            var counts = (await conn.QueryAsync<(string Status, int Count)>(
+                "SELECT status, COUNT(*) AS count FROM nexjob_jobs GROUP BY status").ConfigureAwait(false))
+                .ToDictionary(x => x.Status, x => x.Count, StringComparer.Ordinal);
 
-        var throughput = (await conn.QueryAsync<(DateTimeOffset Hour, int Count)>(
-            """
+            var throughput = (await conn.QueryAsync<(DateTimeOffset Hour, int Count)>(
+                """
             SELECT DATEADD(HOUR, DATEDIFF(HOUR, 0, CAST(completed_at AS DATETIME2)), 0) AS hour,
                    COUNT(*) AS count
             FROM nexjob_jobs
@@ -755,29 +842,30 @@ public sealed class SqlServerStorageProvider : IStorageProvider, IOrphanedJobRep
               AND status IN ('Succeeded','Failed')
             GROUP BY DATEADD(HOUR, DATEDIFF(HOUR, 0, CAST(completed_at AS DATETIME2)), 0)
             ORDER BY hour
-            """))
-            .Select(r => new HourlyThroughput { Hour = r.Hour, Count = r.Count })
-            .ToList();
+            """).ConfigureAwait(false))
+                .Select(r => new HourlyThroughput { Hour = r.Hour, Count = r.Count })
+                .ToList();
 
-        var recentFailures = (await conn.QueryAsync<JobRow>(
-            "SELECT TOP 10 * FROM nexjob_jobs WHERE status = 'Failed' ORDER BY completed_at DESC"))
-            .Select(r => r.ToRecord())
-            .ToList();
+            var recentFailures = (await conn.QueryAsync<JobRow>(
+                "SELECT TOP 10 * FROM nexjob_jobs WHERE status = 'Failed' ORDER BY completed_at DESC").ConfigureAwait(false))
+                .Select(r => r.ToRecord())
+                .ToList();
 
-        var recurringCount = await conn.ExecuteScalarAsync<int>(
-            "SELECT COUNT(*) FROM nexjob_recurring_jobs");
+            var recurringCount = await conn.ExecuteScalarAsync<int>(
+                "SELECT COUNT(*) FROM nexjob_recurring_jobs").ConfigureAwait(false);
 
-        return new JobMetrics
-        {
-            Enqueued = counts.GetValueOrDefault("Enqueued"),
-            Processing = counts.GetValueOrDefault("Processing"),
-            Succeeded = counts.GetValueOrDefault("Succeeded"),
-            Failed = counts.GetValueOrDefault("Failed"),
-            Scheduled = counts.GetValueOrDefault("Scheduled"),
-            Recurring = recurringCount,
-            HourlyThroughput = throughput,
-            RecentFailures = recentFailures,
-        };
+            return new JobMetrics
+            {
+                Enqueued = counts.GetValueOrDefault("Enqueued"),
+                Processing = counts.GetValueOrDefault("Processing"),
+                Succeeded = counts.GetValueOrDefault("Succeeded"),
+                Failed = counts.GetValueOrDefault("Failed"),
+                Scheduled = counts.GetValueOrDefault("Scheduled"),
+                Recurring = recurringCount,
+                HourlyThroughput = throughput,
+                RecentFailures = recentFailures,
+            };
+        }
     }
 
     /// <inheritdoc/>
@@ -785,91 +873,103 @@ public sealed class SqlServerStorageProvider : IStorageProvider, IOrphanedJobRep
         JobFilter filter, int page, int pageSize,
         CancellationToken cancellationToken = default)
     {
-        await using var conn = Open();
-        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
-
-        var where = new List<string>();
-        var p = new DynamicParameters();
-
-        if (filter.Status.HasValue)
+        var conn = Open();
+        await using (conn.ConfigureAwait(false))
         {
-            where.Add("status = @status");
-            p.Add("status", filter.Status.Value.ToString());
-        }
+            await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
 
-        if (!string.IsNullOrWhiteSpace(filter.Queue))
-        {
-            where.Add("queue = @queue");
-            p.Add("queue", filter.Queue);
-        }
+            var where = new List<string>();
+            var p = new DynamicParameters();
 
-        if (!string.IsNullOrWhiteSpace(filter.Search))
-        {
-            where.Add("(job_type LIKE @search OR CAST(id AS NVARCHAR(50)) LIKE @search)");
-            p.Add("search", $"%{filter.Search.Trim()}%");
-        }
+            if (filter.Status.HasValue)
+            {
+                where.Add("status = @status");
+                p.Add("status", filter.Status.Value.ToString());
+            }
 
-        if (!string.IsNullOrEmpty(filter.RecurringJobId))
-        {
-            where.Add("recurring_job_id = @recurringJobId");
-            p.Add("recurringJobId", filter.RecurringJobId);
-        }
+            if (!string.IsNullOrWhiteSpace(filter.Queue))
+            {
+                where.Add("queue = @queue");
+                p.Add("queue", filter.Queue);
+            }
 
-        var clause = where.Count > 0 ? "WHERE " + string.Join(" AND ", where) : string.Empty;
+            if (!string.IsNullOrWhiteSpace(filter.Search))
+            {
+                where.Add("(job_type LIKE @search OR CAST(id AS NVARCHAR(50)) LIKE @search)");
+                p.Add("search", $"%{filter.Search.Trim()}%");
+            }
+
+            if (!string.IsNullOrEmpty(filter.RecurringJobId))
+            {
+                where.Add("recurring_job_id = @recurringJobId");
+                p.Add("recurringJobId", filter.RecurringJobId);
+            }
+
+            var clause = where.Count > 0 ? "WHERE " + string.Join(" AND ", where) : string.Empty;
 #pragma warning disable S2077 // `clause` holds only literal fragments such as "status = @status"; every value is a parameter.
-        var total = await conn.ExecuteScalarAsync<int>($"SELECT COUNT(*) FROM nexjob_jobs {clause}", p).ConfigureAwait(false);
+            var total = await conn.ExecuteScalarAsync<int>($"SELECT COUNT(*) FROM nexjob_jobs {clause}", p).ConfigureAwait(false);
 
-        var offset = (page - 1) * pageSize;
-        p.Add("offset", offset);
-        p.Add("pageSize", pageSize);
+            var offset = (page - 1) * pageSize;
+            p.Add("offset", offset);
+            p.Add("pageSize", pageSize);
 
-        var items = (await conn.QueryAsync<JobRow>(
-            $"SELECT * FROM nexjob_jobs {clause} ORDER BY created_at DESC OFFSET @offset ROWS FETCH NEXT @pageSize ROWS ONLY", p))
-            .Select(r => r.ToRecord())
-            .ToList();
+            var items = (await conn.QueryAsync<JobRow>(
+                $"SELECT * FROM nexjob_jobs {clause} ORDER BY created_at DESC OFFSET @offset ROWS FETCH NEXT @pageSize ROWS ONLY", p).ConfigureAwait(false))
+                .Select(r => r.ToRecord())
+                .ToList();
 #pragma warning restore S2077
 
-        return new PagedResult<JobRecord> { Items = items, TotalCount = total, Page = page, PageSize = pageSize };
+            return new PagedResult<JobRecord> { Items = items, TotalCount = total, Page = page, PageSize = pageSize };
+        }
     }
 
     /// <inheritdoc/>
     public async Task<JobRecord?> GetJobByIdAsync(JobId id, CancellationToken cancellationToken = default)
     {
-        await using var conn = Open();
-        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
-        var row = await conn.QuerySingleOrDefaultAsync<JobRow>(
-            "SELECT * FROM nexjob_jobs WHERE id = @id", new { id = id.Value });
-        return row?.ToRecord();
+        var conn = Open();
+        await using (conn.ConfigureAwait(false))
+        {
+            await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+            var row = await conn.QuerySingleOrDefaultAsync<JobRow>(
+                "SELECT * FROM nexjob_jobs WHERE id = @id", new { id = id.Value }).ConfigureAwait(false);
+            return row?.ToRecord();
+        }
     }
 
     /// <inheritdoc/>
     public async Task DeleteJobAsync(JobId id, CancellationToken cancellationToken = default)
     {
-        await using var conn = Open();
-        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await conn.ExecuteAsync("DELETE FROM nexjob_jobs WHERE id = @id", new { id = id.Value }).ConfigureAwait(false);
+        var conn = Open();
+        await using (conn.ConfigureAwait(false))
+        {
+            await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+            await conn.ExecuteAsync("DELETE FROM nexjob_jobs WHERE id = @id", new { id = id.Value }).ConfigureAwait(false);
+        }
     }
 
     /// <inheritdoc/>
     public async Task RequeueJobAsync(JobId id, CancellationToken cancellationToken = default)
     {
-        await using var conn = Open();
-        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
-        try
+        var conn = Open();
+        await using (conn.ConfigureAwait(false))
         {
-            await conn.ExecuteAsync(
-                """
+            await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await conn.ExecuteAsync(
+                    """
                 UPDATE nexjob_jobs
                 SET status = 'Enqueued', attempts = 0, retry_at = NULL,
                     completed_at = NULL, exception_message = NULL, exception_stack_trace = NULL
                 WHERE id = @id AND status IN ('Failed', 'Expired', 'Scheduled')
                 """,
-                new { id = id.Value });
-        }
-        catch (SqlException ex) when (IsUniqueConstraintViolation(ex))
-        {
-            throw new InvalidOperationException(
-                $"Cannot requeue job {id.Value}: another active job already holds its idempotency key.", ex);
+                    new { id = id.Value }).ConfigureAwait(false);
+            }
+            catch (SqlException ex) when (IsUniqueConstraintViolation(ex))
+            {
+                throw new InvalidOperationException(
+                    $"Cannot requeue job {id.Value}: another active job already holds its idempotency key.", ex);
+            }
         }
     }
 
@@ -877,10 +977,12 @@ public sealed class SqlServerStorageProvider : IStorageProvider, IOrphanedJobRep
     public async Task<IReadOnlyList<QueueMetrics>> GetQueueMetricsAsync(
         CancellationToken cancellationToken = default)
     {
-        await using var conn = Open();
-        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
-        var rows = await conn.QueryAsync<(string Queue, int Enqueued, int Processing)>(
-            """
+        var conn = Open();
+        await using (conn.ConfigureAwait(false))
+        {
+            await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+            var rows = await conn.QueryAsync<(string Queue, int Enqueued, int Processing)>(
+                """
             SELECT queue,
                    SUM(CASE WHEN status = 'Enqueued' THEN 1 ELSE 0 END) AS enqueued,
                    SUM(CASE WHEN status = 'Processing' THEN 1 ELSE 0 END) AS processing
@@ -888,11 +990,12 @@ public sealed class SqlServerStorageProvider : IStorageProvider, IOrphanedJobRep
             WHERE status IN ('Enqueued','Processing')
             GROUP BY queue
             ORDER BY queue
-            """);
+            """).ConfigureAwait(false);
 
-        return rows
-            .Select(r => new QueueMetrics { Queue = r.Queue, Enqueued = r.Enqueued, Processing = r.Processing })
-            .ToList();
+            return rows
+                .Select(r => new QueueMetrics { Queue = r.Queue, Enqueued = r.Enqueued, Processing = r.Processing })
+                .ToList();
+        }
     }
 
     /// <inheritdoc/>
@@ -900,73 +1003,84 @@ public sealed class SqlServerStorageProvider : IStorageProvider, IOrphanedJobRep
         JobId jobId, IReadOnlyList<JobExecutionLog> logs,
         CancellationToken cancellationToken = default)
     {
-        await using var conn = Open();
-        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await conn.ExecuteAsync(
-            "UPDATE nexjob_jobs SET execution_logs = @Logs WHERE id = @Id",
-            new { Id = jobId.Value, Logs = JsonSerializer.Serialize(logs) });
+        var conn = Open();
+        await using (conn.ConfigureAwait(false))
+        {
+            await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+            await conn.ExecuteAsync(
+                "UPDATE nexjob_jobs SET execution_logs = @Logs WHERE id = @Id",
+                new { Id = jobId.Value, Logs = JsonSerializer.Serialize(logs) }).ConfigureAwait(false);
+        }
     }
 
     /// <inheritdoc/>
     public async Task CommitJobResultAsync(
         JobId jobId, JobExecutionResult result, CancellationToken cancellationToken = default)
     {
-        await using var conn = Open();
-        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var tx = await conn.BeginTransactionAsync(cancellationToken);
-
-        var currentStatus = await conn.ExecuteScalarAsync<string?>(
+        var conn = Open();
+        await using (conn.ConfigureAwait(false))
+        {
+            await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+            var tx = await conn.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+            await using (tx.ConfigureAwait(false))
+            {
+                var currentStatus = await conn.ExecuteScalarAsync<string?>(
             "SELECT status FROM nexjob_jobs WITH (UPDLOCK, ROWLOCK) WHERE id = @id",
-            new { id = jobId.Value }, transaction: tx);
+            new { id = jobId.Value }, transaction: tx).ConfigureAwait(false);
 
-        if (IsTerminalStatus(currentStatus))
-        {
-            await tx.RollbackAsync(cancellationToken);
-            return;
+                if (IsTerminalStatus(currentStatus))
+                {
+                    await tx.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                    return;
+                }
+
+                var logsJson = JsonSerializer.Serialize(result.Logs);
+
+                if (result.Succeeded)
+                {
+                    await ApplySuccessAsync(conn, tx, jobId, result, logsJson).ConfigureAwait(false);
+                    await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
+                    return;
+                }
+
+                if (result.RetryAt.HasValue)
+                {
+                    await ApplyRetryAsync(conn, tx, jobId, result, logsJson).ConfigureAwait(false);
+                    await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
+                    return;
+                }
+
+                await ApplyFailureAsync(conn, tx, jobId, result, logsJson).ConfigureAwait(false);
+                await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
+            }
         }
-
-        var logsJson = JsonSerializer.Serialize(result.Logs);
-
-        if (result.Succeeded)
-        {
-            await ApplySuccessAsync(conn, tx, jobId, result, logsJson);
-            await tx.CommitAsync(cancellationToken);
-            return;
-        }
-
-        if (result.RetryAt.HasValue)
-        {
-            await ApplyRetryAsync(conn, tx, jobId, result, logsJson);
-            await tx.CommitAsync(cancellationToken);
-            return;
-        }
-
-        await ApplyFailureAsync(conn, tx, jobId, result, logsJson);
-        await tx.CommitAsync(cancellationToken);
     }
 
     /// <inheritdoc/>
     public async Task<bool> TryAcquireRecurringJobLockAsync(
         string recurringJobId, TimeSpan ttl, CancellationToken ct = default)
     {
-        await using var conn = Open();
-        await conn.OpenAsync(ct).ConfigureAwait(false);
-        await conn.ExecuteAsync(
-            "DELETE FROM nexjob_recurring_locks WHERE expires_at < SYSUTCDATETIME()");
-        try
+        var conn = Open();
+        await using (conn.ConfigureAwait(false))
         {
+            await conn.OpenAsync(ct).ConfigureAwait(false);
             await conn.ExecuteAsync(
-                """
+                "DELETE FROM nexjob_recurring_locks WHERE expires_at < SYSUTCDATETIME()").ConfigureAwait(false);
+            try
+            {
+                await conn.ExecuteAsync(
+                    """
                 INSERT INTO nexjob_recurring_locks (recurring_job_id, expires_at)
                 VALUES (@id, DATEADD(MILLISECOND, @ms, SYSUTCDATETIME()))
                 """,
-                new { id = recurringJobId, ms = (long)ttl.TotalMilliseconds });
-            return true;
-        }
-        catch (SqlException ex) when (ex.Number == 2627 || ex.Number == 2601)
-        {
-            // Primary key / unique constraint violation — lock already held
-            return false;
+                    new { id = recurringJobId, ms = (long)ttl.TotalMilliseconds }).ConfigureAwait(false);
+                return true;
+            }
+            catch (SqlException ex) when (ex.Number == 2627 || ex.Number == 2601)
+            {
+                // Primary key / unique constraint violation — lock already held
+                return false;
+            }
         }
     }
 
@@ -974,62 +1088,76 @@ public sealed class SqlServerStorageProvider : IStorageProvider, IOrphanedJobRep
     public async Task ReleaseRecurringJobLockAsync(
         string recurringJobId, CancellationToken ct = default)
     {
-        await using var conn = Open();
-        await conn.OpenAsync(ct).ConfigureAwait(false);
-        await conn.ExecuteAsync(
-            "DELETE FROM nexjob_recurring_locks WHERE recurring_job_id = @id",
-            new { id = recurringJobId });
+        var conn = Open();
+        await using (conn.ConfigureAwait(false))
+        {
+            await conn.OpenAsync(ct).ConfigureAwait(false);
+            await conn.ExecuteAsync(
+                "DELETE FROM nexjob_recurring_locks WHERE recurring_job_id = @id",
+                new { id = recurringJobId }).ConfigureAwait(false);
+        }
     }
 
     /// <inheritdoc/>
     public async Task ReportProgressAsync(
         JobId jobId, int percent, string? message, CancellationToken ct = default)
     {
-        await using var conn = Open();
-        await conn.OpenAsync(ct).ConfigureAwait(false);
-        await conn.ExecuteAsync(
-            "UPDATE nexjob_jobs SET progress_percent = @p, progress_message = @m WHERE id = @id",
-            new { id = jobId.Value, p = percent, m = message });
+        var conn = Open();
+        await using (conn.ConfigureAwait(false))
+        {
+            await conn.OpenAsync(ct).ConfigureAwait(false);
+            await conn.ExecuteAsync(
+                "UPDATE nexjob_jobs SET progress_percent = @p, progress_message = @m WHERE id = @id",
+                new { id = jobId.Value, p = percent, m = message }).ConfigureAwait(false);
+        }
     }
 
     /// <inheritdoc/>
     public async Task SaveCheckpointAsync(
         JobId jobId, string checkpointJson, int? percent, string? message, CancellationToken ct = default)
     {
-        await using var conn = Open();
-        await conn.OpenAsync(ct).ConfigureAwait(false);
-        await conn.ExecuteAsync(
-            """
+        var conn = Open();
+        await using (conn.ConfigureAwait(false))
+        {
+            await conn.OpenAsync(ct).ConfigureAwait(false);
+            await conn.ExecuteAsync(
+                """
             UPDATE nexjob_jobs
             SET checkpoint_json = @chk,
                 progress_percent = COALESCE(@p, progress_percent),
                 progress_message = COALESCE(@m, progress_message)
             WHERE id = @id
             """,
-            new { id = jobId.Value, chk = checkpointJson, p = percent, m = message });
+                new { id = jobId.Value, chk = checkpointJson, p = percent, m = message }).ConfigureAwait(false);
+        }
     }
 
     /// <inheritdoc/>
     public async Task<IReadOnlyList<JobRecord>> GetJobsByTagAsync(
         string tag, CancellationToken cancellationToken = default)
     {
-        await using var conn = Open();
-        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
-        // tags is stored as JSON array string, e.g. '["tenant:acme","region:us"]'
-        var rows = await conn.QueryAsync<JobRow>(
-            "SELECT * FROM nexjob_jobs WHERE tags LIKE @pattern",
-            new { pattern = $"%\"{tag}\"%" });
-        return rows.Select(r => r.ToRecord()).ToList();
+        var conn = Open();
+        await using (conn.ConfigureAwait(false))
+        {
+            await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+            // tags is stored as JSON array string, e.g. '["tenant:acme","region:us"]'
+            var rows = await conn.QueryAsync<JobRow>(
+                "SELECT * FROM nexjob_jobs WHERE tags LIKE @pattern",
+                new { pattern = $"%\"{tag}\"%" }).ConfigureAwait(false);
+            return rows.Select(r => r.ToRecord()).ToList();
+        }
     }
 
     /// <inheritdoc/>
     public async Task<IReadOnlyList<JobCatalogItem>> GetJobCatalogAsync(
         CancellationToken cancellationToken = default)
     {
-        await using var conn = Open();
-        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+        var conn = Open();
+        await using (conn.ConfigureAwait(false))
+        {
+            await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
 
-        const string sql = """
+            const string sql = """
             SELECT
                 job_type AS JobType,
                 queue AS Queue,
@@ -1047,114 +1175,118 @@ public sealed class SqlServerStorageProvider : IStorageProvider, IOrphanedJobRep
             ORDER BY job_type ASC, queue ASC
             """;
 
-        var rows = await conn.QueryAsync<JobCatalogItem>(sql).ConfigureAwait(false);
-        return rows.ToList();
+            var rows = await conn.QueryAsync<JobCatalogItem>(sql).ConfigureAwait(false);
+            return rows.ToList();
+        }
     }
 
     /// <inheritdoc/>
     public async Task<int> PurgeJobsAsync(RetentionPolicy policy, CancellationToken cancellationToken = default)
     {
-        await using var conn = Open();
-        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
-
-        var batchSize = policy.BatchSize > 0 ? policy.BatchSize : 1000;
-        var deleted = 0;
-
-        if (policy.RetainSucceeded > TimeSpan.Zero)
+        var conn = Open();
+        await using (conn.ConfigureAwait(false))
         {
-            while (!cancellationToken.IsCancellationRequested)
+            await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+
+            var batchSize = policy.BatchSize > 0 ? policy.BatchSize : 1000;
+            var deleted = 0;
+
+            if (policy.RetainSucceeded > TimeSpan.Zero)
             {
-                var rows = await conn.ExecuteAsync(
-                    """
+                while (!cancellationToken.IsCancellationRequested)
+                {
+                    var rows = await conn.ExecuteAsync(
+                        """
                     DELETE TOP (@batchSize) FROM nexjob_jobs
                     WHERE status = 'Succeeded'
                       AND completed_at < DATEADD(SECOND, @seconds, SYSDATETIMEOFFSET())
                     """,
-                    new { seconds = -(long)policy.RetainSucceeded.TotalSeconds, batchSize, }).ConfigureAwait(false);
+                        new { seconds = -(long)policy.RetainSucceeded.TotalSeconds, batchSize, }).ConfigureAwait(false);
 
-                deleted += rows;
-                if (rows < batchSize)
-                {
-                    break;
+                    deleted += rows;
+                    if (rows < batchSize)
+                    {
+                        break;
+                    }
+
+                    await Task.Yield();
                 }
-
-                await Task.Yield();
             }
-        }
 
-        if (policy.RetainFailed > TimeSpan.Zero)
-        {
-            while (!cancellationToken.IsCancellationRequested)
+            if (policy.RetainFailed > TimeSpan.Zero)
             {
-                var rows = await conn.ExecuteAsync(
-                    """
+                while (!cancellationToken.IsCancellationRequested)
+                {
+                    var rows = await conn.ExecuteAsync(
+                        """
                     DELETE TOP (@batchSize) FROM nexjob_jobs
                     WHERE status = 'Failed'
                       AND completed_at < DATEADD(SECOND, @seconds, SYSDATETIMEOFFSET())
                     """,
-                    new { seconds = -(long)policy.RetainFailed.TotalSeconds, batchSize, }).ConfigureAwait(false);
+                        new { seconds = -(long)policy.RetainFailed.TotalSeconds, batchSize, }).ConfigureAwait(false);
 
-                deleted += rows;
-                if (rows < batchSize)
-                {
-                    break;
+                    deleted += rows;
+                    if (rows < batchSize)
+                    {
+                        break;
+                    }
+
+                    await Task.Yield();
                 }
-
-                await Task.Yield();
             }
-        }
 
-        if (policy.RetainDeadLetter > TimeSpan.Zero)
-        {
-            var retainFailedIsZero = policy.RetainFailed == TimeSpan.Zero ? 1 : 0;
-            while (!cancellationToken.IsCancellationRequested)
+            if (policy.RetainDeadLetter > TimeSpan.Zero)
             {
-                var rows = await conn.ExecuteAsync(
-                    """
+                var retainFailedIsZero = policy.RetainFailed == TimeSpan.Zero ? 1 : 0;
+                while (!cancellationToken.IsCancellationRequested)
+                {
+                    var rows = await conn.ExecuteAsync(
+                        """
                     DELETE TOP (@batchSize) FROM nexjob_jobs
                     WHERE (status = 'DeadLetter' OR (status = 'Failed' AND @retainFailedIsZero = 1))
                       AND ISNULL(completed_at, created_at) < DATEADD(SECOND, @seconds, SYSDATETIMEOFFSET())
                     """,
-                    new
+                        new
+                        {
+                            seconds = -(long)policy.RetainDeadLetter.TotalSeconds,
+                            batchSize,
+                            retainFailedIsZero,
+                        }).ConfigureAwait(false);
+
+                    deleted += rows;
+                    if (rows < batchSize)
                     {
-                        seconds = -(long)policy.RetainDeadLetter.TotalSeconds,
-                        batchSize,
-                        retainFailedIsZero,
-                    }).ConfigureAwait(false);
+                        break;
+                    }
 
-                deleted += rows;
-                if (rows < batchSize)
-                {
-                    break;
+                    await Task.Yield();
                 }
-
-                await Task.Yield();
             }
-        }
 
-        if (policy.RetainExpired > TimeSpan.Zero)
-        {
-            while (!cancellationToken.IsCancellationRequested)
+            if (policy.RetainExpired > TimeSpan.Zero)
             {
-                var rows = await conn.ExecuteAsync(
-                    """
+                while (!cancellationToken.IsCancellationRequested)
+                {
+                    var rows = await conn.ExecuteAsync(
+                        """
                     DELETE TOP (@batchSize) FROM nexjob_jobs
                     WHERE status = 'Expired'
                       AND created_at < DATEADD(SECOND, @seconds, SYSDATETIMEOFFSET())
                     """,
-                    new { seconds = -(long)policy.RetainExpired.TotalSeconds, batchSize, }).ConfigureAwait(false);
+                        new { seconds = -(long)policy.RetainExpired.TotalSeconds, batchSize, }).ConfigureAwait(false);
 
-                deleted += rows;
-                if (rows < batchSize)
-                {
-                    break;
+                    deleted += rows;
+                    if (rows < batchSize)
+                    {
+                        break;
+                    }
+
+                    await Task.Yield();
                 }
-
-                await Task.Yield();
             }
-        }
 
-        return deleted;
+            return deleted;
+        }
     }
 
     // ── Schema ────────────────────────────────────────────────────────────────
@@ -1241,7 +1373,7 @@ public sealed class SqlServerStorageProvider : IStorageProvider, IOrphanedJobRep
             await conn.ExecuteAsync(
                 "DELETE FROM nexjob_jobs WHERE id = @id",
                 new { id = jobId.Value },
-                transaction: tx);
+                transaction: tx).ConfigureAwait(false);
         }
         else
         {
@@ -1260,7 +1392,7 @@ public sealed class SqlServerStorageProvider : IStorageProvider, IOrphanedJobRep
             await conn.ExecuteAsync(
                 updateSql,
                 new { id = jobId.Value, Logs = logsJson },
-                transaction: tx);
+                transaction: tx).ConfigureAwait(false);
         }
 
         await conn.ExecuteAsync(
@@ -1271,7 +1403,7 @@ public sealed class SqlServerStorageProvider : IStorageProvider, IOrphanedJobRep
             WHERE j.parent_job_id = @id AND j.parent_job_id IS NOT NULL AND j.status = 'AwaitingContinuation'
             """,
             new { id = jobId.Value },
-            transaction: tx);
+            transaction: tx).ConfigureAwait(false);
 
         if (result.RecurringJobId is not null)
         {
@@ -1282,7 +1414,7 @@ public sealed class SqlServerStorageProvider : IStorageProvider, IOrphanedJobRep
                 WHERE recurring_job_id = @rid
                 """,
                 new { rid = result.RecurringJobId },
-                transaction: tx);
+                transaction: tx).ConfigureAwait(false);
         }
     }
 
@@ -1308,7 +1440,7 @@ public sealed class SqlServerStorageProvider : IStorageProvider, IOrphanedJobRep
                 stack = result.Exception?.StackTrace,
                 Logs = logsJson,
             },
-            transaction: tx);
+            transaction: tx).ConfigureAwait(false);
     }
 
     private async Task ApplyFailureAsync(
@@ -1330,7 +1462,7 @@ public sealed class SqlServerStorageProvider : IStorageProvider, IOrphanedJobRep
                 stack = result.Exception?.StackTrace,
                 Logs = logsJson,
             },
-            transaction: tx);
+            transaction: tx).ConfigureAwait(false);
 
         if (result.RecurringJobId is not null)
         {
@@ -1341,8 +1473,7 @@ public sealed class SqlServerStorageProvider : IStorageProvider, IOrphanedJobRep
                 WHERE recurring_job_id = @rid
                 """,
                 new { rid = result.RecurringJobId, msg = result.Exception?.Message },
-                transaction: tx);
+                transaction: tx).ConfigureAwait(false);
         }
     }
 }
-#pragma warning restore MA0004

@@ -49,6 +49,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **PostgreSQL and SQL Server providers: every `await` now uses `ConfigureAwait(false)`, and the rule (`MA0004`) is on for both projects.** The SQL Server schema migration, which the constructor runs synchronously, deadlocked in a host with a `SynchronizationContext` (WinForms, WPF, legacy ASP.NET); the PostgreSQL migration already left the context. No API change. (issue #587)
 - SQL Server: the orphaned-job sweep no longer deadlocks with the job fetch. It locked every row it examined in index order while the fetch locks rows by priority, so under load SQL Server picked one of them as the victim (about 2% of load-test runs); the sweep now skips a row another transaction holds and takes it on the next pass (issue #315).
 - Redis: force-deleting a recurring job now also deletes the jobs it created, as the other providers and the interface documentation say. They used to stay and run (issue #542).
 - Redis: updating, force-deleting or restoring a recurring job id that was never registered (and the scheduler's next-execution and last-result writes after a job was deleted) no longer creates a phantom definition. Reading it threw, and a recurring job registered afterwards was born disabled and deleted (issue #543).

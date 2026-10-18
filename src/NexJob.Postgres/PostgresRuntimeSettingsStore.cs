@@ -1,4 +1,3 @@
-#pragma warning disable MA0004
 using System.Text.Json;
 using Dapper;
 using NexJob.Configuration;
@@ -37,15 +36,17 @@ public sealed class PostgresRuntimeSettingsStore : IRuntimeSettingsStore
     /// <inheritdoc/>
     public async Task<RuntimeSettings> GetAsync(CancellationToken ct = default)
     {
-        await using var conn = await OpenAsync(ct).ConfigureAwait(false);
-
-        var json = await conn.ExecuteScalarAsync<string?>(
+        var conn = await OpenAsync(ct).ConfigureAwait(false);
+        await using (conn.ConfigureAwait(false))
+        {
+            var json = await conn.ExecuteScalarAsync<string?>(
             "SELECT value FROM nexjob_settings WHERE key = @key",
             new { key = SettingsKey, }).ConfigureAwait(false);
 
-        return json is null
-            ? new RuntimeSettings()
-            : JsonSerializer.Deserialize<RuntimeSettings>(json) ?? new RuntimeSettings();
+            return json is null
+                ? new RuntimeSettings()
+                : JsonSerializer.Deserialize<RuntimeSettings>(json) ?? new RuntimeSettings();
+        }
     }
 
     /// <inheritdoc/>
@@ -54,9 +55,10 @@ public sealed class PostgresRuntimeSettingsStore : IRuntimeSettingsStore
         settings.UpdatedAt = DateTimeOffset.UtcNow;
         var json = JsonSerializer.Serialize(settings);
 
-        await using var conn = await OpenAsync(ct).ConfigureAwait(false);
-
-        await conn.ExecuteAsync(
+        var conn = await OpenAsync(ct).ConfigureAwait(false);
+        await using (conn.ConfigureAwait(false))
+        {
+            await conn.ExecuteAsync(
             """
             INSERT INTO nexjob_settings (key, value, updated_at)
             VALUES (@key, @value, NOW())
@@ -65,6 +67,7 @@ public sealed class PostgresRuntimeSettingsStore : IRuntimeSettingsStore
                     updated_at = EXCLUDED.updated_at
             """,
             new { key = SettingsKey, value = json, }).ConfigureAwait(false);
+        }
     }
 
     private async Task<NpgsqlConnection> OpenAsync(CancellationToken ct)
