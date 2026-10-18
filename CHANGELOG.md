@@ -8,6 +8,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Dependency updates:** StackExchange.Redis 2.13.17 (Redis provider) and System.Text.Json 8.0.6 (the pin in the `net8.0` group of the Azure Service Bus trigger). (issue #626, PRs #618, #620)
 - **Samples, benchmarks and the playground image run on .NET 10.** `samples/*`, `benchmarks/*` and `NexJob.Samples.Tests` target `net10.0` only (the libraries keep `net8.0` and `net10.0`), and the playground `Dockerfile` uses the `10.0-alpine` SDK and ASP.NET images, pinned by digest. This also fixes the 500 (`PipeWriter ... UnflushedBytes`) the sample tests hit on a .NET 10 host. The published benchmark tables were measured on .NET 8 and are unchanged. (issue #584)
 - **Dependabot no longer proposes `Microsoft.Extensions.*` or `Microsoft.CodeAnalysis.CSharp*`.** It ignored the per-framework `Condition` and moved the net8.0 references to 10.x, which would raise the dependency floor of the net8.0 package; the floors are moved by hand. (issue #615)
 - **Dependency updates:** Npgsql 8.0.9, Microsoft.Data.SqlClient 5.2.3, Microsoft.AspNetCore.Http.Abstractions 2.3.13, Newtonsoft.Json 13.0.4 (benchmarks) and the GitHub Actions of the CodeQL and Scorecard workflows. (PRs #605, #607, #610, #611, #612)
