@@ -1,0 +1,61 @@
+namespace NexJob.Configuration;
+
+/// <summary>
+/// Mutable runtime configuration that overrides <see cref="NexJobOptions"/> values
+/// without requiring an application restart.
+/// </summary>
+public sealed class RuntimeSettings
+{
+    /// <summary>
+    /// Not applied: the worker count is a deployment setting (<see cref="NexJobOptions.Workers"/>) and the dispatcher
+    /// never reads this value. The dashboard no longer offers a way to change it. Kept for compatibility with stored
+    /// settings and may be removed in the next major version.
+    /// </summary>
+    public int? Workers { get; set; }
+
+    /// <summary>Queues that are administratively paused. Workers skip these queues entirely.</summary>
+    public HashSet<string> PausedQueues { get; set; } = [];
+
+    /// <summary>When <see langword="true"/>, the recurring job scheduler does not enqueue any jobs.</summary>
+    public bool RecurringJobsPaused { get; set; }
+
+    /// <summary>Override polling interval. <see langword="null"/> = use appsettings/code value.</summary>
+    public TimeSpan? PollingInterval { get; set; }
+
+    /// <summary>
+    /// Override retention period for <see cref="JobStatus.Succeeded"/> jobs.
+    /// <see langword="null"/> = use <see cref="NexJobOptions.RetentionSucceeded"/> baseline.
+    /// <see cref="TimeSpan.Zero"/> = disable purging for this status.
+    /// </summary>
+    public TimeSpan? RetentionSucceeded { get; set; }
+
+    /// <summary>
+    /// Override retention period for <see cref="JobStatus.Failed"/> jobs.
+    /// <see langword="null"/> = use <see cref="NexJobOptions.RetentionFailed"/> baseline.
+    /// <see cref="TimeSpan.Zero"/> = disable purging for this status.
+    /// </summary>
+    public TimeSpan? RetentionFailed { get; set; }
+
+    /// <summary>
+    /// Override retention period for <see cref="JobStatus.Expired"/> jobs.
+    /// <see langword="null"/> = use <see cref="NexJobOptions.RetentionExpired"/> baseline.
+    /// <see cref="TimeSpan.Zero"/> = disable purging for this status.
+    /// </summary>
+    public TimeSpan? RetentionExpired { get; set; }
+
+    /// <summary>
+    /// Override retention period for dead-letter jobs.
+    /// <see langword="null"/> = use <see cref="NexJobOptions.RetentionDeadLetter"/> baseline.
+    /// <see cref="TimeSpan.Zero"/> = disable purging for this status.
+    /// </summary>
+    public TimeSpan? RetentionDeadLetter { get; set; }
+
+    /// <summary>
+    /// Override chunk/batch size for retention purge operations.
+    /// <see langword="null"/> = use <see cref="NexJobOptions.RetentionBatchSize"/> baseline.
+    /// </summary>
+    public int? RetentionBatchSize { get; set; }
+
+    /// <summary>Timestamp of the last save, set automatically by the store.</summary>
+    public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+}

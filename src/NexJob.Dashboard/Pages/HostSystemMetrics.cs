@@ -37,7 +37,7 @@ internal static class HostSystemMetrics
     /// </summary>
     internal static (int CpuPercent, int WorkingSetMb, int MemoryPercent, long ManagedHeapBytes) GetCurrent()
     {
-        var cpu = _lastCpuPercent;
+        int cpu;
         long workingSetBytes = 0;
         long totalAvailableBytes = 0;
         long managedHeapBytes = 0;

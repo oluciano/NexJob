@@ -1,3 +1,4 @@
+using System.Globalization;
 using NexJob;
 
 namespace NexJob.Sample.ConfiguredRecurring.Jobs;
@@ -13,7 +14,7 @@ public sealed class HeartbeatJob(ILogger<HeartbeatJob> logger) : IJob
     /// <param name="cancellationToken">Cancellation token for the operation.</param>
     public async Task ExecuteAsync(CancellationToken cancellationToken)
     {
-        var now = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss.fff");
+        var now = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture);
         logger.LogInformation("[HeartbeatJob] Executing at {Time} UTC", now);
         Console.WriteLine($"[HeartbeatJob] Current UTC time: {now}");
         await Task.CompletedTask;

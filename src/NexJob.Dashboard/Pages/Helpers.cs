@@ -9,6 +9,8 @@ namespace NexJob.Dashboard.Pages;
 [ExcludeFromCodeCoverage]
 internal static class Helpers
 {
+    private static readonly System.Text.Json.JsonSerializerOptions IndentedJson = new() { WriteIndented = true };
+
     internal static async Task<JobMetrics> GetCachedMetricsAsync(
         IMemoryCache cache, IDashboardStorage storage, DashboardOptions options, DashboardCluster? activeCluster, CancellationToken ct)
     {
@@ -136,10 +138,7 @@ internal static class Helpers
         try
         {
             var obj = CreateSampleInstance(inputType);
-            return System.Text.Json.JsonSerializer.Serialize(obj, new System.Text.Json.JsonSerializerOptions
-            {
-                WriteIndented = true,
-            });
+            return System.Text.Json.JsonSerializer.Serialize(obj, IndentedJson);
         }
         catch
         {
@@ -297,8 +296,7 @@ internal static class Helpers
             }
 
             var doc = System.Text.Json.JsonDocument.Parse(json);
-            var pretty = System.Text.Json.JsonSerializer.Serialize(doc,
-                new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+            var pretty = System.Text.Json.JsonSerializer.Serialize(doc, IndentedJson);
             return ColorizeJson(pretty);
         }
         catch

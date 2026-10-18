@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.Web;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Rendering;
@@ -148,7 +149,7 @@ internal sealed class JobDetailPage : IComponent
                 segColor = "var(--border)";
             }
 
-            budgetSegments.Append($"<span style=\"flex:1;height:6px;background:{segColor};border-radius:3px;transition:var(--transition)\" title=\"Attempt {i}\"></span>");
+            budgetSegments.Append(CultureInfo.InvariantCulture, $"<span style=\"flex:1;height:6px;background:{segColor};border-radius:3px;transition:var(--transition)\" title=\"Attempt {i}\"></span>");
         }
 
         var remainingAttempts = Math.Max(0, effectiveMax - job.Attempts);
@@ -418,7 +419,7 @@ internal sealed class JobDetailPage : IComponent
                         "Debug" or "Trace" => "var(--text-tertiary)",
                         _ => "var(--text-secondary)",
                     };
-                    var ts = entry.Timestamp.ToString("HH:mm:ss.fff");
+                    var ts = entry.Timestamp.ToString("HH:mm:ss.fff", CultureInfo.InvariantCulture);
                     var msg = HttpUtility.HtmlEncode(entry.Message).Replace("\n", "&#10;");
                     return $"<div style=\"display:flex;gap:10px;line-height:1.6\"><span style=\"color:var(--terminal-subtext);flex-shrink:0\">[{ts}]</span><span style=\"color:{color};font-weight:600;min-width:70px;flex-shrink:0\">[{entry.Level}]</span><span style=\"color:var(--terminal-text);word-break:break-all\">{msg}</span></div>";
                 }))

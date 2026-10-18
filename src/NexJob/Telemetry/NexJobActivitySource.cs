@@ -47,7 +47,7 @@ public static class NexJobActivitySource
 
         if (traceParent is not null)
         {
-            ActivityContext.TryParse(traceParent, null, out parentContext);
+            _ = ActivityContext.TryParse(traceParent, null, out parentContext);
         }
 
         return Source.StartActivity(

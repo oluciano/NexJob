@@ -59,12 +59,12 @@ public sealed class DeadLetterHandlerTests
             await handlerCalled.Task.WaitAsync(TimeSpan.FromSeconds(10));
             handlerCalled.Task.IsCompletedSuccessfully.Should().BeTrue("handler should be invoked after all retries exhausted");
         }
-        catch (TimeoutException)
+        catch (TimeoutException ex)
         {
             // If handler didn't get invoked, check job status
             var storage = (InMemoryStorageProvider)host.Services.GetRequiredService<NexJob.Storage.IStorageProvider>();
             var job = await storage.GetJobByIdAsync(jobId);
-            throw new TimeoutException($"Handler not invoked; job status is {job?.Status}");
+            throw new TimeoutException($"Handler not invoked; job status is {job?.Status}", ex);
         }
 
         await host.StopAsync();

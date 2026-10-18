@@ -404,7 +404,7 @@ public sealed class DefaultSchedulerTests
 
             // Prove that NextExecution was calculated using `tz` and NOT `Utc` (kills timeZone ?? Utc mutants)
             var expectedInTz = cronExpr.GetNextOccurrence(record.NextExecution!.Value.AddSeconds(-1), tz);
-            var expectedInUtc = cronExpr.GetNextOccurrence(record.NextExecution!.Value.AddSeconds(-1), TimeZoneInfo.Utc);
+            var expectedInUtc = cronExpr.GetNextOccurrence(record.NextExecution.Value.AddSeconds(-1), TimeZoneInfo.Utc);
 
             record.NextExecution.Value.Should().Be(expectedInTz);
             record.NextExecution.Value.Should().NotBe(expectedInUtc, "NextExecution must differ when computed in America/Sao_Paulo vs UTC");

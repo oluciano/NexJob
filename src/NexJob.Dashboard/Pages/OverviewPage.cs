@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.Text;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Rendering;
@@ -137,7 +138,7 @@ internal sealed class OverviewPage : IComponent
 
         var anomalyHours = anomalyIndexes
             .OrderBy(i => i)
-            .Select(i => throughput[i].Hour.ToString("HH") + "h")
+            .Select(i => throughput[i].Hour.ToString("HH", CultureInfo.InvariantCulture) + "h")
             .ToList();
         var anomalyNote = anomalyHours.Count > 0
             ? $"<div class=\"anomaly-note\">⚠ Drop at {string.Join(", ", anomalyHours)} — below 40% of average</div>"

@@ -240,9 +240,9 @@ public sealed class SaveCustomerJob(
     IConfiguration configuration,
     ILogger<SaveCustomerJob> logger) : IJob<string>
 {
-    public async Task ExecuteAsync(string rawJson, CancellationToken cancellationToken)
+    public async Task ExecuteAsync(string input, CancellationToken cancellationToken)
     {
-        var customer = JsonSerializer.Deserialize<CustomerPayload>(rawJson, new JsonSerializerOptions
+        var customer = JsonSerializer.Deserialize<CustomerPayload>(input, new JsonSerializerOptions
         {
             PropertyNameCaseInsensitive = true,
         }) ?? throw new InvalidOperationException("Invalid customer payload JSON.");

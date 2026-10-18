@@ -47,7 +47,7 @@ public sealed class ListenerRegistryTests
 
         var snapshot = registry.Get("kafka:payment-topic");
         Assert.NotNull(snapshot);
-        Assert.Equal(ListenerStatus.Listening, snapshot!.Status);
+        Assert.Equal(ListenerStatus.Listening, snapshot.Status);
         Assert.Equal("Connected to cluster", snapshot.StatusDescription);
     }
 
@@ -68,7 +68,7 @@ public sealed class ListenerRegistryTests
 
         var item = registry.Get("rabbitmq:dead-broker");
         Assert.NotNull(item);
-        Assert.Equal(ListenerStatus.Reconnecting, item!.Status);
+        Assert.Equal(ListenerStatus.Reconnecting, item.Status);
         Assert.Equal("Connection reset by peer", item.StatusDescription);
 
         registry.UpdateStatus("rabbitmq:dead-broker", ListenerStatus.Stopped);

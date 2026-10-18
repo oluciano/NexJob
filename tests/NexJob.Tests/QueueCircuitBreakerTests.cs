@@ -50,7 +50,7 @@ public sealed class QueueCircuitBreakerTests
         // Act - Simulate 2 failures followed by 1 success
         manager.RecordOutcome("payments", succeeded: false, new DownstreamApiException("503 Service Unavailable"));
         manager.RecordOutcome("payments", succeeded: false, new DownstreamApiException("503 Service Unavailable"));
-        var stateBeforeSuccess = manager.GetState("payments", out var concurrencyBefore);
+        var stateBeforeSuccess = manager.GetState("payments", out _);
 
         manager.RecordOutcome("payments", succeeded: true, exception: null);
         var stateAfterSuccess = manager.GetState("payments", out var concurrencyAfter);
