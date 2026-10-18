@@ -29,11 +29,15 @@ jobs:
             8.0.x
             10.0.x
 
+      - name: Cache NuGet packages
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', 'Directory.Build.props') }}
+          restore-keys: nuget-${{ runner.os }}-
+
       - name: Restore
         run: dotnet restore
-
-      - name: Build
-        run: dotnet build --no-restore --configuration Release
 
       # One project at a time, only the projects that target this runtime (the samples tests stay on net8.0 until #584).
       # Coverage is collected on the net8.0 leg only; the net10.0 leg exists to catch a runtime behaviour change.
@@ -47,10 +51,13 @@ jobs:
           STATUS=0
           for dir in tests/*/; do
             name=$(basename "$dir")
-            dll="${dir}bin/Release/${FRAMEWORK}/${name}.dll"
-            [ -f "$dll" ] || continue
+            # The filter excludes these projects entirely: do not build them.
+            case "$name" in *IntegrationTests|*ReliabilityTests|*StressTests) continue ;; esac
+            # Only the projects that target this runtime.
+            [ "$FRAMEWORK" = "net10.0" ] && [ "$name" = "NexJob.Samples.Tests" ] && continue
             # By project, not by dll: the coverage collector is resolved from the project's restored packages.
-            dotnet test "${dir}${name}.csproj" --no-build --configuration Release --framework "$FRAMEWORK" --filter "$FILTER" "${COLLECT[@]}" --blame-hang --blame-hang-timeout 10m || STATUS=1
+            # Builds only this project and its references, for this framework only.
+            dotnet test "${dir}${name}.csproj" --no-restore --configuration Release --framework "$FRAMEWORK" --filter "$FILTER" "${COLLECT[@]}" --blame-hang --blame-hang-timeout 10m || STATUS=1
           done
           exit $STATUS
 
@@ -149,17 +156,21 @@ jobs:
             8.0.x
             10.0.x
 
-      - name: Restore
-        run: dotnet restore
+      - name: Cache NuGet packages
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', 'Directory.Build.props') }}
+          restore-keys: nuget-${{ runner.os }}-
 
-      - name: Build
-        run: dotnet build --no-restore --configuration Release
+      - name: Restore
+        run: dotnet restore ${{ matrix.project }}
 
       - name: Run integration tests
         run: |
           if [ -n "${{ matrix.filter }}" ]; then
             dotnet test ${{ matrix.project }} \
-              --no-build \
+              --no-restore \
               --configuration Release \
               --framework ${{ matrix.framework }} \
               --verbosity normal \
@@ -169,7 +180,7 @@ jobs:
               --blame-hang-timeout 5m
           else
             dotnet test ${{ matrix.project }} \
-              --no-build \
+              --no-restore \
               --configuration Release \
               --framework ${{ matrix.framework }} \
               --verbosity normal \
@@ -201,6 +212,13 @@ jobs:
           dotnet-version: |
             8.0.x
             10.0.x
+
+      - name: Cache NuGet packages
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', 'Directory.Build.props') }}
+          restore-keys: nuget-${{ runner.os }}-
 
       - name: Restore
         run: dotnet restore
@@ -246,6 +264,13 @@ jobs:
           dotnet-version: |
             8.0.x
             10.0.x
+
+      - name: Cache NuGet packages
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', 'Directory.Build.props') }}
+          restore-keys: nuget-${{ runner.os }}-
 
       - name: Restore
         run: dotnet restore
