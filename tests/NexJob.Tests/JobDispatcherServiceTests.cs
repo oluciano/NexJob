@@ -381,6 +381,36 @@ public sealed class JobDispatcherServiceTests
             "dispatcher must log an error when FetchNextAsync throws");
     }
 
+    /// <summary>Issue #623 N1: a host that is disposed and then stopped (WebApplicationFactory, TestServer) must not make StopAsync throw.</summary>
+    [Fact]
+    public async Task StopAsync_AfterDispose_DoesNotThrow()
+    {
+        using var host = BuildPrefixHost(new LevelLogSink(), _ => { });
+        await host.StartAsync();
+        var dispatcher = host.Services.GetServices<IHostedService>().OfType<JobDispatcherService>().Single();
+
+        dispatcher.Dispose();
+        var act = () => dispatcher.StopAsync(CancellationToken.None);
+
+        await act.Should().NotThrowAsync();
+    }
+
+    /// <summary>Issue #623 N3: disposing twice and stopping twice are both harmless.</summary>
+    [Fact]
+    public async Task DisposeAndStopAsync_CalledTwice_DoNotThrow()
+    {
+        using var host = BuildPrefixHost(new LevelLogSink(), _ => { });
+        await host.StartAsync();
+        var dispatcher = host.Services.GetServices<IHostedService>().OfType<JobDispatcherService>().Single();
+
+        await dispatcher.StopAsync(CancellationToken.None);
+        dispatcher.Dispose();
+        dispatcher.Dispose();
+        var act = () => dispatcher.StopAsync(CancellationToken.None);
+
+        await act.Should().NotThrowAsync();
+    }
+
     private static bool IsQueuePrefixWarning((LogLevel Level, string Message) entry) =>
         entry.Level == LogLevel.Warning && entry.Message.Contains("QueuePrefix", StringComparison.Ordinal);
 
