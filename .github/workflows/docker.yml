@@ -1,0 +1,25 @@
+name: Docker
+
+# The Dockerfile builds the playground. Nothing else builds it, so a change of base image (or of the target framework of the
+# project it publishes) can pass every other check and break the deploy. It runs only when the Dockerfile or its ignore file changes.
+on:
+  pull_request:
+    branches: [develop, main]
+    paths:
+      - Dockerfile
+      - .dockerignore
+
+permissions:
+  contents: read
+
+jobs:
+  docker-build:
+    name: Docker Build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Build the image
+        run: docker build --tag nexjob-playground:ci .
