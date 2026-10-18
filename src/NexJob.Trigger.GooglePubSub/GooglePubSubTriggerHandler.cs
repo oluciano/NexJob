@@ -132,15 +132,17 @@ internal sealed class GooglePubSubTriggerHandler : IHostedService
 
     private string ExtractJobType(PubsubMessage message)
     {
+        // A configured JobType pins this trigger to one job; it must win over the attribute,
+        // which a message publisher could otherwise set to target an unintended job (#630).
+        if (!string.IsNullOrWhiteSpace(_options.JobType))
+        {
+            return _options.JobType;
+        }
+
         if (message.Attributes.TryGetValue("nexjob.job_type", out var jobType) &&
             !string.IsNullOrWhiteSpace(jobType))
         {
             return jobType;
-        }
-
-        if (!string.IsNullOrWhiteSpace(_options.JobType))
-        {
-            return _options.JobType;
         }
 
         throw new InvalidOperationException("Message must contain 'nexjob.job_type' attribute or JobType must be configured in GooglePubSubTriggerOptions.");

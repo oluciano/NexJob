@@ -282,7 +282,7 @@ public sealed class GooglePubSubTriggerTests
     }
 
     /// <summary>
-    /// Verifies that when both attribute and options JobType are present, the attribute takes precedence.
+    /// Verifies that when both attribute and options JobType are present, the configured JobType takes precedence.
     /// </summary>
     [Fact]
     // Behavior changed in v6.7.0: a configured JobType is a pinning decision by the operator

@@ -70,7 +70,7 @@ The trigger expects messages with the following properties:
 
 - **Data:** The job input payload as a UTF-8 string (JSON).
 - **Attributes:**
-  - `nexjob.job_type`: Assembly-qualified name of the job implementation type. Optional when the subscriber sets `options.JobType` or registers the trigger with `AddNexJobGooglePubSubTrigger<TJob>()`; the attribute wins when both are present. A message with neither can never become a job: it is nacked after a 2 second pause (so it is not redelivered in a tight loop) and logged as an error. Pub/Sub delivers a nacked message again, so give the subscription a **dead-letter policy** (a dead-letter topic with a maximum number of delivery attempts) to park such messages instead of redelivering them forever.
+  - `nexjob.job_type`: Assembly-qualified name of the job implementation type. Optional when the subscriber sets `options.JobType` or registers the trigger with `AddNexJobGooglePubSubTrigger<TJob>()`; the configured `JobType` always wins when both are present — a publisher cannot override it. A message with neither can never become a job: it is nacked after a 2 second pause (so it is not redelivered in a tight loop) and logged as an error. Pub/Sub delivers a nacked message again, so give the subscription a **dead-letter policy** (a dead-letter topic with a maximum number of delivery attempts) to park such messages instead of redelivering them forever.
   - `traceparent`: W3C traceparent header for distributed tracing (optional).
 
 ## Broker Guarantees

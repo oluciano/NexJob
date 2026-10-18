@@ -42,7 +42,7 @@ public sealed class AzureServiceBusTriggerOptions
     /// <summary>
     /// Gets or sets the target job type (assembly-qualified name or type name) to execute for consumed messages.
     /// When specified, messages do not require the 'nexjob.job_type' application property.
-    /// If both are present, the message application property takes precedence.
+    /// If both are present, this configured value takes precedence over the message application property.
     /// </summary>
     public string? JobType { get; set; }
 }

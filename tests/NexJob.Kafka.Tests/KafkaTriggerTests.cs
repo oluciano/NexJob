@@ -439,7 +439,7 @@ public sealed class KafkaTriggerTests
     }
 
     /// <summary>
-    /// Verifies that when both header and options JobType are present, the header takes precedence.
+    /// Verifies that when both header and options JobType are present, the configured JobType takes precedence.
     /// </summary>
     [Fact]
     // Behavior changed in v6.7.0: a configured JobType is a pinning decision by the operator

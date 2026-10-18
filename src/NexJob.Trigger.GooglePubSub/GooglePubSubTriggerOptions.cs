@@ -38,7 +38,7 @@ public sealed class GooglePubSubTriggerOptions
     /// <summary>
     /// Gets or sets the target job type (assembly-qualified name or type name) to execute for consumed messages.
     /// When specified, messages do not require the 'nexjob.job_type' attribute.
-    /// If both are present, the message attribute takes precedence.
+    /// If both are present, this configured value takes precedence over the message attribute.
     /// </summary>
     public string? JobType { get; set; }
 }
