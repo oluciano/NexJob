@@ -15,7 +15,7 @@ public sealed class PackagePinsTests : IClassFixture<PackagePinsTests.PackedPack
     {
         ["NexJob"] = ["System.Diagnostics.DiagnosticSource:8.0.1", "System.Text.Encodings.Web:8.0.0"],
         ["NexJob.Postgres"] = ["System.Text.Encodings.Web:8.0.0"],
-        ["NexJob.Trigger.AzureServiceBus"] = ["System.Text.Json:8.0.5"],
+        ["NexJob.Trigger.AzureServiceBus"] = ["System.Text.Json:8.0.6"],
     };
 
     private readonly PackedPackages _packed;
