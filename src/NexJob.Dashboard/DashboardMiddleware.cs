@@ -201,7 +201,7 @@ public sealed class DashboardMiddleware
 #pragma warning disable SCS0027
     private static void LocalRedirect(HttpContext context, string location, DashboardCluster? activeCluster = null)
     {
-        if (location.StartsWith("/", StringComparison.Ordinal) && !location.StartsWith("//", StringComparison.Ordinal))
+        if (location.StartsWith('/') && !location.StartsWith("//", StringComparison.Ordinal))
         {
             if (activeCluster is not null)
             {
@@ -301,7 +301,7 @@ public sealed class DashboardMiddleware
             }
         }
 
-        return catalog.FirstOrDefault() ?? anyJob;
+        return catalog.Count > 0 ? catalog[0] : anyJob;
     }
 
     private void RedirectAfterQueueAction(HttpContext context, DashboardCluster? activeCluster)

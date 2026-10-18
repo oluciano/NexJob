@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Xml.Linq;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
@@ -227,7 +228,7 @@ public sealed class SqlServerContinuationReleaseTests : IClassFixture<SqlServerF
         await conn.OpenAsync();
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = "SELECT cntr_value FROM sys.dm_os_performance_counters WHERE counter_name = 'Number of Deadlocks/sec' AND instance_name = '_Total'";
-        return Convert.ToInt64(await cmd.ExecuteScalarAsync());
+        return Convert.ToInt64(await cmd.ExecuteScalarAsync(), CultureInfo.InvariantCulture);
     }
 
     // The statements and lock resources of the recent deadlocks, read from the system_health session, so a failure says what

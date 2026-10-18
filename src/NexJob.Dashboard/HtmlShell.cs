@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.Reflection;
 using NexJob.Storage;
 
@@ -1028,7 +1029,7 @@ internal static class HtmlShell
         {
             var isSelected = activeCluster is not null && string.Equals(c.Id, activeCluster.Id, StringComparison.OrdinalIgnoreCase);
             var selectedAttr = isSelected ? " selected" : string.Empty;
-            sb.Append($"<option value=\"{System.Web.HttpUtility.HtmlAttributeEncode(c.Id)}\"{selectedAttr}>Cluster: {System.Web.HttpUtility.HtmlEncode(c.Name)}</option>");
+            sb.Append(CultureInfo.InvariantCulture, $"<option value=\"{System.Web.HttpUtility.HtmlAttributeEncode(c.Id)}\"{selectedAttr}>Cluster: {System.Web.HttpUtility.HtmlEncode(c.Name)}</option>");
         }
 
         sb.Append("</select></div>");

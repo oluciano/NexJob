@@ -437,8 +437,8 @@ public sealed class AwsSqsTriggerTests
         var method = typeof(AwsSqsTriggerHandler).GetMethod("ExtractTraceparent", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
 
         method!.Invoke(null, new object[] { msgWithTrace }).Should().Be("00-trace");
-        method!.Invoke(null, new object[] { msgNoTrace }).Should().BeNull();
-        method!.Invoke(null, new object[] { msgEmptyTrace }).Should().BeNull();
+        method.Invoke(null, new object[] { msgNoTrace }).Should().BeNull();
+        method.Invoke(null, new object[] { msgEmptyTrace }).Should().BeNull();
     }
 
     // ─── Visibility Extension Branches ─────────────────────────────────────

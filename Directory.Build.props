@@ -9,6 +9,8 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <WarningsAsErrors />
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <AnalysisLevel>latest</AnalysisLevel>
+    <AnalysisMode>Recommended</AnalysisMode>
     <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
     <RestoreEnablePackagePruning Condition="'$(TargetFramework)' == 'net8.0'">false</RestoreEnablePackagePruning>
     <_SkipUpgradeNetAnalyzersNuGetWarning>true</_SkipUpgradeNetAnalyzersNuGetWarning>
@@ -35,19 +37,19 @@
   <ItemGroup>
     <AdditionalFiles Include="$(MSBuildThisFileDirectory)build/BannedSymbols.txt" />
     <AdditionalFiles Include="$(MSBuildThisFileDirectory)build/stylecop.json" />
-    <PackageReference Include="Microsoft.CodeAnalysis.NetAnalyzers" Version="8.0.0">
+    <PackageReference Include="Microsoft.CodeAnalysis.NetAnalyzers" Version="10.0.112">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
     </PackageReference>
-    <PackageReference Include="SonarAnalyzer.CSharp" Version="9.32.0.97167">
+    <PackageReference Include="SonarAnalyzer.CSharp" Version="10.35.0.4138">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
     </PackageReference>
-    <PackageReference Include="StyleCop.Analyzers" Version="1.2.0-beta.556">
+    <PackageReference Include="StyleCop.Analyzers" Version="1.3.109-beta">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
     </PackageReference>
-    <PackageReference Include="Meziantou.Analyzer" Version="2.0.302">
+    <PackageReference Include="Meziantou.Analyzer" Version="3.0.307">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
     </PackageReference>
@@ -55,7 +57,7 @@
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
     </PackageReference>
-    <PackageReference Include="Microsoft.CodeAnalysis.BannedApiAnalyzers" Version="3.3.4">
+    <PackageReference Include="Microsoft.CodeAnalysis.BannedApiAnalyzers" Version="5.6.0">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
     </PackageReference>

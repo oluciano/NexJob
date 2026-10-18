@@ -99,7 +99,7 @@ public abstract class ShutdownRequeueEndToEndTests
         public async Task ExecuteAsync(CancellationToken cancellationToken)
         {
             started.TrySetResult(true);
-            await Task.Delay(TimeSpan.FromSeconds(3));
+            await Task.Delay(TimeSpan.FromSeconds(3), CancellationToken.None);
         }
     }
 }

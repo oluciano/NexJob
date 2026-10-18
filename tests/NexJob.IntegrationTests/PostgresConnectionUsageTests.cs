@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using NexJob.Configuration;
@@ -121,7 +122,7 @@ public sealed class PostgresConnectionUsageTests : IClassFixture<PostgresFixture
         await admin.OpenAsync();
         await using var cmd = new NpgsqlCommand("SELECT count(*) FROM pg_stat_activity WHERE application_name = @app", admin);
         cmd.Parameters.AddWithValue("app", applicationName);
-        return Convert.ToInt64(await cmd.ExecuteScalarAsync());
+        return Convert.ToInt64(await cmd.ExecuteScalarAsync(), CultureInfo.InvariantCulture);
     }
 
     private sealed class QuickJob : IJob

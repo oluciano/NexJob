@@ -1,9 +1,8 @@
 namespace NexJob.Tests;
 
-/// <summary>
-/// Waits for an observed condition instead of sleeping a fixed time, which is not enough on a loaded machine.
+/// <content>
 /// This file is shared: <c>NexJob.Tests</c> and the integration test projects link it.
-/// </summary>
+/// </content>
 internal static partial class TestWait
 {
     /// <summary>Polls <paramref name="condition"/> until it returns true, or fails after <paramref name="timeout"/>.</summary>

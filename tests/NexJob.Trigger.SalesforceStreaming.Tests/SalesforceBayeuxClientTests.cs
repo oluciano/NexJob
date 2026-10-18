@@ -31,7 +31,7 @@ public sealed class SalesforceBayeuxClientTests
         {
             req.RequestUri!.ToString().Should().Be("https://na1.salesforce.com/cometd/60.0");
             req.Headers.Authorization!.Scheme.Should().Be("Bearer");
-            req.Headers.Authorization!.Parameter.Should().Be(AccessToken);
+            req.Headers.Authorization.Parameter.Should().Be(AccessToken);
 
             var body = await req.Content!.ReadAsStringAsync(ct);
             body.Should().Contain("/meta/handshake");

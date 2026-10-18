@@ -26,7 +26,7 @@ internal static class StaleTermsCheck
             var lines = text.Split('\n');
             for (var i = 0; i < lines.Length; i++)
             {
-                foreach (var (term, regex, _) in active.Where(t => t.Regex.IsMatch(lines[i])))
+                foreach (var (term, _, _) in active.Where(t => t.Regex.IsMatch(lines[i])))
                 {
                     findings.Add(new Finding(
                         "stale-terms",

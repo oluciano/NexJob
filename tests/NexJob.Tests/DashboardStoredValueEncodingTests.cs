@@ -47,7 +47,7 @@ public sealed class DashboardStoredValueEncodingTests
         };
         var recurring = new RecurringJobRecord
         {
-            RecurringJobId = job.RecurringJobId!,
+            RecurringJobId = job.RecurringJobId,
             JobType = job.JobType,
             Cron = "* * * * *",
             Queue = job.Queue,
