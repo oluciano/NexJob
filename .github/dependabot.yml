@@ -29,12 +29,6 @@ updates:
           - "Microsoft.AspNetCore.TestHost"
           - "Microsoft.Extensions.TimeProvider.Testing"
         update-types: [minor, patch]
-      # The packages carry two lines per Microsoft.Extensions dependency (8.x for net8.0, 10.x for net10.0): minor and patch
-      # updates of both families move in one pull request; the major stays with the maintainer (ignore below).
-      microsoft-extensions:
-        patterns:
-          - "Microsoft.Extensions.*"
-        update-types: [minor, patch]
       analyzers:
         patterns:
           - "StyleCop.Analyzers"
@@ -44,11 +38,16 @@ updates:
           - "MinVer"
         update-types: [minor, patch]
     # Major versions are decided by the maintainer, not proposed weekly. The 10.x of the Microsoft families also drags
-    # net8.0 projects to 10.x packages (NU1605 as errors); the net10.0 lines are already at 10.x (#439), so Microsoft.Extensions
-    # moves inside its own major, and these two families stay ignored.
+    # net8.0 projects to 10.x packages (NU1605 as errors), so those two families stay ignored.
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
+      # The packages carry one reference per framework (8.x for net8.0, 10.0.0 for net10.0). Dependabot ignores the
+      # Condition and moved the net8.0 lines to 10.x (#606), which raises the floor for every net8.0 consumer. The floors
+      # stay at the lowest supported version and are moved by hand.
+      - dependency-name: "Microsoft.Extensions.*"
+      # An analyzer must stay on the oldest Roslyn it supports: 4.14 fails NexJob.Analyzers with CS1705 (#608).
+      - dependency-name: "Microsoft.CodeAnalysis.CSharp*"
       - dependency-name: "Microsoft.AspNetCore.*"
         versions: ["10.x"]
       - dependency-name: "System.Text.*"
