@@ -31,11 +31,16 @@ public sealed class IgnoredSettingsTests
     [Fact]
     public async Task Startup_WithIgnoredSetting_LogsWarning()
     {
+        // Behavior changed in net10.0: BackgroundService.StartAsync does not guarantee ExecuteAsync ran up to its first await,
+        // so the tests that expect the startup warning wait for it before stopping the host.
         // N2 (Negative path made visible): a setting without effect must not be silent.
         var sink = new LevelLogSink();
         using var host = BuildHost(sink, o => o.ConfigureQueue("bulk", q => q.Workers = 3));
 
         await host.StartAsync();
+        await TestWait.UntilAsync(
+            () => Task.FromResult(sink.Entries.Any(e => e.Message.Contains("no effect", StringComparison.Ordinal))),
+            because: "the dispatcher logs the ignored settings");
         await host.StopAsync();
 
         sink.Entries.Should().ContainSingle(e =>
@@ -52,6 +57,9 @@ public sealed class IgnoredSettingsTests
         using var host = BuildHost(sink, o => o.ApplySettings(new NexJobSettings { DefaultQueue = "emails", }));
 
         await host.StartAsync();
+        await TestWait.UntilAsync(
+            () => Task.FromResult(sink.Entries.Any(e => e.Message.Contains("no effect", StringComparison.Ordinal))),
+            because: "the dispatcher logs the ignored settings");
         await host.StopAsync();
 
         sink.Entries.Should().ContainSingle(e =>
@@ -69,6 +77,9 @@ public sealed class IgnoredSettingsTests
         using var host = BuildHost(sink, o => o.ConfigureQueue("bulk", q => q.Workers = 3));
 
         await host.StartAsync();
+        await TestWait.UntilAsync(
+            () => Task.FromResult(sink.Entries.Any(e => e.Message.Contains("no effect", StringComparison.Ordinal))),
+            because: "the dispatcher logs the ignored settings");
         await host.StopAsync();
 
         var ignoredWarning = sink.Entries.Single(e => e.Message.Contains("no effect", StringComparison.Ordinal));

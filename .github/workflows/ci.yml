@@ -10,9 +10,14 @@ permissions:
 
 jobs:
   unit-tests:
-    name: Unit Tests
+    name: Unit Tests - ${{ matrix.framework }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+
+    strategy:
+      fail-fast: false
+      matrix:
+        framework: [net8.0, net10.0]
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -20,7 +25,9 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
-          dotnet-version: 8.0.x
+          dotnet-version: |
+            8.0.x
+            10.0.x
 
       - name: Restore
         run: dotnet restore
@@ -28,19 +35,36 @@ jobs:
       - name: Build
         run: dotnet build --no-restore --configuration Release
 
-      - name: Test and Collect
+      # One project at a time, only the projects that target this runtime (the samples tests stay on net8.0 until #584).
+      # Coverage is collected on the net8.0 leg only; the net10.0 leg exists to catch a runtime behaviour change.
+      - name: Test
+        env:
+          FRAMEWORK: ${{ matrix.framework }}
+          FILTER: Category!=Integration&Category!=Reliability&Category!=Stress&FullyQualifiedName!~Reliability&FullyQualifiedName!~Integration&FullyQualifiedName!~Stress
         run: |
-          dotnet test --no-build --configuration Release --collect:"XPlat Code Coverage" --results-directory ./coverage/ --filter "Category!=Integration&Category!=Reliability&Category!=Stress&FullyQualifiedName!~Reliability&FullyQualifiedName!~Integration&FullyQualifiedName!~Stress"
-          
+          COLLECT=()
+          if [ "$FRAMEWORK" = "net8.0" ]; then COLLECT=(--collect:"XPlat Code Coverage" --results-directory ./coverage/); fi
+          STATUS=0
+          for dir in tests/*/; do
+            name=$(basename "$dir")
+            dll="${dir}bin/Release/${FRAMEWORK}/${name}.dll"
+            [ -f "$dll" ] || continue
+            dotnet test "$dll" --filter "$FILTER" "${COLLECT[@]}" --blame-hang --blame-hang-timeout 10m || STATUS=1
+          done
+          exit $STATUS
+
       - name: Debug Coverage Files
+        if: matrix.framework == 'net8.0'
         run: |
           echo "Listing all XML files in ./coverage:"
           find ./coverage -name "*.xml"
 
       - name: Install ReportGenerator
+        if: matrix.framework == 'net8.0'
         run: dotnet tool install --global dotnet-reportgenerator-globaltool
 
       - name: Generate Coverage Report
+        if: matrix.framework == 'net8.0'
         run: |
           reportgenerator \
             -reports:"./coverage/**/*.xml" \
@@ -51,6 +75,7 @@ jobs:
             -classfilters:"-Eventbus.V1.*"
 
       - name: Check Coverage Threshold
+        if: matrix.framework == 'net8.0'
         run: |
           COVERAGE=$(grep "Line coverage" ./coverage-report/Summary.txt | awk '{print $3}' | sed 's/%//')
           echo "Current Line Coverage: $COVERAGE%"
@@ -63,19 +88,21 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
-          name: unit-test-artifacts
+          name: unit-test-artifacts-${{ matrix.framework }}
           path: |
             **/TestResults/**/*.trx
             ./coverage-report/**
 
   integration-tests:
-    name: Integration Tests - ${{ matrix.name }}
+    name: Integration Tests - ${{ matrix.name }} - ${{ matrix.framework }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
 
     strategy:
       fail-fast: false
       matrix:
+        framework: [net8.0, net10.0]
+        name: [InMemory-EndToEnd, Reliability-InMemory, Redis, Postgres, Mongo, SqlServer, RabbitMQ, Kafka, Sqs, Salesforce, GooglePubSub]
         include:
           - name: InMemory-EndToEnd
             project: tests/NexJob.IntegrationTests
@@ -117,7 +144,9 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
-          dotnet-version: 8.0.x
+          dotnet-version: |
+            8.0.x
+            10.0.x
 
       - name: Restore
         run: dotnet restore
@@ -131,17 +160,19 @@ jobs:
             dotnet test ${{ matrix.project }} \
               --no-build \
               --configuration Release \
+              --framework ${{ matrix.framework }} \
               --verbosity normal \
               --filter "${{ matrix.filter }}" \
-              --logger "trx;LogFileName=${{ matrix.name }}.trx" \
+              --logger "trx;LogFileName=${{ matrix.name }}-${{ matrix.framework }}.trx" \
               --blame-hang \
               --blame-hang-timeout 5m
           else
             dotnet test ${{ matrix.project }} \
               --no-build \
               --configuration Release \
+              --framework ${{ matrix.framework }} \
               --verbosity normal \
-              --logger "trx;LogFileName=${{ matrix.name }}.trx" \
+              --logger "trx;LogFileName=${{ matrix.name }}-${{ matrix.framework }}.trx" \
               --blame-hang \
               --blame-hang-timeout 5m
           fi
@@ -150,7 +181,7 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
-          name: integration-${{ matrix.name }}-artifacts
+          name: integration-${{ matrix.name }}-${{ matrix.framework }}-artifacts
           path: |
             ${{ matrix.project }}/TestResults/**/*.trx
             ${{ matrix.project }}/TestResults/**/*
@@ -166,7 +197,9 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
-          dotnet-version: 8.0.x
+          dotnet-version: |
+            8.0.x
+            10.0.x
 
       - name: Restore
         run: dotnet restore
@@ -188,7 +221,9 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
-          dotnet-version: 8.0.x
+          dotnet-version: |
+            8.0.x
+            10.0.x
 
       - name: Compare the code with the wiki
         run: |
@@ -207,7 +242,9 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
-          dotnet-version: 8.0.x
+          dotnet-version: |
+            8.0.x
+            10.0.x
 
       - name: Restore
         run: dotnet restore

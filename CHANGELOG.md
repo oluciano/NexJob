@@ -6,6 +6,9 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- **CI runs the unit and integration tests on net8.0 and net10.0** (one leg per runtime), builds the `Dockerfile` when it changes, and packs with SDK 10. The tests that expected a startup log or a listener status right after `StartAsync` now wait for it: on .NET 10 `BackgroundService.StartAsync` does not run `ExecuteAsync` up to its first await (issue #583).
+
 ### Added
 - **The packages target `net8.0` and `net10.0`** (additive, no breaking change). .NET 8 and 9 leave support on 2026-11-10. Each package holds `lib/net8.0` and `lib/net10.0`; the security pins (`System.Text.Json`, `System.Text.Encodings.Web`, `System.Diagnostics.DiagnosticSource`) stay in the `net8.0` dependency group only, and the `net10.0` group takes `Microsoft.Extensions.*` 10.x. `System.Threading.Lock` is used on .NET 9 and later (issue #582, part of #439).
 
