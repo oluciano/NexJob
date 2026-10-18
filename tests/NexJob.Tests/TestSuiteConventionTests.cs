@@ -56,6 +56,71 @@ public sealed class TestSuiteConventionTests : IDisposable
         FindForbiddenTestFiles(Path.Combine(_tempRoot, "does-not-exist")).Should().BeEmpty();
     }
 
+    // N1 — Positive: every rule the repository turns off has a reason next to it (issue #586).
+    [Fact]
+    public void EditorConfig_EverySilencedRuleHasAReason()
+    {
+        var text = File.ReadAllText(Path.Combine(FindRepoRoot(), ".editorconfig"));
+
+        FindSilencedRulesWithoutReason(text).Should().BeEmpty("a rule turned off without a reason is a decision nobody can review");
+    }
+
+    // N2 — Negative: a rule turned off with no comment in its block or above its section is reported.
+    [Fact]
+    public void Scanner_ReportsSilencedRule_WithoutComment()
+    {
+        const string text = "[*.cs]\ndotnet_diagnostic.CA1234.severity = none\n\n# why\n[tests/**/*.cs]\ndotnet_diagnostic.CA5678.severity = none\n";
+
+        FindSilencedRulesWithoutReason(text).Should().Equal("dotnet_diagnostic.CA1234.severity = none");
+    }
+
+    // N3 — Invalid input: empty text, and a reason written either above the section or inside the block.
+    [Theory]
+    [InlineData("")]
+    [InlineData("# why\n[*.cs]\ndotnet_diagnostic.CA1.severity = none\n")]
+    [InlineData("[*.cs]\n# why\ndotnet_diagnostic.CA1.severity = none\n")]
+    public void Scanner_AcceptsEmptyText_AndReasonsInEitherPlace(string text)
+    {
+        FindSilencedRulesWithoutReason(text).Should().BeEmpty();
+    }
+
+    private static List<string> FindSilencedRulesWithoutReason(string editorConfig)
+    {
+        var lines = editorConfig.Replace("\r", string.Empty, StringComparison.Ordinal).Split('\n');
+        var missing = new List<string>();
+        for (var i = 0; i < lines.Length; i++)
+        {
+            if (!lines[i].StartsWith("dotnet_diagnostic.", StringComparison.Ordinal)
+                || !lines[i].EndsWith("severity = none", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var hasReason = false;
+            for (var j = i - 1; j >= 0 && lines[j].Length > 0; j--)
+            {
+                if (lines[j].StartsWith('#'))
+                {
+                    hasReason = true;
+                    break;
+                }
+
+                if (lines[j].StartsWith('['))
+                {
+                    hasReason = j > 0 && lines[j - 1].StartsWith('#');
+                    break;
+                }
+            }
+
+            if (!hasReason)
+            {
+                missing.Add(lines[i]);
+            }
+        }
+
+        return missing;
+    }
+
     private static List<string> FindForbiddenTestFiles(string testsDirectory)
     {
         if (!Directory.Exists(testsDirectory))
