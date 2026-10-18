@@ -49,7 +49,8 @@ jobs:
             name=$(basename "$dir")
             dll="${dir}bin/Release/${FRAMEWORK}/${name}.dll"
             [ -f "$dll" ] || continue
-            dotnet test "$dll" --filter "$FILTER" "${COLLECT[@]}" --blame-hang --blame-hang-timeout 10m || STATUS=1
+            # By project, not by dll: the coverage collector is resolved from the project's restored packages.
+            dotnet test "${dir}${name}.csproj" --no-build --configuration Release --framework "$FRAMEWORK" --filter "$FILTER" "${COLLECT[@]}" --blame-hang --blame-hang-timeout 10m || STATUS=1
           done
           exit $STATUS
 
