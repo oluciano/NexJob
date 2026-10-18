@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using NexJob.Storage;
 
 namespace NexJob.Internal;
@@ -9,13 +11,19 @@ namespace NexJob.Internal;
 internal sealed class JobContext : IJobContext
 {
     private readonly IJobStorage _storage;
+#pragma warning disable S4487 // red commit only: the fields are read by the fix
+    private readonly ILogger _logger;
+    private readonly string _jobType;
+#pragma warning restore S4487
     private string? _checkpointJson;
 
     /// <summary>
     /// Initializes a new <see cref="JobContext"/> from the fetched <paramref name="job"/> record.
     /// </summary>
-    public JobContext(JobRecord job, IJobStorage storage)
+    public JobContext(JobRecord job, IJobStorage storage, ILogger? logger = null)
     {
+        _logger = logger ?? NullLogger.Instance;
+        _jobType = job.JobType;
         JobId = job.Id;
         Attempt = job.Attempts;
         MaxAttempts = job.MaxAttempts;

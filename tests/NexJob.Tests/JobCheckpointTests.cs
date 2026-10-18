@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using NexJob.Internal;
 using NexJob.Storage;
 using Xunit;
@@ -144,5 +145,74 @@ public sealed class JobCheckpointTests
         // Boundary: Percentage > 100 throws ArgumentOutOfRangeException
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() =>
             context.SaveCheckpointAsync(new BatchState(), percent: 105));
+    }
+
+    // Issue #588: a checkpoint that exists but cannot be read is not the first attempt; it must be visible.
+    [Fact]
+    public void N1_UnreadableCheckpoint_ReturnsNull_AndLogsWarningWithJobAndStateType()
+    {
+        var logger = new CapturingLogger();
+        var job = NewJob("{\"LastProcessedId\":\"not-a-number\"}");
+        var context = new JobContext(job, new InMemoryStorageProvider(), logger);
+
+        var checkpoint = context.GetCheckpoint<BatchState>();
+
+        Assert.Null(checkpoint);
+        var entry = Assert.Single(logger.Entries);
+        Assert.Equal(LogLevel.Warning, entry.Level);
+        Assert.Contains(job.Id.ToString(), entry.Message, StringComparison.Ordinal);
+        Assert.Contains("SampleBatchJob", entry.Message, StringComparison.Ordinal);
+        Assert.Contains(nameof(BatchState), entry.Message, StringComparison.Ordinal);
+        Assert.NotNull(entry.Exception);
+    }
+
+    [Fact]
+    public void N2_ReadableCheckpoint_IsReturnedUnchanged_AndNothingIsLogged()
+    {
+        var logger = new CapturingLogger();
+        var context = new JobContext(NewJob("{\"LastProcessedId\":7,\"ItemsCount\":9,\"Tag\":\"t\"}"), new InMemoryStorageProvider(), logger);
+
+        var checkpoint = context.GetCheckpoint<BatchState>();
+
+        Assert.Equal(new BatchState { LastProcessedId = 7, ItemsCount = 9, Tag = "t" }, checkpoint);
+        Assert.Empty(logger.Entries);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void N3_NoCheckpoint_IsTheFirstAttempt_ReturnsNullWithoutWarning(string? checkpointJson)
+    {
+        var logger = new CapturingLogger();
+        var context = new JobContext(NewJob(checkpointJson), new InMemoryStorageProvider(), logger);
+
+        Assert.Null(context.GetCheckpoint<BatchState>());
+        Assert.Empty(logger.Entries);
+    }
+
+    private static JobRecord NewJob(string? checkpointJson) => new()
+    {
+        Id = new JobId(Guid.NewGuid()),
+        JobType = "SampleBatchJob",
+        Queue = "default",
+        Attempts = 2,
+        MaxAttempts = 3,
+        CreatedAt = DateTimeOffset.UtcNow,
+        Status = JobStatus.Processing,
+        CheckpointJson = checkpointJson,
+    };
+
+    private sealed class CapturingLogger : ILogger
+    {
+        public List<(LogLevel Level, string Message, Exception? Exception)> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+            => Entries.Add((logLevel, formatter(state, exception), exception));
     }
 }
