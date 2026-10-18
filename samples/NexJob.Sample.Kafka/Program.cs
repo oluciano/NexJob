@@ -11,9 +11,9 @@ using NexJob.Storage;
 
 var builder = WebApplication.CreateBuilder(args);
 
-var bootstrapServers = builder.Configuration.GetValue("Kafka:BootstrapServers", "localhost:9092")!;
-var topicName = builder.Configuration.GetValue("Kafka:Topic", "customer-registrations")!;
-var groupId = builder.Configuration.GetValue("Kafka:GroupId", "nexjob-customer-consumer-group")!;
+var bootstrapServers = builder.Configuration.GetValue("Kafka:BootstrapServers", "localhost:9092");
+var topicName = builder.Configuration.GetValue("Kafka:Topic", "customer-registrations");
+var groupId = builder.Configuration.GetValue("Kafka:GroupId", "nexjob-customer-consumer-group");
 var sqlServerConn = builder.Configuration.GetConnectionString("SqlServer");
 
 // 1. Configure Storage: Use SQL Server if connection string is configured, otherwise fallback to InMemory
