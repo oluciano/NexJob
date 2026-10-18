@@ -381,6 +381,9 @@ public sealed class JobDispatcherServiceTests
             "dispatcher must log an error when FetchNextAsync throws");
     }
 
+    private static bool IsQueuePrefixWarning((LogLevel Level, string Message) entry) =>
+        entry.Level == LogLevel.Warning && entry.Message.Contains("QueuePrefix", StringComparison.Ordinal);
+
     /// <summary>N1 (#377): a prefix derived from the assembly name is announced with guidance to set it explicitly.</summary>
     [Fact]
     public async Task Startup_WithDerivedQueuePrefix_LogsWarning()
@@ -389,10 +392,12 @@ public sealed class JobDispatcherServiceTests
         using var host = BuildPrefixHost(sink, _ => { });
 
         await host.StartAsync();
+
+        // StartAsync does not guarantee the dispatcher ran to its first await: wait for the warning, then stop.
+        await TestWait.UntilAsync(() => Task.FromResult(sink.Entries.Any(IsQueuePrefixWarning)));
         await host.StopAsync();
 
-        sink.Entries.Should().ContainSingle(e =>
-            e.Level == LogLevel.Warning && e.Message.Contains("QueuePrefix", StringComparison.Ordinal));
+        sink.Entries.Where(IsQueuePrefixWarning).Should().ContainSingle();
     }
 
     /// <summary>N2/N3 (#377): an explicit prefix does not warn; a whitespace-only one is treated as unset and does.</summary>
@@ -407,10 +412,14 @@ public sealed class JobDispatcherServiceTests
         using var host = BuildPrefixHost(sink, o => o.QueuePrefix = prefix);
 
         await host.StartAsync();
+        if (warns)
+        {
+            await TestWait.UntilAsync(() => Task.FromResult(sink.Entries.Any(IsQueuePrefixWarning)));
+        }
+
         await host.StopAsync();
 
-        sink.Entries.Any(e => e.Level == LogLevel.Warning && e.Message.Contains("QueuePrefix", StringComparison.Ordinal))
-            .Should().Be(warns);
+        sink.Entries.Any(IsQueuePrefixWarning).Should().Be(warns);
     }
 
     /// <summary>N1/N2 (#377): without an entry assembly and without a prefix the shared default is back; say so, unless a prefix is set.</summary>

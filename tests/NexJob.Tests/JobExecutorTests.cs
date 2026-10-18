@@ -1014,7 +1014,15 @@ public sealed class JobExecutorTests
         var job = MakeJob<TestJob, TestInput>(new TestInput("batch"));
 
         await _sut.ExecuteJobAsync(job);
-        await NexJob.Tests.TestWait.InvokedAsync(_storage, nameof(IJobStorage.AcknowledgeBatchAsync), 1);
+
+        // Moq records the invocation before it runs the callback: wait for the copy, not for the call.
+        await NexJob.Tests.TestWait.UntilAsync(() =>
+        {
+            lock (acked)
+            {
+                return Task.FromResult(acked.Count == 1);
+            }
+        });
 
         lock (acked)
         {
