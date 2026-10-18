@@ -8,6 +8,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Dependabot no longer proposes `Microsoft.Extensions.*` or `Microsoft.CodeAnalysis.CSharp*`.** It ignored the per-framework `Condition` and moved the net8.0 references to 10.x, which would raise the dependency floor of the net8.0 package; the floors are moved by hand. (issue #615)
 - **Analyzers moved to their current versions** (NetAnalyzers 10.0, Sonar 10.35, Meziantou 3.0, StyleCop 1.3, BannedApiAnalyzers 5.6) with `AnalysisLevel=latest` and `AnalysisMode=Recommended`. No behaviour change in the libraries, except that the Dashboard now formats the numbers and times in its HTML with the invariant culture and lower-cases the status in a confirmation text with `ToLowerInvariant`. Every rule turned off in `.editorconfig` carries its reason, and a test fails when one does not. `RuntimeSettings` moved to its own file. (issue #586)
 - **CI runs the unit and integration tests on net8.0 and net10.0** (one leg per runtime), builds the `Dockerfile` when it changes, and packs with SDK 10. The tests that expected a startup log or a listener status right after `StartAsync` now wait for it: on .NET 10 `BackgroundService.StartAsync` does not run `ExecuteAsync` up to its first await (issue #583).
 
