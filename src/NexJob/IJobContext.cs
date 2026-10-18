@@ -41,6 +41,10 @@ public interface IJobContext
     /// Deserializes and returns the last saved checkpoint state for this job instance,
     /// or <see langword="null"/> if no checkpoint has been persisted yet (e.g. on first attempt).
     /// </summary>
+    /// <remarks>
+    /// A checkpoint that exists but cannot be deserialized into <typeparamref name="TState"/> also returns
+    /// <see langword="null"/>; a warning is logged with the job id, job type and state type.
+    /// </remarks>
     /// <typeparam name="TState">The checkpoint state model type.</typeparam>
     /// <returns>The deserialized state object, or <see langword="null"/>.</returns>
     TState? GetCheckpoint<TState>()
