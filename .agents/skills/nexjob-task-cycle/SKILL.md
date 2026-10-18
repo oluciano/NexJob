@@ -229,8 +229,16 @@ Follow this strict step order:
    # 2. Build in Release Mode with Zero Warnings (validating both net8.0 and net10.0)
    dotnet build -c Release
 
-   # 3. Execute Unit Tests (runs test legs for net8.0 and net10.0)
-   dotnet test --no-build
+   # 3. Execute Unit Tests — one project at a time, scoped to what this task touched.
+   # `dotnet test --no-build` with no project/filter runs the ENTIRE solution serially
+   # in one process: it can take 15+ minutes, and running the reliability/stress suites
+   # alongside everything else causes resource contention that fails tests which pass
+   # in isolation (false positives). CI never does this — it matrices by project x
+   # framework x category (see .github/workflows/ci.yml). Match that shape locally:
+   dotnet test tests/<TouchedPackage>.Tests --no-build
+   # Repeat per touched package's unit-test project (e.g. NexJob.Tests for core,
+   # NexJob.RabbitMQ.Tests for the RabbitMQ trigger). Add --framework net8.0 / net10.0
+   # only if you need to isolate one runtime leg; otherwise both run together per project.
 
    # 4. Execute Targeted Integration Tests (Mandatory when touching Storage, Core or Brokers)
    # If touching Core (src/NexJob/):
@@ -242,6 +250,12 @@ Follow this strict step order:
    # If touching Messaging Triggers / Outbox (RabbitMQ, Kafka, SQS, Salesforce):
    dotnet test tests/NexJob.<Package>.IntegrationTests
    ```
+   `tests/NexJob.ReliabilityTests` and `tests/NexJob.StressTests` are their own CI
+   workflows (`reliability.yml`, `stress-tests.yml`), filtered and scheduled separately
+   from the PR pipeline — they are not part of this local gate unless the task is
+   specifically about reliability/crash-recovery behavior. Running them locally
+   requires Docker containers they expect (SQL Server, etc.); do not add them to a
+   routine verification pass.
 
 2. **Step 2: Test Contract Self-Audit (Mandatory when touching `tests/**`):**
    ```bash
