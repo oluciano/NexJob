@@ -442,7 +442,9 @@ public sealed class KafkaTriggerTests
     /// Verifies that when both header and options JobType are present, the header takes precedence.
     /// </summary>
     [Fact]
-    public async Task HeaderJobType_TakesPrecedence_OverOptionsJobType()
+    // Behavior changed in v6.7.0: a configured JobType is a pinning decision by the operator
+    // and must not be overridable by an attacker-controlled broker header (security issue #630).
+    public async Task OptionsJobType_TakesPrecedence_OverHeaderJobType()
     {
         // Arrange
         var message = new Message<string, string>
@@ -490,7 +492,7 @@ public sealed class KafkaTriggerTests
 
         // Assert
         _scheduler.EnqueueCalls.Should().HaveCount(1);
-        _scheduler.EnqueueCalls[0].JobType.Should().Be("HeaderPriorityJob");
+        _scheduler.EnqueueCalls[0].JobType.Should().Be("FallbackOptionsJob");
         _consumerMock.Verify(m => m.Commit(consumeResult), Times.Once);
     }
 

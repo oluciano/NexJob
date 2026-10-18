@@ -425,7 +425,9 @@ public sealed class AzureServiceBusTriggerHandlerTests
     }
 
     [Fact]
-    public async Task HandleMessageAsync_HeaderJobType_TakesPrecedence_OverOptionsJobType()
+    // Behavior changed in v6.7.0: a configured JobType is a pinning decision by the operator
+    // and must not be overridable by an attacker-controlled broker header (security issue #630).
+    public async Task HandleMessageAsync_OptionsJobType_TakesPrecedence_OverHeaderJobType()
     {
         // Arrange
         _triggerOptions.JobType = "FallbackOptionsAsbJob";
@@ -437,7 +439,7 @@ public sealed class AzureServiceBusTriggerHandlerTests
 
         // Assert
         _scheduler.EnqueueCalls.Should().HaveCount(1);
-        _scheduler.EnqueueCalls[0].JobType.Should().Be("HeaderPriorityAsbJob");
+        _scheduler.EnqueueCalls[0].JobType.Should().Be("FallbackOptionsAsbJob");
         argsMock.Verify(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()), Times.Once);
     }
 
