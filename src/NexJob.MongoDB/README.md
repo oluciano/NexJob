@@ -1,6 +1,6 @@
 # NexJob.MongoDB
 
-MongoDB storage provider for **NexJob** — the background job scheduler for .NET 8+.
+MongoDB storage provider for **NexJob** — the background job scheduler for .NET 8 and .NET 10.
 
 Backed by the official **MongoDB.Driver**, this provider uses `FindOneAndUpdateAsync` with atomic condition filters for concurrency-safe, lock-free job claiming across distributed workers.
 

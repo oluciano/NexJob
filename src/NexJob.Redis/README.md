@@ -1,6 +1,6 @@
 # NexJob.Redis
 
-High-throughput Redis storage provider for **NexJob** — the background job scheduler for .NET 8+.
+High-throughput Redis storage provider for **NexJob** — the background job scheduler for .NET 8 and .NET 10.
 
 Backed by **StackExchange.Redis**, this provider evaluates server-side **Lua scripts** to execute atomic, lock-free state transitions and priority queue operations at microsecond latencies.
 

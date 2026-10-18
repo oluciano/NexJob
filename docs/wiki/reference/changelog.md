@@ -6,6 +6,46 @@ description: "A history of NexJob releases with key features, bug fixes, and bre
 
 NexJob follows [Semantic Versioning](https://semver.org/). Breaking changes increment the major version. This page summarizes every public release from newest to oldest.
 
+## v6.5.1
+
+**Fixed**
+- An unknown time zone in a queue execution window fails `StartAsync` again on .NET 10. With `Microsoft.Extensions.Hosting` 10 the start no longer failed and the queue silently never ran.
+
+## v6.5.0
+
+**Added**
+- Dashboard: clickable rows on the Catalog, Recent Jobs and the Execution History of a recurring schedule; a status filter and per-job-type totals on the Recurring detail.
+
+**Fixed**
+- Dashboard: the Queues page lists a queue that an active worker polls even when it has no job; the logo in the `semi-dark` theme is readable.
+
+**Changed**
+- Dependencies: Grpc 2.84 and Google.Protobuf 3.36 (Salesforce trigger), Hangfire.InMemory 0.11 (benchmarks), GitHub Actions and Docker base images.
+
+## v6.4.0
+
+**Fixed**
+- SQL Server: the orphaned-job sweep no longer deadlocks with the job fetch under load.
+- Redis: force-deleting a recurring job also deletes the jobs it created; updating or deleting an id that was never registered no longer creates a phantom definition.
+- RabbitMQ trigger: stopping the host cancels an enqueue that waits on the storage and gives the message back.
+- Disposing the executor synchronously drains the queued batch acknowledgments instead of losing them.
+
+**Changed**
+- The five broker triggers share one internal job factory and the duplicate-handling rules live once in the core. No behaviour change.
+
+## v6.3.0
+
+**Added**
+- `IOrphanedJobReporter.RequeueOrphanedJobsAndReportAsync` overload with a predicate on the stored job type; `ConfigureConnection` on the RabbitMQ options.
+
+**Changed**
+- The Kafka and RabbitMQ outboxes and the Salesforce triggers default to the `default` queue, like the other triggers.
+
+**Fixed**
+- A job that does not implement the interface its stored input needs fails with a clear error instead of `Value cannot be null (Parameter 'method')`.
+- A job is stored with the `[SchemaVersion]` of its class; the orphan watcher of another service no longer fails a job it cannot load; filters can read `Succeeded` and `Exception` after `await next(ct)`.
+- RabbitMQ: an unroutable `Mandatory` publish fails the job; `DefaultExchange` and `DefaultRoutingKey` apply. Salesforce: the job receives the decoded event as a JSON string, and an event that can never be decoded no longer drops the stream in a loop.
+
 ## v6.2.1
 
 **Fixed**

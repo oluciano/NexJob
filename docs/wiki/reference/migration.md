@@ -6,6 +6,23 @@ description: "Step-by-step migration guides for NexJob major version upgrades, i
 
 This page covers every breaking change between NexJob releases and tells you exactly what to update in your code. Schema migrations for PostgreSQL and SQL Server apply automatically at startup. Follow the steps in order for each version jump you're crossing.
 
+## v6.5.1 → v6.6.0
+
+No schema migration and no breaking change. The packages now ship two targets, `net8.0` and `net10.0`; NuGet picks the one that matches your application, so there is nothing to change.
+
+- **Runtimes:** .NET 8 and .NET 10 are supported (see [Supported runtimes](../quickstart.md#supported-runtimes)). An application on .NET 9 uses the `net8.0` target.
+- **What the `net10.0` target requires:** `Microsoft.Extensions.*` 10.0.0 or newer, which a .NET 10 host already has. The `net8.0` target keeps the `8.x` floors, and the pinned security fixes (`System.Text.Json`, `System.Text.Encodings.Web`, `System.Diagnostics.DiagnosticSource`) stay in the `net8.0` dependency group only.
+- **PostgreSQL and SQL Server:** the schema migration that the constructor runs no longer risks a deadlock in a host with a `SynchronizationContext` (WinForms, WPF, legacy ASP.NET). No API change.
+- **`GetCheckpoint<TState>()`:** a saved checkpoint that cannot be read as `TState` still returns `null`, and now logs a warning with the job id, job type and state type.
+- **Samples, benchmarks and the playground image** run on .NET 10; they are not packages.
+
+**Rolling upgrade.** No stored data changes, so 6.5.1 and 6.6.0 nodes can run together.
+
+**Rollout and rollback.**
+
+- **Roll out:** upgrade one node first. If it is on .NET 10, check that `dotnet list package` shows the `net10.0` assets resolved.
+- **Roll back:** go back to 6.5.1; there is nothing to undo.
+
 ## v6.5.0 → v6.5.1
 
 No schema migration, no new public API and no stored format change. One fix:

@@ -9,6 +9,15 @@ Security fixes are released for the latest major version only.
 | 6.x | Yes |
 | 5.x and older | No |
 
+## Supported runtimes
+
+| Runtime | Package target | Supported |
+|---|---|---|
+| .NET 8 | `net8.0` | Yes |
+| .NET 10 | `net10.0` | Yes |
+
+`net8.0` is dropped in a later major version, not before .NET 8 has been out of support for 6 months or a dependency requires it. Security fixes ship in both targets while both are supported.
+
 ## Reporting a vulnerability
 
 Please do not open a public issue for a security problem.
