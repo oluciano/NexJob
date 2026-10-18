@@ -1,6 +1,6 @@
 # NexJob.Postgres
 
-PostgreSQL storage provider for **NexJob** — the background job scheduler for .NET 8+.
+PostgreSQL storage provider for **NexJob** — the background job scheduler for .NET 8 and .NET 10.
 
 Backed by **Npgsql** and **Dapper**, this provider uses `SELECT FOR UPDATE SKIP LOCKED` for atomic, concurrency-safe job fetching across multiple distributed worker nodes.
 

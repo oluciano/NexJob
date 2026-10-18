@@ -1,14 +1,25 @@
 ---
 title: "NexJob Quick Start: Run Your First .NET Background Job"
 sidebarTitle: "Quick Start"
-description: "Install NexJob, define your first job, and enqueue it in a .NET 8 project. Covers ASP.NET Core and Worker Service setups with runnable samples."
+description: "Install NexJob, define your first job, and enqueue it in a .NET 8 or .NET 10 project. Covers ASP.NET Core and Worker Service setups with runnable samples."
 ---
 
 NexJob needs three things to run: a package reference, a service registration, and a job class. In about five minutes you will have a job running in your own project.
 
 ## Before you start
 
-You need the [.NET 8 SDK](https://dotnet.microsoft.com/download) and a project to add NexJob to. For a new one, `dotnet new worker -n MyJobs` creates a Worker Service, and `dotnet new web -n MyJobs` creates an ASP.NET Core app.
+You need the [.NET 8 SDK](https://dotnet.microsoft.com/download) or newer and a project to add NexJob to. For a new one, `dotnet new worker -n MyJobs` creates a Worker Service, and `dotnet new web -n MyJobs` creates an ASP.NET Core app.
+
+### Supported runtimes
+
+The packages target `net8.0` and `net10.0`. NuGet picks the target that matches your application; nothing to configure. An application on .NET 9 runs the `net8.0` target.
+
+| Runtime | Package target | Status |
+|---|---|---|
+| .NET 8 | `net8.0` | Supported |
+| .NET 10 | `net10.0` | Supported |
+
+`net8.0` is dropped in a later major version, not before .NET 8 has been out of support for 6 months or a dependency requires it. Adding a target is not a breaking change; removing one is.
 
 ## Your first job
 

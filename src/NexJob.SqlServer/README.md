@@ -1,6 +1,6 @@
 # NexJob.SqlServer
 
-Microsoft SQL Server storage provider for **NexJob** — the background job scheduler for .NET 8+.
+Microsoft SQL Server storage provider for **NexJob** — the background job scheduler for .NET 8 and .NET 10.
 
 Backed by **Microsoft.Data.SqlClient** and **Dapper**, this provider uses `WITH (UPDLOCK, READPAST, ROWLOCK)` hints for atomic, lock-contention-free job fetching across multiple distributed worker nodes.
 

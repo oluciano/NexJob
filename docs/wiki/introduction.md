@@ -1,10 +1,10 @@
 ---
 title: "NexJob Introduction: Reliable Background Jobs for .NET"
 sidebarTitle: "Introduction"
-description: "NexJob is a free, open-source background job library for .NET 8 with predictable retries, deadline enforcement, and a built-in real-time dashboard."
+description: "NexJob is a free, open-source background job library for .NET 8 and .NET 10 with predictable retries, deadline enforcement, and a built-in real-time dashboard."
 ---
 
-NexJob is a reliable, open-source background job processing library for .NET 8. It was built for developers who need jobs that **must run, fail safely, and leave a trace** — without a paid tier, hidden complexity, or silent failures. NexJob gives you predictable execution, built-in retries, deadline enforcement, dead-letter handling, and a real-time operational dashboard as first-class features from day one.
+NexJob is a reliable, open-source background job processing library for .NET (`net8.0` and `net10.0`). It was built for developers who need jobs that **must run, fail safely, and leave a trace** — without a paid tier, hidden complexity, or silent failures. NexJob gives you predictable execution, built-in retries, deadline enforcement, dead-letter handling, and a real-time operational dashboard as first-class features from day one.
 
 ## Why NexJob?
 

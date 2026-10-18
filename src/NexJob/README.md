@@ -1,6 +1,6 @@
 # NexJob
 
-Background jobs for .NET 8+. **Predictable. Observable. No magic.**
+Background jobs for .NET 8 and .NET 10. **Predictable. Observable. No magic.**
 
 NexJob gives you reliable execution, retries with backoff, deadline enforcement and dead-letter handling, with a built-in dashboard and OpenTelemetry. If a job must run, fail safely and leave a trace, NexJob treats that as a first-class concern.
 
