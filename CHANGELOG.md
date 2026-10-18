@@ -6,6 +6,8 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [6.6.0] - 2026-10-18
+
 ### Changed
 
 - **Dependency updates:** StackExchange.Redis 2.13.17 (Redis provider) and System.Text.Json 8.0.6 (the pin in the `net8.0` group of the Azure Service Bus trigger). (issue #626, PRs #618, #620)
