@@ -9,6 +9,7 @@ NexJob keeps all state in storage and is built around one promise: **a job that 
 ## The guarantees
 
 - **At-least-once.** After a crash, or when a result cannot be saved, a job can run again. It can also have run _partly_ before the crash. Design jobs to be [idempotent](idempotency.md).
+- **Accepted means stored.** A job is accepted when `EnqueueAsync` returns: it is one storage write, and no overload joins your database transaction. So rolling back your transaction does not remove the job, a crash between your commit and the enqueue loses it, and enqueuing before the commit lets the job run against uncommitted data. The existing workaround (mark the row and let a recurring job enqueue for unmarked rows) is in the notes of [common scenarios](../guides/common-scenarios.md).
 - **Storage is the source of truth.** Every state change is stored. A dispatcher keeps nothing that would be lost if the process died.
 - **A job is always visible.** It is waiting, running, or ended as `Succeeded`, `Failed` (dead-letter) or `Expired`, in the [dashboard](../integrations/dashboard.md#dashboard-pages). Nothing is dropped silently; jobs only disappear through [retention](../guides/best-practices.md#control-storage-growth-with-retention-policies) or `DeleteJobAsync`, which you control.
 - **An expired job never runs.** The [deadline](scheduling.md#deadlines) is checked before execution starts.
@@ -31,9 +32,10 @@ The columns are the same in all three tables: what happens to the job, whether t
 | The node running it dies (crash, kill, lost machine) | Stays `Processing` until its heartbeat is older than `HeartbeatTimeout` (default 5 minutes; the check runs every `HeartbeatTimeout`, so recovery takes between 5 and about 10 minutes), then goes back to `Enqueued` | **Used**: the attempt that was running may have partly run | No |
 | The node dies on the job's last attempt | `Failed`, by a node that can load the job type; until one does it stays `Processing` (v6.3.0) | Used | **Called** with an `OrphanedJobException` (v5.8.0) |
 | The job succeeds but its result cannot be saved | The save is retried a few times. If it still fails the job stays `Processing` and is treated like a crashed node: run again by the orphan watcher, or `Failed` (and dead-lettered) if it had no attempts left | Used | Only if no attempts were left |
+| The job fails (or is deferred) and that outcome cannot be saved | The save is retried like a result, three times. If it still fails the job stays `Processing` and is treated like a crashed node: the orphan watcher requeues it, or closes it as `Failed` if it had no attempts left. The executor does not call the dead-letter handler in that case | Used | Not called by the executor; the orphan watcher calls it with an `OrphanedJobException` when no attempts were left (v6.7.0) |
 | A dead-letter handler or forwarder throws | The job stays `Failed`; the error is logged | n/a | Swallowed, other forwarders still run |
 
-The failed save is retried three times, about 2.6 seconds in all (four calls). Run on PostgreSQL, SQL Server, Redis and MongoDB with the save failing on purpose: up to three failures the job ran once and ended `Succeeded`; with four, the job stayed `Processing`, was run a second time by the orphan watcher and then ended `Succeeded`. Keep `HeartbeatTimeout` above those 2.6 seconds, or the orphan watcher can give the job back while the executor is still retrying. This is the at-least-once guarantee at work: a job that succeeded can run twice, so make it [idempotent](idempotency.md).
+The failed save, whether it records a success or a failure, is retried three times, about 2.6 seconds in all (four calls). Run on PostgreSQL, SQL Server, Redis and MongoDB with the save failing on purpose: up to three failures the job ran once and ended `Succeeded`; with four, the job stayed `Processing`, was run a second time by the orphan watcher and then ended `Succeeded`. Keep `HeartbeatTimeout` above those 2.6 seconds, or the orphan watcher can give the job back while the executor is still retrying. This is the at-least-once guarantee at work: a job that succeeded can run twice, so make it [idempotent](idempotency.md).
 
 ### When the job waits or is skipped
 
@@ -58,6 +60,34 @@ The failed save is retried three times, about 2.6 seconds in all (four calls). R
 !!! note
     A job that fails on its last attempt and a job whose node died on its last attempt both reach your `IDeadLetterHandler<TJob>` and every `IDeadLetterForwarder`. The second one receives an `OrphanedJobException`, because the job never reported an error of its own. See [When the node dies](dead-letter.md#when-the-node-dies).
 
+
+## When storage is unavailable
+
+Storage is the source of truth, so an outage stops progress. For the calls in the table, the component catches the storage error, logs it and tries again. Which log you see and what it costs the job depends on how long the outage lasts compared with `HeartbeatTimeout` (default 5 minutes).
+
+| Component | What happens | Log level and text | The job's attempt |
+| --- | --- | --- | --- |
+| **Short outage (shorter than `HeartbeatTimeout`)** | | | |
+| Dispatcher fetch and settings read | The error is caught, the dispatcher waits `PollingInterval` (default 15 s, no exponential backoff) and polls again. It resumes by itself when storage is back | `Error`, `Error fetching next jobs from storage` or `Error reading runtime settings from storage`, once per poll for the whole outage | None used: nothing was fetched |
+| Job heartbeat (a running job) | The job keeps running. The update is tried again every `HeartbeatInterval` (default 30 s) | `Warning`, `Heartbeat update for job {JobId} failed; will retry on the next interval` | Not affected |
+| Node heartbeat | The timer continues. Each beat has a 10 s timeout | `Warning`, `Failed to update global heartbeat for server {ServerId}.` | Not affected |
+| Node registration (at host start) | If the registration fails, the host still runs and the jobs execute. The node retries the registration every `ServerHeartbeatInterval` (default 15 s) and appears in the dashboard once it succeeds. It sends no heartbeat before that | `Warning`, `Server node {ServerId} failed to register — running in degraded mode ... Retrying every {Interval}.`; `Information`, `registered after retrying` | Not affected |
+| Recurring jobs from configuration (at host start) | A job the storage fails to store is registered again with exponential backoff (1 s, doubling up to 30 s) until it is stored or the host stops. A configuration error (invalid cron, unknown job, bad input) is not retried. The jobs not yet stored are not scheduled in the meantime (v6.7.0) | `Warning`, `Could not store recurring job '{Job}' from configuration; it will be retried.` and `The storage could not store {Count} recurring job(s) from configuration. Retrying in {Delay}s.` | Not affected |
+| Saving a result | Retried three times, about 2.6 s, as described in [the table above](#when-the-job-fails-or-its-node-dies) | see above | Used |
+| Orphan watcher, recurring scheduler, retention | The error is caught and the loop continues. The orphan watcher retries after the smaller of 5 s and `HeartbeatTimeout`; the recurring scheduler waits 5 s and the retention service continues its loop | `Error`, `Error in OrphanedJobWatcherService`, `Error in RecurringJobSchedulerService`, `Error in JobRetentionService.` | Not affected |
+| Recurring job fired while storage fails between its two writes | The scheduler enqueues the job, then moves `NextExecution` forward. If the second write fails, the job exists and the same occurrence is due again at the next cycle. With `SkipIfRunning` the idempotency key `recurring:{id}` makes the storage reject the second one while the first is still `Enqueued` or `Processing`; with `AllowConcurrent`, or once the first has finished, a second job is created | `Error`, `Failed to enqueue recurring job '{Id}'` | None used: the first job has not run yet |
+| **Long outage (longer than `HeartbeatTimeout`)** | | | |
+| Job running during the outage | The job keeps running, but its heartbeat cannot be written, so it goes stale. When storage returns, the orphan watcher requeues any `Processing` job whose heartbeat is older than `HeartbeatTimeout`. It does not check whether the process that owns the job is alive, so a job that is still running can be run a second time | none for the requeue (a `Warning` only when the job had no attempts left, see [Where to see it](#where-to-see-it)) | Used: the requeued run counts as a new attempt |
+| **Enqueue side** | | | |
+| `IScheduler.EnqueueAsync` and `ScheduleAsync` | The storage exception reaches the caller unwrapped. There is no retry inside NexJob, and the dispatcher is not woken up | none from NexJob; your code sees the exception | No job exists |
+| **Host start** | | | |
+| Storage unreachable when the host starts | The start fails with the driver's exception and the host does not run: PostgreSQL in the schema initializer, SQL Server and MongoDB when the host starts, and Redis already in `AddNexJobRedis`, which connects when it is called. How long it takes is the driver's connection timeout. Measured with a 5 s timeout configured: PostgreSQL 0.3 s, SQL Server 4.9 s, MongoDB 5.5 s, Redis 10.2 s | the driver's exception from `Host.StartAsync` | No job involved |
+
+Guidance derived from the requeue criterion: set `HeartbeatTimeout` above the longest outage you want to ride out, plus two `HeartbeatInterval`. A job that is requeued while still running is the at-least-once guarantee at work, so make it [idempotent](idempotency.md).
+
+The caller owns the retry of an enqueue. When the failure leaves you unsure whether the job was stored (a timeout after the write), repeat the call with the same `idempotencyKey`: while the first job is still active the call returns its `JobId` instead of creating a second one. Once it has ended, [`DuplicatePolicy`](idempotency.md#duplicatepolicy) decides. `ScheduleAsync` and `ScheduleAtAsync` always use `AllowAfterFailed`.
+
+Outage behavior beyond this table is not covered by tests: see [How NexJob is Tested](../reference/how-we-test.md#what-is-not-covered).
 
 ## Where to see it
 

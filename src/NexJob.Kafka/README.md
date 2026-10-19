@@ -99,7 +99,7 @@ builder.Services.AddNexJob()
 ```
 
 #### Option B: Dynamic Message Header (`nexjob.job_type`)
-If multiple job types share the same topic, omit the generic argument. The incoming Kafka message must include the `nexjob.job_type` header (or have `options.JobType` set as a default):
+If multiple job types share the same topic, omit the generic argument. The incoming Kafka message must include the `nexjob.job_type` header, unless `options.JobType` is set — when it is, it always wins over the header, so a producer cannot override which job runs:
 
 ```csharp
 builder.Services.AddNexJob()
@@ -116,7 +116,7 @@ builder.Services.AddNexJob()
 ### Inbound Message Contract
 
 For dynamic triggers (Option B), consumed messages can carry the following headers:
-- `nexjob.job_type`: Assembly-qualified name of the `IJob<string>` to execute. When it is absent, `options.JobType` is used; a message with neither can never become a job and is handled as a permanent failure.
+- `nexjob.job_type`: Assembly-qualified name of the `IJob<string>` to execute. Read only when `options.JobType` is unset — a configured `JobType` always wins over this header. A message with neither can never become a job and is handled as a permanent failure.
 - `traceparent`: W3C distributed trace header (optional).
 
 The message value is passed as the string input to the resolved job. The job idempotency key is the record position (`kafka:{topic}:{partition}:{offset}`), so a redelivered record never creates a second job while two records that share a message key each produce a job.
@@ -171,7 +171,7 @@ builder.Services.AddNexJob()
 | `TargetQueue` | Target NexJob queue name for enqueued jobs; `"default"` is the application's default queue (`{prefix}.default`) | `"default"` |
 | `JobPriority` | Priority of the enqueued jobs | `JobPriority.Normal` |
 | `DeadLetterTopic` | Topic that receives records that can never be enqueued (permanent failures) | `null` |
-| `JobType` | Assembly-qualified job type used when a message has no `nexjob.job_type` header | `null` |
+| `JobType` | Assembly-qualified job type to use for every message; always wins over the `nexjob.job_type` header when set | `null` |
 | `ConsumeTimeout` | Polling timeout for `IConsumer.Consume` | `1 second` |
 | `ConfigureConsumer` | Delegate (`Action<ConsumerConfig>`) to customize SASL/SSL credentials, TLS certificates, and timeouts | `null` |
 

@@ -14,34 +14,24 @@
 
 ---
 
-## 2. The 7 Canonical Release Phases
+## 2. Streamlined Release Flow (Zero Prompt Fatigue)
 
-1. **Phase 1: Version Auditing, SemVer & Release Size Guard:**
-   - Determine version change (Major, Minor, or Patch) based on NuGet (`api.nuget.org`) and git history since last tag.
-   - Respect SemVer strictly (Major for breaking changes, Minor for backwards-compatible features/triggers, Patch for bug fixes only).
-   - Evaluate the **Release Size Guard** (Green ≤12 entries/≤40 commits/≤25 src files; Yellow 13-24 entries; Red ≥25 entries — stop and propose split).
-2. **Phase 2: User Confirmation of Version:**
-   - **Mandatory Stop:** Always present detected changes and proposed version, and require explicit user confirmation or override before modifying any file.
-3. **Phase 3: Code vs Documentation Truth Gate (Direct Sync on `develop`):**
-   - **Code is the ultimate source of truth:** If docs disagree with code, fix the docs. **Never alter production code (`src/**/*.cs`) to match docs.**
-   - Audit root `README.md`, package READMEs (`src/*/README.md`), and Wiki (`docs/wiki/*.md`).
-   - There is no external documentation to synchronize: `docs/wiki` is the single source (the Mintlify mirror was retired).
-   - Run the `nexjob-docs-truth` skill with `--scope full` (tool report, semantic review in batches, coverage report per page) and verify `mkdocs build --strict`.
-   - Commit documentation updates directly to `develop`.
-4. **Phase 4: Pre-Release Quality & Packaging Rehearsal:**
-   - Verify `dotnet build -c Release` (0 warnings, `TreatWarningsAsErrors = true`).
-   - Verify all unit tests pass (`dotnet test tests/NexJob.Tests/ -c Release --no-build`).
-   - Verify code formatting (`dotnet format --verify-no-changes`).
-   - Verify all 16 packages pack (`dotnet pack -c Release`).
-   - **Packaging Rehearsal:** Rehearse release candidate into a local temporary feed and test across all 5 providers (InMemory, PostgreSQL, SQL Server, Redis, MongoDB).
-5. **Phase 5: Version Bump, Changelog & Release PR to `main`:**
-   - Set `<VersionPrefix>X.Y.Z</VersionPrefix>` in `Directory.Build.props`.
-   - Move `[Unreleased]` entries to `[X.Y.Z] - YYYY-MM-DD` in `CHANGELOG.md`.
-   - Commit on `develop` and open Release PR to `main` (`gh pr create --base main --head develop --title "release: vX.Y.Z"`).
-6. **Phase 6: Post-Release Sync-Back (`main` ➔ `develop`):**
-   - Once merged to `main`, sync the release commit and tag back into `develop` using a merge commit (`git merge origin/main --no-ff`).
-7. **Phase 7: Post-Release Learning Snapshot (Async Retro):**
-   - Record any friction, flaky tests, or packaging hurdles into `GEMINI.md` or method references to permanently harden future releases.
+The release cycle is orchestrated by `.agents/skills/nexjob-release/SKILL.md` in three stages, eliminating confirmation fatigue by running pre-flight checks autonomously and pausing only once for human approval:
+
+1. **Step 1: Autonomous Pre-Flight & Verification (Continuous Pass):**
+   - **Version & SemVer:** Query published NuGet versions and local git tags. Classify SemVer (Major, Minor, or Patch) and check Release Size Guard (Green/Yellow/Red).
+   - **Docs & Changelog Truth Gate:** Run `dotnet run --project tools/DocsTruth -c Release -- --strict` and cross-check `CHANGELOG.md` against `git diff --stat -- src/`. Direct-commit any doc sync to `develop`.
+   - **Quality Compilation & Packaging:** Verify `dotnet build -c Release` (0 warnings on net8.0 & net10.0), run unit tests (`dotnet test tests/NexJob.Tests/ -c Release --no-build`), check formatting, and execute **Packaging Rehearsal** (pack `-rc.1` into local feed, verify consumer app restore and zero version conflicts).
+   - **Prepare Bump:** Stage `<VersionPrefix>` update in `Directory.Build.props` and move `## [Unreleased]` to `## [X.Y.Z] - YYYY-MM-DD` in `CHANGELOG.md`.
+
+2. **Step 2: The Single Human Decision Gate:**
+   - Present the executive release summary (version, size, quality status, docs parity).
+   - Ask the user **ONCE**: *"Do you approve opening the Release PR for vX.Y.Z from develop to main?"*
+
+3. **Step 3: PR Creation & Automated Post-Release:**
+   - Commit bump to `develop`, push, and open the Release PR (`gh pr create --base main --head develop`).
+   - After user merges on GitHub using **Merge Commit (`--no-ff`)**, execute single-command sync-back (`git merge origin/main --no-ff`) and push to `develop`.
+   - Record learning retro snapshot in `GEMINI.md` if any friction occurred.
 
 ---
 

@@ -45,7 +45,7 @@ public sealed class ProcessOrderJob : IJob<string>
 
 The job receives the record value as text and decides how to parse it. The same registration exists on the service collection as `services.AddNexJobKafkaTrigger<ProcessOrderJob>(...)`.
 
-To route records to different job types, omit the generic argument and have the producer set the `nexjob.job_type` header to the assembly-qualified name of the job. `JobType` is the fallback for records without the header; when both exist, the header wins:
+To route records to different job types, omit the generic argument and have the producer set the `nexjob.job_type` header to the assembly-qualified name of the job. `JobType`, when configured, always wins over the header — a producer cannot override it; the header is read only when `JobType` is unset:
 
 ```csharp
 builder.Services.AddNexJob()
@@ -65,8 +65,8 @@ builder.Services.AddNexJob()
 | `BootstrapServers` | required | The brokers, as `host:port,host:port`. |
 | `Topic` | required | The topic to read. One trigger reads one topic. |
 | `GroupId` | required | The consumer group. |
-| `JobType` | `null` | The job type for records without a `nexjob.job_type` header. |
-| `TargetQueue` | `"default"` | The NexJob queue the jobs go to. `"default"` is the application's `{prefix}.default` queue ([details](../concepts/default-queue.md)). |
+| `JobType` | `null` | The job type to use for every record. When set, it always wins over the `nexjob.job_type` header — a producer cannot override it. When unset, the header is read instead. |
+| `TargetQueue` | `"default"` | The NexJob queue the jobs go to. `"default"` is the application's `{prefix}.default` queue ([details](../concepts/queues.md#the-default-queue)). |
 | `JobPriority` | `Normal` | The priority of the jobs. |
 | `DeadLetterTopic` | `null` | A topic that receives the records that can never become jobs. |
 | `ExhaustedJobsTopic` | `null` | A topic that receives a copy of a job once it exhausts its retries. Needs `AddKafkaProducer`. |
@@ -84,7 +84,7 @@ The consumer is created with `AutoOffsetReset = Earliest`, then your `ConfigureC
 ### How a record becomes a job
 
 - **Input:** the record value, as text.
-- **Job type:** the `nexjob.job_type` header, else `JobType`.
+- **Job type:** `JobType` when configured, else the `nexjob.job_type` header.
 - **Idempotency key:** `kafka:{topic}:{partition}:{offset}`, the position of the record. It deduplicates only against jobs that are still active: a record read again after its job has finished (for example after a consumer group reset) creates a new job. See [the overview](triggers.md#idempotency-keys-by-broker).
 - **Trace:** a `traceparent` header, when present, becomes the job's trace parent.
 - **Commit:** the offset is committed only after the job was enqueued. If only the commit fails, the record is read again and the key keeps it from becoming a second job while the first is active.

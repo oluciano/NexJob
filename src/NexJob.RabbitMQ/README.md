@@ -118,7 +118,7 @@ builder.Services.AddNexJob()
 ```
 
 #### Option B: Dynamic Message Header (`nexjob.job_type`)
-If multiple job types share the same queue, omit the generic argument. The incoming RabbitMQ message must include the `nexjob.job_type` header (or have `options.JobType` configured as a default):
+If multiple job types share the same queue, omit the generic argument. The incoming RabbitMQ message must include the `nexjob.job_type` header, unless `options.JobType` is configured — when it is, it always wins over the header, so a publisher cannot override which job runs:
 
 ```csharp
 builder.Services.AddNexJob()
@@ -135,7 +135,7 @@ builder.Services.AddNexJob()
 ### Inbound Message Contract
 
 Messages consumed by the trigger can carry the following headers:
-- `nexjob.job_type`: Assembly-qualified name of the `IJob<string>` to execute. When it is absent, `options.JobType` is used; a message with neither can never become a job and is nacked without requeue.
+- `nexjob.job_type`: Assembly-qualified name of the `IJob<string>` to execute. Read only when `options.JobType` is unset — a configured `JobType` always wins over this header. A message with neither can never become a job and is nacked without requeue.
 - `traceparent`: W3C distributed trace header (optional).
 
 The message payload body is passed directly as the job input string. The job idempotency key is the message's `MessageId` (`CorrelationId` and the body are not used); a message published without a `MessageId` is not deduplicated.

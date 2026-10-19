@@ -156,3 +156,5 @@ FROM pg_stat_activity
 WHERE datname = 'nexjob'
 GROUP BY application_name;
 ```
+
+For what NexJob does while this database is unreachable, see [When storage is unavailable](../concepts/delivery-guarantees.md#when-storage-is-unavailable).

@@ -4,7 +4,7 @@ sidebarTitle: "FAQ"
 description: "Answers to common questions about NexJob: storage choices, multi-instance deployments, job ordering and performance."
 ---
 
-These answers describe verified behavior as of v5.6.1 and later.
+These answers describe the current behavior of NexJob. Version-specific changes are called out where they matter, and [Migration](migration.md) lists breaking changes.
 
 ## General
 
@@ -62,11 +62,11 @@ These answers describe verified behavior as of v5.6.1 and later.
     | Status | Default retention |
     |---|---|
     | Succeeded | 7 days |
-    | Failed | 30 days |
+    | Failed | 30 days (`RetentionFailed`) |
     | Expired | 7 days |
-    | Dead-letter | 60 days |
+    | Dead-letter | 60 days (`RetentionDeadLetter`) |
 
-    The retention service runs every `RetentionInterval` (default 1 hour) and deletes in batches of up to `RetentionBatchSize` (default 1,000 rows) to avoid lock escalation. Set any retention to `TimeSpan.Zero` to disable purging for that status.
+    The retention service runs every `RetentionInterval` (default 1 hour) and deletes in batches of up to `RetentionBatchSize` (default 1,000 rows) to avoid lock escalation. Set any retention to `TimeSpan.Zero` to disable purging for that status. See [Configuration](configuration.md) for the options.
 
     For high-frequency jobs, use per-job attributes to reduce storage further:
 

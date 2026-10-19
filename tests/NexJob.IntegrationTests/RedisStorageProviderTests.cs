@@ -164,6 +164,59 @@ public sealed class RedisStorageProviderTests : StorageProviderTestsBase, IClass
         ((string?)await db.HashGetAsync("nexjob:processing", id.ToString())).Should().Be(refreshedHeartbeat);
     }
 
+    // ── A queue entry only runs a job that is still Enqueued (issue #647) ─────
+
+    [Theory]
+    [InlineData("Succeeded", false)]
+    [InlineData("Succeeded", true)]
+    [InlineData("Processing", false)]
+    [InlineData("Processing", true)]
+    public async Task Fetch_DropsAStaleQueueEntryForAJobThatIsNotEnqueued(string state, bool batch)
+    {
+        var (mux, provider) = await ConnectAsync();
+        var db = mux.GetDatabase();
+        var id = state == "Succeeded" ? await CreateSucceededJobAsync(provider) : await CreateProcessingJobAsync(provider);
+        var attemptsBefore = (int)await db.HashGetAsync($"nexjob:jobs:{id}", "attempts");
+
+        // What an orphan requeue followed by a late commit leaves behind: the job moved on, its queue entry did not.
+        await db.SortedSetAddAsync("nexjob:queue:default:z", id.ToString(), 0);
+
+        var fetched = await FetchAsync(provider, batch);
+
+        fetched.Should().BeEmpty("a job that is not Enqueued must not run again");
+        ((string?)await db.HashGetAsync($"nexjob:jobs:{id}", "status")).Should().Be(state, "the fetch must not rewrite the state");
+        ((int)await db.HashGetAsync($"nexjob:jobs:{id}", "attempts")).Should().Be(attemptsBefore, "no attempt is consumed");
+        (await db.SortedSetScoreAsync("nexjob:queue:default:z", id.ToString())).Should().BeNull("the stale entry is dropped");
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Fetch_DropsAQueueEntryForAJobThatNoLongerExists_WithoutCreatingAGhostHash(bool batch)
+    {
+        var (mux, provider) = await ConnectAsync();
+        var db = mux.GetDatabase();
+        var ghostId = Guid.NewGuid().ToString();
+        await db.SortedSetAddAsync("nexjob:queue:default:z", ghostId, 0);
+
+        var fetched = await FetchAsync(provider, batch);
+
+        fetched.Should().BeEmpty();
+        (await db.KeyExistsAsync($"nexjob:jobs:{ghostId}")).Should().BeFalse("writing to a missing key would recreate a ghost hash");
+        (await db.SortedSetScoreAsync("nexjob:queue:default:z", ghostId)).Should().BeNull();
+    }
+
+    private static async Task<IReadOnlyList<JobRecord>> FetchAsync(RedisStorageProvider provider, bool batch)
+    {
+        if (batch)
+        {
+            return await provider.FetchBatchAsync(["default"], 5);
+        }
+
+        var one = await provider.FetchNextAsync(["default"]);
+        return one is null ? [] : [one];
+    }
+
     private static async Task<Guid> CreateProcessingJobAsync(RedisStorageProvider provider)
     {
         var job = new JobRecord

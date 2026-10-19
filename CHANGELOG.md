@@ -6,6 +6,31 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [6.7.0] - 2026-10-19
+
+### Security
+
+- **A configured trigger `JobType` can no longer be overridden by a broker message.** In the RabbitMQ, Kafka, Azure Service Bus and Google Pub/Sub triggers, the `nexjob.job_type` message header/attribute/application property previously took precedence over `options.JobType` when both were present, letting anyone who could publish to the broker direct the trigger to invoke any `IJob` registered in the host's DI container with attacker-controlled input. The configured `JobType`, when set, now always wins; the message value is read only as a fallback when `JobType` is unset. (issue #630)
+- **The job detail page's live log viewer no longer builds markup with `innerHTML`.** The SSE live-refresh handler rebuilt the log panel from `logs.map(l => ... + l.message + ...).join('')` straight into `innerHTML`, so a job that logs attacker-influenced input (common when the job's input comes from an external broker trigger) could run arbitrary JavaScript in an operator's authenticated dashboard session while watching that job. Entries are now built with `document.createElement` and `.textContent`, the same safe pattern the recurring job detail page already used. (issue #629)
+
+### Changed
+
+- **Recurring jobs from configuration are retried when the storage is down at start.** `RecurringJobRegistrationService` made one attempt, and `RecurringJobRegistrar` swallowed each job's failure, so a storage blip at start dropped every `NexJob:RecurringJobs` entry until the host restarted, with only an error in the log. The registrar now tells a storage failure from a configuration error (invalid cron, unknown job, bad input: permanent, never retried) and lists the jobs it could not store (`PendingJobs`); the service registers the whole list again with exponential backoff (1 s, doubling up to 30 s) until it is stored or the host stops. The upsert is idempotent, so re-registering is safe. (issue #648)
+
+### Fixed
+
+- **A node whose registration failed at start now registers when the storage returns.** `ServerHeartbeatService` created its heartbeat timer only after a successful registration, so a storage error at start left the node out of the dashboard and the cluster tracking for the life of the process (the jobs still ran). The timer now always runs; until the node is registered each tick retries the registration (every `ServerHeartbeatInterval`, default 15 s) and no heartbeat is sent. (issue #646)
+- **Redis: a job that is no longer `Enqueued` is no longer fetched from a stale queue entry.** When the orphan watcher requeued a job that was still running and the original run then committed its result, the queue entry stayed behind, and the fetch scripts ran the job again whatever its state: a job that had succeeded went back to `Processing` and ran a second time, and a job running on another node ran twice at once. Both fetch scripts now drop an entry whose job is not `Enqueued`. The other providers already filtered by status. (issue #647)
+- **A storage error at the moment a job fails is now retried like the one at the moment it succeeds.** The commit of a failed (or deferred) job was a single call: if it threw, the dead-letter handler was skipped and the dispatcher logged `Unhandled error while executing job`. Both commits now share the same three retries (about 2.6 s). When they run out the job stays `Processing`, the executor does not call the dead-letter handler, and the orphan watcher decides, as after a crash. (issue #641)
+- **A storage error while reading the runtime settings no longer ends the dispatcher.** `JobDispatcherService` caught only cancellation around the read of the runtime settings, so an outage there let the exception leave `ExecuteAsync` (and fail `Host.StartAsync` when it happened at start). It now logs `Error reading runtime settings from storage`, waits `PollingInterval` and polls again, as it already did for the fetch. (issue #640)
+
+### Documentation
+
+- **Documented the enqueue/transaction boundary and the web app plus worker split.** The delivery guarantees page now says where a job counts as accepted (when `EnqueueAsync` returns) and that the caller's database transaction is not part of it. The multi-service guide has a new section "Web app and worker in separate processes" (enqueue-only host with `Workers = 0`, worker host, polling latency across processes). Files: docs/wiki/concepts/delivery-guarantees.md, docs/wiki/guides/multi-service.md, docs/wiki/quickstart.md. (issue #636)
+- **Documented two more storage-outage cases.** The delivery guarantees page now says that a recurring job can fire the same occurrence twice when the storage fails between the enqueue and the advance of `NextExecution`, and that a host with the storage unreachable at start fails with the driver's exception. New tests pin the recurring behavior, the start-up registration of configured recurring jobs, and the storage contract for a late commit after an orphan requeue. (issue #642)
+- **Documented what happens when storage is unavailable.** New section "When storage is unavailable" in the delivery guarantees page (dispatcher, job and node heartbeats, orphan watcher, enqueue, and the `HeartbeatTimeout` guidance), a "Database outage or failover" entry in troubleshooting with the exact log messages, and a note in "What is not covered" of the testing page that no test cuts a real database connection. (issue #633)
+- **Added `nexjob-wiki-guardian` skill for human-centric documentation architecture.** Establishes an anti-accumulation, dev-to-dev documentation curator skill in `.agents/skills/nexjob-wiki-guardian/SKILL.md` to prevent content fragmentation, eliminate marketing fluff, extract buried features, and ensure all capabilities are canonical and discoverable.
+
 ## [6.6.0] - 2026-10-18
 
 ### Changed

@@ -9,7 +9,7 @@ description: >-
 
 # NexJob Disciplined Task Cycle
 
-This skill provides an end-to-end, token-efficient, and mathematically disciplined workflow for developing on **NexJob** (.NET 8).
+This skill provides an end-to-end, token-efficient, and mathematically disciplined workflow for developing on **NexJob** (.NET 8 and .NET 10).
 It synthesizes the best principles of context engineering and verification gates with NexJob's non-negotiable architectural invariants and multi-agent squad governance.
 
 ---
@@ -54,45 +54,52 @@ It synthesizes the best principles of context engineering and verification gates
 > **Mode:** `.agents/method/modes/01-architect-mode.md`  
 > **Goal:** Eliminate ambiguity, challenge assumptions, and agree on the Definition of Done (DoD) before generating code. **No production code generation permitted in this phase.**
 
-When a task is new, non-trivial, or ambiguous (or when explicitly requested via *"faça um grooming desta task"*), adopt the **Tech Lead / Devil's Advocate / Architect** persona:
+### Step-by-Step Execution Sequence
 
-1. **Invariants & Scope Check:**
-   - Consult `.agents/method/core/00-foundation-minimal.md`.
-   - Does this touch core execution (`src/NexJob/Internal/`) or core storage contracts? *(If so, flag that it belongs to Architect/Codex/Bruxo).*
-   - Does this change any public API signature or behavior?
-2. **Failure Modes & Edge Cases:**
-   - What happens if the broker drops connection mid-flight?
-   - How are poison messages / deserialization failures handled? (Dead-letter vs rethrow).
-   - What happens under concurrent execution or cancellation?
-3. **Performance & Observability:**
-   - Will this allocate on the hot execution path?
-   - Is distributed tracing (`traceparent`) properly extracted and propagated?
-4. **Operational & SRE Observability Check (Dual Persona: SRE & End User):**
-   - Does this backend feature introduce new operational states, automated pauses, throttles, or failure thresholds?
-   - **The SRE Question:** If this triggers at 3 AM during an outage, how does the on-call SRE discover, diagnose, and remediate it? Is a Dashboard representation required (`/queues`, `/servers`, `/jobs`, `/catalog`)?
-   - **The Developer Question:** Does the developer enqueuing or inspecting jobs have clear visibility into whether their job is waiting, deferred, throttled, or paused?
-   - Explicitly decide in grooming: **Is UI representation part of the current DoD**, or should a dedicated UI issue be logged?
-5. **Interactive Alignment (`/grill-me` Protocol):**
-   - **Zero Raw Text in Chat:** Never ask trade-offs via long chat paragraphs. Trigger the native interactive modal (`ask_question` tool).
-   - Present 2 to 4 concise trade-off questions along the core axes (Scope, Contracts, Failure Modes, UI Visibility, Testing).
-   - Format each option in first-person voice, with the recommended architectural choice first prefixed by `(Recommended)`.
-   - Once the user submits their choices via the modal, immediately formalize the **Definition of Done (DoD)** and the **3N Testing Plan**.
-6. **Backlog Health & Threshold Alert (Anti-Accumulation Guard):**
-   - Before or upon creating new issues, monitor open issue volume (`gh issue list --state open --limit 50 | wc -l`).
-   - If open issues exceed **15 items**, provide a gentle, non-bureaucratic prompt:
+Follow this strict step order:
+
+1. **Step 1: Dispatch Architectural Subagent (Token Saver):**
+   - **Antigravity:** Invoke an isolated read-only subagent (`invoke_subagent` using type `research` or `self`) with the prompt:
+     > *"Act as NexJob Architect following `.agents/method/modes/01-architect-mode.md`. Analyze [Issue / Requirement], inspect the relevant codebase files in read-only mode, and produce the Output Structure: Overview, Classes to create, Methods & Signatures, Execution Flow, Edge Cases, Invariant Compliance, and the 3N Testing Matrix."*
+   - **Claude Code:** Invoke a background task/agent (e.g. `Task` tool) with the same prompt and mode instructions.
+   - **Benefit:** All file reads, grep searches, and exploratory reasoning happen in an isolated context, saving thousands of tokens in the primary conversation window.
+
+2. **Step 2: Review Specification & Invariants:**
+   - The primary agent receives the subagent's specification and verifies compliance against:
+     - Core execution boundaries (`src/NexJob/Internal/` untouched).
+     - Storage contract segregation (`IJobStorage`, `IRecurringStorage`, `IDashboardStorage`).
+     - Trigger 5 Guarantees (if broker/cloud related).
+     - Multi-targeting awareness (`net8.0` and `net10.0`).
+     - Operational & SRE visibility (Dashboard representation needed? Is UI in scope?).
+
+3. **Step 3: Interactive Alignment with User (`/grill-me` Protocol):**
+   - If there are architectural trade-offs, scope ambiguities, or design choices, present them to the user:
+     - **In Antigravity:** Trigger the native interactive modal (`ask_question` tool). Zero raw text slop in chat.
+     - **In Claude Code:** Ask concise structured questions directly in chat.
+   - Present 2 to 4 concise choices formatted in first-person voice, with the recommended architectural choice first prefixed by `(Recommended)`.
+
+4. **Step 4: Formalize DoD & 3N Testing Plan:**
+   - Confirm the agreed scope and matrix:
+     - **N1 (Positive):** Happy path works as expected.
+     - **N2 (Negative):** Failure path fails as expected (broker down, storage exception, timeout).
+     - **N3 (Invalid / Boundary):** Null, empty, corrupted payload, extreme concurrency handled gracefully.
+
+5. **Step 5: Backlog Health & Threshold Alert (Anti-Accumulation Guard):**
+   - Check open issue volume (`gh issue list --state open --limit 50 | wc -l`).
+   - If open issues exceed **15 items**, provide a gentle alert:
      > *"Heads-up: We currently have X open issues in the backlog. Would you like to review/attack one of the existing top priorities, or prune/validate stale tickets before logging a new one?"*
-   - This ensures the project avoids zombie backlogs while preserving a fast "groom & attack" rhythm.
-7. **Backlog Crystallization (GitHub Issues Integration):**
+
+6. **Step 6: Backlog Crystallization (GitHub Issues Integration):**
    - Materialize each groomed item into a dedicated GitHub Issue via `gh issue create`.
    - **Language Mandate:** Issues must be written **strictly in English**.
    - Use conventional titles (`type(scope): description`), assign relevant labels (`bug`, `enhancement`, `reliability`, `performance`, `documentation`, `rfc`), and structure the body with:
      - **Context & Motivation**
-     - **Target Files & Components Map:** Explicit list of files/classes identified during grooming (serves as the baseline for future warmup/validity checks).
+     - **Target Files & Components Map** (baseline for future warmup/validity checks)
      - **Current vs Expected Behavior**
      - **Definition of Done (DoD)**
      - **3N Testing Matrix Plan**
-   - Capture the issue ID (e.g. `#138`) to link in the eventual Pull Request.
-   - **Assign the target version** (label and milestone named like the version, for example `v5.6.1`). A **patch** milestone accepts only small bug fixes: no new public API, no stored-format change, no behaviour change, and nothing on a hot path that needs investigation first. Everything else goes to the next minor milestone. This keeps releases small (see the Release Size Guard in the `nexjob-release` skill).
+   - **Assign target version & milestone:** A **patch** milestone (`vX.Y.Z`) accepts only small bug fixes. Any new feature, new options, or behavior changes belong to minor (`vX.Y.0`).
+   - Once crystallized, proceed immediately to **Phase 1**.
 
 *For deep architectural questions and broker-specific dilemmas, refer to [grooming-guide.md](./references/grooming-guide.md).*
 
@@ -106,41 +113,43 @@ When picking an issue from the backlog, execute the **Warmup Gate**:
 
 1. **Issue Context Summary:**
    - Review the issue description, DoD, and specifically the **Target Files & Components Map** recorded during grooming.
+
 2. **Current State & Validity Check (Warmup):**
    - **Inspect Target Files on `develop`:** Check the mapped files on the latest `develop` (`git log -n 5 <path>`, `view_file` or `grep`) to inspect current implementation.
    - **Already Solved?** Verify if a recent PR or refactor already fixed or implemented this behavior indirectly.
    - **Still Valid?** Verify whether the classes, methods, or architectural premises cited in the issue still exist or have evolved.
    - **Active Collisions:** Check if another open PR or branch is actively touching the same components.
-3. **Warmup Decision Gate & WIP Limit Enforcement (WIP = 1):**
-   - **Enforce WIP Limit:** Verify that no other issue currently holds the `in-progress` label (`gh issue list --label "in-progress"`). Only one issue may be active at a time to prevent multitasking thrashing.
-   - **Audit Comment & Status:** If valid, attach the `in-progress` label to the issue (`gh issue edit <id> --add-label "in-progress"`) and post a brief summary comment with the mapped Target Files and warmup findings.
-   - **If Valid:** Present a brief summary of the current state vs planned change to the user, confirm alignment, select the appropriate workflow (`.agents/method/workflows/{feature|bugfix|refactor|reliability}.md`), and proceed to branch isolation.
-   - **If Already Solved or Obsolete:** Present the evidence immediately to the user, document the rationale, and close the issue without generating redundant code (Phase 6, Scenario B).
-4. **WIP Limit = 1 & Issue Kickoff Audit Comment (Scrum Discipline):**
-   - **Check Active WIP:** Run `gh issue list --label in-progress` to ensure no other issue is currently in progress. WIP limit per person/squad lane is strictly **1**. Never start a new issue while another is marked `in-progress`.
-   - **Post Kickoff Comment:** Before writing code or switching branches, post a clear summary/audit comment on the issue so the team and board know what is being worked on:
-     ```bash
-     gh issue comment <id> --body "### 🚀 Work Started (WIP)
-     - **Branch:** \`<type>/<issue-id>-<description>\`
-     - **Objective & Scope:** <Summary of approach, planned changes, and target files>
-     - **DoD & 3N Matrix:** Positive, Negative, and Boundary test matrix planned."
-     ```
-   - **Apply in-progress Label:**
-     ```bash
-     gh issue edit <id> --add-label "in-progress"
-     ```
-5. **Inspect Target Files & Squad Lane (GEMINI.md):**
-   - Check which projects/files are involved.
+
+3. **Squad Lane & Core Boundaries Check (GEMINI.md):**
+   - Verify which projects and files are involved.
    - ❌ **Protected Core Files:** `src/NexJob/Internal/`, `IJobStorage`, `IRecurringStorage`, `IDashboardStorage`, `JobRecord`, `IScheduler`, `JobWakeUpChannel`.
-   - 🛑 If an issue requires modifying protected core execution (e.g. issues like #201 or #204 in `JobExecutor.cs`), it belongs to **Architect / Claude Code (bruxo)** or requires explicit architectural pre-approval before proceeding.
-6. **Branch Isolation Mandate:**
+   - 🛑 If an issue requires modifying protected core execution (e.g. `JobExecutor.cs`), it belongs to **Architect / Claude Code (bruxo)** or requires explicit architectural pre-approval before proceeding.
+
+4. **Warmup Decision & WIP Limit Enforcement (WIP = 1):**
+   - **If Already Solved or Obsolete:** Present evidence immediately to the user, document the rationale, and close the issue without generating redundant code (Phase 6, Scenario B).
+   - **If Valid:**
+     - **Enforce WIP Limit:** Run `gh issue list --label in-progress` to ensure no other issue is currently active. WIP limit per person/squad lane is strictly **1**.
+     - **Post Kickoff Comment:**
+       ```bash
+       gh issue comment <id> --body "### Work Started (WIP)
+       - **Branch:** \`<type>/<issue-id>-<description>\`
+       - **Objective & Scope:** <Summary of approach, planned changes, and target files>
+       - **DoD & 3N Matrix:** Positive, Negative, and Boundary test matrix planned."
+       ```
+     - **Apply `in-progress` Label:**
+       ```bash
+       gh issue edit <id> --add-label "in-progress"
+       ```
+
+5. **Branch Isolation Mandate:**
    - Always branch off the latest `develop`:
      ```bash
      git checkout develop && git pull origin develop
      git checkout -b <type>/<issue-id>-<short-description>
      ```
    - Never commit implementation code directly to `develop` or `main`.
-7. **Context Engineering (State Tracking):**
+
+6. **Context Engineering (State Tracking):**
    - Maintain task progress in `.gemini/scratch/task-state.md` with:
      - Objective & Linked Issue (#ID)
      - Target Files Baseline
@@ -178,6 +187,7 @@ Writing the tests first is not enough: show that they test something.
 
 ### The Test Contract Rule:
 - **NEVER** weaken, invert, skip or delete an assertion to make new code pass.
+- **NO FIXED SLEEPS:** A test never waits a fixed time for something to happen (`Task.Delay(50)` is strictly banned). Must poll for observed state with `TestWait.UntilAsync` / `TestWait.SucceededAsync` / `TestWait.InvokedAsync`, `TaskCompletionSource`, or `PauseObservedSignal`.
 - When an existing test breaks: fix the production code, not the test.
 - Moving a test into its canonical `<Class>Tests.cs`, merging into a `[Theory]`, or deleting a proven duplicate is allowed; name the surviving test in the PR. Twin files such as `*HardeningTests.cs` are banned.
 - The only exception to changing an expectation is an explicit architect decision (marked with `// Behavior changed in vX.Y: <reason>`).
@@ -206,71 +216,96 @@ Apply the following mandatory engineering rules:
 > **Mode:** `.agents/method/modes/03-validation-mode.md`  
 > **Goal:** Guarantee zero CI breakages and zero invariant drift before claiming work is finished.
 
-Execute the verification sequence directly in the terminal:
+### Step-by-Step Execution Sequence
 
-```bash
-# 1. Verify Code Formatting & StyleCop Rules
-dotnet format --verify-no-changes
+Follow this strict step order:
 
-# 2. Build in Release Mode with Zero Warnings
-dotnet build -c Release
+1. **Step 1: Run Local Terminal Verification (Primary Agent):**
+   Execute the verification commands directly in the workspace terminal:
+   ```bash
+   # 1. Verify Code Formatting & StyleCop Rules
+   dotnet format --verify-no-changes
 
-# 3. Execute Unit Tests
-dotnet test --no-build
+   # 2. Build in Release Mode with Zero Warnings (validating both net8.0 and net10.0)
+   dotnet build -c Release
 
-# 4. Execute Targeted Integration Tests (Mandatory when touching Storage, Core or Brokers)
-# If touching Core (src/NexJob/):
-dotnet test tests/NexJob.IntegrationTests --filter "FullyQualifiedName~InMemoryStorageProviderTests|FullyQualifiedName~JobExecutionEndToEndTests"
+   # 3. Execute Unit Tests — one project at a time, scoped to what this task touched.
+   # `dotnet test --no-build` with no project/filter runs the ENTIRE solution serially
+   # in one process: it can take 15+ minutes, and running the reliability/stress suites
+   # alongside everything else causes resource contention that fails tests which pass
+   # in isolation (false positives). CI never does this — it matrices by project x
+   # framework x category (see .github/workflows/ci.yml). Match that shape locally:
+   dotnet test tests/<TouchedPackage>.Tests --no-build
+   # Repeat per touched package's unit-test project (e.g. NexJob.Tests for core,
+   # NexJob.RabbitMQ.Tests for the RabbitMQ trigger). Add --framework net8.0 / net10.0
+   # only if you need to isolate one runtime leg; otherwise both run together per project.
 
-# If touching Storage Providers (Postgres, SqlServer, Mongo, Redis):
-# (Requires local Docker / Testcontainers if run locally, or verify targeted container tests pass)
-dotnet test tests/NexJob.IntegrationTests --filter "FullyQualifiedName~<Provider>"
+   # 4. Execute Targeted Integration Tests (Mandatory when touching Storage, Core or Brokers)
+   # If touching Core (src/NexJob/):
+   dotnet test tests/NexJob.IntegrationTests --filter "FullyQualifiedName~InMemoryStorageProviderTests|FullyQualifiedName~JobExecutionEndToEndTests"
 
-# If touching Messaging Triggers / Outbox (RabbitMQ, Kafka, SQS, Salesforce):
-dotnet test tests/NexJob.<Package>.IntegrationTests
-```
+   # If touching Storage Providers (Postgres, SqlServer, Mongo, Redis):
+   dotnet test tests/NexJob.IntegrationTests --filter "FullyQualifiedName~<Provider>"
 
-- **Test Contract Self-Audit (mandatory when the diff touches `tests/**`):**
-  ```bash
-  git diff develop -- tests | grep -E '^-' | grep -E 'Should\(|Assert\.|Verify\(|Times\.|\[Fact|\[Theory|Skip ='
-  ```
-  Every line printed must be explained in the PR body: moved to which file, duplicate of which surviving test, or `// Behavior changed in vX.Y: <reason>`. An unexplained line means an assertion was weakened: restore it and fix the production code instead.
-- **Architecture Compliance Audit (`03-validation-mode.md`):**
-  - [ ] Storage is the single source of truth (no in-memory cache overriding state transitions).
-  - [ ] Dispatcher remains stateless.
-  - [ ] Deadline enforced BEFORE execution begins.
-  - [ ] Dead-letter handler exceptions are swallowed/logged (never crashes dispatcher).
-  - [ ] Storage & Core contracts verified against Integration Suite (`tests/NexJob.IntegrationTests`).
-- **If any step fails:** Do not ask the user what to do. Inspect the failure, correct the production code, and re-run the gate until all pass with **0 errors and 0 warnings**.
-- For troubleshooting StyleCop warnings (SA1202, SA1204, SA1413, SA1508), refer to [verification-gate.md](./references/verification-gate.md).
+   # If touching Messaging Triggers / Outbox (RabbitMQ, Kafka, SQS, Salesforce):
+   dotnet test tests/NexJob.<Package>.IntegrationTests
+   ```
+   `tests/NexJob.ReliabilityTests` and `tests/NexJob.StressTests` are their own CI
+   workflows (`reliability.yml`, `stress-tests.yml`), filtered and scheduled separately
+   from the PR pipeline — they are not part of this local gate unless the task is
+   specifically about reliability/crash-recovery behavior. Running them locally
+   requires Docker containers they expect (SQL Server, etc.); do not add them to a
+   routine verification pass.
+
+2. **Step 2: Test Contract Self-Audit (Mandatory when touching `tests/**`):**
+   ```bash
+   git diff develop -- tests | grep -E '^-' | grep -E 'Should\(|Assert\.|Verify\(|Times\.|\[Fact|\[Theory|Skip ='
+   ```
+   Every line printed must be explained in the PR body: moved to which file, duplicate of which surviving test, or `// Behavior changed in vX.Y: <reason>`. An unexplained line means an assertion was weakened: restore it and fix the production code instead.
+
+3. **Step 3: Dispatch Code Review Subagent (Token Saver):**
+   Before opening the PR, delegate the dual-axis review to an isolated read-only subagent:
+   - **Antigravity:** Invoke an isolated subagent (`invoke_subagent` using type `research` or `self`) with the prompt:
+     > *"Act as NexJob Reviewer following `.agents/method/modes/03-validation-mode.md`. Inspect `git diff develop`, verify StyleCop rules, XML documentation, CancellationToken propagation, .ConfigureAwait(false) usage, and ensure the 3N testing matrix has no weakened assertions. Return a structured PASS or FAIL verdict with specific file and line citations."*
+   - **Claude Code:** Invoke a background task/agent (e.g. `Task` tool) with the same prompt and mode instructions.
+   - **Benefit:** The heavy diff inspection and standards checklist run in an isolated context, returning only the final verdict and necessary fixes to the primary session without token bloat.
+
+4. **Step 4: Remediate Findings (Zero Toleration Gate):**
+   - If the subagent or tests report any finding (`FAIL`), fix the production code or tests immediately.
+   - Re-run the affected checks until all pass with **0 errors and 0 warnings** and the subagent returns `PASS`.
+   - Once clean, proceed to **Phase 4.5**.
+
+*For troubleshooting StyleCop warnings (SA1202, SA1204, SA1413, SA1508), refer to [verification-gate.md](./references/verification-gate.md).*
 
 ---
 
 ## Phase 4.5: Continuous Changelog Maintenance
 
+> **Workflow Reference:** `.agents/method/workflows/documentation.md` (Section 3: Changelog ↔ Diff Cross-Check)  
 > **Goal:** Keep `CHANGELOG.md` synchronized with every delivered change so releases are always ready.
 
 Before generating the Pull Request:
 1. Open `CHANGELOG.md`.
 2. Ensure an `## [Unreleased]` section exists at the top.
 3. Add a concise, professional bullet point under the appropriate category:
-   - `### Added` for new features or packages.
+   - `### Added` for new features or packages (MINOR versions only).
    - `### Fixed` for bug fixes.
    - `### Changed` for behavioral/config changes.
    - `### Security` for vulnerability fixes.
+   - `### Dependencies` for library dependency bumps (v6.2.0).
 4. Reference the package/scope, description of behavior, and linked issue/PR (e.g. `(issue #146, PR #153)`).
+5. **No repo-relative links:** Use plain text for paths (e.g. `src/NexJob/Job.cs`). Never use `[path](src/...)` which breaks strict MkDocs builds.
 
 ---
 
 ## Phase 4.6: Documentation & Wiki Truth Gate
 
-> **Goal:** Ensure the Wiki and Package READMEs reflect all new options, architectural behaviors, and breaking/fixed patterns before any PR is submitted.
+> **Workflow Reference:** `.agents/method/workflows/documentation.md` & `.agents/skills/nexjob-docs-truth/SKILL.md`  
+> **Goal:** Ensure the Wiki, Package READMEs, and CHANGELOG reflect all new options, architectural behaviors, and breaking/fixed patterns before any PR is submitted.
 
 Every task that introduces or modifies public options, defaults, architecture behaviors, or multi-service patterns MUST audit and update documentation directly in the working branch:
 
-> **Tool first:** run the `nexjob-docs-truth` skill with `--scope diff` (`dotnet run --project tools/DocsTruth -c Release -- --strict`, then the
-> semantic review of the pages that describe the changed areas). A rule lives in one page and the others link to it; do not copy it.
-> The checklist below says where each kind of change is documented.
+> **Subagent Delegation:** In Antigravity or Claude Code, run the `nexjob-docs-truth` skill with `--scope diff` via an isolated read-only subagent. The subagent runs `dotnet run --project tools/DocsTruth -c Release -- --strict`, executes the Changelog ↔ Diff cross-check, and performs the semantic review of changed Wiki pages and package READMEs.
 
 1. **Package / Root READMEs:**
    - If a new feature or behavior was added to a package, update the corresponding `src/<Package>/README.md` or root `README.md`.

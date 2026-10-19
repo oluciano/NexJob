@@ -21,6 +21,7 @@ internal sealed class RecurringJobRegistrar
     private readonly ILogger<RecurringJobRegistrar> _logger;
     private readonly NexJobOptions? _options;
     private readonly List<string> _registeredJobIds = [];
+    private readonly List<RecurringJobSettings> _pendingJobs = [];
 
     /// <summary>
     /// Initializes a new instance of the <see cref="RecurringJobRegistrar"/> class.
@@ -45,6 +46,12 @@ internal sealed class RecurringJobRegistrar
     public IReadOnlyList<string> RegisteredJobIds => _registeredJobIds;
 
     /// <summary>
+    /// Gets the jobs of the last <see cref="RegisterRecurringJobsAsync"/> call that the storage failed to store.
+    /// A configuration error is not listed: it is permanent and retrying it would not help.
+    /// </summary>
+    public IReadOnlyList<RecurringJobSettings> PendingJobs => _pendingJobs;
+
+    /// <summary>
     /// Registers a collection of recurring jobs.
     /// </summary>
     /// <param name="recurringJobs">The settings for the jobs to register.</param>
@@ -55,6 +62,7 @@ internal sealed class RecurringJobRegistrar
         CancellationToken cancellationToken = default)
     {
         var configs = recurringJobs.ToList();
+        _pendingJobs.Clear();
         var assignments = AssignEffectiveIds(configs);
         var existing = await LoadExistingAsync(cancellationToken).ConfigureAwait(false);
 
@@ -321,9 +329,23 @@ internal sealed class RecurringJobRegistrar
 
             // Always upsert: the definition in configuration wins on every start, while the fields an operator changes
             // in the dashboard (cron override, paused, deleted) are preserved by the storage on conflict.
-            await _storage.UpsertRecurringJobAsync(recurringJob, cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await _storage.UpsertRecurringJobAsync(recurringJob, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // The storage failed, not the configuration: keep the job so the caller can retry it.
+                _pendingJobs.Add(jobConfig);
+                _logger.LogWarning(ex, "Could not store recurring job '{Job}' from configuration; it will be retried.", jobConfig.Job);
+                return;
+            }
 
-            _registeredJobIds.Add(effectiveId);
+            if (!_registeredJobIds.Contains(effectiveId))
+            {
+                _registeredJobIds.Add(effectiveId);
+            }
+
             _logger.LogInformation(
                 "Registered or updated recurring job '{Id}' with cron '{Cron}' in queue '{Queue}'",
                 effectiveId,

@@ -141,3 +141,20 @@ builder.Services.AddNexJob(options =>
 - [Dead-letter handling](dead-letter.md): what runs when every attempt is spent.
 - [Job context](../guides/job-context.md#progress-checkpoints-for-long-running-jobs): save a checkpoint so a retried attempt resumes where the previous one stopped.
 - [Retries & dead letter](retries-and-dead-letter.md): how to choose a strategy for common failures.
+
+## Choosing the right strategy
+
+Use the table below to pick the right approach for common failure scenarios:
+
+| Scenario | Recommended approach |
+|---|---|
+| Transient network error (timeout, connection reset) | Retries with exponential backoff |
+| External API rate limiting | Retries with longer `InitialDelay` and higher `MaxDelay` |
+| Invalid input data | `[Retry(0)]` — dead-letter immediately |
+| Business rule violation | `[Retry(0)]` — retry won't fix it |
+| Database deadlock | Retries with a short `InitialDelay`, 2–3 attempts |
+| Payment or legal operation failure | Dead-letter handler with alerting and compensation |
+
+## Try it
+
+The [`NexJob.Sample.Reliability`](https://github.com/oluciano/NexJob/tree/develop/samples/NexJob.Sample.Reliability) sample runs retries, checkpoint resume and a dead-letter handler on in-memory storage, with no infrastructure: `POST /retry/flaky` fails twice and succeeds on the third attempt, `POST /checkpoint` resumes a retried job from its last step, and `POST /deadletter` ends in the dead-letter handler. Open the dashboard at `/dashboard` while you call them.

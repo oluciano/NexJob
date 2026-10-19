@@ -60,9 +60,9 @@ The same registration is available on the builder as `AddNexJob().AddAzureServic
 | `QueueOrTopicName` | required | The queue, or the topic when you also set `SubscriptionName`. |
 | `SubscriptionName` | `null` | The subscription to read. Required for a topic, leave `null` for a queue. |
 | `MaxConcurrentMessages` | `1` | How many messages the processor handles at the same time on this node. |
-| `TargetQueue` | `"default"` | The NexJob queue the jobs go to. `"default"` is the application's `{prefix}.default` queue ([details](../concepts/default-queue.md)). |
+| `TargetQueue` | `"default"` | The NexJob queue the jobs go to. `"default"` is the application's `{prefix}.default` queue ([details](../concepts/queues.md#the-default-queue)). |
 | `JobPriority` | `Normal` | The priority of the jobs. |
-| `JobType` | `null` | The job type for messages without a `nexjob.job_type` property. When both exist, the message property wins. |
+| `JobType` | `null` | The job type to use for every message. When set, it always wins over the `nexjob.job_type` property — a publisher cannot override it. When unset, the property is read instead. |
 
 A missing `ConnectionString` or `QueueOrTopicName` fails when the host starts, not when the first message arrives.
 
@@ -72,7 +72,7 @@ A missing `ConnectionString` or `QueueOrTopicName` fails when the host starts, n
 ## How a message becomes a job
 
 - **Input:** the message body, read as text.
-- **Job type:** the `nexjob.job_type` application property, else `JobType`. With neither, the message can never become a job.
+- **Job type:** `JobType` when configured, else the `nexjob.job_type` application property. With neither, the message can never become a job.
 - **Idempotency key:** the Service Bus `MessageId`. It deduplicates only against jobs that are still active; see [the overview](triggers.md#idempotency-keys-by-broker).
 - **Trace:** a `traceparent` application property, when present, becomes the job's trace parent.
 

@@ -79,7 +79,7 @@ Call `AddNexJob()` once, then scan your assembly so NexJob can discover your job
 
 ### 3. Define a job
 
-Implement `IJob` for work that needs no input. NexJob resolves the job from the DI container, so constructor injection works.
+Implement `IJob` for work that needs no input. NexJob resolves the job from the DI container, so constructor injection works. Each execution gets its own scope, so scoped services such as `DbContext` are safe to inject: see [scoped services](concepts/job-types.md#dependency-injection-and-scoped-services).
 
 ```csharp
 // HelloJob.cs
@@ -116,7 +116,7 @@ You will see the job's output in the console:
 Hello at 2026-10-11T13:05:29.7182279+00:00
 ```
 
-The dispatcher runs as a hosted `BackgroundService` in your own process. There is no separate worker process or sidecar.
+The dispatcher runs as a hosted `BackgroundService` in your own process. There is no separate worker process or sidecar. To split the web app and the workers into different processes, see [Web app and worker in separate processes](guides/multi-service.md#web-app-and-worker-in-separate-processes).
 
 ## Going further
 

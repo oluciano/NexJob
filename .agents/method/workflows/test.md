@@ -14,12 +14,18 @@
 
 ---
 
-## Test Integrity (3N Mandatory Matrix)
+## Test Integrity (3N Mandatory Matrix & Non-Negotiable Rules)
 
 Every feature or bug fix must produce minimum 3 tests:
 - **N1 — Positive:** happy path works as expected.
 - **N2 — Negative:** failure path fails as expected.
 - **N3 — Invalid Input:** null, empty, boundary — handled gracefully.
+
+### Core Test Rules:
+- **No Fixed Sleeps:** A test never waits a fixed time (`Task.Delay(50)` is strictly banned). Must poll for observed state with `TestWait.UntilAsync` / `TestWait.SucceededAsync` / `TestWait.InvokedAsync`, `TaskCompletionSource`, or `PauseObservedSignal`.
+- **One Canonical Test File per Class:** Production class `Foo` has one test file: `FooTests.cs`. Twin files (`FooHardeningTests.cs`) are banned and enforced by `TestSuiteConventionTests`.
+- **Existing Tests Are Contracts:** NEVER weaken, invert or delete an assertion. Moving, merging into a `[Theory]` and deleting a proven duplicate are allowed.
+- **Dual-Target Execution:** Tests must execute and pass cleanly on both `net8.0` and `net10.0`.
 
 > **N2 Case Study: Recurring Job Distributed Lock**
 > A unit test (N2) can verify the `catch` block for storage errors. However, a **Distributed Reliability Test (N2-Dist)** is required to verify that only 1 out of N instances acquires the lock when competing for the same recurring job execution window.

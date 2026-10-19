@@ -47,7 +47,7 @@ public sealed class ProcessOrderJob : IJob<string>
 
 The job receives the message body as UTF-8 text and decides how to parse it. The same registration exists on the service collection as `services.AddNexJobRabbitMqTrigger<ProcessOrderJob>(...)`.
 
-To route messages to different job types, omit the generic argument and have the publisher set the `nexjob.job_type` header to the assembly-qualified name of the job. `JobType` is the fallback for messages without the header; when both exist, the header wins:
+To route messages to different job types, omit the generic argument and have the publisher set the `nexjob.job_type` header to the assembly-qualified name of the job. `JobType`, when configured, always wins over the header — a publisher cannot override it; the header is read only when `JobType` is unset:
 
 ```csharp
 builder.Services.AddNexJob()
@@ -69,8 +69,8 @@ builder.Services.AddNexJob()
 | `UserName`, `Password` | `"guest"`, `"guest"` | The credentials. RabbitMQ only lets `guest` connect from the same machine, so set real ones elsewhere. |
 | `VirtualHost` | `"/"` | The virtual host. |
 | `PrefetchCount` | `1` | How many unacknowledged messages the broker may send at once. |
-| `JobType` | `null` | The job type for messages without a `nexjob.job_type` header. |
-| `TargetQueue` | `"default"` | The NexJob queue the jobs go to. `"default"` is the application's `{prefix}.default` queue ([details](../concepts/default-queue.md)). |
+| `JobType` | `null` | The job type to use for every message. When set, it always wins over the `nexjob.job_type` header — a publisher cannot override it. When unset, the header is read instead. |
+| `TargetQueue` | `"default"` | The NexJob queue the jobs go to. `"default"` is the application's `{prefix}.default` queue ([details](../concepts/queues.md#the-default-queue)). |
 | `JobPriority` | `Normal` | The priority of the jobs. |
 | `ReconnectDelay` | 5 seconds | The wait between attempts to reconnect. |
 | `ExhaustedJobsRoutingKey` | `null` | When set, a job that exhausts its retries is copied to this routing key. Needs `AddRabbitMqProducer`. |
@@ -82,7 +82,7 @@ A missing `HostName` or `QueueName` fails when the host starts. The connection i
 ### How a message becomes a job
 
 - **Input:** the message body, as UTF-8 text.
-- **Job type:** the `nexjob.job_type` header, else `JobType`.
+- **Job type:** `JobType` when configured, else the `nexjob.job_type` header.
 - **Idempotency key:** the AMQP `MessageId`. It deduplicates only against jobs that are still active, and **a message without a `MessageId` has no key**, so every delivery of it creates a job. Set a unique `MessageId` on every message you publish to a queue that feeds a trigger. See [the overview](triggers.md#idempotency-keys-by-broker).
 - **Trace:** a `traceparent` header, when present, becomes the job's trace parent.
 - **Ack:** the message is acknowledged only after the job was enqueued.

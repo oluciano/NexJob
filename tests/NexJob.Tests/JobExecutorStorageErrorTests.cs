@@ -2,6 +2,7 @@ using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
+using NexJob.Exceptions;
 using NexJob.Internal;
 using NexJob.Internal.Tests;
 using NexJob.Storage;
@@ -141,12 +142,94 @@ public sealed class JobExecutorStorageErrorTests
         _deadLetter.Verify(x => x.DispatchAsync(job, It.IsAny<Exception>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
+    // ─── failure commit failures (#641) ──────────────────────────────────────
+
+    /// <summary>N1 (Positive): a failure commit that fails once is retried, recorded as failed, and the dead-letter handler runs once.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task FailureCommitFailsOnce_IsRetried_AndDeadLetterRunsOnce()
+    {
+        var calls = 0;
+        _storage.Setup(x => x.CommitJobResultAsync(It.IsAny<JobId>(), It.IsAny<JobExecutionResult>(), It.IsAny<CancellationToken>()))
+            .Returns(() => Interlocked.Increment(ref calls) == 1
+                ? Task.FromException(new InvalidOperationException("blip"))
+                : Task.CompletedTask);
+        var job = NewJob(attempts: 1, maxAttempts: 1);
+        await using var sut = Build(TimeSpan.FromMinutes(5));
+        SetupInvoker(job, _ => throw new InvalidOperationException("job bug"));
+        _retry.Setup(x => x.ComputeRetryAt(job, It.IsAny<Exception>())).Returns((DateTimeOffset?)null);
+
+        await sut.ExecuteJobAsync(job);
+
+        calls.Should().Be(2, "one failed call and one retry");
+        Committed(job, r => !r.Succeeded && r.RetryAt == null).Should().Be(2);
+        _deadLetter.Verify(x => x.DispatchAsync(job, It.IsAny<Exception>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    /// <summary>N2 (Negative): a failure commit that always fails is retried within budget, never reaches the dispatcher, and skips the dead-letter.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task FailureCommitAlwaysFails_RetriesWithinBudget_NoThrow_NoDeadLetter()
+    {
+        _storage.Setup(x => x.CommitJobResultAsync(It.IsAny<JobId>(), It.IsAny<JobExecutionResult>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("commit down"));
+        var job = NewJob(attempts: 1, maxAttempts: 1);
+        await using var sut = Build(TimeSpan.FromMinutes(5));
+        SetupInvoker(job, _ => throw new InvalidOperationException("job bug"));
+        _retry.Setup(x => x.ComputeRetryAt(job, It.IsAny<Exception>())).Returns((DateTimeOffset?)null);
+
+        var act = () => sut.ExecuteJobAsync(job);
+
+        await act.Should().NotThrowAsync("the dispatcher must not see the storage error");
+        Committed(job, r => !r.Succeeded).Should().Be(4, "1 attempt + 3 retries");
+        _deadLetter.Verify(x => x.DispatchAsync(It.IsAny<JobRecord>(), It.IsAny<Exception>(), It.IsAny<CancellationToken>()), Times.Never, "the job stays Processing, so the orphan watcher decides");
+    }
+
+    /// <summary>N3 (Boundary): the branches that give the attempt back (foreign job) use the same retry.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task ForeignJobCommitFailsOnce_IsRetried_WithRefund()
+    {
+        var calls = 0;
+        _storage.Setup(x => x.CommitJobResultAsync(It.IsAny<JobId>(), It.IsAny<JobExecutionResult>(), It.IsAny<CancellationToken>()))
+            .Returns(() => Interlocked.Increment(ref calls) == 1
+                ? Task.FromException(new InvalidOperationException("blip"))
+                : Task.CompletedTask);
+        var job = NewJob();
+        await using var sut = Build(TimeSpan.FromMinutes(5));
+        SetupInvoker(job, _ => throw new ForeignJobTypeException("Other.Service.Job", "not here"));
+
+        var act = () => sut.ExecuteJobAsync(job);
+
+        await act.Should().NotThrowAsync();
+        calls.Should().Be(2);
+        Committed(job, r => !r.Succeeded && r.RefundAttempt).Should().Be(2);
+    }
+
+    /// <summary>N3 (Boundary): with no retry delays configured a failing failure commit is a single call and still does not throw.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task FailureCommit_WithNoRetryDelays_IsASingleCall_AndDoesNotThrow()
+    {
+        _storage.Setup(x => x.CommitJobResultAsync(It.IsAny<JobId>(), It.IsAny<JobExecutionResult>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("commit down"));
+        var job = NewJob(attempts: 1, maxAttempts: 1);
+        await using var sut = Build(TimeSpan.FromMinutes(5), retryDelays: []);
+        SetupInvoker(job, _ => throw new InvalidOperationException("job bug"));
+        _retry.Setup(x => x.ComputeRetryAt(job, It.IsAny<Exception>())).Returns((DateTimeOffset?)null);
+
+        var act = () => sut.ExecuteJobAsync(job);
+
+        await act.Should().NotThrowAsync();
+        Committed(job, r => !r.Succeeded).Should().Be(1);
+    }
+
     // ─── helpers ─────────────────────────────────────────────────────────────
 
     private static JobRecord NewJob(int attempts = 1, int maxAttempts = 3) =>
         new() { Id = JobId.New(), JobType = "TestJob", Attempts = attempts, MaxAttempts = maxAttempts };
 
-    private JobExecutor Build(TimeSpan heartbeatInterval) =>
+    private JobExecutor Build(TimeSpan heartbeatInterval, TimeSpan[]? retryDelays = null) =>
         new(
             _storage.Object,
             _invoker.Object,
@@ -157,7 +240,7 @@ public sealed class JobExecutorStorageErrorTests
             new JobWakeUpChannel(),
             NullLogger<JobExecutor>.Instance)
         {
-            CommitRetryDelays = FastRetries,
+            CommitRetryDelays = retryDelays ?? FastRetries,
         };
 
     private void SetupInvoker(JobRecord job, Func<CancellationToken, Task> body)

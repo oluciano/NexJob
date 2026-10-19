@@ -41,7 +41,7 @@ builder.Services.AddNexJob(options =>
 
 ## Features
 
-- **Atomic Job Dispatching:** Leverages PostgreSQL `FOR UPDATE SKIP LOCKED` to ensure zero lock contention and no double-execution across multiple server instances.
+- **Atomic Job Dispatching:** Fetches with `FOR UPDATE SKIP LOCKED`, so server instances do not block each other and a job is never claimed twice.
 - **High-Throughput Batch Processing:** Dynamic batch dequeue (`FetchBatchAsync`) and vectorized batch acknowledgment (`AcknowledgeBatchAsync`) with native array operations (`WHERE id = ANY(@Ids)`).
 - **Automatic Schema Migration:** Applies database migrations automatically on startup using PostgreSQL advisory locks (`pg_advisory_lock`), ensuring safe concurrent migrations in multi-node clusters.
 - **Idempotency Enforcement:** Supports strict and conditional deduplication policies (`DuplicatePolicy`) indexed on `idempotency_key`.

@@ -49,7 +49,7 @@ app.Run();
 
 ## Features
 
-- **Multi-Cluster Dashboard Federation:** Seamlessly aggregate multiple isolated NexJob clusters (regional, multi-tenant, or staging vs production) in a single dashboard with live cluster switching dropdown (`?cluster={id}`), cluster-isolated SSE caching, and read-only cluster protection.
+- **Multi-Cluster Dashboard Federation:** Aggregate multiple isolated NexJob clusters (regional, multi-tenant, or staging vs production) in a single dashboard with live cluster switching dropdown (`?cluster={id}`), cluster-isolated SSE caching, and read-only cluster protection.
 - **Enterprise Maxton Design System:** Complete visual overhaul inspired by the modern Maxton UI layout, featuring an executive 64px Top Header with responsive sidebar toggle (☰), global keyboard search (`Ctrl + K`), live cluster health status badge (`HEALTHY`, `DEGRADED`, `INCIDENT`), and docs shortcuts.
 - **Multi-Theme Switcher (5 Themes):** Instant 1-click theme customizer offcanvas drawer supporting `Blue Theme` (Midnight - default), `Dark`, `Light`, `Semi-Dark` (dark sidebar/header with light content), and `Bordered` (clean 1px high-contrast borders without heavy shadows), fully persisted in `localStorage`.
 - **Cluster Pipeline Topology Map:** Native SVG & animated CSS flowchart connecting Ingress & Triggers ➔ Queue Buffers ➔ Processing Workers with live activity pulse indicators.

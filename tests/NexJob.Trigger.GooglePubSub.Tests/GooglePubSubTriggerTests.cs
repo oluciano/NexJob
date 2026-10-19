@@ -282,10 +282,12 @@ public sealed class GooglePubSubTriggerTests
     }
 
     /// <summary>
-    /// Verifies that when both attribute and options JobType are present, the attribute takes precedence.
+    /// Verifies that when both attribute and options JobType are present, the configured JobType takes precedence.
     /// </summary>
     [Fact]
-    public async Task AttributeJobType_TakesPrecedence_OverOptionsJobType()
+    // Behavior changed in v6.7.0: a configured JobType is a pinning decision by the operator
+    // and must not be overridable by an attacker-controlled broker header (security issue #630).
+    public async Task OptionsJobType_TakesPrecedence_OverAttributeJobType()
     {
         // Arrange
         Func<PubsubMessage, CancellationToken, Task<SubscriberClient.Reply>>? capturedHandler = null;
@@ -326,7 +328,7 @@ public sealed class GooglePubSubTriggerTests
         // Assert
         reply.Should().Be(SubscriberClient.Reply.Ack);
         _scheduler.EnqueueCalls.Should().HaveCount(1);
-        _scheduler.EnqueueCalls[0].JobType.Should().Be("AttributePriorityPubSubJob");
+        _scheduler.EnqueueCalls[0].JobType.Should().Be("FallbackOptionsPubSubJob");
     }
 
     /// <summary>

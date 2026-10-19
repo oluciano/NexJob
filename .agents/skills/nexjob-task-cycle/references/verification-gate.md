@@ -15,8 +15,8 @@ dotnet format --verify-no-changes
 # Step 2: Release Build with Zero Warnings (TreatWarningsAsErrors = true)
 dotnet build -c Release
 
-# Step 3: Run Unit Tests
-dotnet test --no-build
+# Step 3: Run Unit Tests (scoped to touched package)
+dotnet test tests/<TouchedPackage>.Tests --no-build
 ```
 
 ---

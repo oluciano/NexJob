@@ -65,7 +65,7 @@ internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
         _batchAck = new BatchAcknowledger(storage, wakeUp, logger);
     }
 
-    /// <summary>Gets the delays between retries of a failed success commit. Overridable for tests.</summary>
+    /// <summary>Gets the delays between retries of a failed commit, for a success and for a failure. Overridable for tests.</summary>
     internal TimeSpan[] CommitRetryDelays { get; init; } =
     [
         TimeSpan.FromMilliseconds(100),
@@ -195,9 +195,10 @@ internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
             sw.Stop();
             var retryAt = HandleFailureAsync(job, ex, activity);
 
-            await CommitFailureAsync(job, logScope.Entries, ex, retryAt, refundAttempt: false).ConfigureAwait(false);
+            var failureCommitted = await CommitFailureAsync(job, logScope.Entries, ex, retryAt, refundAttempt: false).ConfigureAwait(false);
 
-            if (retryAt is null)
+            // Not committed: the job stays Processing and the orphan watcher decides, so the handler must not run yet.
+            if (failureCommitted && retryAt is null)
             {
                 await _deadLetterDispatcher.DispatchAsync(job, ex, CancellationToken.None).ConfigureAwait(false);
             }
@@ -231,8 +232,9 @@ internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
             new TagList { { "nexjob.job_type", jobType } });
     }
 
-    private Task CommitFailureAsync(JobRecord job, IReadOnlyList<JobExecutionLog> logs, Exception exception, DateTimeOffset? retryAt, bool refundAttempt)
-        => _storage.CommitJobResultAsync(job.Id, new JobExecutionResult
+    private async Task<bool> CommitFailureAsync(JobRecord job, IReadOnlyList<JobExecutionLog> logs, Exception exception, DateTimeOffset? retryAt, bool refundAttempt)
+    {
+        var result = new JobExecutionResult
         {
             Succeeded = false,
             Logs = logs,
@@ -240,7 +242,54 @@ internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
             RetryAt = retryAt,
             RecurringJobId = job.RecurringJobId,
             RefundAttempt = refundAttempt,
-        }, CancellationToken.None);
+        };
+
+        var error = await TryCommitAsync(job, result, "failure").ConfigureAwait(false);
+        if (error is null)
+        {
+            return true;
+        }
+
+        // At-least-once: leave the job Processing so the orphan watcher recovers it, as after a crash.
+        _logger.LogError(
+            error,
+            "Job {JobId} ended but its failure could not be committed after {Attempts} attempts. It stays Processing and will be recovered by the orphan watcher.",
+            job.Id,
+            CommitRetryDelays.Length + 1);
+        return false;
+    }
+
+    /// <summary>Commits <paramref name="result"/>, retrying after each delay in <see cref="CommitRetryDelays"/>.</summary>
+    /// <returns>Null when the commit succeeded; otherwise the last storage exception.</returns>
+    private async Task<Exception?> TryCommitAsync(JobRecord job, JobExecutionResult result, string outcome)
+    {
+        Exception? last = null;
+        for (var attempt = 0; attempt <= CommitRetryDelays.Length; attempt++)
+        {
+            try
+            {
+                await _storage.CommitJobResultAsync(job.Id, result, CancellationToken.None).ConfigureAwait(false);
+                return null;
+            }
+            catch (Exception ex)
+            {
+                last = ex;
+                if (attempt < CommitRetryDelays.Length)
+                {
+                    _logger.LogWarning(
+                        ex,
+                        "Committing the {Outcome} of job {JobId} failed (attempt {Attempt}). Retrying in {Delay}ms.",
+                        outcome,
+                        job.Id,
+                        attempt + 1,
+                        CommitRetryDelays[attempt].TotalMilliseconds);
+                    await Task.Delay(CommitRetryDelays[attempt], CancellationToken.None).ConfigureAwait(false);
+                }
+            }
+        }
+
+        return last;
+    }
 
     private async Task CommitSuccessAsync(JobRecord job, JobExecutionResult result, bool useBatchAck)
     {
@@ -251,37 +300,20 @@ internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
             return;
         }
 
-        for (var attempt = 0; attempt <= CommitRetryDelays.Length; attempt++)
+        var error = await TryCommitAsync(job, result, "success").ConfigureAwait(false);
+        if (error is null)
         {
-            try
-            {
-                await _storage.CommitJobResultAsync(job.Id, result, CancellationToken.None).ConfigureAwait(false);
-                _wakeUp.Signal();
-                _logger.LogDebug("Job {JobId} completed successfully", job.Id);
-                return;
-            }
-            catch (Exception ex)
-            {
-                if (attempt >= CommitRetryDelays.Length)
-                {
-                    // At-least-once: leave the job Processing so the orphan watcher runs it again, as after a crash.
-                    _logger.LogError(
-                        ex,
-                        "Job {JobId} succeeded but its result could not be committed after {Attempts} attempts. It stays Processing and will be re-run by the orphan watcher.",
-                        job.Id,
-                        attempt + 1);
-                    return;
-                }
-
-                _logger.LogWarning(
-                    ex,
-                    "Committing the success of job {JobId} failed (attempt {Attempt}). Retrying in {Delay}ms.",
-                    job.Id,
-                    attempt + 1,
-                    CommitRetryDelays[attempt].TotalMilliseconds);
-                await Task.Delay(CommitRetryDelays[attempt], CancellationToken.None).ConfigureAwait(false);
-            }
+            _wakeUp.Signal();
+            _logger.LogDebug("Job {JobId} completed successfully", job.Id);
+            return;
         }
+
+        // At-least-once: leave the job Processing so the orphan watcher runs it again, as after a crash.
+        _logger.LogError(
+            error,
+            "Job {JobId} succeeded but its result could not be committed after {Attempts} attempts. It stays Processing and will be re-run by the orphan watcher.",
+            job.Id,
+            CommitRetryDelays.Length + 1);
     }
 
     private async Task<bool> TryHandleExpirationAsync(JobRecord job)

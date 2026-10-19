@@ -65,7 +65,6 @@ nav:
       - Scheduling: concepts/scheduling.md
       - Recurring Jobs: concepts/recurring-jobs.md
       - Queues: concepts/queues.md
-      - Default queue and prefix: concepts/default-queue.md
       - Failure handling:
           - Retries and dead letter: concepts/retries-and-dead-letter.md
           - Retries: concepts/retries.md
@@ -112,5 +111,5 @@ nav:
       - Troubleshooting: reference/troubleshooting.md
       - FAQ: reference/faq.md
       - Migration: reference/migration.md
-      - How We Test: reference/how-we-test.md
+      - How NexJob is tested: reference/how-we-test.md
       - Changelog: reference/changelog.md

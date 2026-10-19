@@ -1,97 +1,143 @@
 ---
 name: nexjob-docs-truth
 description: >-
-  Proves that the NexJob wiki (docs/wiki), the package READMEs and the XML docs say what the code does.
-  Runs the deterministic tools/DocsTruth checks (metrics, options, settings keys, defaults, stale terms) and then a semantic
-  review of the behaviour the documentation describes, in two modes: --scope diff (what a pull request or a version changed)
-  and --scope full (the whole documentation, with a coverage report per page). Use in nexjob-release Phase 3, in
-  nexjob-task-cycle Phase 4.6, or on demand ("is the wiki still true?", "full docs regression").
+  Proves that the NexJob wiki (docs/wiki), the package READMEs, CHANGELOG.md, and XML docs say what the code does.
+  Runs the deterministic tools/DocsTruth checks (metrics, options, settings keys, defaults, stale terms), executes
+  the Changelog vs Diff cross-check (omissions, ghost entries, SemVer guard, relative path lint), and performs a semantic
+  review of documentation accuracy in two modes: --scope diff (PR/task) and --scope full (release).
 ---
 
-# NexJob Docs Truth
+# NexJob Docs & Changelog Truth
 
-The code is the source of truth; `docs/wiki` is the only source of the documentation (there is no second copy to sync).
-This skill proves that the documentation still describes the code. It is permanent: it is not tied to a release.
+> **Workflow Reference:** Follow `.agents/method/workflows/documentation.md`.  
+> **Source of Truth Rule:** The code is the single source of truth; `docs/wiki` and package `README.md` files describe reality.
+
+This skill proves that documentation, the Wiki, and `CHANGELOG.md` stay 100% faithful to the codebase without omissions, drift, or phantom APIs.
+
+---
 
 ## When it runs
 
 | Caller | Scope |
 | --- | --- |
-| `nexjob-task-cycle` Phase 4.6 (a change touched an option, a metric, a default, a behaviour) | `diff` |
-| `nexjob-release` Phase 3 (Truth Gate) | `full` |
-| On demand | either |
-| CI job `Docs Truth` on every pull request | the deterministic tool only, report in the job summary |
+| `nexjob-task-cycle` Phase 4.6 (change touched options, metrics, defaults, or behavior) | `diff` |
+| `nexjob-release` Phase 3 (Release Truth Gate) | `full` |
+| On demand ("is the wiki and changelog true?") | either |
+| CI job `Docs Truth` on every PR | deterministic tool only |
 
-## Step 1: run the tool (always first)
+---
+
+## Subagent Delegation (Token Saver)
+
+Because auditing documentation requires reading multiple `.md` files, READMEs, and the git diff, **delegate this review to an isolated read-only subagent**:
+
+- **Antigravity:** Invoke an isolated subagent (`invoke_subagent` using type `research` or `self`) with the prompt:
+  > *"Act as NexJob Docs & Changelog Reviewer following `.agents/method/workflows/documentation.md` and `.agents/skills/nexjob-docs-truth/SKILL.md`. Inspect `git diff`, cross-check `CHANGELOG.md` under `## [Unreleased]`, audit touched Wiki pages and READMEs, run `tools/DocsTruth`, and return the structured Docs Truth Report."*
+- **Claude Code:** Invoke a background task/agent (e.g. `Task` tool) with the same instructions.
+- **Benefit:** All heavy file reading, diff parsing, and cross-referencing run in an isolated context without polluting the primary conversation.
+
+---
+
+## Step 1: Run the Automated Deterministic Tool (Always First)
 
 ```bash
 dotnet run --project tools/DocsTruth -c Release -- --report docs-truth-report.md --strict
 ```
 
-It always covers the whole surface, whatever the scope:
-
+The tool proves:
 | Check | What it proves |
 | --- | --- |
-| `metrics` | every instrument of the NexJob meter is on `integrations/opentelemetry.md` |
-| `options` | every public property of `NexJobOptions` is mentioned in `reference/configuration.md` |
-| `settings` | every public property of `NexJobSettings` (an appsettings key) is mentioned there |
-| `defaults` | each `// Default:` in the configuration page equals the real default (numbers, booleans, enums, strings, durations such as `15s`, `5min`, `7 days`); anything else is listed as *review* |
-| `stale-terms` | phrases from `tools/DocsTruth/stale-terms.json` that stopped being true, in the wiki, the READMEs and the XML docs |
+| `metrics` | Every instrument in `NexJobMetrics` is documented in `integrations/opentelemetry.md` |
+| `options` | Every public property in `NexJobOptions` is documented in `reference/configuration.md` |
+| `settings` | Every public property in `NexJobSettings` (appsettings keys) is documented there |
+| `defaults` | Each `// Default:` in the configuration page equals the real runtime default |
+| `stale-terms` | Phrases from `tools/DocsTruth/stale-terms.json` that stopped being true are removed |
 
-- Exit code 1 only with `--strict` and at least one *drift* finding; *review* items never fail.
-- Fix every *drift* in the documentation (never in the code) and re-run until the tool reports 0 drift.
-- Look at every *review* item by hand and say what you concluded.
+- Exit code 1 with `--strict` if any *drift* is detected.
+- Fix every *drift* in the documentation (never in code) until the tool reports 0 drift.
 
-## Step 2: semantic review (what a script cannot do)
+---
 
-For each described behaviour, open the code that implements it and confirm the sentence is still true: defaults, order of
-operations, what happens on failure, which name is stored, what is logged, what is counted. Quote the code location in the
-finding. A claim you could not verify is reported as unverified, never as correct.
+## Step 2: Changelog ↔ Diff Cross-Check (Auditoria Cruzada)
+
+Cross-check `CHANGELOG.md` (`## [Unreleased]`) against `git diff <base>...HEAD --stat -- src/`:
+
+1. **Omissions Check (Diff → Changelog):**
+   - Did any public API, option, behavior, or package configuration change in `src/` without an entry in `CHANGELOG.md`?
+   - Were `.csproj` dependencies bumped without being listed under `### Dependencies` (v6.2.0)?
+2. **Ghost & Duplicate Check (Changelog → Diff):**
+   - Does every bullet point in `## [Unreleased]` correspond to an actual change in the diff?
+   - Are any items duplicated across different categories (e.g. mentioned in both `### Added` and `### Fixed`)?
+3. **SemVer & Milestone Guard (v6.5.0):**
+   - If the target release is a PATCH (`vX.Y.Z`), verify that NO new features or options exist under `### Added`. Patch releases accept strictly bug fixes (`### Fixed`).
+4. **Markdown Link Linting (v6.0.0):**
+   - Verify zero repo-relative links (`[foo](src/...)`) exist in `CHANGELOG.md`. Paths must be plain text because the changelog is copied into the Wiki and relative links break strict MkDocs site builds.
+
+---
+
+## Step 3: Semantic Review (What a Script Cannot Do)
+
+For each changed behavior, verify that Wiki pages and READMEs accurately describe the implementation:
 
 ### `--scope diff`
-1. List what changed: `git diff <base>...HEAD --stat` (a pull request) or `git diff <last-tag>...HEAD --stat` (a version).
-2. Map the changed code areas to the pages that describe them (table below) and review only those pages and the
-   READMEs of the changed packages.
-3. Also review the pages that link to those pages through the single-source rules (for example `multi-service.md` links to
-   `queues.md`): the rule lives in one page, the others must only link.
+1. List changed components: `git diff <base>...HEAD --stat -- src/`.
+2. Map changed code to the corresponding Wiki pages (table below) and package `README.md` files.
+3. Review pages that link to those pages via single-source rules.
 
 ### `--scope full`
-Review the whole documentation in batches, one area at a time, so the context stays small. Start every batch from the tool report.
+Review the whole documentation in batches, one area at a time:
 
-| Area | Wiki pages | Code |
+| Area | Wiki pages | Code Source |
 | --- | --- | --- |
-| Queues and recurring | `concepts/queues.md`, `concepts/recurring-jobs.md`, `concepts/scheduling.md`, `guides/multi-service.md`, `guides/runtime-control.md`, `guides/execution-windows.md` | `src/NexJob/Internal` (dispatcher, scheduler, registrar, `QueueNames`), `NexJobOptions` |
+| Queues & recurring | `concepts/queues.md`, `concepts/recurring-jobs.md`, `concepts/scheduling.md`, `guides/multi-service.md`, `guides/runtime-control.md`, `guides/execution-windows.md` | `src/NexJob/Internal`, `NexJobOptions` |
 | Retry, dead letter, guarantees | `concepts/retries-and-dead-letter.md`, `concepts/retries.md`, `concepts/dead-letter.md`, `concepts/dead-letter-forwarding.md`, `concepts/delivery-guarantees.md`, `concepts/idempotency.md`, `concepts/continuations.md`, `guides/circuit-breaker.md`, `guides/throttling.md` | `JobExecutor`, retry policy, dead-letter dispatcher, throttle registry, circuit breaker |
 | Jobs and context | `concepts/job-types.md`, `guides/job-context.md`, `guides/job-filters.md`, `guides/best-practices.md`, `guides/common-scenarios.md`, `guides/writing-tests.md` | public interfaces and attributes in `src/NexJob` |
-| Storage | `storage/*.md`, `reference/configuration.md` (storage parts) | `src/NexJob.Postgres`, `SqlServer`, `MongoDB`, `Redis` |
+| Storage providers | `storage/*.md`, `reference/configuration.md` (storage parts) | `src/NexJob.Postgres`, `SqlServer`, `MongoDB`, `Redis` |
 | Dashboard | `integrations/dashboard.md`, `playground.md` | `src/NexJob.Dashboard*` |
 | Triggers and brokers | `integrations/triggers.md`, `integrations/kafka.md`, `integrations/rabbitmq.md`, `src/NexJob.Trigger.*/README.md`, `src/NexJob.Kafka/README.md`, `src/NexJob.RabbitMQ/README.md` | `src/NexJob.Trigger.*`, `NexJob.Kafka`, `NexJob.RabbitMQ` |
-| Observability and operations | `integrations/opentelemetry.md`, `guides/alerts.md`, `reference/troubleshooting.md`, `reference/faq.md` | `NexJobMetrics`, `NexJobActivitySource`, log messages |
-| Reference and onboarding | `reference/configuration.md`, `reference/migration.md`, `introduction.md`, `mental-model.md`, `quickstart.md`, `index.md` | `NexJobOptions`, `NexJobSettings`, `CHANGELOG.md` |
+| Observability & ops | `integrations/opentelemetry.md`, `guides/alerts.md`, `reference/troubleshooting.md`, `reference/faq.md` | `NexJobMetrics`, `NexJobActivitySource`, log messages |
+| Reference & onboarding | `reference/configuration.md`, `reference/migration.md`, `introduction.md`, `mental-model.md`, `quickstart.md`, `index.md` | `NexJobOptions`, `NexJobSettings`, `CHANGELOG.md` |
 
-Not reviewed: `reference/changelog.md` (written at release time) and `reference/how-we-test.md` unless tests changed.
+---
 
-## Output: the coverage report
+## Step 4: Site Build Verification (MkDocs Strict)
 
-End every run with this table, in the issue or in the release PR, so what was not checked is visible:
+When documentation pages or the changelog change, verify the static site build:
 
+```bash
+# Prepare wiki files (syncs root CHANGELOG.md into wiki reference)
+docs/site/prepare.sh
+
+# Build MkDocs in strict mode (fails on broken links or warnings)
+mkdocs build --strict
 ```
+
+---
+
+## Output: The Coverage Report
+
+End every run with this structured report:
+
+```markdown
 Docs truth report: scope <diff|full>, version <x.y.z>, tool: <n> drift, <m> review
-| Page | Reviewed | Findings | Fixed |
+| Page / Area | Reviewed | Findings | Status |
 | --- | --- | --- | --- |
-| concepts/queues.md | yes (code: DefaultJobControlService, NexJobOptions) | 1 | yes |
-| guides/job-filters.md | no (out of the diff) | - | - |
-Unverified claims: <list, or none>
+| CHANGELOG.md | yes (cross-checked against diff) | 0 omitted, 0 duplicates | PASS |
+| concepts/queues.md | yes (code: DefaultJobControlService) | 1 outdated default | FIXED |
+| guides/job-filters.md | no (out of diff scope) | - | - |
+
+- Unverified claims: <list, or none>
+- CHANGELOG cross-check: 100% synchronized with git diff
+- MkDocs strict build: PASS
 ```
+
+---
 
 ## Rules
-1. The code wins. If the code looks wrong, open an issue; do not change the documentation to match a bug and do not change the code here.
-2. Documentation fixes go straight to `develop` (or into the pull request being reviewed); they never touch `src/` logic.
-3. One source per rule: a rule is written in one page and the others link to it. If you find a rule copied in two pages, replace the copy by a link.
-4. Never claim a page is correct without having opened the code it describes. Say "unverified".
-5. A new breaking change adds its stale phrases to `tools/DocsTruth/stale-terms.json` with `since` set to the version, so the old wording cannot come back.
 
-## Extending the tool
-- A new check is a static class in `tools/DocsTruth` with a `Run(...)` returning `Finding`s, wired in `DocsTruthRunner`, with
-  tests in `tests/NexJob.Tests/DocsTruth` (positive, negative, invalid input; red first).
-- The CI job `Docs Truth` is non-blocking. When the baseline stays at 0 drift, remove `continue-on-error` and it blocks.
+1. **The code wins:** If the code looks wrong, open an issue; do not change documentation to match a bug.
+2. **Docs fixes touch docs only:** Documentation fixes go straight to `develop` (or the PR being reviewed); they never touch `src/` logic.
+3. **One source per rule:** A rule is written in one canonical page; other pages link to it.
+4. **Never claim a page is correct without opening the code:** If unverified, state "unverified".
+5. **Compile snippets (v5.6.0):** Code snippets in docs must be valid and compilable.
+6. **Plain text paths in CHANGELOG (v6.0.0):** No repo-relative markdown links.

@@ -1,6 +1,6 @@
 # NexJob — AI Foundation (Extended)
 
-**Read this for complex scenarios or architectural compliance checks.**
+**Read this for complex scenarios, broker triggers, storage providers, or architectural compliance checks.**
 
 ---
 
@@ -17,6 +17,10 @@ See `docs/ARCHITECTURE.md` for the authoritative system design.
 - Periodically queries `IJobStorage.FetchNextAsync` for eligible jobs across queues.
 - Manages concurrency worker slots and respects queue-level pauses and circuit breakers.
 - Hands each fetched job to `IJobExecutor.ExecuteJobAsync`.
+
+### Hosting Lifecycle on .NET 10
+In `Microsoft.Extensions.Hosting` 10, `BackgroundService.StartAsync` no longer executes `ExecuteAsync` up to its first `await`.
+Any validation or startup check that must fail fast during host startup MUST live in an explicit `StartAsync` override, never in `ExecuteAsync`.
 
 ### JobExecutor is the execution pipeline orchestrator
 Extracted from the dispatcher in v3, `JobExecutor` executes a single job through defined stages:
@@ -36,6 +40,37 @@ The dispatcher must log the *reason* for every automatic decision:
 - Throttle wait started → `LogDebug`
 - Retry scheduled → `LogInformation` with delay and scheduled time
 - Dead-letter → `LogError`
+
+---
+
+## Storage Architecture & Contract Segregation
+
+### Segregated Storage Contracts
+NexJob separates storage concerns into three distinct contracts:
+- `IJobStorage` — hot-path execution (FetchNext, CommitJobResult, Heartbeat, AcquireLock).
+- `IRecurringStorage` — recurring job scheduling and cron evaluation.
+- `IDashboardStorage` — read-heavy queries for metrics, job lists, and server status.
+- `IStorageProvider` — composed interface uniting all three contracts.
+
+**Rule:** Core interfaces (`IJobStorage`, `IRecurringStorage`, `IDashboardStorage`) are stable contracts and must never be modified without architect approval.
+
+### Read Replica Support
+PostgreSQL and SQL Server support `UseDashboardReadReplica()` to route `IDashboardStorage` queries to secondary nodes, protecting hot execution paths from dashboard query loads.
+
+### Mongo Serializer Bootstrap
+In MongoDB integration, registering serializers after driver defaults are cached causes `BsonSerializationException`. Always ensure `MongoSerializerBootstrap` registers custom serializers prior to container or provider instantiation.
+
+---
+
+## Trigger Implementation Contract (The 5 Guarantees)
+
+Every trigger provider (RabbitMQ, Kafka, Azure Service Bus, AWS SQS, Google Pub/Sub, Salesforce) must satisfy all 5 guarantees:
+
+1. **Never silently drop:** If `IScheduler.EnqueueAsync` fails, the message must be routed to the broker dead-letter destination or rethrown for broker-level retry.
+2. **Idempotency:** Always map the broker's native message ID to `idempotencyKey` when enqueuing.
+3. **Trace propagation:** Extract `traceparent` from broker headers and assign to `JobRecord.TraceParent` to ensure distributed tracing continuity.
+4. **Signal after enqueue:** Handled internally by `IScheduler.EnqueueAsync` (never invoke `_wakeUpChannel.Signal()` directly from triggers).
+5. **Ack only after storage write:** Never acknowledge the broker message before `IScheduler.EnqueueAsync` completes successfully.
 
 ---
 
@@ -111,7 +146,7 @@ Provider extension methods register before `AddNexJob()` is called, so their reg
 4. Simple jobs must remain simple (`IJob` needs no input complexity)
 5. No unnecessary DTO requirements (input must be minimal and reproducible)
 6. Storage is authoritative for all state (no cache optimizations override storage)
-7. Zero warnings in Release builds (treat warnings as errors)
+7. Zero warnings in Release builds (`TreatWarningsAsErrors = true`) on both `net8.0` and `net10.0`
 
 ---
 
@@ -122,6 +157,11 @@ Provider extension methods register before `AddNexJob()` is called, so their reg
 - Validates scenarios against **real storage providers** via Docker.
 - Coverage: Retry & Dead-Letter, Concurrency, Crash Recovery, Deadline Enforcement, Wake-Up Latency.
 - Providers: PostgreSQL 16, SQL Server 2022, Redis 7, MongoDB 7.
+
+### Test Integrity & No Fixed Delay
+- Never wait with a fixed delay (`Task.Delay(50)`).
+- Use `TestWait.UntilAsync`, `TestWait.SucceededAsync`, `TestWait.InvokedAsync`, or `TaskCompletionSource`.
+- Every feature or bug fix must provide a **3N Mandatory Matrix** (Positive, Negative, Boundary).
 
 ---
 
@@ -134,6 +174,7 @@ Verify these during implementation/fix:
 - Does not introduce static/global state.
 - Designs don't prevent deterministic testing.
 - No in-memory optimization overrides storage truth.
+- Compiles with 0 warnings on `net8.0` and `net10.0`.
 
 ---
 
@@ -141,6 +182,7 @@ Verify these during implementation/fix:
 
 ### Public API
 - All public types and members must have XML documentation (`///`).
+- Add overloads, never optional parameters to public interfaces (preserves binary/mock compatibility).
 
 ### Async & Concurrency
 - Never use `.Result` or `.Wait()`.
