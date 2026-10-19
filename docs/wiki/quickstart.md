@@ -116,7 +116,7 @@ You will see the job's output in the console:
 Hello at 2026-10-11T13:05:29.7182279+00:00
 ```
 
-The dispatcher runs as a hosted `BackgroundService` in your own process. There is no separate worker process or sidecar.
+The dispatcher runs as a hosted `BackgroundService` in your own process. There is no separate worker process or sidecar. To split the web app and the workers into different processes, see [Web app and worker in separate processes](guides/multi-service.md#web-app-and-worker-in-separate-processes).
 
 ## Going further
 
