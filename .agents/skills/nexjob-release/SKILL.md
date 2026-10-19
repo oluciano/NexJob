@@ -1,279 +1,209 @@
 ---
 name: nexjob-release
 description: >-
-  Executes the official NexJob release cycle: NuGet/tag version check, automated SemVer detection (Major/Minor/Patch)
-  with user confirmation, Code vs Documentation Truth Gate (auto-updating Wiki and package READMEs directly on develop without modifying code),
-  quality & packaging verification gate, and opening the release PR from develop to main.
+  Executes the streamlined, audit-proof NexJob release cycle with zero prompt fatigue:
+  autonomously calculates SemVer, synchronizes Wiki and CHANGELOG via DocsTruth, validates
+  Release build and unit tests, and presents a single decision gate before opening the Release PR to main.
 ---
 
-# NexJob Release Cycle Skill
+# NexJob Release Cycle (Zero Prompt Fatigue)
 
-This skill enforces an audit-proof, disciplined, and automated workflow for releasing **NexJob** to NuGet and GitHub.
-It executes the canonical governance defined in `.agents/method/modes/04-release-mode.md`.
-It guarantees that code and documentation (Wiki + Package READMEs) are strictly aligned before any release reaches `main`.
-
----
-
-## Non-Negotiable Invariants
-
-1. **Truth Invariant (Code vs Documentation):** The code is the ultimate source of truth. If Wiki or READMEs are outdated, missing features, or describe contradictory behavior, **fix the documentation immediately** — **NEVER** modify production code during the release cycle.
-2. **Direct Doc Sync on `develop`:** Documentation fixes (Wiki in `docs/wiki/` and Package READMEs in `src/*/README.md`) can be committed directly to `develop` without a separate PR before opening the release PR. (Samples are excluded from release sync).
-3. **NuGet & Git Tag Alignment:** Always query `https://api.nuget.org/v3-flatcontainer/nexjob/index.json` and local `git tag` to ensure version monotonicity. Never reuse an existing tag or version.
-4. **SemVer Detection & User Confirmation:** Automatically inspect commits and `CHANGELOG.md` since the last tag to determine if the release is **MAJOR**, **MINOR**, or **PATCH**, propose the next version number, and **ask the user to confirm or override**.
-5. **Quality Gate:** Release builds must pass with **0 warnings** (`TreatWarningsAsErrors = true`), all unit tests must pass, and `dotnet pack` must produce valid `.nupkg` packages.
-6. **Branch Strategy:** Releases are ALWAYS merged via PR from `develop` into `main` using **"Create a merge commit"** (not squash, not rebase). Never push directly to `main`. Never manually create git tags (CI creates the tag upon merge to `main`).
-7. **Release Size Guard:** A release must stay small enough to review, canary and roll back. Phase 1 measures the size of what is about to ship and stops the flow when it is oversized (see the thresholds there). An oversized release ships only after the user picks a split or explicitly accepts the mitigation checklist. Never let `[Unreleased]` grow unnoticed: propose a release when it reaches the "green" cap.
+This skill executes an automated, streamlined, and audit-proof release cycle for **NexJob**.
+It eliminates confirmation fatigue by running all pre-flight calculations, doc sync, and quality checks **autonomously in one continuous pass**, pausing for user confirmation **only once** before opening the Release PR.
 
 ---
 
-## The 7-Phase Release Flow
+## Non-Negotiable Release Invariants
+
+1. **Single User Gate:** Never prompt the user for intermediate steps (e.g., checking tags, running tests, syncing docs). Run all pre-flight stages autonomously and pause only to present the final release summary and confirm PR creation.
+2. **Code is the Source of Truth:** Never alter production code (`src/**/*.cs`) to match documentation. Always update docs to match the code.
+3. **SemVer Milestone Guard:**
+   - **PATCH (`vX.Y.Z`):** Strictly bug fixes and docs. Zero new features, zero new public APIs.
+   - **MINOR (`vX.Y.0`):** New backwards-compatible features, triggers, providers, options.
+   - **MAJOR (`vX.0.0`):** Breaking public contract or storage format changes.
+4. **Merge Commit Requirement:** Release PRs from `develop` into `main` MUST be merged using **"Create a merge commit"** (`--no-ff`), never Squash or Rebase, preserving git history and preventing phantom commit drift.
+5. **Quality Floor:** Zero compiler warnings (`TreatWarningsAsErrors = true`), all unit tests pass, and packages pack cleanly.
+
+---
+
+## The 3-Step Streamlined Flow
 
 ```
-[Phase 1: Version Auditing & SemVer Detection]
-                     │
-                     ▼
-[Phase 2: User Confirmation of Version]
-                     │
-                     ▼
-[Phase 3: Code vs Documentation Truth Gate (Auto-Sync to develop)]
-                     │
-                     ▼
-[Phase 4: Pre-Release Quality & Packaging Verification]
-                     │
-                     ▼
-[Phase 5: Version Bump, Changelog & Release PR to main]
-                     │
-                     ▼
-[Phase 6: Post-Release Sync-Back (main ➔ develop)]
-                     │
-                     ▼
-[Phase 7: Post-Release Learning Snapshot (Async Retro)]
+┌────────────────────────────────────────────────────────┐
+│ STEP 1: Autonomous Pre-Flight & Verification           │
+│ - SemVer detection & NuGet check                       │
+│ - DocsTruth & CHANGELOG ↔ Diff Cross-Check             │
+│ - Zero-warning build, unit tests & dotnet pack         │
+│ - Automatic Directory.Build.props & CHANGELOG bump     │
+└──────────────────────────┬─────────────────────────────┘
+                           │ (Silent execution)
+                           ▼
+┌────────────────────────────────────────────────────────┐
+│ STEP 2: The Single Human Decision Gate                 │
+│ - Present executive release report                     │
+│ - Ask user ONCE: "Confirm & Open Release PR to main?"  │
+└──────────────────────────┬─────────────────────────────┘
+                           │ (User approves)
+                           ▼
+┌────────────────────────────────────────────────────────┐
+│ STEP 3: PR Creation & Automated Post-Release           │
+│ - Commit bump to develop & push                        │
+│ - Open Release PR (develop ➔ main)                     │
+│ - Post-merge: single-command sync-back (main ➔ develop)│
+└────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Phase 1: Version Auditing & SemVer Detection
+## Step 1: Autonomous Pre-Flight & Verification (Continuous Pass)
 
-1. **Query NuGet & Git Tags:**
+The agent executes the following checks sequentially in the workspace without prompting:
+
+### 1. Version & SemVer Auditing
+1. Query published versions:
    ```bash
    curl -s "https://api.nuget.org/v3-flatcontainer/nexjob/index.json"
-   git tag -l -n1
+   LAST_TAG=$(git describe --tags --abbrev=0)
    ```
-2. **Inspect Changes Since Last Tag:**
-   ```bash
-   git log $(git describe --tags --abbrev=0)..HEAD --oneline
-   ```
-3. **Determine SemVer Category:**
-   - **MAJOR (vX.0.0):** Breaking changes to public interfaces (`IJob`, `IJobStorage`, public constructors, removed/renamed public APIs).
-   - **MINOR (vX.Y.0):** New backwards-compatible features, new dashboard pages, new triggers, new options/delegates, new extension methods.
-   - **PATCH (vX.Y.Z):** Bug fixes, performance optimizations, documentation-only changes, zero new features.
-4. Formulate the proposed version (e.g. if NuGet has `5.3.0` and new dashboard features are added, propose `v5.4.0`).
-5. **Measure the release size (Release Size Guard):**
-   ```bash
-   LAST=$(git describe --tags --abbrev=0)
-   git rev-list --count $LAST..HEAD                                   # commits
-   awk '/^## \[Unreleased\]/{f=1;next} /^## \[/{f=0} f && /^- \*\*/' CHANGELOG.md | wc -l   # changelog entries
-   git diff --name-only $LAST..HEAD -- src | wc -l                    # changed files in src/
-   ```
-   Reference points from history: usual releases had 1-4 entries; v5.2.0 had 19; v5.6.0 had 43 (105 commits, 86 files in `src/`) and needed a risk review, a documentation audit and a follow-up patch plan.
+2. Classify changes since `$LAST_TAG` into PATCH, MINOR, or MAJOR based on commits and `CHANGELOG.md`.
+3. Check Release Size Guard:
+   - Commits: `git rev-list --count $LAST_TAG..HEAD`
+   - Files in `src/`: `git diff --name-only $LAST_TAG..HEAD -- src | wc -l`
+   - Entries: count in `## [Unreleased]` of `CHANGELOG.md`
+   - Classify size: 🟢 Green (≤12 entries), 🟡 Yellow (13-24 entries), 🔴 Red (≥25 entries).
 
-   | Size | Entries | Commits | Files in `src/` | What to do |
-   |---|---|---|---|---|
-   | 🟢 Green | ≤ 12 | ≤ 40 | ≤ 25 | Proceed. |
-   | 🟡 Yellow | 13-24 | 41-80 | 26-40 | Proceed only after the **mitigation checklist** below. |
-   | 🔴 Red (oversized) | ≥ 25 | > 80 | > 40 | **Stop.** Present the options below and wait for the user. |
+### 2. Docs & Changelog Truth Gate
+Execute `.agents/method/workflows/documentation.md`:
+1. Run `dotnet run --project tools/DocsTruth -c Release -- --report docs-truth-report.md --strict`. Fix any doc drift until 0 findings.
+2. Cross-check `CHANGELOG.md` against `git diff $LAST_TAG...HEAD --stat -- src/`:
+   - Verify no unrecorded public changes.
+   - Verify all library dependency bumps are under `### Dependencies` (v6.2.0).
+   - Verify zero repo-relative markdown links (`[path](src/...)`) in `CHANGELOG.md` (v6.0.0).
+3. If Wiki pages or READMEs need updates to match code, commit them directly to `develop`:
+   `git commit -am "docs: synchronize wiki and readmes for vX.Y.Z release"`
 
-   A **PATCH** is only valid when it holds bug fixes alone: at most 10 entries, no `feat`, no new public API, no change to a stored data format, no behaviour change. Anything else is a MINOR (or a split).
-
-   **Options when Red:** (a) release earlier, from the last known-good commit, and keep the rest in `develop`; (b) cut a fix-only branch from the last tag with the reviewed fixes and release that as a PATCH, then the features as the next MINOR; (c) proceed anyway, recording in the release PR that it is oversized and completing the mitigation checklist.
-
-   **Mitigation checklist (Yellow and Red):**
-   - Every entry that changes observable behaviour is listed in the release PR and in `docs/wiki/reference/migration.md` with what the user must do.
-   - Every change to a stored format or key (schema, Redis keys, Mongo documents) has an explicit **mixed-version (rolling upgrade) statement**: what happens while old and new nodes run together, and how to recover.
-   - The full reliability suite (`tests/NexJob.ReliabilityTests`) was run on every database provider (`gh workflow run reliability.yml --ref develop`, also scheduled nightly) and its result recorded, with every failure classified as test issue or product issue.
-   - Code examples added or changed in the docs were compiled and executed.
-   - A rollout note (upgrade one node first, what to watch) and a rollback note (previous version, whether the schema migrations are reversible) are in the release PR.
-   - A patch milestone (`vX.Y.Z+1`) exists for the follow-ups already known, so they do not pile into the next minor.
-
----
-
-## Phase 2: User Confirmation of Version
-
-Always ask the user explicitly before proceeding:
-- Present the detected changes.
-- Explain whether it was classified as **MAJOR**, **MINOR**, or **PATCH**.
-- Propose the next version (e.g. `v5.4.0`).
-- Report the size (entries, commits, files in `src/`) and its colour from the Release Size Guard; on Red, do not continue until the user chooses an option.
-- Wait for user confirmation or alternative version request.
-
----
-
-## Phase 3: Code vs Documentation Truth Gate (Auto-Fix on `develop`)
-
-> **CRITICAL RULE:** **NEVER alter production code (`src/**/*.cs`) to match docs.** Always update the docs to match the real code!
-
-1. **Audit Root `README.md` & `GEMINI.md`:**
-   - **Packages Table:** Update all version badges in the Packages table to the new version `vX.Y.Z` (`img.shields.io/badge/nuget-vX.Y.Z-blue`).
-   - **Roadmap:** Add the new version line with `✅` and summary of features delivered in `vX.Y.Z`.
-   - **`GEMINI.md`:** Update `Current published version: **vX.Y.Z**`.
-2. **Audit Package READMEs (`src/*/README.md`):**
-   - Identify packages with code changes in this release (e.g. `src/NexJob.Dashboard/README.md`, `src/NexJob.Kafka/README.md`).
-   - Check if options, methods, endpoints, themes, or UI features are accurately described.
-   - If outdated or missing info, **edit the README immediately**.
-3. **There is no external documentation to synchronize.** `docs/wiki` is the single source of the documentation (the Mintlify mirror was retired).
-4. **Run the `nexjob-docs-truth` skill with `--scope full`** (see `.agents/skills/nexjob-docs-truth/SKILL.md`):
-   - Step 1: `dotnet run --project tools/DocsTruth -c Release -- --report docs-truth-report.md --strict`; fix every *drift* in the
-     documentation until it reports 0 and look at every *review* item.
-   - Step 2: the semantic review of the whole documentation in batches by area, ending with the **coverage report per page**.
-   - Attach the tool report and the coverage report to the release PR. A page that was not reviewed must be listed as such.
-   - Then run `docs/site/prepare.sh && mkdocs build` to verify 0 broken links (`strict: true`).
-5. **Commit & Push Docs Direct to `develop`:**
-   - Commit all doc and wiki updates with message: `docs: synchronize wiki, root readme and package readmes for vX.Y.Z release`.
-   - Push directly to `origin/develop`.
-
----
-
-## Phase 4: Pre-Release Quality & Packaging Verification
-
-Execute the non-negotiable compilation and packaging gate:
-
+### 3. Pre-Release Quality Compilation & Unit Tests
 ```bash
-# 1. Zero compiler warnings in Release
+# 1. Zero compiler warnings across net8.0 and net10.0
 dotnet build -c Release
 
 # 2. All unit tests pass
 dotnet test tests/NexJob.Tests/ -c Release --no-build
 
-# 3. Formatting verified
+# 3. Code formatting verified
 dotnet format --verify-no-changes
 
-# 4. Packaging validation (assert all nupkgs build cleanly)
+# 4. Packaging validation
 dotnet pack -c Release
-
-# 5. Full Dashboard UI Regression Gate (Autonomous Headless Browser)
-# Ensures all routes, visual states, and adversarial edge-cases pass before shipping
-node .agents/skills/nexjob-dashboard-chaos-gate/scripts/full-regression.js
 ```
 
-If any check fails: **STOP**. Fix the issue, verify again, and only continue when 100% green.
+### 4. Packaging Rehearsal (Nothing is Published)
 
-### Packaging rehearsal (nothing is published)
+`dotnet pack` succeeding does not prove that a user can install the packages. Rehearse the release the way a user will meet it, with a release-candidate version and a local feed. Do this autonomously before opening the Release PR:
 
-`dotnet pack` succeeding does not prove that a user can install the packages. Rehearse the release the way a user will meet it, with a release-candidate version and a local feed. Do this before opening the Release PR; it takes a few minutes.
-
-1. **Every packable project is in the publish workflow.** The projects under `src/` that are packable must be exactly the ones `publish.yml` packs (a new package that is missing from that list is never published).
+1. **Verify All Packable Projects Are in Publish Workflow:**
    ```bash
    comm -3 <(grep -L "<IsPackable>false" src/*/*.csproj | xargs -n1 basename | sed 's/\.csproj//' | sort) \
            <(grep -o "dotnet pack src/[A-Za-z.]*/" .github/workflows/publish.yml | sed 's|dotnet pack src/||; s|/||' | sort)
    ```
-   No output means they match.
-2. **Pack everything as `X.Y.Z-rc.1` into a local folder.**
+   *Requirement:* Output must be completely empty (all packable projects accounted for).
+2. **Pack Release Candidate into Local Temporary Feed:**
    ```bash
    FEED=$(mktemp -d)
    for p in src/*/*.csproj; do dotnet pack "$p" -c Release -p:MinVerVersionOverride=X.Y.Z-rc.1 --output "$FEED"; done
    ```
-   Open each `.nupkg`: it has the DLL, the XML documentation, the README and the license, and its dependency on `NexJob` is `X.Y.Z-rc.1`.
-3. **Install them in an empty application.** Create a new project **outside the repository**, with a `nuget.config` that lists the local feed and nuget.org (use `packageSourceMapping` so `NexJob*` comes only from the local feed), and reference **all** the packages at once. It must restore and build with 0 warnings: this catches version conflicts between packages.
-4. **Run it on every provider.** In that application, register a job that succeeds and one that fails with an `IDeadLetterHandler`, and check that the first ends `Succeeded`, the second `Failed` and the handler is called once, on InMemory, PostgreSQL, SQL Server, Redis and MongoDB. Use throwaway containers on high ports (`docker run --rm -p 35432:5432 ...`) and stop them afterwards. **Never use the ports of the `dev-*` containers**, they belong to the developer. Remember to register the job classes in DI.
-5. **Public API against the last release** (optional, manual): compare the public types and members of `NexJob.dll` between the last published version and the release candidate. Anything removed is a breaking change and needs a major version.
+   Verify each `.nupkg` contains DLL, XML documentation, README, and license, with correct `X.Y.Z-rc.1` dependency version.
+3. **Install in Empty Consumer Application:**
+   Create a throwaway console project **outside the repository** with a `nuget.config` mapping `NexJob*` to the local feed `$FEED`. Reference the packages simultaneously to confirm clean restore and zero version conflicts.
+4. **Smoke Test Storage Providers:**
+   Register jobs and verify execution, retries, and dead-letter handling across providers using throwaway containers on high ports (`35xxx`).
+5. **Public API Contract Diff:**
+   Compare public API surface of `NexJob.dll` against the last published release to ensure no accidental breaking changes exist in a minor/patch.
 
-If any step fails, fix it on `develop` and rehearse again. Do not publish the release candidate to NuGet: `publish.yml` only publishes tags on `main`, and a published NuGet version cannot be deleted.
+If any rehearsal step fails, the agent pauses and reports the exact failure before touching `Directory.Build.props`.
+
+### 5. Prepare Version Bump & Changelog
+1. Update `<VersionPrefix>X.Y.Z</VersionPrefix>` in `Directory.Build.props`.
+2. Move content from `## [Unreleased]` in `CHANGELOG.md` to a new section:
+   ```markdown
+   ## [X.Y.Z] - YYYY-MM-DD
+   ```
+   Leave a fresh, blank `## [Unreleased]` at the top.
 
 ---
 
-## Phase 5: Version Bump, Changelog & Release PR to `main`
+## Step 2: The Single Human Decision Gate
 
-1. **Update `Directory.Build.props`:**
-   - Set `<VersionPrefix>X.Y.Z</VersionPrefix>`.
-2. **Update `CHANGELOG.md`:**
-   - Move the content under `## [Unreleased]` to a new release header:
-     ```markdown
-     ## [X.Y.Z] - YYYY-MM-DD
-     ```
-   - Leave a blank `## [Unreleased]` section at the top.
-3. **Commit on `develop`:**
-   ```bash
-   git add Directory.Build.props CHANGELOG.md
-   git commit -m "chore(release): prepare vX.Y.Z"
-   git push origin develop
-   ```
-4. **Open Release PR (`develop` ➔ `main`):**
-   ```bash
-   gh pr create \
-     --base main \
-     --head develop \
-     --title "release: vX.Y.Z" \
-     --body "## Summary
-   Release vX.Y.Z of NexJob.
-   
-   ### Key Changes
-   <Brief summary from CHANGELOG>
-   
-   ### Checklist
-   - [x] Version bump in Directory.Build.props (vX.Y.Z)
-   - [x] CHANGELOG.md updated
-   - [x] Code vs Documentation Truth Gate passed (Wiki & Package READMEs synchronized)
-   - [x] Release build 0 warnings
-   - [x] Unit tests 100% passing
-   - [x] NuGet package creation verified"
-   ```
-5. **Handoff:** Notify the user that the Release PR is open and ready to merge. Once merged to `main`, GitHub Actions automatically creates the git tag, GitHub Release, and publishes to NuGet.org.
+The agent stops and presents a single, concise executive summary:
+
+```markdown
+### 🚀 Release Candidate Ready: vX.Y.Z
+
+- **Classification:** [PATCH | MINOR | MAJOR]
+- **Release Size:** [🟢 Green | 🟡 Yellow | 🔴 Red] (<N> entries, <M> commits, <K> files in src/)
+- **Quality Gates:**
+  - [x] Zero compiler warnings (`net8.0` & `net10.0`)
+  - [x] Unit test suite 100% green
+  - [x] Packaging Rehearsal passed (all 16 packages restore & install cleanly)
+  - [x] DocsTruth: 0 drift & CHANGELOG ↔ Diff cross-checked
+- **Changes Prepared:**
+  - `Directory.Build.props` -> `<VersionPrefix>X.Y.Z</VersionPrefix>`
+  - `CHANGELOG.md` -> `## [X.Y.Z] - YYYY-MM-DD`
+
+👉 **Do you approve opening the Release PR for vX.Y.Z from `develop` to `main`?**
+```
 
 ---
 
-## Phase 6: Post-Release Sync-Back (`main` ➔ `develop`)
+## Step 3: PR Creation & Automated Post-Release
 
-Since release PRs are merged into `main` using **Merge Commit (`--no-ff`)** (the GitHub default "Create a merge commit" option), the merge commit and git tag must be synced back into `develop` to keep the branches aligned:
+Upon receiving user approval:
 
-> ⚠️ **Critical:** The release PR on GitHub MUST be merged using **"Create a merge commit"** — NOT "Squash and merge" or "Rebase and merge".
-> Squash merge collapses all commits into one new SHA. Git then no longer recognises those commits as present in `main`, causing ghost duplicates (e.g. 70+ phantom commits) to appear in every subsequent release PR. Merge Commit preserves the original SHAs so future PRs only show genuinely new commits.
+### 1. Commit Bump and Open Release PR
+```bash
+git add Directory.Build.props CHANGELOG.md
+git commit -m "chore(release): prepare vX.Y.Z"
+git push origin develop
 
-1. **Pull and Sync Back:**
-   ```bash
-   git checkout develop
-   git pull origin develop
-   git fetch origin --tags
-   git merge origin/main --no-ff -m "chore: sync release vX.Y.Z from main into develop"
-   git push origin develop
-   ```
-2. **Verification:** Confirm `develop` contains the release tag and is strictly even/ahead of `origin/main`.
-   ```bash
-   git log --oneline develop..origin/main   # must be empty (0 commits)
-   git log --oneline origin/main..develop   # shows only new work since release
-   ```
-3. **Live Demo Deployment (Fly.io Playground):**
-   When the release includes changes to `NexJob.Dashboard`, `NexJob.Dashboard.Standalone`, `NexJob.Sample.WorkerService`, or for any official minor/major release:
-   - Deploy the released code from `main` to Fly.io:
-     ```bash
-     # Run from the repository root: the Docker build context is the working directory.
-     # Running it from deploy/ fails with "Project file does not exist".
-     fly deploy -c deploy/fly.toml
-     ```
-   - Verify that the live playground is healthy and reflects the newly released version:
-     ```bash
-     curl -sI https://nexjob-playground.fly.dev/dashboard | head -n 1
-     ```
-     Confirm HTTP 200 OK.
+gh pr create \
+  --base main \
+  --head develop \
+  --title "release: vX.Y.Z" \
+  --body "## Summary
+Release vX.Y.Z of NexJob.
 
+### Checklist
+- [x] Version bump in Directory.Build.props (vX.Y.Z)
+- [x] CHANGELOG.md updated and cross-checked against git diff
+- [x] DocsTruth passed (0 drift)
+- [x] Release build 0 warnings on net8.0 and net10.0
+- [x] Unit tests 100% passing
+- [x] NuGet packages verified via dotnet pack"
+```
 
----
+The agent provides the clickable PR link to the user:
+> *"Release PR opened: https://github.com/oluciano/NexJob/pull/<ID>. Please click **Merge Commit** on GitHub."*
 
-## Phase 7: Post-Release Learning Snapshot (Async Retro)
+### 2. Post-Merge Sync-Back (`main` ➔ `develop`)
+Once the user confirms the PR was merged to `main`, the agent runs the sync-back in one shot:
 
-> **Goal:** Continuous self-evolution without meetings or ceremony. Capture operational friction or test/CI hurdles and turn them into permanent rules.
+```bash
+git checkout develop
+git pull origin develop
+git fetch origin --tags
+git merge origin/main --no-ff -m "chore: sync release vX.Y.Z from main into develop"
+git push origin develop
+```
 
-Immediately following the sync-back to `develop`:
+### 3. Quick Verification
+Verify that `develop` is strictly ahead/synced:
+```bash
+git log --oneline develop..origin/main   # Must be 0 commits
+```
 
-1. **Lightweight Friction Audit:**
-   - Did any compiler warning, StyleCop rule, or flaky test delay the release cycle?
-   - Did we encounter documentation drift that was caught late?
-   - Record the release size (entries, commits, files in `src/`, colour) and whether a follow-up patch was needed. If the same size problem happened twice, lower the green cap or add a cadence rule.
-2. **Repository Hardening (Direct to `develop`):**
-   - If a recurring pain point or pattern was identified, synthesize it into a 1-line rule in `GEMINI.md` or a skill reference.
-   - Commit directly to `develop`:
-     ```bash
-     git add GEMINI.md .agents/skills/
-     git commit -m "chore(governance): record release vX.Y.Z learnings"
-     git push origin develop
-     ```
-3. **Done:** The release is officially closed, codebase is updated, and the squad is sharper for the next cycle.
+If the release included dashboard or sample updates, optionally deploy the live demo:
+```bash
+fly deploy -c deploy/fly.toml
+```
+
+Release is closed cleanly with zero prompt fatigue!
