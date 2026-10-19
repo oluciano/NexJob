@@ -103,7 +103,7 @@ The stored `traceparent` is the one of the caller at the moment the job record i
 
 ## Available metrics
 
-NexJob exposes the following metrics under the `"NexJob"` meter:
+NexJob exposes the following metrics under the `"NexJob"` meter (`NexJobMetrics.MeterName`). The spans come from the activity source of the same name (`NexJobActivitySource.Name`, also `"NexJob"`). Both classes are public:
 
 | Metric | Type | Description |
 |---|---|---|

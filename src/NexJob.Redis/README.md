@@ -60,7 +60,7 @@ Any job decorated with `[Throttle("external-api", maxConcurrent: 50)]` then runs
 
 ## High-Throughput Batch Processing
 
-For heavy ingestion workloads, enable batch processing to leverage server-side Lua scripts and vectorized acknowledgments:
+For heavy ingestion workloads, enable batch processing to use server-side Lua scripts and vectorized acknowledgments:
 
 ```csharp
 builder.Services.AddNexJobRedis("localhost:6379,abortConnect=false");
@@ -81,7 +81,7 @@ builder.Services.AddNexJob(options =>
 ## Features
 - **High-Throughput Batch Processing:** Atomic batch claims and single-roundtrip acknowledgments via `FetchBatchScript` and `AcknowledgeBatchScript`.
 
-- **Microsecond Latency:** Ultra-fast job enqueue and dispatch leveraging in-memory data structures.
+- **Microsecond Latency:** Enqueue and dispatch run against in-memory data structures.
 - **Server-Side Lua Scripts:** All complex state transitions (dequeuing, state commits, retry rescheduling) run atomically inside Redis, preventing race conditions.
 - **Priority Queues:** Implemented using Redis Sorted Sets (`ZSET`) ordered by job priority and schedule timestamp.
 - **Global Distributed Throttle:** Cluster-wide `[Throttle]` concurrency limits with crash-safe, expiring slots.

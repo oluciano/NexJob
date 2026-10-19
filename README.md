@@ -155,7 +155,7 @@ Complete documentation is on the [Documentation Site](https://oluciano.github.io
 - **[Alerts](https://oluciano.github.io/NexJob/guides/alerts/)** — get notified when a job fails for good
 - **[Best Practices](https://oluciano.github.io/NexJob/guides/best-practices/)** — production and Kubernetes guidelines
 - **[Common Scenarios](https://oluciano.github.io/NexJob/guides/common-scenarios/)** — real-world use cases with code
-- **[How We Test](https://oluciano.github.io/NexJob/reference/how-we-test/)** — what the test suite proves, and what it does not
+- **[How NexJob is tested](https://oluciano.github.io/NexJob/reference/how-we-test/)** — what the test suite proves, and what it does not
 - **[Troubleshooting](https://oluciano.github.io/NexJob/reference/troubleshooting/)** — debug common issues
 
 ---
@@ -190,7 +190,7 @@ Benchmarks can be parameterized by payload size (`PayloadBytes: 0, 1024, 10240`)
 
 ## Ecosystem & Companion Projects
 
-- **[qKafka](https://github.com/oluciano/QKafka)**: If you need event-driven choreographies, distributed sagas with compensating transactions, and native Kafka stream state machines, check out qKafka. NexJob focuses on background job scheduling and resilient outbox dispatch, seamlessly bridging events to and from Kafka.
+- **[qKafka](https://github.com/oluciano/QKafka)**: If you need event-driven choreographies, distributed sagas with compensating transactions, and native Kafka stream state machines, check out qKafka. NexJob focuses on background job scheduling and resilient outbox dispatch. It bridges events to and from Kafka.
 
 ---
 

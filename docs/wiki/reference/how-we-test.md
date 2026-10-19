@@ -1,6 +1,6 @@
 ---
 title: "How NexJob is Tested: Real Databases, Crashes and Upgrades"
-sidebarTitle: "How We Test"
+sidebarTitle: "How NexJob is tested"
 description: "What NexJob's test suite proves and how it runs: contract tests on every storage provider, reliability scenarios with several nodes, a killed process, upgrade tests and what is not covered."
 ---
 

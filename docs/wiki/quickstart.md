@@ -79,7 +79,7 @@ Call `AddNexJob()` once, then scan your assembly so NexJob can discover your job
 
 ### 3. Define a job
 
-Implement `IJob` for work that needs no input. NexJob resolves the job from the DI container, so constructor injection works.
+Implement `IJob` for work that needs no input. NexJob resolves the job from the DI container, so constructor injection works. Each execution gets its own scope, so scoped services such as `DbContext` are safe to inject: see [scoped services](concepts/job-types.md#dependency-injection-and-scoped-services).
 
 ```csharp
 // HelloJob.cs

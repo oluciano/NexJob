@@ -29,7 +29,7 @@ NexJob is designed to surface diagnostic information through structured logs, me
 
     **Check 2 — Queue name mismatch**
 
-    The dispatcher only processes queues listed in `options.Queues`. If you enqueued a job on `"emails"` but your options only list `"default"`, the job sits untouched. A job enqueued without a queue is stored in the [default queue](../concepts/default-queue.md), `{prefix}.default`; the dashboard shows that name, not `default`.
+    The dispatcher only processes queues listed in `options.Queues`. If you enqueued a job on `"emails"` but your options only list `"default"`, the job sits untouched. A job enqueued without a queue is stored in the [default queue](../concepts/queues.md#the-default-queue), `{prefix}.default`; the dashboard shows that name, not `default`.
 
     Verify the job's queue name matches your configuration:
 
@@ -60,9 +60,13 @@ NexJob is designed to surface diagnostic information through structured logs, me
 
     A host with `Workers = 0`, or a standalone dashboard with `DisableWorkers = true`, fetches nothing by design and logs `Workers = 0: this host does not fetch or execute jobs.` at start. Jobs wait until a host with workers polls their queue. See [`DisableWorkers`](configuration.md).
 
-    **Check 7 — The queue prefix changed**
+    **Check 7 — The job type is not loaded in this service (foreign job)**
 
-    If the entry assembly was renamed (or `QueuePrefix` changed), jobs stay in the old `{oldprefix}.default` and no node reads it. The dashboard **Servers** page flags the queue as unattended and names the `QueuePrefix` that brings it back. Set `QueuePrefix` explicitly so the name survives renames: see [the default queue](../concepts/default-queue.md).
+    If a service fetches a job whose type it cannot load, it defers the job back to the queue instead of running or failing it, and logs `references foreign type ... Deferring`. The job stays `Enqueued` until a service that has the type polls its queue. See [foreign jobs](../guides/multi-service.md#layer-2-foreign-jobs-are-deferred-not-failed).
+
+    **Check 8 — The queue prefix changed**
+
+    If the entry assembly was renamed (or `QueuePrefix` changed), jobs stay in the old `{oldprefix}.default` and no node reads it. The dashboard **Servers** page flags the queue as unattended and names the `QueuePrefix` that brings it back. Set `QueuePrefix` explicitly so the name survives renames: see [the default queue](../concepts/queues.md#the-default-queue).
 
 
 ???+ "Jobs stuck in Processing (orphaned jobs)"
@@ -154,7 +158,7 @@ NexJob is designed to surface diagnostic information through structured logs, me
 
     **Step 4: Check DI registration**
 
-    If the job constructor throws because a dependency is missing, the job fails before your code runs. Verify the job's dependencies are registered in the DI container.
+    If the job constructor throws because a dependency is missing, the job fails before your code runs. Verify the job's dependencies are registered in the DI container. Each execution runs in its own scope; see [scoped services](../concepts/job-types.md#dependency-injection-and-scoped-services).
 
 
 ???+ "Dead-letter handler not triggered"
@@ -280,7 +284,7 @@ NexJob is designed to surface diagnostic information through structured logs, me
 
     **Pool sizing rule of thumb**
 
-    A node needs about `Workers + 5` connections; set the pool maximum to `Workers + 10` to leave room for spikes. For a 3-node cluster each with 20 workers, that is about 75 connections in use and a pool maximum of 30 per node, 90 in total, so keep the database's connection limit above 90. On PostgreSQL and SQL Server, NexJob logs the detected pool size and worker count at startup, and warns when the pool is smaller than `Workers`. Redis and MongoDB log nothing about their pools.
+    A node needs about `Workers + 5` connections (see [pool sizing](../guides/best-practices.md#size-the-database-connection-pool), which is canonical); set the pool maximum to `Workers + 10` to leave room for spikes. For a 3-node cluster each with 20 workers, that is about 75 connections in use and a pool maximum of 30 per node, 90 in total, so keep the database's connection limit above 90. On PostgreSQL and SQL Server, NexJob logs the detected pool size and worker count at startup, and warns when the pool is smaller than `Workers`. Redis and MongoDB log nothing about their pools.
 
     **PostgreSQL: `AddNexJobPostgres(NpgsqlDataSource)` on password-protected databases**
 

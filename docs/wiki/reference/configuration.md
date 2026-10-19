@@ -326,6 +326,17 @@ app.UseNexJobDashboard("/dashboard", options =>
 });
 ```
 
+| Option | Type | Default | Effect |
+|---|---|---|---|
+| `Title` | `string` | `"NexJob"` | Browser tab and sidebar header. |
+| `MetricsCacheTtl` | `TimeSpan` | 3 seconds | Cache of the metrics queries behind SSE polling. `TimeSpan.Zero` disables the cache. |
+| `Queues` | `IReadOnlyList<string>?` | `null` | Scopes counters, queue cards and job lists to these queues. `null` shows all queues. |
+| `EnvironmentName` | `string?` | `null` | Badge in the top bar and prefix in the tab title. `Production`/`Prod` is red, `Staging`/`Stage`/`QA` amber, `Development`/`Dev`/`Local` green, other names neutral. `null` shows no badge. |
+| `DefaultTheme` | `string` | `"blue-theme"` | Theme used when the browser has no stored preference: `blue-theme`, `semi-dark`, `dark`, `light`, `bordered-theme`. |
+| `EnablePlayground` | `bool` | `false` | Enables the playground drawer and demo scenarios. Leave off in production. |
+
+See [Dashboard](../integrations/dashboard.md) for authorization and features.
+
 ### Standalone Worker Service (`StandaloneDashboardOptions`)
 
 Embed a small web server inside a Worker Service or console app using the `NexJob.Dashboard.Standalone` package:
@@ -346,6 +357,8 @@ builder.Services.AddNexJobStandaloneDashboard(options =>
 });
 ```
 
+`StandaloneDashboardOptions` also has `EnvironmentName` (`null`), `DefaultTheme` (`"blue-theme"`) and `EnablePlayground` (`false`), with the same meaning as in the table above. `Clusters` (`IList<DashboardCluster>`, empty by default) and `AddCluster(DashboardCluster)` register clusters for multi-cluster federation; with none registered the dashboard reads the services from DI. See [Dashboard](../integrations/dashboard.md).
+
 !!! warning
     The standalone dashboard binds to **loopback only** by default (`LocalhostOnly = true`). In a container, this makes the dashboard unreachable through a published port. Set `LocalhostOnly = false` **and** register an `IDashboardAuthorizationHandler` — without a handler, NexJob logs a startup warning. The embedded server has no authentication middleware, so your handler must authenticate from `context.Request` directly.
 
@@ -353,3 +366,15 @@ builder.Services.AddNexJobStandaloneDashboard(options =>
 Set `DisableWorkers = true` to run a dashboard-only process that serves the UI without executing any jobs. This sets `Workers = 0` for that host before any service starts.
 
 `Workers = 0` is valid on its own (`options.Workers = 0` or `"Workers": 0`) and means that the host does not fetch or execute jobs. The host still starts and registers as a node with 0 workers and **no polled queues**, so it is not counted as listening to a queue (the dashboard still flags a queue that only such hosts could read). The recurring scheduler, the orphan watcher and the retention keep running: they maintain the whole database and run on any node. A negative value throws `ArgumentOutOfRangeException`.
+
+## Attributes
+
+Per-job-class settings. They override the matching global option.
+
+| Attribute | Parameters (type, default) | Behavior |
+|---|---|---|
+| `[Retry(attempts)]` | `Attempts` (`int`, required, >= 0); `InitialDelay` (`string?`, `null` = global `RetryDelayFactory`); `Multiplier` (`double`, `2.0`); `MaxDelay` (`string?`, `null` = no cap); `IgnoreRetryAttemptExceptions` (`Type[]?`, `null`) | `Attempts` counts executions including the first; `0` and `1` mean no retry. Ignored exception types go straight to `Failed` and the dead-letter handler. See [Retries](../concepts/retries.md). |
+| `[Throttle(resource, maxConcurrent)]` | `Resource` (`string`, required, not blank); `MaxConcurrent` (`int`, required, >= 1) | Caps concurrent executions per resource name. Enforced per worker process unless `AddNexJobDistributedThrottle()` is used. See [Throttling](../guides/throttling.md). |
+| `[ExecutionTimeout(timeout)]` | `Timeout` (`TimeSpan` string, required, > 0) | Cancels the job's token at the limit and records a `TimeoutException` failure that follows the retry path. Overrides `DefaultExecutionTimeout` (`null`). See [Retries](../concepts/retries.md). |
+| `[Retention]` | `PurgeOnSuccess` (`bool`, `false`); `TrimPayloadOnSuccess` (`bool`, `false`) | `PurgeOnSuccess` deletes the row when the job succeeds; `TrimPayloadOnSuccess` clears `input_json` and keeps the history. Failed jobs are kept. See [Best practices](../guides/best-practices.md). |
+| `[SchemaVersion(version)]` | `Version` (`int`, required, >= 1; version 1 when the attribute is absent) | Declares the input payload version for `IJobMigration`. See [Job payloads](../concepts/job-payloads.md). |

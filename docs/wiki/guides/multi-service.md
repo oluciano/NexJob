@@ -20,11 +20,11 @@ builder.Services.AddNexJob(options => options.Queues = ["inventory"]);
 
 Enqueue with the queue of the service that owns the job type (`queue: "billing"`). This is the recommended pattern.
 
-Jobs enqueued without a queue also stay apart: the default queue is `{prefix}.default`, one per application. See [the default queue and prefix](../concepts/default-queue.md).
+Jobs enqueued without a queue also stay apart: the default queue is `{prefix}.default`, one per application. See [the default queue and prefix](../concepts/queues.md#the-default-queue).
 
 ## Layer 2: foreign jobs are deferred, not failed
 
-If a service fetches a job whose type (or input type) it cannot load, the job is a **foreign job**. NexJob does not run it, does not use an attempt and does not dead-letter it. It returns the job to the queue after `ForeignJobRetryDelay` (default 5 seconds) so the owning service can take it. The host logs a warning (`references foreign type ... Deferring`) and the trace of the attempt carries the tag `nexjob.foreign_job = true`.
+If a service fetches a job whose type (or input type) it cannot load, the job is a **foreign job**. NexJob does not run it, does not use an attempt and does not dead-letter it. It returns the job to the queue after `ForeignJobRetryDelay` (`NexJobOptions`, default 5 seconds) so the owning service can take it. The executor signals this case with `ForeignJobTypeException`. The host logs a warning (`references foreign type ... Deferring`) and the trace of the attempt carries the tag `nexjob.foreign_job = true`.
 
 This is a safety net, not a design. If two services poll the **same** queue they keep handing each other's jobs back: nothing breaks, but fetches are wasted and execution is delayed. A foreign job that no running service owns waits in the queue, visible in the dashboard, until one of them is deployed.
 

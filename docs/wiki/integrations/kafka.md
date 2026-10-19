@@ -66,7 +66,7 @@ builder.Services.AddNexJob()
 | `Topic` | required | The topic to read. One trigger reads one topic. |
 | `GroupId` | required | The consumer group. |
 | `JobType` | `null` | The job type to use for every record. When set, it always wins over the `nexjob.job_type` header — a producer cannot override it. When unset, the header is read instead. |
-| `TargetQueue` | `"default"` | The NexJob queue the jobs go to. `"default"` is the application's `{prefix}.default` queue ([details](../concepts/default-queue.md)). |
+| `TargetQueue` | `"default"` | The NexJob queue the jobs go to. `"default"` is the application's `{prefix}.default` queue ([details](../concepts/queues.md#the-default-queue)). |
 | `JobPriority` | `Normal` | The priority of the jobs. |
 | `DeadLetterTopic` | `null` | A topic that receives the records that can never become jobs. |
 | `ExhaustedJobsTopic` | `null` | A topic that receives a copy of a job once it exhausts its retries. Needs `AddKafkaProducer`. |

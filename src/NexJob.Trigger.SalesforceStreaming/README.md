@@ -8,7 +8,7 @@ Salesforce Streaming API (CometD/Bayeux protocol) trigger for NexJob. Connects t
 - **Flexible Multi-Authentication**:
   - **OAuth 2.0 Username-Password Flow**: Integration user credentials with optional security token.
   - **OAuth 2.0 Client Credentials Flow**: Modern server-to-server Connected App authorization.
-  - **Direct Session ID / Pre-generated Bearer Token**: Seamless integration with existing session tokens.
+  - **Direct Session ID / Pre-generated Bearer Token**: Use an existing session token as it is.
 - **Resilient Replay ID Checkpointing**: `IStreamingReplayIdStore` with atomic file-based persistence (`FileStreamingReplayIdStore`) and memory-only storage (`InMemoryStreamingReplayIdStore`).
 - **Replay Presets**:
   - `SalesforceStreamingReplayPreset.Latest` (`-1`): Receives new events created after subscription.

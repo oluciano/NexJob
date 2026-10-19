@@ -63,7 +63,7 @@ The credentials need `sqs:ReceiveMessage`, `sqs:DeleteMessage` and `sqs:ChangeMe
 | `WaitTimeSeconds` | `20` | How long a receive call waits for a message (long polling, 0 to 20). |
 | `VisibilityTimeoutSeconds` | `30` | How long a received message is hidden from other consumers (0 to 43200). |
 | `VisibilityExtensionIntervalSeconds` | `15` | How often the trigger renews the visibility while it handles a message. Keep it below `VisibilityTimeoutSeconds`. |
-| `TargetQueue` | `"default"` | The NexJob queue the jobs go to. `"default"` is the application's `{prefix}.default` queue ([details](../concepts/default-queue.md)). |
+| `TargetQueue` | `"default"` | The NexJob queue the jobs go to. `"default"` is the application's `{prefix}.default` queue ([details](../concepts/queues.md#the-default-queue)). |
 | `JobPriority` | `Normal` | The priority of the jobs. |
 
 The ranges and the two required options are validated when the host starts, so a wrong value fails the start and not the first message.
