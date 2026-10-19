@@ -13,6 +13,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Documentation
 
+- **Documented what happens when storage is unavailable.** New section "When storage is unavailable" in the delivery guarantees page (dispatcher, job and node heartbeats, orphan watcher, enqueue, and the `HeartbeatTimeout` guidance), a "Database outage or failover" entry in troubleshooting with the exact log messages, and a note in "What is not covered" of the testing page that no test cuts a real database connection. (issue #633)
 - **Added `nexjob-wiki-guardian` skill for human-centric documentation architecture.** Establishes an anti-accumulation, dev-to-dev documentation curator skill in `.agents/skills/nexjob-wiki-guardian/SKILL.md` to prevent content fragmentation, eliminate marketing fluff, extract buried features, and ensure all capabilities are canonical and discoverable.
 
 ## [6.6.0] - 2026-10-18

@@ -279,6 +279,29 @@ NexJob is designed to surface diagnostic information through structured logs, me
     ```
 
 
+???+ "Database outage or failover"
+    **Symptom:** The database was unreachable or failed over, and the host logs storage errors.
+
+    **Look for these log messages:**
+
+    | Level | Message | Source |
+    | --- | --- | --- |
+    | `Error` | `Error fetching next jobs from storage` | Dispatcher, once per `PollingInterval` (default 15 s) |
+    | `Warning` | `Heartbeat update for job {JobId} failed; will retry on the next interval` | A running job |
+    | `Warning` | `Failed to update global heartbeat for server {ServerId}.` | Node heartbeat |
+    | `Warning` | `Failed to gracefully deregister server {ServerId} on shutdown.` | Shutdown during the outage (5 s timeout) |
+    | `Error` | `Error in OrphanedJobWatcherService`, `Error in RecurringJobSchedulerService`, `Error in JobRetentionService.` | Background loops |
+
+    **What recovers by itself:** the dispatcher fetch, both heartbeats, the orphan watcher, the recurring scheduler and retention catch the error and try again. If jobs are still not picked up after storage is back and the fetch error is no longer logged, restart the host. Calls to `EnqueueAsync` and `ScheduleAsync` are the exception: they throw to your code and must be retried by the caller (use an `idempotencyKey`).
+
+    **What to check after:**
+
+    - Jobs with a higher `Attempts` than expected. If the outage lasted longer than `HeartbeatTimeout`, jobs that were still running were requeued and ran again.
+    - `Warning` logs from the orphan watcher (`... stopped sending heartbeats and no attempts were left`): those jobs ended `Failed`.
+    - Enqueue calls in your own code that threw during the outage.
+
+    The full table is in [When storage is unavailable](../concepts/delivery-guarantees.md#when-storage-is-unavailable).
+
 ???+ "Database connection issues"
     **Symptom:** Jobs fail with connection-related exceptions, or the host logs warnings about pool exhaustion.
 

@@ -146,5 +146,4 @@ Consider `UseDashboardReadReplica` when the dashboard is busy. Dashboard queries
 
 Set `EnableBatchAcknowledgment = true` when you process more than a few thousand jobs per minute. Batching acknowledgments replaces a write per job with one write for the batch.
 
-
-
+For what NexJob does while this database is unreachable, see [When storage is unavailable](../concepts/delivery-guarantees.md#when-storage-is-unavailable).

@@ -120,3 +120,5 @@ MongoDB is the right choice when:
 - **MongoDB is already in your stack.** Reusing existing infrastructure avoids adding an extra database to operate, monitor, and back up.
 - **You need distributed workers without SQL.** `FindOneAndUpdate` is atomic per document, so several worker nodes never claim the same job (covered by the multi-node reliability scenarios on MongoDB).
 - **You want automatic schema management.** Collections and indexes are created on startup, with no setup scripts.
+
+For what NexJob does while this database is unreachable, see [When storage is unavailable](../concepts/delivery-guarantees.md#when-storage-is-unavailable).

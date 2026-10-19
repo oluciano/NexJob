@@ -124,3 +124,4 @@ The connection string follows `StackExchange.Redis` configuration syntax. Common
 !!! warning
     Redis is an in-memory store by default. If your Redis instance restarts without persistence configured, **all pending and queued jobs are lost**. For production use, enable either RDB snapshots or AOF (append-only file) persistence in your Redis configuration (`save` or `appendonly yes`). Verify that your Redis persistence settings match your tolerance for data loss.
 
+For what NexJob does while this database is unreachable, see [When storage is unavailable](../concepts/delivery-guarantees.md#when-storage-is-unavailable).
