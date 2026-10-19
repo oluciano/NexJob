@@ -290,6 +290,48 @@ public abstract class StorageProviderTestsBase
         updated.CompletedAt.Should().NotBeNull();
     }
 
+    // ── Late commit after the orphan watcher requeued a running job (issue #642) ─
+
+    [Fact]
+    public async Task CommitJobResultAsync_late_success_while_a_second_run_is_processing_is_not_undone_by_the_second_commit()
+    {
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
+        await storage.EnqueueAsync(MakeJob());
+        var first = (await storage.FetchNextAsync(["default"]))!;
+        await WaitForTheClockToPassAsync();
+        await storage.RequeueOrphanedJobsAsync(TimeSpan.Zero);
+        var second = (await storage.FetchNextAsync(["default"]))!;
+        second.Id.Should().Be(first.Id);
+        second.Attempts.Should().Be(2, "the second run is a new attempt");
+
+        // The first run commits while the second is still running, then the second commits too.
+        await storage.CommitJobResultAsync(first.Id, new JobExecutionResult { Succeeded = true, Logs = [] });
+        var afterFirst = (await dashboard.GetJobByIdAsync(first.Id))!.Status;
+        await storage.CommitJobResultAsync(second.Id, new JobExecutionResult { Succeeded = true, Logs = [] });
+
+        afterFirst.Should().Be(JobStatus.Succeeded, "the commit does not check which attempt owns the job");
+        (await dashboard.GetJobByIdAsync(first.Id))!.Status.Should().Be(JobStatus.Succeeded, "the second commit finds a terminal job and changes nothing");
+    }
+
+    [Fact]
+    public async Task CommitJobResultAsync_late_failure_after_the_job_already_succeeded_changes_nothing()
+    {
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
+        await storage.EnqueueAsync(MakeJob());
+        var fetched = (await storage.FetchNextAsync(["default"]))!;
+        await storage.CommitJobResultAsync(fetched.Id, new JobExecutionResult { Succeeded = true, Logs = [] });
+
+        await storage.CommitJobResultAsync(fetched.Id, new JobExecutionResult { Succeeded = false, Exception = new InvalidOperationException("late"), Logs = [] });
+
+        (await dashboard.GetJobByIdAsync(fetched.Id))!.Status.Should().Be(JobStatus.Succeeded);
+    }
+
+    private static async Task WaitForTheClockToPassAsync()
+    {
+        var start = DateTimeOffset.UtcNow;
+        await NexJob.Tests.TestWait.UntilAsync(() => Task.FromResult(DateTimeOffset.UtcNow > start.AddMilliseconds(20)), because: "the heartbeat cutoff must be later than the heartbeat just written");
+    }
+
     // ── Orphan requeue reports the jobs it failed (issue #340) ─────────────────
 
     private static IOrphanedJobReporter Reporter(IJobStorage storage) =>
