@@ -9,6 +9,7 @@ NexJob keeps all state in storage and is built around one promise: **a job that 
 ## The guarantees
 
 - **At-least-once.** After a crash, or when a result cannot be saved, a job can run again. It can also have run _partly_ before the crash. Design jobs to be [idempotent](idempotency.md).
+- **Accepted means stored.** A job is accepted when `EnqueueAsync` returns: it is one storage write, and no overload joins your database transaction. So rolling back your transaction does not remove the job, a crash between your commit and the enqueue loses it, and enqueuing before the commit lets the job run against uncommitted data. The existing workaround (mark the row and let a recurring job enqueue for unmarked rows) is in the notes of [common scenarios](../guides/common-scenarios.md).
 - **Storage is the source of truth.** Every state change is stored. A dispatcher keeps nothing that would be lost if the process died.
 - **A job is always visible.** It is waiting, running, or ended as `Succeeded`, `Failed` (dead-letter) or `Expired`, in the [dashboard](../integrations/dashboard.md#dashboard-pages). Nothing is dropped silently; jobs only disappear through [retention](../guides/best-practices.md#control-storage-growth-with-retention-policies) or `DeleteJobAsync`, which you control.
 - **An expired job never runs.** The [deadline](scheduling.md#deadlines) is checked before execution starts.

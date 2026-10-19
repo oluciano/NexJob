@@ -45,6 +45,27 @@ Run one dashboard per team, limited to that team's queues, so the counters and l
 - **Retention and the orphan watcher** run in every node. They act on the whole database, not only on the jobs of their own service.
 - **A crashed job is failed by a node of its own service.** The orphan watcher scans the whole database, but a node fails a job that has no attempts left only when it can load the job type, so the typed `IDeadLetterHandler<TJob>` runs in the service that owns the job. A node that cannot load the type logs a `Warning` (`... this node cannot load that type`) and leaves the job `Processing` for a node that can. A job with attempts left is still given back to its queue by any node. If every node of the owning service is down, the job stays `Processing` until one of them starts.
 
+## Web app and worker in separate processes
+
+Both processes call `AddNexJob` with the same storage, the same `QueuePrefix` and the same queue names. They differ only in `Workers`.
+
+```csharp
+// Web app: enqueues, executes nothing
+builder.Services.AddNexJob(options => options.Workers = 0);
+
+// Worker: executes jobs from the queues it lists
+builder.Services.AddNexJob(options =>
+{
+    options.Workers = 10;
+    options.Queues = ["default", "billing"];
+});
+```
+
+- **`Workers = 0`** is valid (negative values throw). The host does not fetch or execute jobs and logs `Workers = 0: this host does not fetch or execute jobs.` It still registers as a node, with 0 workers and no polled queues. The recurring scheduler, the orphan watcher and retention are registered regardless of `Workers`, so they keep running on it.
+- **Latency.** The wake-up channel is in-process: it only wakes a dispatcher in the same process as `EnqueueAsync`. A job enqueued by the web app is fetched at the worker's next poll, up to `PollingInterval` later (default 15 seconds). Lower `PollingInterval` to shorten it; see [Configuration](../reference/configuration.md).
+- **Queue names.** Jobs without a queue go to the default queue of the enqueuing application, so the worker must share the web app's prefix; see [the default queue and prefix](../concepts/queues.md#the-default-queue). A worker that cannot load a job type defers it ([foreign jobs](#layer-2-foreign-jobs-are-deferred-not-failed)).
+- **`DisableWorkers`** is an option of the standalone dashboard, not of `AddNexJob`. For an enqueue-only API set `Workers = 0`.
+
 ## Upgrading some services before others
 
 Services on different NexJob versions can share a database during a rolling upgrade. The limits of each step are in the [migration guide](../reference/migration.md). Two that matter here:
