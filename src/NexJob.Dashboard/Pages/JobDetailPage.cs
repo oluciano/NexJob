@@ -454,11 +454,19 @@ internal sealed class JobDetailPage : IComponent
             $"if(Array.isArray(logs)&&logs.length>lastLogsCount&&logsBody){{" +
             $"lastLogsCount=logs.length;" +
             $"if(logsBadge)logsBadge.textContent='('+logs.length+' entries)';" +
-            $"logsBody.innerHTML=logs.map(l=>{{" +
+            // Logs can embed job input, which may originate from an attacker-influenced broker message;
+            // build each entry with DOM APIs and .textContent, never innerHTML string concatenation (#629).
+            $"logsBody.textContent='';" +
+            $"logs.forEach(function(l){{" +
             $"var c=l.level==='Warning'?'var(--warning)':(l.level==='Error'||l.level==='Critical'?'var(--error)':'var(--text-secondary)');" +
             $"var t=l.timestamp?l.timestamp.split(' ')[1]||l.timestamp:'';" +
-            $"return '<div style=\"display:flex;gap:10px;line-height:1.6\"><span style=\"color:var(--terminal-subtext);flex-shrink:0\">['+t+']</span><span style=\"color:'+c+';font-weight:600;min-width:70px;flex-shrink:0\">['+l.level+']</span><span style=\"color:var(--terminal-text);word-break:break-all\">'+l.message+'</span></div>';" +
-            $"}}).join('');" +
+            $"var row=document.createElement('div');row.style.cssText='display:flex;gap:10px;line-height:1.6';" +
+            $"var tsSpan=document.createElement('span');tsSpan.style.cssText='color:var(--terminal-subtext);flex-shrink:0';tsSpan.textContent='['+t+']';" +
+            $"var lvlSpan=document.createElement('span');lvlSpan.style.cssText='color:'+c+';font-weight:600;min-width:70px;flex-shrink:0';lvlSpan.textContent='['+l.level+']';" +
+            $"var msgSpan=document.createElement('span');msgSpan.style.cssText='color:var(--terminal-text);word-break:break-all';msgSpan.textContent=l.message;" +
+            $"row.appendChild(tsSpan);row.appendChild(lvlSpan);row.appendChild(msgSpan);" +
+            $"logsBody.appendChild(row);" +
+            $"}});" +
             $"logsBody.scrollTop=logsBody.scrollHeight;" +
             $"}}" +
             $"}}).catch(()=>{{}});" +
