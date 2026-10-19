@@ -105,7 +105,7 @@ See the [Circuit Breaker guide](../guides/circuit-breaker.md) for the states, th
 
 In environments where multiple services share a database cluster:
 
-- Set `QueuePrefix` explicitly in each service so its default queue (`{prefix}.default`) survives renames and refactors; the dashboard of a standalone host needs the same value. See [the default queue and prefix](../concepts/default-queue.md).
+- Set `QueuePrefix` explicitly in each service so its default queue (`{prefix}.default`) survives renames and refactors; the dashboard of a standalone host needs the same value. See [the default queue and prefix](../concepts/queues.md#the-default-queue).
 - Run a dedicated dashboard container with `DisableWorkers = true` so it never takes worker slots from the services.
 - Scope the dashboard to relevant queues with `options.Queues = ["serviceA-queue"]` so each team sees only their own jobs.
 - NexJob handles foreign job types safely by rolling back attempt counts and deferring via `ForeignJobRetryDelay` rather than dead-lettering them. See the [Multi-Service guide](../guides/multi-service.md).
@@ -230,7 +230,7 @@ Set `Maximum Pool Size` to `Workers + 10` per node.
 
 ### Retention policies
 
-Add `[Retention]` to high-frequency job classes to control storage growth.
+Add `[Retention]` to high-frequency job classes to control storage growth. Parameters and defaults: [Attributes](../reference/configuration.md#attributes).
 
 ### Deadlines
 

@@ -65,7 +65,6 @@ nav:
       - Scheduling: concepts/scheduling.md
       - Recurring Jobs: concepts/recurring-jobs.md
       - Queues: concepts/queues.md
-      - Default queue and prefix: concepts/default-queue.md
       - Failure handling:
           - Retries and dead letter: concepts/retries-and-dead-letter.md
           - Retries: concepts/retries.md

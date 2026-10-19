@@ -60,7 +60,7 @@ The same registration is available on the builder as `AddNexJob().AddAzureServic
 | `QueueOrTopicName` | required | The queue, or the topic when you also set `SubscriptionName`. |
 | `SubscriptionName` | `null` | The subscription to read. Required for a topic, leave `null` for a queue. |
 | `MaxConcurrentMessages` | `1` | How many messages the processor handles at the same time on this node. |
-| `TargetQueue` | `"default"` | The NexJob queue the jobs go to. `"default"` is the application's `{prefix}.default` queue ([details](../concepts/default-queue.md)). |
+| `TargetQueue` | `"default"` | The NexJob queue the jobs go to. `"default"` is the application's `{prefix}.default` queue ([details](../concepts/queues.md#the-default-queue)). |
 | `JobPriority` | `Normal` | The priority of the jobs. |
 | `JobType` | `null` | The job type to use for every message. When set, it always wins over the `nexjob.job_type` property — a publisher cannot override it. When unset, the property is read instead. |
 

@@ -448,7 +448,7 @@ Directly scheduling the same job type from inside its own `ExecuteAsync` method 
 **Category:** Reliability  
 **Default Severity:** Info (Opt-in)  
 
-In multi-service setups where different services share the same database with distinct `QueuePrefix` configurations, enqueuing without an explicit `queue` parameter places the job in the producer's default queue. Consumer worker services polling a different prefixed queue will never pick it up. See [the default queue and prefix](../concepts/default-queue.md).
+In multi-service setups where different services share the same database with distinct `QueuePrefix` configurations, enqueuing without an explicit `queue` parameter places the job in the producer's default queue. Consumer worker services polling a different prefixed queue will never pick it up. See [the default queue and prefix](../concepts/queues.md#the-default-queue).
 
 !!! note
     NXJ016 is disabled by default. Enable it in multi-service distributed architectures via `.editorconfig`.

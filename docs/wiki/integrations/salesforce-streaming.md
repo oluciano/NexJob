@@ -116,6 +116,7 @@ Replace `ISalesforceBayeuxClient` itself only when the protocol behaviour or the
 | `ConnectTimeout` | 120 seconds | How long one long-polling request stays open. The HTTP client timeout is this plus 30 seconds. |
 | `CometdVersion` | `"60.0"` | The API version used in the CometD URL. |
 | `DeadLetterQueue` | `null` | A queue that receives a copy of an event that could not be enqueued. |
+| `JobType` | `null` (uses `SalesforceStreamingEventJob`) | The job class, an `IJob<SalesforceStreamingEventInput>`. Unlike the other triggers, where `JobType` is a `string?` (assembly-qualified name), here it is a `Type?`: `options.JobType = typeof(MyEventJob);`. |
 | `MaxRetries` | `5` | **Has no effect.** It is validated (1 to 100) but nothing reads it. |
 
 ## How an event becomes a job

@@ -29,7 +29,7 @@ NexJob is designed to surface diagnostic information through structured logs, me
 
     **Check 2 — Queue name mismatch**
 
-    The dispatcher only processes queues listed in `options.Queues`. If you enqueued a job on `"emails"` but your options only list `"default"`, the job sits untouched. A job enqueued without a queue is stored in the [default queue](../concepts/default-queue.md), `{prefix}.default`; the dashboard shows that name, not `default`.
+    The dispatcher only processes queues listed in `options.Queues`. If you enqueued a job on `"emails"` but your options only list `"default"`, the job sits untouched. A job enqueued without a queue is stored in the [default queue](../concepts/queues.md#the-default-queue), `{prefix}.default`; the dashboard shows that name, not `default`.
 
     Verify the job's queue name matches your configuration:
 
@@ -62,7 +62,7 @@ NexJob is designed to surface diagnostic information through structured logs, me
 
     **Check 7 — The queue prefix changed**
 
-    If the entry assembly was renamed (or `QueuePrefix` changed), jobs stay in the old `{oldprefix}.default` and no node reads it. The dashboard **Servers** page flags the queue as unattended and names the `QueuePrefix` that brings it back. Set `QueuePrefix` explicitly so the name survives renames: see [the default queue](../concepts/default-queue.md).
+    If the entry assembly was renamed (or `QueuePrefix` changed), jobs stay in the old `{oldprefix}.default` and no node reads it. The dashboard **Servers** page flags the queue as unattended and names the `QueuePrefix` that brings it back. Set `QueuePrefix` explicitly so the name survives renames: see [the default queue](../concepts/queues.md#the-default-queue).
 
 
 ???+ "Jobs stuck in Processing (orphaned jobs)"

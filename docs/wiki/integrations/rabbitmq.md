@@ -70,7 +70,7 @@ builder.Services.AddNexJob()
 | `VirtualHost` | `"/"` | The virtual host. |
 | `PrefetchCount` | `1` | How many unacknowledged messages the broker may send at once. |
 | `JobType` | `null` | The job type to use for every message. When set, it always wins over the `nexjob.job_type` header — a publisher cannot override it. When unset, the header is read instead. |
-| `TargetQueue` | `"default"` | The NexJob queue the jobs go to. `"default"` is the application's `{prefix}.default` queue ([details](../concepts/default-queue.md)). |
+| `TargetQueue` | `"default"` | The NexJob queue the jobs go to. `"default"` is the application's `{prefix}.default` queue ([details](../concepts/queues.md#the-default-queue)). |
 | `JobPriority` | `Normal` | The priority of the jobs. |
 | `ReconnectDelay` | 5 seconds | The wait between attempts to reconnect. |
 | `ExhaustedJobsRoutingKey` | `null` | When set, a job that exhausts its retries is copied to this routing key. Needs `AddRabbitMqProducer`. |

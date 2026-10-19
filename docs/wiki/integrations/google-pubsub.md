@@ -50,7 +50,7 @@ Credentials come from the Google client library's default chain (Application Def
 | `ProjectId` | required | The Google Cloud project that owns the subscription. |
 | `SubscriptionId` | required | The subscription to read. |
 | `JobType` | `null` | The job type to use for every message. When set, it always wins over the `nexjob.job_type` attribute — a publisher cannot override it. When unset, the attribute is read instead. |
-| `TargetQueue` | `"default"` | The NexJob queue the jobs go to. `"default"` is the application's `{prefix}.default` queue ([details](../concepts/default-queue.md)). |
+| `TargetQueue` | `"default"` | The NexJob queue the jobs go to. `"default"` is the application's `{prefix}.default` queue ([details](../concepts/queues.md#the-default-queue)). |
 | `JobPriority` | `Normal` | The priority of the jobs. |
 | `EmulatorHost` | `null` | A host such as `localhost:8085`. When set, the trigger connects to the Pub/Sub emulator without TLS or credentials. |
 
