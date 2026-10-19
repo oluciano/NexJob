@@ -50,4 +50,52 @@ public abstract class CommitFailureScenarios : DistributedReliabilityTestBase
         plan.Injected.Should().Be(failures);
         await host.StopAsync();
     }
+
+    [Theory]
+    [InlineData(0, false)]
+    [InlineData(3, false)]
+    [InlineData(4, true)]
+    public async Task FailureCommitFailures_UpToTheRetryBudgetAreAbsorbed_PastItTheOrphanWatcherDeadLetters(int failures, bool deadLetteredByWatcher)
+    {
+        // N1 (0 failures), N3 (3 failures: the last one the retries absorb) and N2 (4 failures: the budget is gone and the
+        // job stays Processing until the orphan watcher closes it). In every case the dead-letter handler runs exactly once.
+        var plan = new FaultPlan(nameof(IJobStorage.CommitJobResultAsync), failures);
+        var recorder = new DeadLetterRecorder();
+        var queue = $"commit-failure-{Guid.NewGuid():N}";
+        using var host = BuildHost(
+            s =>
+            {
+                Storage()(s);
+                FaultInjectingStorage<IJobStorage>.Decorate(s, plan);
+                FaultInjectingStorage<IStorageProvider>.Decorate(s, plan);
+            },
+            s =>
+            {
+                s.AddTransient<AlwaysFailJob>(sp => new AlwaysFailJob(() => { }, sp.GetRequiredService<ILogger<AlwaysFailJob>>()));
+                s.AddSingleton(recorder);
+                s.AddTransient<IDeadLetterHandler<AlwaysFailJob>, RecordingDeadLetterHandler<AlwaysFailJob>>();
+            },
+            queues: [queue],
+            heartbeatTimeout: TimeSpan.FromSeconds(5),
+            heartbeatInterval: TimeSpan.FromSeconds(1),
+            maxAttempts: 1);
+        await host.StartAsync();
+
+        var id = await host.Services.GetRequiredService<IScheduler>().EnqueueAsync<AlwaysFailJob>(queue: queue);
+
+        (await WaitForJobStatus(host, id, JobStatus.Failed, Timeout)).Should().NotBeNull("the job ends Failed either way");
+        (await WaitUntil(() => Task.FromResult(recorder.InvocationCount > 0), Timeout)).Should().BeTrue("the dead-letter handler must run");
+        recorder.InvocationCount.Should().Be(1, "the handler runs once, not once per commit attempt");
+        if (deadLetteredByWatcher)
+        {
+            recorder.LastException.Should().BeOfType<OrphanedJobException>("the executor gave up and the watcher closed the job");
+        }
+        else
+        {
+            recorder.LastException.Should().BeOfType<InvalidOperationException>("the executor saved the failure and dead-lettered it with the job's own error");
+        }
+
+        plan.Injected.Should().Be(failures);
+        await host.StopAsync();
+    }
 }
