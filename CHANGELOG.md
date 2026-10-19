@@ -6,6 +6,8 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [6.7.0] - 2026-10-19
+
 ### Security
 
 - **A configured trigger `JobType` can no longer be overridden by a broker message.** In the RabbitMQ, Kafka, Azure Service Bus and Google Pub/Sub triggers, the `nexjob.job_type` message header/attribute/application property previously took precedence over `options.JobType` when both were present, letting anyone who could publish to the broker direct the trigger to invoke any `IJob` registered in the host's DI container with attacker-controlled input. The configured `JobType`, when set, now always wins; the message value is read only as a fallback when `JobType` is unset. (issue #630)
