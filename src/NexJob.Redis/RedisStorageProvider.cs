@@ -177,8 +177,9 @@ public sealed class RedisStorageProvider : IStorageProvider, IOrphanedJobReporte
             local jobKey = 'nexjob:jobs:' .. id
 
             -- A queue entry whose job no longer exists (it was deleted) is dropped. Writing to the missing key
-            -- would recreate a ghost hash without an id.
-            if redis.call('EXISTS', jobKey) == 1 then
+            -- would recreate a ghost hash without an id. So is an entry whose job is no longer Enqueued (it
+            -- succeeded or was picked up after the orphan watcher requeued it): running it would repeat the job.
+            if redis.call('HGET', jobKey, 'status') == 'Enqueued' then
               local now = ARGV[1]
               redis.call('HSET', jobKey,
                 'status', 'Processing',
@@ -212,8 +213,9 @@ public sealed class RedisStorageProvider : IStorageProvider, IOrphanedJobReporte
             redis.call('ZREM', zkey, id)
             local jobKey = 'nexjob:jobs:' .. id
 
-            -- Dropped when the job was deleted: writing to the missing key would recreate a ghost hash.
-            if redis.call('EXISTS', jobKey) == 1 then
+            -- Dropped when the job was deleted (writing to the missing key would recreate a ghost hash) or is no
+            -- longer Enqueued (a stale entry left by an orphan requeue): running it would repeat the job.
+            if redis.call('HGET', jobKey, 'status') == 'Enqueued' then
               redis.call('HSET', jobKey,
                 'status', 'Processing',
                 'processingStartedAt', now,

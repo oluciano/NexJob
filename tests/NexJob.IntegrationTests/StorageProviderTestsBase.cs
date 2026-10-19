@@ -293,6 +293,23 @@ public abstract class StorageProviderTestsBase
     // ── Late commit after the orphan watcher requeued a running job (issue #642) ─
 
     [Fact]
+    public async Task CommitJobResultAsync_late_success_after_requeue_closes_the_job_and_leaves_nothing_to_run()
+    {
+        var (storage, _, dashboard, _) = await CreateStorageAsync();
+        await storage.EnqueueAsync(MakeJob());
+        var fetched = (await storage.FetchNextAsync(["default"]))!;
+        await WaitForTheClockToPassAsync();
+        await storage.RequeueOrphanedJobsAsync(TimeSpan.Zero);
+        (await dashboard.GetJobByIdAsync(fetched.Id))!.Status.Should().Be(JobStatus.Enqueued, "the watcher gave the running job back");
+
+        // The original run was only slow, not dead: it commits its result now.
+        await storage.CommitJobResultAsync(fetched.Id, new JobExecutionResult { Succeeded = true, Logs = [] });
+
+        (await dashboard.GetJobByIdAsync(fetched.Id))!.Status.Should().Be(JobStatus.Succeeded);
+        (await storage.FetchNextAsync(["default"])).Should().BeNull("a job that already succeeded must not be fetched again");
+    }
+
+    [Fact]
     public async Task CommitJobResultAsync_late_success_while_a_second_run_is_processing_is_not_undone_by_the_second_commit()
     {
         var (storage, _, dashboard, _) = await CreateStorageAsync();
