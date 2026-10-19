@@ -213,6 +213,31 @@ public sealed class ServerHeartbeatServiceTests
         await sut.StopAsync(CancellationToken.None);
     }
 
+    /// <summary>
+    /// N3 (Boundary, #646): a registration retry that is still in flight when the host stops completes after the deregistration.
+    /// The node must be deregistered again, otherwise it stays in the cluster as a ghost until its heartbeat expires.
+    /// </summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task StopAsync_WhileARegistrationRetryIsInFlight_DeregistersAgainWhenItCompletes()
+    {
+        var calls = 0;
+        var inFlight = new TaskCompletionSource();
+        _storage.Setup(x => x.RegisterServerAsync(It.IsAny<ServerRecord>(), It.IsAny<CancellationToken>()))
+            .Returns(() => Interlocked.Increment(ref calls) == 1
+                ? Task.FromException(new InvalidOperationException("storage down"))
+                : inFlight.Task);
+        using var sut = CreateSut();
+        await sut.StartAsync(CancellationToken.None);
+        await TestWait.UntilAsync(() => Task.FromResult(Volatile.Read(ref calls) >= 2), because: "the retry must be in flight");
+
+        await sut.StopAsync(CancellationToken.None);
+        inFlight.SetResult();
+
+        await TestWait.InvokedAsync(_storage, nameof(IJobStorage.DeregisterServerAsync), 2);
+        _storage.Verify(x => x.DeregisterServerAsync("test-server", It.IsAny<CancellationToken>()), Times.AtLeast(2));
+    }
+
     /// <summary>Tests that StopAsync deregisters the server and handles errors.</summary>
     /// <returns>A task.</returns>
     [Fact]
