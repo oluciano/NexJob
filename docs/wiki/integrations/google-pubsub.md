@@ -28,7 +28,7 @@ builder.Services.AddNexJobGooglePubSubTrigger<ProcessOrderJob>(options =>
 
 `ProcessOrderJob` must implement `IJob<string>`: it receives the message data as UTF-8 text and decides how to parse it. The subscription must already exist; the trigger does not create it.
 
-To route messages to different job types, omit the generic argument and have the publisher set the `nexjob.job_type` message attribute to the assembly-qualified name of the job (for example `MyApp.Jobs.ProcessOrderJob, MyApp`). You can also set `JobType` as a default for messages without the attribute; when both exist, the attribute wins:
+To route messages to different job types, omit the generic argument and have the publisher set the `nexjob.job_type` message attribute to the assembly-qualified name of the job (for example `MyApp.Jobs.ProcessOrderJob, MyApp`). You can also set `JobType`, which always wins over the attribute when configured — a publisher cannot override it; the attribute is read only when `JobType` is unset:
 
 ```csharp
 builder.Services.AddNexJobGooglePubSubTrigger(options =>
@@ -49,7 +49,7 @@ Credentials come from the Google client library's default chain (Application Def
 |---|---|---|
 | `ProjectId` | required | The Google Cloud project that owns the subscription. |
 | `SubscriptionId` | required | The subscription to read. |
-| `JobType` | `null` | The job type for messages without a `nexjob.job_type` attribute. The attribute wins when both exist. |
+| `JobType` | `null` | The job type to use for every message. When set, it always wins over the `nexjob.job_type` attribute — a publisher cannot override it. When unset, the attribute is read instead. |
 | `TargetQueue` | `"default"` | The NexJob queue the jobs go to. `"default"` is the application's `{prefix}.default` queue ([details](../concepts/default-queue.md)). |
 | `JobPriority` | `Normal` | The priority of the jobs. |
 | `EmulatorHost` | `null` | A host such as `localhost:8085`. When set, the trigger connects to the Pub/Sub emulator without TLS or credentials. |
@@ -59,7 +59,7 @@ A missing `ProjectId` or `SubscriptionId` fails when the host starts. There is n
 ## How a message becomes a job
 
 - **Input:** the message data, read as UTF-8 text.
-- **Job type:** the `nexjob.job_type` attribute, else `JobType`.
+- **Job type:** `JobType` when configured, else the `nexjob.job_type` attribute.
 - **Idempotency key:** the Pub/Sub `MessageId`. It deduplicates only against jobs that are still active; see [the overview](triggers.md#idempotency-keys-by-broker).
 - **Trace:** a `traceparent` message attribute, when present, becomes the job's trace parent.
 

@@ -11,11 +11,11 @@ NexJob triggers bridge external message brokers and your background job pipeline
 
 | Broker | Publishes (outbox) | Idempotency key | The job type comes from | When the enqueue fails |
 |---|---|---|---|---|
-| [**Kafka**](kafka.md) | Yes | `kafka:{topic}:{partition}:{offset}` | header `nexjob.job_type`, or `JobType` | Transient: retried in place with a growing pause (1 s up to 30 s) without consuming the next record. Permanent: copied to the dead-letter topic if one is configured, otherwise skipped with an error log. |
-| [**RabbitMQ**](rabbitmq.md) | Yes | `MessageId` (none when blank) | header `nexjob.job_type`, or `JobType` | Transient: `nack` with requeue after 1 s. Permanent: `nack` without requeue. |
-| [**Azure Service Bus**](azure-service-bus.md) | No | `MessageId` | application property `nexjob.job_type`, or `JobType` | Transient: the message is abandoned and redelivered. Permanent: dead-lettered. |
+| [**Kafka**](kafka.md) | Yes | `kafka:{topic}:{partition}:{offset}` | `JobType`, else header `nexjob.job_type` | Transient: retried in place with a growing pause (1 s up to 30 s) without consuming the next record. Permanent: copied to the dead-letter topic if one is configured, otherwise skipped with an error log. |
+| [**RabbitMQ**](rabbitmq.md) | Yes | `MessageId` (none when blank) | `JobType`, else header `nexjob.job_type` | Transient: `nack` with requeue after 1 s. Permanent: `nack` without requeue. |
+| [**Azure Service Bus**](azure-service-bus.md) | No | `MessageId` | `JobType`, else application property `nexjob.job_type` | Transient: the message is abandoned and redelivered. Permanent: dead-lettered. |
 | [**AWS SQS**](aws-sqs.md) | No | `MessageId` | only the `JobName` option | Any failure: the visibility timeout is reset to 0, so the message returns at once. A redrive policy on the queue is what parks it. |
-| [**Google Pub/Sub**](google-pubsub.md) | No | message ID | attribute `nexjob.job_type`, or `JobType` | Transient: `Nack`. Permanent: `Nack` after 2 s, so a dead-letter policy on the subscription can park it. |
+| [**Google Pub/Sub**](google-pubsub.md) | No | message ID | `JobType`, else attribute `nexjob.job_type` | Transient: `Nack`. Permanent: `Nack` after 2 s, so a dead-letter policy on the subscription can park it. |
 | [**Salesforce Pub/Sub API**](salesforce.md) | No | event id (replay id as hex) | the `JobType` option, else the built-in `SalesforceEventJob` | The event is logged and, when `DeadLetterQueue` is set, copied there as a job. Its replay id is not committed. An event that can never be decoded is logged, kept in `DeadLetterQueue` as Base64 when one is set, and skipped with its replay id committed. |
 | [**Salesforce Streaming API**](salesforce-streaming.md) | No | `{channel}:{eventId}` | the `JobType` option, else the built-in `SalesforceStreamingEventJob` | The same as the Pub/Sub API trigger. |
 
@@ -78,8 +78,8 @@ An optional **`traceparent`** header or attribute carries the W3C trace context 
 
 Most triggers resolve which job to run using the same three-step precedence:
 
-1. **`nexjob.job_type` header/attribute** on the message — set by the publisher as the assembly-qualified name (e.g. `MyApp.Jobs.ProcessOrderJob, MyApp`).
-2. **Subscriber's configured job type** — `options.JobType`, or the generic overload `Add{Broker}Trigger<TJob>()` which sets it for you. The AWS SQS option is called `JobName`, and SQS reads **no** message attribute: its job type is always the configured one. The two Salesforce triggers fall back to a built-in job when no type is configured.
+1. **Subscriber's configured job type** — `options.JobType`, or the generic overload `Add{Broker}Trigger<TJob>()` which sets it for you. The AWS SQS option is called `JobName`, and SQS reads **no** message attribute: its job type is always the configured one. The two Salesforce triggers fall back to a built-in job when no type is configured. A configured value always wins: the message header/attribute below is never even read when it is set, so a broker publisher cannot override the operator's choice of job.
+2. **`nexjob.job_type` header/attribute** on the message, used only when no job type was configured — set by the publisher as the assembly-qualified name (e.g. `MyApp.Jobs.ProcessOrderJob, MyApp`).
 3. **Neither present** — permanent failure: the message can never become a job and is dead-lettered or committed without redelivery (see *Error Handling* below).
 
 ---

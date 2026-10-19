@@ -46,7 +46,7 @@ Write the tests FIRST before implementing production code:
 ## 5. Automated Verification & Gates (Phase 4, 4.5, 4.6, 4.7)
 - **Formatting:** `dotnet format --verify-no-changes`.
 - **Build:** `dotnet build -c Release` (0 warnings, 0 errors across `net8.0` and `net10.0`).
-- **Unit & Integration Tests:** `dotnet test --no-build` and targeted provider tests.
+- **Unit & Integration Tests:** `dotnet test tests/<TouchedPackage>.Tests --no-build` (scoped to touched package unit tests) and targeted integration tests.
 - **Continuous Changelog (Phase 4.5):** Add entry under `## [Unreleased]` -> `### Added` referencing issue/PR.
 - **Documentation & Wiki Truth Gate (Phase 4.6):** Update package `README.md` and relevant Wiki pages (`docs/wiki/*.md`).
 - **Dashboard Chaos Gate (Phase 4.7):** If touching UI, run headless browser regression (`node .agents/skills/nexjob-dashboard-chaos-gate/scripts/full-regression.js`).

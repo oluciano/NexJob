@@ -222,6 +222,13 @@ internal sealed class AzureServiceBusTriggerHandler : IHostedService
     /// </summary>
     private string ExtractJobType(ServiceBusReceivedMessage message)
     {
+        // A configured JobType pins this trigger to one job; it must win over the application
+        // property, which a message publisher could otherwise set to target an unintended job (#630).
+        if (!string.IsNullOrWhiteSpace(_options.JobType))
+        {
+            return _options.JobType;
+        }
+
         if (message.ApplicationProperties.TryGetValue("nexjob.job_type", out var jobType) &&
             jobType is not null)
         {
@@ -230,11 +237,6 @@ internal sealed class AzureServiceBusTriggerHandler : IHostedService
             {
                 return str;
             }
-        }
-
-        if (!string.IsNullOrWhiteSpace(_options.JobType))
-        {
-            return _options.JobType;
         }
 
         throw new InvalidOperationException("Message must contain 'nexjob.job_type' in ApplicationProperties or JobType must be configured in AzureServiceBusTriggerOptions");

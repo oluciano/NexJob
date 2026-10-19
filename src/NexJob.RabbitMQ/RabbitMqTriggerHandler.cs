@@ -144,16 +144,18 @@ internal sealed class RabbitMqTriggerHandler : IHostedService, IAsyncDisposable
 
     private string ExtractJobType(IBasicProperties props)
     {
+        // A configured JobType pins this trigger to one job; it must win over the header,
+        // which a broker publisher could otherwise set to target an unintended job (#630).
+        if (!string.IsNullOrWhiteSpace(_options.JobType))
+        {
+            return _options.JobType;
+        }
+
         if (props.Headers is not null &&
             props.Headers.TryGetValue("nexjob.job_type", out var value) &&
             value is byte[] bytes)
         {
             return Encoding.UTF8.GetString(bytes);
-        }
-
-        if (!string.IsNullOrWhiteSpace(_options.JobType))
-        {
-            return _options.JobType;
         }
 
         throw new InvalidOperationException("Message must contain 'nexjob.job_type' header or JobType must be configured in RabbitMqTriggerOptions.");

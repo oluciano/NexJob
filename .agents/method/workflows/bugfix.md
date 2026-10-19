@@ -37,7 +37,7 @@
 ## 4. Automated Verification & Gates (Phase 4, 4.5, 4.6)
 - **Formatting:** `dotnet format --verify-no-changes`.
 - **Build:** `dotnet build -c Release` (0 warnings, `TreatWarningsAsErrors = true`, validating both `net8.0` and `net10.0`).
-- **Test Suite:** `dotnet test --no-build` (regression test and full test suite pass on all target frameworks).
+- **Test Suite:** `dotnet test tests/<TouchedPackage>.Tests --no-build` (scoped to touched package unit tests; avoid bare `dotnet test` which runs stress/reliability serially causing flakes).
 - **Test Contract Self-Audit:**
   ```bash
   git diff develop -- tests | grep -E '^-' | grep -E 'Should\(|Assert\.|Verify\(|Times\.|\[Fact|\[Theory|Skip ='

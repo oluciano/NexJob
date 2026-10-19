@@ -134,15 +134,17 @@ internal sealed class KafkaTriggerHandler : BackgroundService
 
     private string ExtractJobType(Headers headers)
     {
+        // A configured JobType pins this trigger to one job; it must win over the header,
+        // which a broker publisher could otherwise set to target an unintended job (#630).
+        if (!string.IsNullOrWhiteSpace(_options.JobType))
+        {
+            return _options.JobType;
+        }
+
         var header = headers.FirstOrDefault(h => string.Equals(h.Key, "nexjob.job_type", StringComparison.Ordinal));
         if (header is not null)
         {
             return Encoding.UTF8.GetString(header.GetValueBytes());
-        }
-
-        if (!string.IsNullOrWhiteSpace(_options.JobType))
-        {
-            return _options.JobType;
         }
 
         throw new InvalidOperationException("Message must contain 'nexjob.job_type' header or JobType must be configured in KafkaTriggerOptions.");
