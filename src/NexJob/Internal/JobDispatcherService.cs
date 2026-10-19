@@ -218,6 +218,12 @@ internal sealed class JobDispatcherService : BackgroundService
                     {
                         break;
                     }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Error reading runtime settings from storage");
+                        await Task.Delay(_options.PollingInterval, fetchToken).ConfigureAwait(false);
+                        continue;
+                    }
 
                     var activeQueues = GetActiveQueues(runtime);
                     if (activeQueues.Count == 0)
