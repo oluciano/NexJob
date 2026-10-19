@@ -21,6 +21,7 @@ internal sealed class ServerHeartbeatService : IHostedService, IDisposable
     private readonly DateTimeOffset _startedAt = DateTimeOffset.UtcNow;
     private Timer? _timer;
     private volatile bool _registered;
+    private volatile bool _stopping;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ServerHeartbeatService"/> class.
@@ -74,21 +75,11 @@ internal sealed class ServerHeartbeatService : IHostedService, IDisposable
     public async Task StopAsync(CancellationToken cancellationToken)
     {
         _logger.LogDebug("Deregistering active server node...");
+        _stopping = true;
         _timer?.Change(Timeout.Infinite, 0);
         NexJobMetrics.SetQueueDepthProvider(null);
 
-        try
-        {
-            // Give 5 seconds for deregistration out of the total shutdown timeout
-            using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            cts.CancelAfter(TimeSpan.FromSeconds(5));
-            await _storage.DeregisterServerAsync(_serverId, cts.Token).ConfigureAwait(false);
-            _logger.LogInformation("Server node {ServerId} gracefully deregistered.", _serverId);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to gracefully deregister server {ServerId} on shutdown.", _serverId);
-        }
+        await DeregisterAsync(cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -142,9 +133,36 @@ internal sealed class ServerHeartbeatService : IHostedService, IDisposable
     private async Task RetryRegistrationAsync()
     {
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-        if (await TryRegisterAsync(cts.Token).ConfigureAwait(false))
+        if (!await TryRegisterAsync(cts.Token).ConfigureAwait(false))
         {
-            _logger.LogInformation("Server node {ServerId} registered after retrying.", _serverId);
+            return;
+        }
+
+        _logger.LogInformation("Server node {ServerId} registered after retrying.", _serverId);
+
+        // The host stopped while this retry was in flight: StopAsync has already deregistered, so this late
+        // registration would leave a ghost node until its heartbeat expires.
+        if (_stopping)
+        {
+            await DeregisterAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>Removes this node from the storage, giving the storage 5 seconds out of the total shutdown timeout.</summary>
+    /// <param name="cancellationToken">Cancelled when the shutdown timeout runs out.</param>
+    /// <returns>A task representing the asynchronous operation.</returns>
+    private async Task DeregisterAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            cts.CancelAfter(TimeSpan.FromSeconds(5));
+            await _storage.DeregisterServerAsync(_serverId, cts.Token).ConfigureAwait(false);
+            _logger.LogInformation("Server node {ServerId} gracefully deregistered.", _serverId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to gracefully deregister server {ServerId} on shutdown.", _serverId);
         }
     }
 
