@@ -59,6 +59,29 @@ The failed save is retried three times, about 2.6 seconds in all (four calls). R
     A job that fails on its last attempt and a job whose node died on its last attempt both reach your `IDeadLetterHandler<TJob>` and every `IDeadLetterForwarder`. The second one receives an `OrphanedJobException`, because the job never reported an error of its own. See [When the node dies](dead-letter.md#when-the-node-dies).
 
 
+## When storage is unavailable
+
+Storage is the source of truth, so an outage stops progress. For the calls in the table, the component catches the storage error, logs it and tries again. Which log you see and what it costs the job depends on how long the outage lasts compared with `HeartbeatTimeout` (default 5 minutes).
+
+| Component | What happens | Log level and text | The job's attempt |
+| --- | --- | --- | --- |
+| **Short outage (shorter than `HeartbeatTimeout`)** | | | |
+| Dispatcher fetch | The fetch error is caught, the dispatcher waits `PollingInterval` (default 15 s, no exponential backoff) and polls again. It resumes by itself when storage is back | `Error`, `Error fetching next jobs from storage`, once per poll for the whole outage | None used: nothing was fetched |
+| Job heartbeat (a running job) | The job keeps running. The update is tried again every `HeartbeatInterval` (default 30 s) | `Warning`, `Heartbeat update for job {JobId} failed; will retry on the next interval` | Not affected |
+| Node heartbeat | The timer continues. Each beat has a 10 s timeout | `Warning`, `Failed to update global heartbeat for server {ServerId}.` | Not affected |
+| Saving a result | Retried three times, about 2.6 s, as described in [the table above](#when-the-job-fails-or-its-node-dies) | see above | Used |
+| Orphan watcher, recurring scheduler, retention | The error is caught and the loop continues. The orphan watcher retries after the smaller of 5 s and `HeartbeatTimeout`; the recurring scheduler waits 5 s and the retention service continues its loop | `Error`, `Error in OrphanedJobWatcherService`, `Error in RecurringJobSchedulerService`, `Error in JobRetentionService.` | Not affected |
+| **Long outage (longer than `HeartbeatTimeout`)** | | | |
+| Job running during the outage | The job keeps running, but its heartbeat cannot be written, so it goes stale. When storage returns, the orphan watcher requeues any `Processing` job whose heartbeat is older than `HeartbeatTimeout`. It does not check whether the process that owns the job is alive, so a job that is still running can be run a second time | none for the requeue (a `Warning` only when the job had no attempts left, see [Where to see it](#where-to-see-it)) | Used: the requeued run counts as a new attempt |
+| **Enqueue side** | | | |
+| `IScheduler.EnqueueAsync` and `ScheduleAsync` | The storage exception reaches the caller unwrapped. There is no retry inside NexJob, and the dispatcher is not woken up | none from NexJob; your code sees the exception | No job exists |
+
+Guidance derived from the requeue criterion: set `HeartbeatTimeout` above the longest outage you want to ride out, plus two `HeartbeatInterval`. A job that is requeued while still running is the at-least-once guarantee at work, so make it [idempotent](idempotency.md).
+
+The caller owns the retry of an enqueue. When the failure leaves you unsure whether the job was stored (a timeout after the write), repeat the call with the same `idempotencyKey`: while the first job is still active the call returns its `JobId` instead of creating a second one. Once it has ended, [`DuplicatePolicy`](idempotency.md#duplicatepolicy) decides. `ScheduleAsync` and `ScheduleAtAsync` always use `AllowAfterFailed`.
+
+Outage behavior beyond this table is not covered by tests: see [How NexJob is Tested](../reference/how-we-test.md#what-is-not-covered).
+
 ## Where to see it
 
 | What you want to know | Look at |

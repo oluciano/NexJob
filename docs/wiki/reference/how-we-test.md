@@ -48,6 +48,7 @@ Being clear about gaps matters more than a long list of passing tests:
 - Connection counts for SQL Server run three nodes in one process, so they share one ADO.NET pool: the figures are an upper-bound guard, not a model of three processes.
 - Authentication on Redis, and MongoDB through a live object beyond what the test container requires.
 - **Wake-up latency.** Wall-clock bounds are too fragile on shared build machines to assert.
+- **A database outage.** No test cuts a real database connection mid-run (no container outage or failover test). How the dispatcher, the heartbeats, enqueue and startup behave when storage is unavailable is established by reading the code and by mock-based unit tests, not by provider tests. See [When storage is unavailable](../concepts/delivery-guarantees.md#when-storage-is-unavailable).
 - Brokers other than Kafka, RabbitMQ, SQS, Salesforce and the Pub/Sub emulator are exercised by unit tests only.
 
 ## Validation rounds
