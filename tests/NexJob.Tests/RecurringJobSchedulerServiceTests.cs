@@ -381,4 +381,52 @@ public sealed class RecurringJobSchedulerServiceTests
         // Assert
         _jobStorage.Verify(x => x.EnqueueAsync(It.IsAny<JobRecord>(), It.IsAny<DuplicatePolicy>(), It.IsAny<CancellationToken>()), Times.Never);
     }
+
+    /// <summary>
+    /// N2 (Negative, #642): the enqueue and the advance of NextExecution are two storage calls. When the second fails the
+    /// job already exists and the next cycle fires the same occurrence again. SkipIfRunning sends the same idempotency key
+    /// both times (the storage rejects the second while the first is active); AllowConcurrent has no key.
+    /// </summary>
+    /// <param name="policy">The concurrency policy of the recurring job.</param>
+    /// <param name="expectedKey">The idempotency key both firings carry.</param>
+    /// <returns>A task that completes when the assertions have run.</returns>
+    [Theory]
+    [InlineData(RecurringConcurrencyPolicy.SkipIfRunning, "recurring:r-advance")]
+    [InlineData(RecurringConcurrencyPolicy.AllowConcurrent, null)]
+    public async Task AdvanceFailsAfterEnqueue_TheNextCycleFiresTheSameOccurrenceAgain(RecurringConcurrencyPolicy policy, string? expectedKey)
+    {
+        var job = new RecurringJobRecord
+        {
+            RecurringJobId = "r-advance",
+            JobType = "FakeJob",
+            InputType = "System.String",
+            InputJson = "\"go\"",
+            Cron = "* * * * *",
+            Queue = "default",
+            Enabled = true,
+            NextExecution = DateTimeOffset.UtcNow.AddSeconds(-1),
+            ConcurrencyPolicy = policy,
+        };
+        _recurringStorage.Setup(x => x.GetDueRecurringJobsAsync(It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<RecurringJobRecord> { job });
+        _recurringStorage.Setup(x => x.GetRecurringJobByIdAsync("r-advance", It.IsAny<CancellationToken>())).ReturnsAsync(job);
+        _recurringStorage.Setup(x => x.TryAcquireRecurringJobLockAsync(It.IsAny<string>(), It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+        _recurringStorage.SetupSequence(x => x.SetRecurringJobNextExecutionAsync("r-advance", It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("storage down"))
+            .Returns(Task.CompletedTask);
+        var enqueued = new List<JobRecord>();
+        _jobStorage.Setup(x => x.EnqueueAsync(It.IsAny<JobRecord>(), It.IsAny<DuplicatePolicy>(), It.IsAny<CancellationToken>()))
+            .Callback<JobRecord, DuplicatePolicy, CancellationToken>((j, _, _) => enqueued.Add(j))
+            .ReturnsAsync((JobRecord j, DuplicatePolicy _, CancellationToken _) => new EnqueueResult(j.Id, false));
+        var sut = CreateSut();
+        var method = typeof(RecurringJobSchedulerService).GetMethod("EnqueueDueJobsAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+
+        await (Task)method!.Invoke(sut, new object[] { CancellationToken.None })!;
+        await (Task)method.Invoke(sut, new object[] { CancellationToken.None })!;
+
+        enqueued.Should().HaveCount(2, "the occurrence was not advanced, so the second cycle fires it again");
+        enqueued.Should().OnlyContain(j => j.IdempotencyKey == expectedKey);
+        _recurringStorage.Verify(x => x.SetRecurringJobNextExecutionAsync("r-advance", It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()), Times.Exactly(2));
+    }
 }
