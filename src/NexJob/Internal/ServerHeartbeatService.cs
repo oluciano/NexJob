@@ -18,7 +18,10 @@ internal sealed class ServerHeartbeatService : IHostedService, IDisposable
     private readonly NexJobOptions _options;
     private readonly ILogger<ServerHeartbeatService> _logger;
     private readonly string _serverId;
+    private readonly DateTimeOffset _startedAt = DateTimeOffset.UtcNow;
     private Timer? _timer;
+    private volatile bool _registered;
+    private volatile bool _stopping;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ServerHeartbeatService"/> class.
@@ -49,36 +52,18 @@ internal sealed class ServerHeartbeatService : IHostedService, IDisposable
     {
         _logger.LogDebug("Registering active server node in cluster...");
 
-        var serverInfo = new ServerRecord
+        if (await TryRegisterAsync(cancellationToken).ConfigureAwait(false))
         {
-            Id = _serverId,
-            WorkerCount = _options.Workers,
-            Queues = _options.Workers == 0 ? [] : _options.PolledQueues,
-            StartedAt = DateTimeOffset.UtcNow,
-            HeartbeatAt = DateTimeOffset.UtcNow,
-        };
-
-        try
-        {
-            await _storage.RegisterServerAsync(serverInfo, cancellationToken).ConfigureAwait(false);
-
-            // Start the periodic heartbeat timer
-            _timer = new Timer(
-                callback: DoWork,
-                state: null,
-                dueTime: _options.ServerHeartbeatInterval,
-                period: _options.ServerHeartbeatInterval);
-
             _logger.LogInformation(
                 "Server node {ServerId} registered and heartbeat started.", _serverId);
         }
-        catch (Exception ex)
-        {
-            // Registration failed — worker will execute jobs but will not appear in
-            // dashboard or cluster tracking. Log as Warning so operators can detect
-            // this degraded state without bringing down the process.
-            _logger.LogWarning(ex, "Server node {ServerId} failed to register — running in degraded mode (jobs will execute but this instance will not appear in dashboard or cluster tracking).", _serverId);
-        }
+
+        // The timer runs even when the registration failed: each tick retries it until the storage answers.
+        _timer = new Timer(
+            callback: DoWork,
+            state: null,
+            dueTime: _options.ServerHeartbeatInterval,
+            period: _options.ServerHeartbeatInterval);
 
         if (_dashboardStorage is not null)
         {
@@ -90,12 +75,86 @@ internal sealed class ServerHeartbeatService : IHostedService, IDisposable
     public async Task StopAsync(CancellationToken cancellationToken)
     {
         _logger.LogDebug("Deregistering active server node...");
+        _stopping = true;
         _timer?.Change(Timeout.Infinite, 0);
         NexJobMetrics.SetQueueDepthProvider(null);
 
+        await DeregisterAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc/>
+    public void Dispose()
+    {
+        _timer?.Dispose();
+    }
+
+    /// <summary>Registers this node in the storage.</summary>
+    /// <returns>True when the node is registered; false when the storage failed, which is logged and retried on the next tick.</returns>
+    private async Task<bool> TryRegisterAsync(CancellationToken cancellationToken)
+    {
+        var serverInfo = new ServerRecord
+        {
+            Id = _serverId,
+            WorkerCount = _options.Workers,
+            Queues = _options.Workers == 0 ? [] : _options.PolledQueues,
+            StartedAt = _startedAt,
+            HeartbeatAt = DateTimeOffset.UtcNow,
+        };
+
         try
         {
-            // Give 5 seconds for deregistration out of the total shutdown timeout
+            await _storage.RegisterServerAsync(serverInfo, cancellationToken).ConfigureAwait(false);
+            _registered = true;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            // Registration failed — worker will execute jobs but will not appear in
+            // dashboard or cluster tracking until a retry succeeds. Log as Warning so operators
+            // can detect this degraded state without bringing down the process.
+            _logger.LogWarning(ex, "Server node {ServerId} failed to register — running in degraded mode (jobs will execute but this instance will not appear in dashboard or cluster tracking). Retrying every {Interval}.", _serverId, _options.ServerHeartbeatInterval);
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Periodically updates the global heartbeat for the current server node.
+    /// </summary>
+    /// <param name="state">The timer state.</param>
+    private void DoWork(object? state)
+    {
+        // Fire and forget as the timer runs synchronously. A node that never registered has nothing to heartbeat:
+        // it retries the registration instead, on the same interval.
+        _ = _registered ? HeartbeatAsync() : RetryRegistrationAsync();
+    }
+
+    /// <summary>Retries the registration of a node that could not register at start-up.</summary>
+    /// <returns>A task representing the asynchronous operation.</returns>
+    private async Task RetryRegistrationAsync()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        if (!await TryRegisterAsync(cts.Token).ConfigureAwait(false))
+        {
+            return;
+        }
+
+        _logger.LogInformation("Server node {ServerId} registered after retrying.", _serverId);
+
+        // The host stopped while this retry was in flight: StopAsync has already deregistered, so this late
+        // registration would leave a ghost node until its heartbeat expires.
+        if (_stopping)
+        {
+            await DeregisterAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>Removes this node from the storage, giving the storage 5 seconds out of the total shutdown timeout.</summary>
+    /// <param name="cancellationToken">Cancelled when the shutdown timeout runs out.</param>
+    /// <returns>A task representing the asynchronous operation.</returns>
+    private async Task DeregisterAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             cts.CancelAfter(TimeSpan.FromSeconds(5));
             await _storage.DeregisterServerAsync(_serverId, cts.Token).ConfigureAwait(false);
@@ -105,22 +164,6 @@ internal sealed class ServerHeartbeatService : IHostedService, IDisposable
         {
             _logger.LogWarning(ex, "Failed to gracefully deregister server {ServerId} on shutdown.", _serverId);
         }
-    }
-
-    /// <inheritdoc/>
-    public void Dispose()
-    {
-        _timer?.Dispose();
-    }
-
-    /// <summary>
-    /// Periodically updates the global heartbeat for the current server node.
-    /// </summary>
-    /// <param name="state">The timer state.</param>
-    private void DoWork(object? state)
-    {
-        // Fire and forget the heartbeat as the timer runs synchronously
-        _ = HeartbeatAsync();
     }
 
     /// <summary>
