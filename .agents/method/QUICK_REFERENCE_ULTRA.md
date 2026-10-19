@@ -19,7 +19,7 @@ load: foundation-minimal + reliability + execution-mode
 load: foundation-minimal + trigger + execution-mode + validation-mode
 
 ## documentation
-load: foundation-minimal + documentation + nexjob-docs-truth skill
+load: foundation-minimal + documentation + nexjob-wiki-guardian + nexjob-docs-truth skills
 
 ## release
 load: release-mode (04-release-mode.md) [orchestrated via nexjob-release skill]

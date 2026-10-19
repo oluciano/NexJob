@@ -11,6 +11,10 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **A configured trigger `JobType` can no longer be overridden by a broker message.** In the RabbitMQ, Kafka, Azure Service Bus and Google Pub/Sub triggers, the `nexjob.job_type` message header/attribute/application property previously took precedence over `options.JobType` when both were present, letting anyone who could publish to the broker direct the trigger to invoke any `IJob` registered in the host's DI container with attacker-controlled input. The configured `JobType`, when set, now always wins; the message value is read only as a fallback when `JobType` is unset. (issue #630)
 - **The job detail page's live log viewer no longer builds markup with `innerHTML`.** The SSE live-refresh handler rebuilt the log panel from `logs.map(l => ... + l.message + ...).join('')` straight into `innerHTML`, so a job that logs attacker-influenced input (common when the job's input comes from an external broker trigger) could run arbitrary JavaScript in an operator's authenticated dashboard session while watching that job. Entries are now built with `document.createElement` and `.textContent`, the same safe pattern the recurring job detail page already used. (issue #629)
 
+### Documentation
+
+- **Added `nexjob-wiki-guardian` skill for human-centric documentation architecture.** Establishes an anti-accumulation, dev-to-dev documentation curator skill in `.agents/skills/nexjob-wiki-guardian/SKILL.md` to prevent content fragmentation, eliminate marketing fluff, extract buried features, and ensure all capabilities are canonical and discoverable.
+
 ## [6.6.0] - 2026-10-18
 
 ### Changed

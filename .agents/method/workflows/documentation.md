@@ -1,6 +1,7 @@
 # Workflow: Documentation & Changelog Truth
 
 **When:** Updating documentation, modifying Wiki pages (`docs/wiki/`), updating package `README.md` files, adding `CHANGELOG.md` entries, or preparing a release truth gate.
+**Execution Skills:** Governed by `.agents/skills/nexjob-wiki-guardian/SKILL.md` (curation & architecture) and `.agents/skills/nexjob-docs-truth/SKILL.md` (truth gate).
 
 ---
 
