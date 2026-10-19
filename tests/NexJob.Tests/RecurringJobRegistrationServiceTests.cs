@@ -14,23 +14,103 @@ namespace NexJob.Tests;
 public sealed class RecurringJobRegistrationServiceTests
 {
     /// <summary>
-    /// N2 (Negative, #642): when the storage is down at start-up the registration is logged and given up: the service ends
-    /// after a single attempt, so the configured recurring jobs are not registered until the host restarts.
+    /// N2 (Negative, #648): with the storage down for the whole run the service keeps retrying with backoff, never throws,
+    /// and stops retrying when the host stops.
     /// </summary>
     /// <returns>A task that completes when the assertions have run.</returns>
     [Fact]
-    public async Task StorageDownAtStart_RegistrationIsAttemptedOnceAndGivenUp()
+    // Behavior changed in v6.7.0: a storage failure at start used to be attempted once and given up (#642); it is retried with backoff (#648).
+    public async Task StorageDownAtStart_KeepsRetryingUntilTheHostStops()
     {
+        var upserts = 0;
         var storage = new Mock<IRecurringStorage>();
         storage.Setup(x => x.UpsertRecurringJobAsync(It.IsAny<RecurringJobRecord>(), It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new InvalidOperationException("storage down"));
+            .Returns(() =>
+            {
+                Interlocked.Increment(ref upserts);
+                return Task.FromException(new InvalidOperationException("storage down"));
+            });
         var sut = BuildService(storage.Object);
+
+        await sut.StartAsync(CancellationToken.None);
+
+        await TestWait.UntilAsync(() => Task.FromResult(Volatile.Read(ref upserts) >= 3), TimeSpan.FromSeconds(20), "the registration keeps being retried");
+        sut.ExecuteTask!.IsCompleted.Should().BeFalse("the service waits for the storage instead of giving up");
+        await sut.StopAsync(CancellationToken.None);
+        sut.ExecuteTask.IsCompleted.Should().BeTrue("stopping the host ends the retry loop");
+    }
+
+    /// <summary>N1 (Positive, #648): the storage fails twice and then answers; the job is registered and the service ends.</summary>
+    /// <returns>A task that completes when the assertions have run.</returns>
+    [Fact]
+    public async Task StorageFailsTwiceThenAnswers_TheJobIsRegisteredAndTheServiceEnds()
+    {
+        var calls = 0;
+        var stored = 0;
+        var storage = new Mock<IRecurringStorage>();
+        storage.Setup(x => x.UpsertRecurringJobAsync(It.IsAny<RecurringJobRecord>(), It.IsAny<CancellationToken>()))
+            .Returns(() =>
+            {
+                if (Interlocked.Increment(ref calls) <= 2)
+                {
+                    return Task.FromException(new InvalidOperationException("storage down"));
+                }
+
+                Interlocked.Increment(ref stored);
+                return Task.CompletedTask;
+            });
+        var sut = BuildService(storage.Object);
+
+        await sut.StartAsync(CancellationToken.None);
+        await sut.ExecuteTask!.WaitAsync(TimeSpan.FromSeconds(20));
+
+        Volatile.Read(ref stored).Should().Be(1, "the job is stored once, on the first attempt that works");
+        Volatile.Read(ref calls).Should().Be(3);
+        await sut.StopAsync(CancellationToken.None);
+    }
+
+    /// <summary>N3 (Invalid input, #648): a configuration error is permanent, so it is not retried and the service ends.</summary>
+    /// <returns>A task that completes when the assertions have run.</returns>
+    [Fact]
+    public async Task ConfigurationError_IsNotRetried()
+    {
+        var storage = new Mock<IRecurringStorage>();
+        var sut = BuildService(storage.Object, jobs: [new RecurringJobSettings { Job = "TestJob1", Cron = "not a cron" }]);
 
         await sut.StartAsync(CancellationToken.None);
         await sut.ExecuteTask!.WaitAsync(TimeSpan.FromSeconds(10));
 
-        sut.ExecuteTask.IsCompletedSuccessfully.Should().BeTrue("the failure is swallowed and the service ends");
-        storage.Verify(x => x.UpsertRecurringJobAsync(It.IsAny<RecurringJobRecord>(), It.IsAny<CancellationToken>()), Times.Once);
+        storage.Verify(x => x.UpsertRecurringJobAsync(It.IsAny<RecurringJobRecord>(), It.IsAny<CancellationToken>()), Times.Never);
+        await sut.StopAsync(CancellationToken.None);
+    }
+
+    /// <summary>
+    /// N3 (Boundary, #648): one job has a configuration error and another hits a storage failure. Only the storage failure is
+    /// retried, and the bad job does not stop the good one from being stored.
+    /// </summary>
+    /// <returns>A task that completes when the assertions have run.</returns>
+    [Fact]
+    public async Task BadJobAndStorageFailure_OnlyTheStorageFailureIsRetried()
+    {
+        var calls = 0;
+        var storage = new Mock<IRecurringStorage>();
+        storage.Setup(x => x.UpsertRecurringJobAsync(It.IsAny<RecurringJobRecord>(), It.IsAny<CancellationToken>()))
+            .Returns(() => Interlocked.Increment(ref calls) == 1
+                ? Task.FromException(new InvalidOperationException("storage down"))
+                : Task.CompletedTask);
+        var sut = BuildService(
+            storage.Object,
+            jobs:
+            [
+                new RecurringJobSettings { Job = "TestJob1", Cron = "not a cron", Id = "bad" },
+                new RecurringJobSettings { Job = "TestJob1", Cron = "0 0 * * *", Id = "good" },
+            ]);
+
+        await sut.StartAsync(CancellationToken.None);
+        await sut.ExecuteTask!.WaitAsync(TimeSpan.FromSeconds(20));
+
+        storage.Verify(x => x.UpsertRecurringJobAsync(It.Is<RecurringJobRecord>(r => r.RecurringJobId == "good"), It.IsAny<CancellationToken>()), Times.Exactly(2));
+        storage.Verify(x => x.UpsertRecurringJobAsync(It.Is<RecurringJobRecord>(r => r.RecurringJobId == "bad"), It.IsAny<CancellationToken>()), Times.Never);
         await sut.StopAsync(CancellationToken.None);
     }
 
