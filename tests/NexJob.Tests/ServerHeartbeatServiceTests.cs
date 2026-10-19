@@ -118,6 +118,101 @@ public sealed class ServerHeartbeatServiceTests
         _storage.Verify(x => x.RegisterServerAsync(It.Is<ServerRecord>(s => s.Id == "test-server"), It.IsAny<CancellationToken>()), Times.Once);
     }
 
+    /// <summary>
+    /// N1 (Positive, #646): the registration at start-up fails once, then the storage is back. The node must end up registered,
+    /// otherwise it never appears in the dashboard or in the cluster tracking.
+    /// </summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task StartAsync_RegistrationFailsOnce_NodeRegistersOnceStorageIsBack()
+    {
+        var calls = 0;
+        var registered = 0;
+        _storage.Setup(x => x.RegisterServerAsync(It.IsAny<ServerRecord>(), It.IsAny<CancellationToken>()))
+            .Returns(() =>
+            {
+                if (Interlocked.Increment(ref calls) == 1)
+                {
+                    return Task.FromException(new InvalidOperationException("storage down"));
+                }
+
+                Interlocked.Increment(ref registered);
+                return Task.CompletedTask;
+            });
+        using var sut = CreateSut();
+
+        await sut.StartAsync(CancellationToken.None);
+
+        await TestWait.UntilAsync(() => Task.FromResult(Volatile.Read(ref registered) >= 1), because: "the node must register once the storage answers");
+        Volatile.Read(ref registered).Should().BeGreaterThanOrEqualTo(1);
+        await sut.StopAsync(CancellationToken.None);
+    }
+
+    /// <summary>N2 (Negative, #646): while the registration keeps failing the service keeps trying, never throws, and stops trying at shutdown.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task StartAsync_RegistrationKeepsFailing_KeepsRetryingWithoutThrowing_AndStopsAtShutdown()
+    {
+        var calls = 0;
+        _storage.Setup(x => x.RegisterServerAsync(It.IsAny<ServerRecord>(), It.IsAny<CancellationToken>()))
+            .Returns(() =>
+            {
+                Interlocked.Increment(ref calls);
+                return Task.FromException(new InvalidOperationException("storage down"));
+            });
+        using var sut = CreateSut();
+
+        await sut.StartAsync(CancellationToken.None);
+
+        await TestWait.UntilAsync(() => Task.FromResult(Volatile.Read(ref calls) >= 3), because: "a node that is not registered keeps trying");
+        await sut.StopAsync(CancellationToken.None);
+
+        // Asserting that something does NOT happen: a sleep is the only way.
+        var afterStop = Volatile.Read(ref calls);
+        await Task.Delay(100);
+        Volatile.Read(ref calls).Should().BeLessThanOrEqualTo(afterStop + 1, "no further attempts once the service is stopped (one may be in flight)");
+    }
+
+    /// <summary>N3 (Boundary, #646): no heartbeat is sent before the node is registered, and heartbeats start once it is.</summary>
+    /// <returns>A task.</returns>
+    [Fact]
+    public async Task Heartbeat_IsNotSentBeforeTheNodeIsRegistered_AndStartsAfterwards()
+    {
+        var calls = 0;
+        var isRegistered = false;
+        var heartbeatBeforeRegistration = 0;
+        var heartbeats = 0;
+        _storage.Setup(x => x.RegisterServerAsync(It.IsAny<ServerRecord>(), It.IsAny<CancellationToken>()))
+            .Returns(() =>
+            {
+                if (Interlocked.Increment(ref calls) <= 2)
+                {
+                    return Task.FromException(new InvalidOperationException("storage down"));
+                }
+
+                Volatile.Write(ref isRegistered, true);
+                return Task.CompletedTask;
+            });
+        _storage.Setup(x => x.HeartbeatServerAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns(() =>
+            {
+                if (!Volatile.Read(ref isRegistered))
+                {
+                    Interlocked.Increment(ref heartbeatBeforeRegistration);
+                }
+
+                Interlocked.Increment(ref heartbeats);
+                return Task.CompletedTask;
+            });
+        using var sut = CreateSut();
+
+        await sut.StartAsync(CancellationToken.None);
+
+        await TestWait.UntilAsync(() => Task.FromResult(Volatile.Read(ref heartbeats) >= 1), because: "heartbeats must start once the node is registered");
+        Volatile.Read(ref heartbeatBeforeRegistration).Should().Be(0, "an unregistered node has nothing to heartbeat");
+        await sut.StopAsync(CancellationToken.None);
+    }
+
     /// <summary>Tests that StopAsync deregisters the server and handles errors.</summary>
     /// <returns>A task.</returns>
     [Fact]
