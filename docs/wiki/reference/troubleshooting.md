@@ -287,12 +287,13 @@ NexJob is designed to surface diagnostic information through structured logs, me
     | Level | Message | Source |
     | --- | --- | --- |
     | `Error` | `Error fetching next jobs from storage` | Dispatcher, once per `PollingInterval` (default 15 s) |
+    | `Error` | `Error reading runtime settings from storage` | Dispatcher, once per `PollingInterval` (default 15 s) |
     | `Warning` | `Heartbeat update for job {JobId} failed; will retry on the next interval` | A running job |
     | `Warning` | `Failed to update global heartbeat for server {ServerId}.` | Node heartbeat |
     | `Warning` | `Failed to gracefully deregister server {ServerId} on shutdown.` | Shutdown during the outage (5 s timeout) |
     | `Error` | `Error in OrphanedJobWatcherService`, `Error in RecurringJobSchedulerService`, `Error in JobRetentionService.` | Background loops |
 
-    **What recovers by itself:** the dispatcher fetch, both heartbeats, the orphan watcher, the recurring scheduler and retention catch the error and try again. If jobs are still not picked up after storage is back and the fetch error is no longer logged, restart the host. Calls to `EnqueueAsync` and `ScheduleAsync` are the exception: they throw to your code and must be retried by the caller (use an `idempotencyKey`).
+    **What recovers by itself:** the dispatcher, both heartbeats, the orphan watcher, the recurring scheduler and retention catch the error and try again. Calls to `EnqueueAsync` and `ScheduleAsync` are the exception: they throw to your code and must be retried by the caller (use an `idempotencyKey`).
 
     **What to check after:**
 

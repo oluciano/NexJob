@@ -346,6 +346,84 @@ public sealed class JobDispatcherServiceTests
         await host.StopAsync();
     }
 
+    // ─── runtime settings read throws (#640) ──────────────────────────────────
+
+    private static IHost BuildHostWithRuntimeStore(FlakyRuntimeSettingsStore store, ListLoggerProvider? logSink = null)
+    {
+        return Host.CreateDefaultBuilder()
+            .ConfigureLogging(l =>
+            {
+                if (logSink is not null)
+                {
+                    l.AddProvider(logSink);
+                }
+            })
+            .ConfigureServices(services =>
+            {
+                // Registered BEFORE AddNexJob so TryAdd keeps this store
+                services.AddSingleton<IRuntimeSettingsStore>(store);
+                services.AddTransient(_ => new QuickSuccessJob(new TaskCompletionSource<bool>()));
+                services.AddNexJob(opt =>
+                {
+                    opt.Workers = 1;
+                    opt.MaxAttempts = 1;
+                    opt.PollingInterval = TimeSpan.FromMilliseconds(20);
+                });
+            })
+            .Build();
+    }
+
+    [Fact]
+    public async Task Dispatcher_RuntimeSettingsReadThrowsThenRecovers_StillRunsTheJob()
+    {
+        var store = new FlakyRuntimeSettingsStore(failures: 2);
+        using var host = BuildHostWithRuntimeStore(store);
+        await host.StartAsync();
+
+        await host.Services.GetRequiredService<IScheduler>().EnqueueAsync<QuickSuccessJob, QuickInput>(new());
+
+        var storage = (InMemoryStorageProvider)host.Services.GetRequiredService<NexJob.Storage.IStorageProvider>();
+        await TestWait.SucceededAsync(storage, 1);
+
+        store.Calls.Should().BeGreaterThan(2, "the dispatcher must keep reading after the failures");
+
+        await host.StopAsync();
+    }
+
+    [Fact]
+    public async Task Dispatcher_RuntimeSettingsReadAlwaysThrows_KeepsPollingAndLogsError()
+    {
+        var logSink = new ListLoggerProvider();
+        var store = new FlakyRuntimeSettingsStore(failures: int.MaxValue);
+        using var host = BuildHostWithRuntimeStore(store, logSink);
+        await host.StartAsync();
+
+        var jobId = await host.Services.GetRequiredService<IScheduler>().EnqueueAsync<QuickSuccessJob, QuickInput>(new());
+
+        await TestWait.UntilAsync(() => Task.FromResult(store.Calls >= 3), because: "the polling loop must stay alive during the outage");
+
+        logSink.Messages.Should().Contain(m => m.Contains("Error reading runtime settings", StringComparison.Ordinal));
+        var storage = (InMemoryStorageProvider)host.Services.GetRequiredService<NexJob.Storage.IStorageProvider>();
+        (await storage.GetJobByIdAsync(jobId))!.Status.Should().Be(JobStatus.Enqueued, "nothing can run while the settings cannot be read");
+
+        await host.StopAsync();
+    }
+
+    [Fact]
+    public async Task Dispatcher_CancelledWhileReadingRuntimeSettings_StopsCleanlyWithoutErrorLog()
+    {
+        var logSink = new ListLoggerProvider();
+        var store = new FlakyRuntimeSettingsStore(failures: 0, blockUntilCancelled: true);
+        using var host = BuildHostWithRuntimeStore(store, logSink);
+        await host.StartAsync();
+
+        await TestWait.UntilAsync(() => Task.FromResult(store.Calls >= 1), because: "the dispatcher must reach the blocking read");
+
+        await host.StopAsync();
+
+        logSink.Messages.Should().NotContain(m => m.Contains("Error reading runtime settings", StringComparison.Ordinal));
+    }
+
     // ─── FetchNextAsync throws ────────────────────────────────────────────────
 
     [Fact]
@@ -971,4 +1049,52 @@ internal sealed class ThrowOnceJobStorage : IJobStorage
     /// <inheritdoc/>
     public Task<IReadOnlyList<ServerRecord>> GetActiveServersAsync(TimeSpan activeTimeout, CancellationToken cancellationToken = default)
         => _inner.GetActiveServersAsync(activeTimeout, cancellationToken);
+}
+
+// ─── FlakyRuntimeSettingsStore ────────────────────────────────────────────────
+
+/// <summary>
+/// A runtime settings store whose reads throw a number of times and then succeed, or block until cancelled.
+/// Used to verify the dispatcher survives a storage outage on the settings read.
+/// </summary>
+internal sealed class FlakyRuntimeSettingsStore : IRuntimeSettingsStore
+{
+    private readonly int _failures;
+    private readonly bool _blockUntilCancelled;
+    private int _calls;
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="FlakyRuntimeSettingsStore"/> class.
+    /// </summary>
+    /// <param name="failures">How many reads throw before they start succeeding.</param>
+    /// <param name="blockUntilCancelled">When true, a read waits for its token to be cancelled.</param>
+    public FlakyRuntimeSettingsStore(int failures, bool blockUntilCancelled = false)
+    {
+        _failures = failures;
+        _blockUntilCancelled = blockUntilCancelled;
+    }
+
+    /// <summary>Gets the number of reads so far.</summary>
+    public int Calls => System.Threading.Volatile.Read(ref _calls);
+
+    /// <inheritdoc/>
+    public async Task<RuntimeSettings> GetAsync(CancellationToken ct = default)
+    {
+        var call = System.Threading.Interlocked.Increment(ref _calls);
+
+        if (_blockUntilCancelled)
+        {
+            await Task.Delay(Timeout.Infinite, ct).ConfigureAwait(false);
+        }
+
+        if (call <= _failures)
+        {
+            throw new InvalidOperationException("simulated storage outage");
+        }
+
+        return new RuntimeSettings();
+    }
+
+    /// <inheritdoc/>
+    public Task SaveAsync(RuntimeSettings settings, CancellationToken ct = default) => Task.CompletedTask;
 }

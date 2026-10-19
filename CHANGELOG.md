@@ -11,6 +11,10 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **A configured trigger `JobType` can no longer be overridden by a broker message.** In the RabbitMQ, Kafka, Azure Service Bus and Google Pub/Sub triggers, the `nexjob.job_type` message header/attribute/application property previously took precedence over `options.JobType` when both were present, letting anyone who could publish to the broker direct the trigger to invoke any `IJob` registered in the host's DI container with attacker-controlled input. The configured `JobType`, when set, now always wins; the message value is read only as a fallback when `JobType` is unset. (issue #630)
 - **The job detail page's live log viewer no longer builds markup with `innerHTML`.** The SSE live-refresh handler rebuilt the log panel from `logs.map(l => ... + l.message + ...).join('')` straight into `innerHTML`, so a job that logs attacker-influenced input (common when the job's input comes from an external broker trigger) could run arbitrary JavaScript in an operator's authenticated dashboard session while watching that job. Entries are now built with `document.createElement` and `.textContent`, the same safe pattern the recurring job detail page already used. (issue #629)
 
+### Fixed
+
+- **A storage error while reading the runtime settings no longer ends the dispatcher.** `JobDispatcherService` caught only cancellation around the read of the runtime settings, so an outage there let the exception leave `ExecuteAsync` (and fail `Host.StartAsync` when it happened at start). It now logs `Error reading runtime settings from storage`, waits `PollingInterval` and polls again, as it already did for the fetch. (issue #640)
+
 ### Documentation
 
 - **Documented what happens when storage is unavailable.** New section "When storage is unavailable" in the delivery guarantees page (dispatcher, job and node heartbeats, orphan watcher, enqueue, and the `HeartbeatTimeout` guidance), a "Database outage or failover" entry in troubleshooting with the exact log messages, and a note in "What is not covered" of the testing page that no test cuts a real database connection. (issue #633)

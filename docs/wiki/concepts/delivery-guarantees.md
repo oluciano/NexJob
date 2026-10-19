@@ -66,7 +66,7 @@ Storage is the source of truth, so an outage stops progress. For the calls in th
 | Component | What happens | Log level and text | The job's attempt |
 | --- | --- | --- | --- |
 | **Short outage (shorter than `HeartbeatTimeout`)** | | | |
-| Dispatcher fetch | The fetch error is caught, the dispatcher waits `PollingInterval` (default 15 s, no exponential backoff) and polls again. It resumes by itself when storage is back | `Error`, `Error fetching next jobs from storage`, once per poll for the whole outage | None used: nothing was fetched |
+| Dispatcher fetch and settings read | The error is caught, the dispatcher waits `PollingInterval` (default 15 s, no exponential backoff) and polls again. It resumes by itself when storage is back | `Error`, `Error fetching next jobs from storage` or `Error reading runtime settings from storage`, once per poll for the whole outage | None used: nothing was fetched |
 | Job heartbeat (a running job) | The job keeps running. The update is tried again every `HeartbeatInterval` (default 30 s) | `Warning`, `Heartbeat update for job {JobId} failed; will retry on the next interval` | Not affected |
 | Node heartbeat | The timer continues. Each beat has a 10 s timeout | `Warning`, `Failed to update global heartbeat for server {ServerId}.` | Not affected |
 | Saving a result | Retried three times, about 2.6 s, as described in [the table above](#when-the-job-fails-or-its-node-dies) | see above | Used |
