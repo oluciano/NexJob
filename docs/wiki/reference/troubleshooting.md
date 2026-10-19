@@ -291,6 +291,7 @@ NexJob is designed to surface diagnostic information through structured logs, me
     | `Warning` | `Heartbeat update for job {JobId} failed; will retry on the next interval` | A running job |
     | `Warning` | `Failed to update global heartbeat for server {ServerId}.` | Node heartbeat |
     | `Warning` | `Server node {ServerId} failed to register — running in degraded mode ...` | Node registration at start, retried every `ServerHeartbeatInterval` |
+    | `Warning` | `The storage could not store {Count} recurring job(s) from configuration. Retrying in {Delay}s.` | Recurring jobs from `appsettings.json` at start, retried until stored |
     | `Warning` | `Failed to gracefully deregister server {ServerId} on shutdown.` | Shutdown during the outage (5 s timeout) |
     | `Error` | `Error in OrphanedJobWatcherService`, `Error in RecurringJobSchedulerService`, `Error in JobRetentionService.` | Background loops |
 
