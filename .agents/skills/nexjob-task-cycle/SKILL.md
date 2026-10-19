@@ -281,29 +281,31 @@ Follow this strict step order:
 
 ## Phase 4.5: Continuous Changelog Maintenance
 
+> **Workflow Reference:** `.agents/method/workflows/documentation.md` (Section 3: Changelog ↔ Diff Cross-Check)  
 > **Goal:** Keep `CHANGELOG.md` synchronized with every delivered change so releases are always ready.
 
 Before generating the Pull Request:
 1. Open `CHANGELOG.md`.
 2. Ensure an `## [Unreleased]` section exists at the top.
 3. Add a concise, professional bullet point under the appropriate category:
-   - `### Added` for new features or packages.
+   - `### Added` for new features or packages (MINOR versions only).
    - `### Fixed` for bug fixes.
    - `### Changed` for behavioral/config changes.
    - `### Security` for vulnerability fixes.
+   - `### Dependencies` for library dependency bumps (v6.2.0).
 4. Reference the package/scope, description of behavior, and linked issue/PR (e.g. `(issue #146, PR #153)`).
+5. **No repo-relative links:** Use plain text for paths (e.g. `src/NexJob/Job.cs`). Never use `[path](src/...)` which breaks strict MkDocs builds.
 
 ---
 
 ## Phase 4.6: Documentation & Wiki Truth Gate
 
-> **Goal:** Ensure the Wiki and Package READMEs reflect all new options, architectural behaviors, and breaking/fixed patterns before any PR is submitted.
+> **Workflow Reference:** `.agents/method/workflows/documentation.md` & `.agents/skills/nexjob-docs-truth/SKILL.md`  
+> **Goal:** Ensure the Wiki, Package READMEs, and CHANGELOG reflect all new options, architectural behaviors, and breaking/fixed patterns before any PR is submitted.
 
 Every task that introduces or modifies public options, defaults, architecture behaviors, or multi-service patterns MUST audit and update documentation directly in the working branch:
 
-> **Tool first:** run the `nexjob-docs-truth` skill with `--scope diff` (`dotnet run --project tools/DocsTruth -c Release -- --strict`, then the
-> semantic review of the pages that describe the changed areas). A rule lives in one page and the others link to it; do not copy it.
-> The checklist below says where each kind of change is documented.
+> **Subagent Delegation:** In Antigravity or Claude Code, run the `nexjob-docs-truth` skill with `--scope diff` via an isolated read-only subagent. The subagent runs `dotnet run --project tools/DocsTruth -c Release -- --strict`, executes the Changelog ↔ Diff cross-check, and performs the semantic review of changed Wiki pages and package READMEs.
 
 1. **Package / Root READMEs:**
    - If a new feature or behavior was added to a package, update the corresponding `src/<Package>/README.md` or root `README.md`.
