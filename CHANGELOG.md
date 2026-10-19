@@ -13,6 +13,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A storage error at the moment a job fails is now retried like the one at the moment it succeeds.** The commit of a failed (or deferred) job was a single call: if it threw, the dead-letter handler was skipped and the dispatcher logged `Unhandled error while executing job`. Both commits now share the same three retries (about 2.6 s). When they run out the job stays `Processing`, the executor does not call the dead-letter handler, and the orphan watcher decides, as after a crash. (issue #641)
 - **A storage error while reading the runtime settings no longer ends the dispatcher.** `JobDispatcherService` caught only cancellation around the read of the runtime settings, so an outage there let the exception leave `ExecuteAsync` (and fail `Host.StartAsync` when it happened at start). It now logs `Error reading runtime settings from storage`, waits `PollingInterval` and polls again, as it already did for the fetch. (issue #640)
 
 ### Documentation
