@@ -6,6 +6,25 @@ description: "Step-by-step migration guides for NexJob major version upgrades, i
 
 This page covers every breaking change between NexJob releases and tells you exactly what to update in your code. Schema migrations for PostgreSQL and SQL Server apply automatically at startup. Follow the steps in order for each version jump you're crossing.
 
+## Where do I start
+
+| You are on | Start at |
+| --- | --- |
+| v6.x | [v6.5.1 → v6.6.0](#v651-v660) and the sections above your version |
+| v5.10.0 | [v5.10.0 → v6.0.0](#v5100-v600) |
+| v5.9.0 | [v5.9.0 → v5.10.0](#v590-v5100) |
+| v5.8.0 | [v5.8.0 → v5.9.0](#v580-v590) |
+| v5.7.0 | [v5.7.0 → v5.8.0](#v570-v580) |
+| v5.6.2 | [v5.6.2 → v5.7.0](#v562-v570) |
+| v5.6.0 | [v5.6.0 → v5.6.1](#v560-v561) |
+| v5.5.0 | [v5.5.0 → v5.6.0](#v550-v560) |
+| v2.x | [v2.x → v3.0](#v2x-v30) |
+| v0.7.x | [v0.7.x → v0.8.0](#v07x-v080) |
+| v0.5.x | [v0.5.x → v0.6.0](#v05x-v060) |
+| v0.4.x | [v0.4.x → v0.5.0](#v04x-v050) |
+
+Schema migrations apply automatically at startup on PostgreSQL, SQL Server and MongoDB; you never run SQL scripts by hand.
+
 ## v6.5.1 → v6.6.0
 
 No schema migration and no breaking change. The packages now ship two targets, `net8.0` and `net10.0`; NuGet picks the one that matches your application, so there is nothing to change.

@@ -50,9 +50,42 @@ dotnet add package NexJob
 
     Choose between PostgreSQL, SQL Server, Redis, MongoDB and in-memory.
 
-  -   [**How We Test**](reference/how-we-test.md)
+  -   [**How NexJob is tested**](reference/how-we-test.md)
 
-    Real databases, killed processes and upgrades, and what is not covered.
+    How NexJob's own test suite works: real databases, killed processes and upgrades, and what is not covered.
+
+  -   [**Writing Tests**](guides/writing-tests.md)
+
+    Test your own jobs: unit tests with fakes and integration tests on InMemory storage.
+
+</div>
+
+## Build
+
+<div class="grid cards" markdown>
+  -   [**Recurring jobs**](concepts/recurring-jobs.md)
+
+    Cron schedules from code or `appsettings.json`.
+
+  -   [**Queues**](concepts/queues.md)
+
+    Route jobs, choose which queues a host polls, and pause or resume them.
+
+  -   [**Throttling**](guides/throttling.md)
+
+    Cap concurrent executions per resource, per process or cluster-wide.
+
+  -   [**Idempotency**](concepts/idempotency.md)
+
+    Make a job safe to run more than once.
+
+  -   [**Triggers**](integrations/triggers.md)
+
+    Enqueue jobs from Kafka, RabbitMQ, SQS, Service Bus, Pub/Sub and Salesforce.
+
+  -   [**Multi-Service**](guides/multi-service.md)
+
+    Several services on one database without stepping on each other.
 
 </div>
 
@@ -70,6 +103,35 @@ dotnet add package NexJob
   -   [**Circuit Breaker**](guides/circuit-breaker.md)
 
     Pause a queue automatically when a dependency is down, and ramp back up safely.
+
+  -   [**Runtime Control**](guides/runtime-control.md)
+
+    Pause, resume, requeue and delete from code.
+
+  -   [**OpenTelemetry**](integrations/opentelemetry.md)
+
+    Traces and metrics for every execution.
+
+  -   [**Production checklist**](guides/best-practices.md#production-checklist)
+
+    What to verify before you go live.
+
+</div>
+
+## Solve a problem
+
+<div class="grid cards" markdown>
+  -   [**Troubleshooting**](reference/troubleshooting.md)
+
+    Jobs not picked up, stuck in Processing, handlers not called.
+
+  -   [**FAQ**](reference/faq.md)
+
+    Restarts, duplicates, retention, storage and Hangfire comparison.
+
+  -   [**Migration**](reference/migration.md)
+
+    Breaking changes and what to update, version by version.
 
 </div>
 

@@ -107,7 +107,7 @@ public Task HandleAsync(JobRecord failedJob, Exception lastException, Cancellati
 ## How long failed jobs are kept
 
 !!! warning
-    Jobs in the `Failed` state are retained for 30 days by default, then automatically purged. Once a job is purged, its history and input are gone permanently. If you need longer retention for audit purposes, increase `options.RetentionFailed` — or set it to `TimeSpan.Zero` to keep failed jobs indefinitely.
+    Jobs in the `Failed` state are retained for 30 days by default (`RetentionFailed`), and dead-letter jobs for 60 days (`RetentionDeadLetter`), then automatically purged. Once a job is purged, its history and input are gone permanently. If you need longer retention for audit purposes, increase `options.RetentionFailed` — or set it to `TimeSpan.Zero` to keep failed jobs indefinitely. All retention options are in [Configuration](../reference/configuration.md).
 
 ## Next
 

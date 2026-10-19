@@ -6,6 +6,9 @@ description: "Set up the NexJob built-in dashboard for ASP.NET Core or Worker Se
 
 The NexJob Dashboard gives you a real-time window into every aspect of your background job infrastructure — from individual job execution timelines and live SSE log streams to cluster-wide topology maps and connected broker listeners. Built on the Maxton design system, it runs entirely from a self-contained NuGet package with no JavaScript framework, no build toolchain, and no CDN dependencies (except the Public Sans web font from Google Fonts).
 
+!!! warning "Open by default"
+    The dashboard accepts any request until you register an `IDashboardAuthorizationHandler`. Read [Dashboard Authorization](#dashboard-authorization) before exposing it beyond localhost.
+
 ## Features
 
 <div class="grid cards" markdown>
@@ -157,7 +160,7 @@ Choose the package that matches your application type:
 
 
     !!! warning
-        The standalone dashboard listens on **loopback only** by default (`LocalhostOnly = true`). Inside a container this makes the dashboard unreachable through a published port. Set `LocalhostOnly = false` to listen on all interfaces, but also register an `IDashboardAuthorizationHandler` (see below) or restrict the port with a firewall or network policy. Anyone who can reach an exposed port can read job payloads and invoke actions such as pausing queues or requeuing jobs. NexJob logs a startup warning when `LocalhostOnly = false` and no authorization handler is registered.
+        The standalone dashboard listens on **loopback only** by default (`LocalhostOnly = true`). Inside a container this makes the dashboard unreachable through a published port. Set `LocalhostOnly = false` to listen on all interfaces, but also register an `IDashboardAuthorizationHandler` (see [Dashboard Authorization](#dashboard-authorization)) or restrict the port with a firewall or network policy. Anyone who can reach an exposed port can read job payloads and invoke actions such as pausing queues or requeuing jobs. NexJob logs a startup warning when `LocalhostOnly = false` and no authorization handler is registered.
 
 ---
 

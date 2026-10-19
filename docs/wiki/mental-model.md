@@ -76,7 +76,7 @@ The dispatcher uses two mechanisms to discover new jobs. Understanding which one
 
 When you call `EnqueueAsync` **from the same process** where the dispatcher is running, NexJob sends a signal through a bounded in-memory channel (capacity = 1). The dispatcher detects this signal and immediately fetches the newly enqueued job without waiting for the next polling interval.
 
-- **Latency:** Near-zero in practice, because the dispatcher is signalled instead of waiting for the next poll. The test suite does not assert a number (see [How We Test](reference/how-we-test.md))
+- **Latency:** Near-zero in practice, because the dispatcher is signalled instead of waiting for the next poll. The test suite does not assert a number (see [How NexJob is tested](reference/how-we-test.md))
 - **Scope:** Local process only
 - **Behavior:** Multiple rapid signals collapse into one; the channel never blocks the caller
 

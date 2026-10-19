@@ -185,9 +185,8 @@ Write cancellable jobs — honour the `CancellationToken` throughout your async 
 
 Enable OpenTelemetry from day one. NexJob emits traces and metrics for every job execution and queue depth change. To be notified when a job fails for good, see the [Alerts guide](../guides/alerts.md).
 
-Set up alerts on:
+The [Alerts guide](../guides/alerts.md) is canonical for "a job failed for good". `nexjob.jobs.failed` counts failed attempts, including ones that will still be retried, so do not use it as a "job is dead" signal. Besides that, alert on:
 
-- `nexjob.jobs.failed` increasing — indicates failed attempts (including ones that will still be retried)
 - `nexjob.jobs.expired` increasing — deadlines are too tight or workers are insufficient
 - `nexjob.job.duration` p99 spiking — jobs are getting slower
 

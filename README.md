@@ -155,7 +155,7 @@ Complete documentation is on the [Documentation Site](https://oluciano.github.io
 - **[Alerts](https://oluciano.github.io/NexJob/guides/alerts/)** — get notified when a job fails for good
 - **[Best Practices](https://oluciano.github.io/NexJob/guides/best-practices/)** — production and Kubernetes guidelines
 - **[Common Scenarios](https://oluciano.github.io/NexJob/guides/common-scenarios/)** — real-world use cases with code
-- **[How We Test](https://oluciano.github.io/NexJob/reference/how-we-test/)** — what the test suite proves, and what it does not
+- **[How NexJob is tested](https://oluciano.github.io/NexJob/reference/how-we-test/)** — what the test suite proves, and what it does not
 - **[Troubleshooting](https://oluciano.github.io/NexJob/reference/troubleshooting/)** — debug common issues
 
 ---

@@ -111,5 +111,5 @@ nav:
       - Troubleshooting: reference/troubleshooting.md
       - FAQ: reference/faq.md
       - Migration: reference/migration.md
-      - How We Test: reference/how-we-test.md
+      - How NexJob is tested: reference/how-we-test.md
       - Changelog: reference/changelog.md

@@ -49,6 +49,12 @@ For the default queue, `default` and `{prefix}.default` are paused, resumed and 
 
 There is **no operation to cancel a job that is already running**. To stop work in flight, pass the `CancellationToken` your job receives to everything it awaits and stop the host (a clean shutdown puts interrupted jobs back in the queue without using an attempt).
 
+## Cancellation and timeouts
+
+- There is no operation to cancel a running job (see above).
+- To cap how long a job may run, use `[ExecutionTimeout]` or `DefaultExecutionTimeout`: see [Retries](../concepts/retries.md#execution-timeout).
+- On shutdown, running jobs get their `CancellationToken` cancelled and are requeued without using an attempt: see [Delivery Guarantees](../concepts/delivery-guarantees.md) and the [FAQ](../reference/faq.md).
+
 ## Try it
 
 The `NexJob.Sample.Reliability` sample exposes each operation as an endpoint: `POST /queues/{queue}/pause`, `POST /queues/{queue}/resume`, `POST /queues/{queue}/reset-circuit`, `POST /jobs/{id}/requeue` and `DELETE /jobs/{id}`.
