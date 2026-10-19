@@ -81,4 +81,42 @@ public sealed class JobDetailPageTests
         html.Should().NotContain("<b id=\"injected\">").And.NotContain("<i id=\"injected\">");
         html.Should().NotContain("W3C Traceparent Header");
     }
+
+    [Fact]
+    public async Task LiveLogRefreshScript_DoesNotBuildMarkupFromLogFieldsWithInnerHtml()
+    {
+        // N2 (Negative, #629): the SSE live-refresh handler used to rebuild the log panel with
+        // `logsBody.innerHTML = logs.map(l => '...' + l.message + '...').join('')`, injecting the
+        // log level/message/timestamp as raw markup. A job can log attacker-influenced input (e.g. a
+        // broker-triggered job echoing its payload), so that sink must never reach `innerHTML` unescaped.
+        var job = Job(JobStatus.Processing);
+        var html = await DashboardTestHost.GetAsync($"/dashboard/jobs/{job.Id.Value}", s => s.EnqueueAsync(job));
+
+        html.Should().NotContain("logsBody.innerHTML=logs.map");
+        html.Should().NotMatch("*l.message+'</span>*");
+    }
+
+    [Fact]
+    public async Task LiveLogRefreshScript_BuildsLogEntriesWithTextContent()
+    {
+        // N1 (Positive, #629): the fix builds each live-refreshed log entry with DOM APIs and
+        // `.textContent`, the same safe pattern already used by RecurringJobDetailPage's showLogs().
+        var job = Job(JobStatus.Processing);
+        var html = await DashboardTestHost.GetAsync($"/dashboard/jobs/{job.Id.Value}", s => s.EnqueueAsync(job));
+
+        // Tied specifically to l.message going through .textContent, not to createElement/.textContent
+        // appearing elsewhere on the page (e.g. the copy-button fallback) for unrelated reasons.
+        html.Should().Contain(".textContent=l.message");
+    }
+
+    [Fact]
+    public async Task LiveLogRefreshScript_StillUpdatesBadgeCountAndScrollsToBottom()
+    {
+        // N3 (Boundary, #629): fixing the innerHTML sink must not regress the surrounding behavior —
+        // the entries-count badge and auto-scroll still run after the log panel is rebuilt.
+        var job = Job(JobStatus.Processing);
+        var html = await DashboardTestHost.GetAsync($"/dashboard/jobs/{job.Id.Value}", s => s.EnqueueAsync(job));
+
+        html.Should().Contain("logsBadge.textContent=").And.Contain("logsBody.scrollTop=logsBody.scrollHeight");
+    }
 }
