@@ -21,7 +21,8 @@ Rules for any reviewer (human, `/code-review`, Gemini). Project context lives in
 ## Where findings go
 
 - Deep and Standard PRs: findings are posted on the PR as one comment starting with `[review]` (`/code-review --comment` also works). The release retro counts the `[review]` comments.
-- Quick PRs: no self-review by the author, but every PR from another agent (e.g. Gemini) is still audited by a second reviewer, whatever the depth. The audit comment also starts with `[review]` and uses the same severity tags.
+- Quick PRs: no automatic review.
+- Whoever authors the PR runs the review step themselves (Claude, Gemini or the owner). No agent depends on another: a second-reviewer audit happens only when the owner asks for it, and the owner may approve or point out issues directly. Any `[review]` comment, from any source, uses the same severity tags.
 
 ## Reporting
 
