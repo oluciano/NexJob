@@ -95,19 +95,23 @@ public abstract class HotPathFailureScenarios : DistributedReliabilityTestBase
         if (childRuns)
         {
             await call.Should().NotThrowAsync("the retries absorb the failure");
-            (await WaitUntil(async () => await GetJobCountByStatus(host, JobStatus.Succeeded) == 2, Timeout)).Should().BeTrue("the child must run");
+            (await WaitUntil(async () => await CountAsync(host, queue, JobStatus.Succeeded) == 2, Timeout)).Should().BeTrue("the child must run");
             counter.Count.Should().Be(2, "the parent and the child each run once");
         }
         else
         {
             await call.Should().ThrowAsync<InvalidOperationException>();
-            var jobs = await host.Services.GetRequiredService<Storage.IStorageProvider>().GetJobsAsync(filter: new JobFilter(), page: 1, pageSize: 100);
-            jobs.TotalCount.Should().Be(2, "the parent and the one child; a failed call must not leave a second child");
+            (await CountAsync(host, queue, null)).Should().Be(2, "the parent and the one child; a failed call must not leave a second child");
         }
 
         plan.Injected.Should().Be(failures);
         await host.StopAsync();
     }
+
+    // The database is shared by the tests of a class, so a count has to be limited to the queue of the test.
+    private static async Task<int> CountAsync(IHost host, string queue, JobStatus? status) =>
+        (await host.Services.GetRequiredService<IStorageProvider>()
+            .GetJobsAsync(filter: new JobFilter { Queue = queue, Status = status }, page: 1, pageSize: 100)).TotalCount;
 
     private void Decorated(IServiceCollection services, FaultPlan plan)
     {
