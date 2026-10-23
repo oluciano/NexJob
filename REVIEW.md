@@ -32,6 +32,7 @@ Rules for any reviewer (human, `/code-review`, Gemini). Project context lives in
 - Skip: `site/`, `coverage/`, `TestResults/`, `BenchmarkDotNet.Artifacts/`, generated code.
 - Start the summary with a count ("2 findings: 1 Important, 1 Pre-existing"). If nothing needs fixing, say "No issues found."
 - Do not repeat findings already posted. After 3 rounds, question the approach instead of adding more comments.
+- An **Important** finding is fixed, or disputed with evidence (file and line showing it is false). "Needs a bigger change" is not a dispute until the cost was checked in the code.
 - Review the claimed intent too: for a bug fix, check the root cause is fixed, not the symptom.
 
 ## Recurring findings
