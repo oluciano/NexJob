@@ -1096,7 +1096,9 @@ public sealed class MongoStorageProvider : IStorageProvider, IOrphanedJobReporte
         JobId jobId, JobExecutionResult result, JobStatus? storedStatus, CancellationToken ct)
     {
         // A purged success leaves no document, so a missing job counts as Succeeded.
-        if (result.Succeeded && storedStatus is null or JobStatus.Succeeded)
+        // Known window: a retry that arrives after a newer run of the same recurring job has finished can put
+        // back the older run's LastExecutionStatus. The retry follows the failed write within seconds, so it is rare.
+        if (result.Succeeded && (storedStatus is null or JobStatus.Succeeded))
         {
             await ApplySuccessTailAsync(jobId, result.RecurringJobId, ct).ConfigureAwait(false);
         }
