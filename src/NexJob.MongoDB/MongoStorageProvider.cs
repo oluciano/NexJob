@@ -723,6 +723,9 @@ public sealed class MongoStorageProvider : IStorageProvider, IOrphanedJobReporte
         var currentJob = await _jobs.Find(ById(jobId)).FirstOrDefaultAsync(cancellationToken).ConfigureAwait(false);
         if (IsTerminalStatus(currentJob?.Status))
         {
+            // The job write of an earlier attempt landed, but the writes after it may not have. They are
+            // idempotent, so finish them when this attempt carries the same outcome the job already has.
+            await FinishInterruptedCommitAsync(jobId, result, currentJob?.Status, cancellationToken).ConfigureAwait(false);
             return;
         }
 
@@ -1063,6 +1066,11 @@ public sealed class MongoStorageProvider : IStorageProvider, IOrphanedJobReporte
             await _jobs.UpdateOneAsync(ById(jobId), update, cancellationToken: ct).ConfigureAwait(false);
         }
 
+        await ApplySuccessTailAsync(jobId, result.RecurringJobId, ct).ConfigureAwait(false);
+    }
+
+    private async Task ApplySuccessTailAsync(JobId jobId, string? recurringJobId, CancellationToken ct)
+    {
         var contFilter = Builders<JobDocument>.Filter.And(
             Builders<JobDocument>.Filter.Eq(d => d.Status, JobStatus.AwaitingContinuation),
             Builders<JobDocument>.Filter.Eq(d => d.ParentJobId, jobId));
@@ -1073,14 +1081,28 @@ public sealed class MongoStorageProvider : IStorageProvider, IOrphanedJobReporte
 
         await _jobs.UpdateManyAsync(contFilter, contUpdate, cancellationToken: ct).ConfigureAwait(false);
 
-        if (result.RecurringJobId is not null)
+        if (recurringJobId is not null)
         {
-            var recurFilter = Builders<RecurringJobDocument>.Filter.Eq(d => d.RecurringJobId, result.RecurringJobId);
+            var recurFilter = Builders<RecurringJobDocument>.Filter.Eq(d => d.RecurringJobId, recurringJobId);
             var recurUpdate = Builders<RecurringJobDocument>.Update
                 .Set(d => d.LastExecutionStatus, JobStatus.Succeeded)
                 .Unset(d => d.LastExecutionError);
 
             await _recurringJobs.UpdateOneAsync(recurFilter, recurUpdate, cancellationToken: ct).ConfigureAwait(false);
+        }
+    }
+
+    private async Task FinishInterruptedCommitAsync(
+        JobId jobId, JobExecutionResult result, JobStatus? storedStatus, CancellationToken ct)
+    {
+        // A purged success leaves no document, so a missing job counts as Succeeded.
+        if (result.Succeeded && storedStatus is null or JobStatus.Succeeded)
+        {
+            await ApplySuccessTailAsync(jobId, result.RecurringJobId, ct).ConfigureAwait(false);
+        }
+        else if (!result.Succeeded && !result.RetryAt.HasValue && storedStatus is JobStatus.Failed)
+        {
+            await ApplyFailureTailAsync(result, ct).ConfigureAwait(false);
         }
     }
 
@@ -1120,6 +1142,11 @@ public sealed class MongoStorageProvider : IStorageProvider, IOrphanedJobReporte
 
         await _jobs.UpdateOneAsync(ById(jobId), jobUpdate, cancellationToken: ct).ConfigureAwait(false);
 
+        await ApplyFailureTailAsync(result, ct).ConfigureAwait(false);
+    }
+
+    private async Task ApplyFailureTailAsync(JobExecutionResult result, CancellationToken ct)
+    {
         if (result.RecurringJobId is not null)
         {
             var recurFilter = Builders<RecurringJobDocument>.Filter.Eq(d => d.RecurringJobId, result.RecurringJobId);
