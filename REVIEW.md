@@ -14,7 +14,7 @@ Rules for any reviewer (human, `/code-review`, Gemini). Project context lives in
 
 ## Depth by path
 
-- Deep (`/code-review high`): `src/NexJob/**`, storage providers, migrations, `.github/workflows/**`.
+- Deep (`/code-review high`): `src/NexJob/**`, storage providers, migrations, `.github/workflows/**`. The author never arms `gh pr merge --auto` on a Deep PR without asking the owner first: the reviewer is not independent of the author, so the owner decides whether to read the diff.
 - Standard: triggers, dashboard, tools.
 - Quick: docs, samples.
 
