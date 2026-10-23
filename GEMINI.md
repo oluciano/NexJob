@@ -74,7 +74,7 @@ The current version is defined dynamically in `Directory.Build.props` (`<Version
 - Well-scoped refactors with explicit acceptance criteria
 
 ### ✅ You own — Review
-- PR review on all branches before merge (via ai_review.yml)
+- PR review before merge: `/code-review` locally, rules in `REVIEW.md`
 - Code quality feedback — StyleCop, naming, test coverage gaps
 
 ### ❌ You do not own
