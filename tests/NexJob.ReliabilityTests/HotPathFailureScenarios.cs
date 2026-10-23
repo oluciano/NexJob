@@ -100,8 +100,10 @@ public abstract class HotPathFailureScenarios : DistributedReliabilityTestBase
         }
         else
         {
-            await call.Should().ThrowAsync<InvalidOperationException>();
+            await call.Should().ThrowAsync<InvalidOperationException>().WithMessage("*EnqueueContinuationsAsync*");
             (await CountAsync(host, queue, null)).Should().Be(2, "the parent and the one child; a failed call must not leave a second child");
+            (await CountAsync(host, queue, JobStatus.AwaitingContinuation)).Should().Be(1, "the stored child is not released, which is the limit the docs state");
+            counter.Count.Should().Be(1, "only the parent ran");
         }
 
         plan.Injected.Should().Be(failures);
