@@ -243,6 +243,123 @@ public sealed class MongoStorageProviderTests : StorageProviderTestsBase, IClass
         read!.CreatedAt.Should().Be(new DateTimeOffset(2026, 3, 1, 13, 30, 0, TimeSpan.Zero));
     }
 
+    // ── Interrupted success commit (issue #656) ────────────────────────────────
+    // The success commit is three writes. These tests start from what an interruption after the first
+    // write leaves behind, then retry the commit the way the executor does.
+
+    private static JobExecutionResult Success(string? recurringJobId = null, bool purge = false) => new()
+    {
+        Succeeded = true,
+        Logs = [],
+        RecurringJobId = recurringJobId,
+        PurgeOnSuccess = purge,
+    };
+
+    private async Task<(MongoStorageProvider Provider, IMongoCollection<BsonDocument> Raw, JobRecord Parent, JobRecord Child)> ParentWithAwaitingChildAsync()
+    {
+        var (provider, raw) = NewProviderWithRawAccess();
+        await provider.EnqueueAsync(NewScheduledJob(DateTimeOffset.UtcNow.AddMinutes(-1)));
+        var parent = (await provider.FetchNextAsync(["default"]))!;
+        var child = new JobRecord
+        {
+            Id = new JobId(Guid.NewGuid()),
+            JobType = "T",
+            InputType = "I",
+            InputJson = "{}",
+            Queue = "default",
+            MaxAttempts = 3,
+            CreatedAt = DateTimeOffset.UtcNow,
+            Status = JobStatus.AwaitingContinuation,
+            ParentJobId = parent.Id,
+        };
+        await provider.EnqueueAsync(child);
+        return (provider, raw, parent, child);
+    }
+
+    private static Task MarkRawAsync(IMongoCollection<BsonDocument> raw, JobId id, string status) =>
+        raw.UpdateOneAsync(
+            new BsonDocument("_id", id.ToString()),
+            new BsonDocument("$set", new BsonDocument("Status", status)));
+
+    [Fact]
+    public async Task CommitJobResultAsync_RetryAfterInterruptedSuccess_ReleasesTheChildren()
+    {
+        var (provider, raw, parent, child) = await ParentWithAwaitingChildAsync();
+        await MarkRawAsync(raw, parent.Id, "Succeeded"); // write 1 done, write 2 lost
+
+        await provider.CommitJobResultAsync(parent.Id, Success());
+
+        (await provider.GetJobByIdAsync(child.Id))!.Status.Should().Be(JobStatus.Enqueued);
+    }
+
+    [Fact]
+    public async Task CommitJobResultAsync_RetryAfterInterruptedPurgeSuccess_ReleasesTheChildren()
+    {
+        var (provider, raw, parent, child) = await ParentWithAwaitingChildAsync();
+        await raw.DeleteOneAsync(new BsonDocument("_id", parent.Id.ToString())); // write 1 was the delete
+
+        await provider.CommitJobResultAsync(parent.Id, Success(purge: true));
+
+        (await provider.GetJobByIdAsync(child.Id))!.Status.Should().Be(JobStatus.Enqueued);
+    }
+
+    [Fact]
+    public async Task CommitJobResultAsync_RetryAfterInterruptedSuccess_UpdatesTheRecurringStatus()
+    {
+        var (provider, raw, parent, _) = await ParentWithAwaitingChildAsync();
+        var recurring = NewRecurring("nightly", DateTimeOffset.UtcNow.AddHours(1));
+        await provider.UpsertRecurringJobAsync(recurring);
+        await MarkRawAsync(raw, parent.Id, "Succeeded");
+
+        await provider.CommitJobResultAsync(parent.Id, Success("nightly"));
+
+        (await provider.GetRecurringJobByIdAsync("nightly"))!.LastExecutionStatus.Should().Be(JobStatus.Succeeded);
+    }
+
+    [Fact]
+    public async Task CommitJobResultAsync_SuccessOnAJobThatAlreadyFailed_DoesNotReleaseTheChildren()
+    {
+        var (provider, raw, parent, child) = await ParentWithAwaitingChildAsync();
+        await MarkRawAsync(raw, parent.Id, "Failed");
+
+        await provider.CommitJobResultAsync(parent.Id, Success());
+
+        (await provider.GetJobByIdAsync(child.Id))!.Status.Should().Be(JobStatus.AwaitingContinuation, "the stored outcome is a failure, a late success must not override it");
+    }
+
+    [Fact]
+    public async Task CommitJobResultAsync_RetryAfterInterruptedFailure_UpdatesTheRecurringStatus()
+    {
+        var (provider, raw, parent, _) = await ParentWithAwaitingChildAsync();
+        await provider.UpsertRecurringJobAsync(NewRecurring("nightly", DateTimeOffset.UtcNow.AddHours(1)));
+        await MarkRawAsync(raw, parent.Id, "Failed");
+
+        await provider.CommitJobResultAsync(parent.Id, new JobExecutionResult
+        {
+            Succeeded = false,
+            Logs = [],
+            RecurringJobId = "nightly",
+            Exception = new InvalidOperationException("boom"),
+        });
+
+        (await provider.GetRecurringJobByIdAsync("nightly"))!.LastExecutionStatus.Should().Be(JobStatus.Failed);
+    }
+
+    [Fact]
+    public async Task CommitJobResultAsync_CommittedThreeTimes_IsIdempotentWithNoChildrenAndNoRecurringJob()
+    {
+        var (provider, _) = NewProviderWithRawAccess();
+        await provider.EnqueueAsync(NewScheduledJob(DateTimeOffset.UtcNow.AddMinutes(-1)));
+        var job = (await provider.FetchNextAsync(["default"]))!;
+
+        for (var i = 0; i < 3; i++)
+        {
+            await provider.CommitJobResultAsync(job.Id, Success());
+        }
+
+        (await provider.GetJobByIdAsync(job.Id))!.Status.Should().Be(JobStatus.Succeeded);
+    }
+
     private static RecurringJobRecord NewRecurring(string id, DateTimeOffset nextExecution) => new()
     {
         RecurringJobId = id,
