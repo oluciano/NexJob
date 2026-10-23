@@ -14,7 +14,7 @@ Rules for any reviewer (human, `/code-review`, Gemini). Project context lives in
 
 ## Depth by path
 
-- Deep (`/code-review high`): `src/NexJob/**`, storage providers, migrations, `.github/workflows/**`. The author never arms `gh pr merge --auto` on a Deep PR without asking the owner first: the reviewer is not independent of the author, so the owner decides whether to read the diff.
+- Deep (`/code-review high`): `src/NexJob/**`, storage providers, migrations, `.github/workflows/**`. The author never arms `gh pr merge --auto` on a Deep PR without asking the owner first: the reviewer shares the author's model and the author triages its findings, so the owner decides whether to read the diff.
 - Standard: triggers, dashboard, tools.
 - Quick: docs, samples.
 
@@ -24,6 +24,10 @@ Rules for any reviewer (human, `/code-review`, Gemini). Project context lives in
 - The author answers each comment in its own thread (see `nexjob-task-cycle`, Phase 5).
 - Quick PRs: no automatic review.
 - Whoever authors the PR runs the review step themselves (Claude, Gemini or the owner). No agent depends on another: a second-reviewer audit happens only when the owner asks for it, and the owner may approve or point out issues directly. Any `[review]` comment, from any source, uses the same severity tags.
+
+## The reviewer runs in a clean session
+
+The reviewer gets this file and the diff, nothing else: no summary of the task and no list of things to check. Its value is that it does not share the author's assumptions, so a finding it makes unprompted is worth more than one it was pointed at. If the author has to point it at something (for example a refactor that touches the commit path), the `[review]` comment says so in one line ("at the author's request: ...") so the owner and the retro can tell the two kinds apart.
 
 ## Reporting
 
