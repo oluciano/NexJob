@@ -264,7 +264,7 @@ Follow this strict step order:
    Every line printed must be explained in the PR body: moved to which file, duplicate of which surviving test, or `// Behavior changed in vX.Y: <reason>`. An unexplained line means an assertion was weakened: restore it and fix the production code instead.
 
 3. **Step 3: Dispatch Code Review Subagent (Token Saver):**
-   Before opening the PR, delegate the dual-axis review to an isolated read-only subagent:
+   Before opening the PR, delegate the dual-axis review to an isolated read-only subagent. The reviewer follows `REVIEW.md` (failure definitions, depth by path, severity tags, reporting format). Keep every finding, including the ones you fix, for the PR comment in Phase 5:
    - **Antigravity:** Invoke an isolated subagent (`invoke_subagent` using type `research` or `self`) with the prompt:
      > *"Act as NexJob Reviewer following `.agents/method/modes/03-validation-mode.md`. Inspect `git diff develop`, verify StyleCop rules, XML documentation, CancellationToken propagation, .ConfigureAwait(false) usage, and ensure the 3N testing matrix has no weakened assertions. Return a structured PASS or FAIL verdict with specific file and line citations."*
    - **Claude Code:** Invoke a background task/agent (e.g. `Task` tool) with the same prompt and mode instructions.
@@ -353,6 +353,7 @@ Every task evaluates this gate along two lanes:
 
 Once the verification gate passes cleanly:
 1. Provide a concise summary of changes and the completed 3N matrix.
+   After `gh pr create`, post the Step 3 findings as one PR comment starting with `[review]` (tag each Important / Nit / Pre-existing, note fixed or disputed). The release retro counts these to promote recurring findings (see `REVIEW.md`). Quick-depth PRs (docs, samples) skip this. Any agent running this cycle does it, so no agent depends on another reviewing its work.
 2. Present the ready-to-run GitHub CLI command following the conventional commits standard:
 
 ```bash

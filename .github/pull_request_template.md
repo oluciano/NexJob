@@ -18,6 +18,11 @@
 - [ ] **Edge Cases:** (e.g., null inputs, empty strings, cancellation tokens)
 - [ ] **Combinations:** (e.g., multiple filters + retry policy)
 
+## Risk and rollback
+
+- **Risk:** <!-- low / medium / high; high = core, storage, migrations, workflows -->
+- **How to revert:** <!-- e.g. revert commit; migration is/is not reversible -->
+
 ## Checklist
 
 - [ ] `dotnet build` passes with **0 warnings**
