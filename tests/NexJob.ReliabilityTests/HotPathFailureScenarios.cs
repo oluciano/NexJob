@@ -9,7 +9,7 @@ using Xunit;
 namespace NexJob.ReliabilityTests;
 
 /// <summary>
-/// The storage fails at two points of the job lifecycle (the batch fetch and the expiry of a job), on a real provider,
+/// The storage fails at three points of the job lifecycle (the batch fetch, the expiry of a job and the late release of a continuation), on a real provider,
 /// and returns. After that the runtime has to recover without losing the job or running it twice. A subclass only says how to register its storage.
 /// </summary>
 public abstract class HotPathFailureScenarios : DistributedReliabilityTestBase
@@ -66,6 +66,46 @@ public abstract class HotPathFailureScenarios : DistributedReliabilityTestBase
         (await WaitForJobStatus(host, id, JobStatus.Expired, Timeout)).Should().NotBeNull("the job must end Expired once the storage works again");
         counter.Count.Should().Be(0, "an expired job never executes");
         plan.Injected.Should().Be(1);
+        await host.StopAsync();
+    }
+
+    [Theory]
+    [InlineData(1, true)]
+    [InlineData(3, true)]
+    [InlineData(4, false)]
+    public async Task EnqueueContinuationsFailure_OnTheLateContinuationPath_IsRetriedLikeAResultCommit(int failures, bool childRuns)
+    {
+        // The parent already succeeded when ContinueWithAsync registers the child, so the scheduler releases the child
+        // itself with EnqueueContinuationsAsync. N1 (1 failure) and N3 (3: the last one the retries absorb): the child runs.
+        // N2 (4: the budget is gone): the caller gets the exception and does not end up with a second child.
+        var plan = new FaultPlan(nameof(IJobStorage.EnqueueContinuationsAsync), failures);
+        var counter = new ExecutionCounter();
+        var queue = $"continuation-failure-{Guid.NewGuid():N}";
+        using var host = BuildHost(
+            s => Decorated(s, plan),
+            s => s.AddTransient<SuccessJob>(sp => new SuccessJob(counter.Increment, sp.GetRequiredService<ILogger<SuccessJob>>())),
+            queues: [queue]);
+        await host.StartAsync();
+        var scheduler = host.Services.GetRequiredService<IScheduler>();
+        var parent = await scheduler.EnqueueAsync<SuccessJob>(queue: queue);
+        (await WaitForJobStatus(host, parent, JobStatus.Succeeded, Timeout)).Should().NotBeNull();
+
+        var call = () => scheduler.ContinueWithAsync<SuccessJob>(parent, queue: queue);
+
+        if (childRuns)
+        {
+            await call.Should().NotThrowAsync("the retries absorb the failure");
+            (await WaitUntil(async () => await GetJobCountByStatus(host, JobStatus.Succeeded) == 2, Timeout)).Should().BeTrue("the child must run");
+            counter.Count.Should().Be(2, "the parent and the child each run once");
+        }
+        else
+        {
+            await call.Should().ThrowAsync<InvalidOperationException>();
+            var jobs = await host.Services.GetRequiredService<Storage.IStorageProvider>().GetJobsAsync(filter: new JobFilter(), page: 1, pageSize: 100);
+            jobs.TotalCount.Should().Be(2, "the parent and the one child; a failed call must not leave a second child");
+        }
+
+        plan.Injected.Should().Be(failures);
         await host.StopAsync();
     }
 
