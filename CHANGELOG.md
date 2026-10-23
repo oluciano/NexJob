@@ -6,6 +6,10 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **MongoDB: a retried commit now finishes what an interrupted one left behind.** A success was committed as three writes (job, continuations, recurring status), and the retry stopped at the first one because the job was already finished, so a connection drop between the writes left the continuations `AwaitingContinuation` for good and the recurring job with its previous status. The retry now completes the remaining writes (also with `PurgeOnSuccess`, and for the recurring status of a failed job). PostgreSQL, SQL Server and Redis were not affected: they commit atomically. (issue #656)
+
 ## [6.7.0] - 2026-10-19
 
 ### Security
