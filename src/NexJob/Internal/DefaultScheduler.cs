@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.ExceptionServices;
 using System.Text.Json;
 using Cronos;
 using NexJob.Exceptions;
@@ -40,6 +41,9 @@ internal sealed class DefaultScheduler : IScheduler
         _options = options;
         _wakeUp = wakeUp;
     }
+
+    /// <summary>Gets the delays between retries of the release of a continuation. Overridable for tests.</summary>
+    internal TimeSpan[] ReleaseRetryDelays { get; init; } = StorageRetry.DefaultDelays;
 
     /// <inheritdoc/>
     public async Task<JobId> EnqueueAsync(
@@ -437,7 +441,18 @@ internal sealed class DefaultScheduler : IScheduler
         var parent = await _dashboardStorage.GetJobByIdAsync(parentJobId, ct).ConfigureAwait(false);
         if (parent?.Status == JobStatus.Succeeded)
         {
-            await _jobStorage.EnqueueContinuationsAsync(parentJobId, ct).ConfigureAwait(false);
+            // The child is stored, so a short storage outage here would leave it AwaitingContinuation for good:
+            // retry the release like a result commit, and tell the caller if it still fails.
+            var error = await StorageRetry.TryAsync(
+                () => _jobStorage.EnqueueContinuationsAsync(parentJobId, ct),
+                ReleaseRetryDelays,
+                static (_, _, _) => { },
+                ct).ConfigureAwait(false);
+            if (error is not null)
+            {
+                ExceptionDispatchInfo.Capture(error).Throw();
+            }
+
             _wakeUp.Signal();
         }
 

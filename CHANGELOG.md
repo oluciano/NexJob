@@ -8,6 +8,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A storage error while `ContinueWithAsync` releases a child is now retried.** When the parent had already succeeded, the scheduler stored the child `AwaitingContinuation` and released it with a second call; if that call failed, the exception reached the caller and the child stayed `AwaitingContinuation` for good, because the parent never commits again. The release is now retried like a result commit (three retries, about 2.6 s); if they run out the call still throws, and the child stays stored. The retry loop of the result commit moved to a helper both use. (issue #662)
 - **MongoDB: a retried commit now finishes what an interrupted one left behind.** A success was committed as three writes (job, continuations, recurring status), and the retry stopped at the first one because the job was already finished, so a connection drop between the writes left the continuations `AwaitingContinuation` for good and the recurring job with its previous status. The retry now completes the remaining writes (also with `PurgeOnSuccess`, and for the recurring status of a failed job). PostgreSQL, SQL Server and Redis were not affected: they commit atomically. (issue #656)
 
 ## [6.7.0] - 2026-10-19

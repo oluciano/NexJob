@@ -66,12 +66,7 @@ internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
     }
 
     /// <summary>Gets the delays between retries of a failed commit, for a success and for a failure. Overridable for tests.</summary>
-    internal TimeSpan[] CommitRetryDelays { get; init; } =
-    [
-        TimeSpan.FromMilliseconds(100),
-        TimeSpan.FromMilliseconds(500),
-        TimeSpan.FromSeconds(2),
-    ];
+    internal TimeSpan[] CommitRetryDelays { get; init; } = StorageRetry.DefaultDelays;
 
     /// <inheritdoc/>
     public void Dispose() => _batchAck.Dispose();
@@ -261,35 +256,17 @@ internal sealed class JobExecutor : IJobExecutor, IDisposable, IAsyncDisposable
 
     /// <summary>Commits <paramref name="result"/>, retrying after each delay in <see cref="CommitRetryDelays"/>.</summary>
     /// <returns>Null when the commit succeeded; otherwise the last storage exception.</returns>
-    private async Task<Exception?> TryCommitAsync(JobRecord job, JobExecutionResult result, string outcome)
-    {
-        Exception? last = null;
-        for (var attempt = 0; attempt <= CommitRetryDelays.Length; attempt++)
-        {
-            try
-            {
-                await _storage.CommitJobResultAsync(job.Id, result, CancellationToken.None).ConfigureAwait(false);
-                return null;
-            }
-            catch (Exception ex)
-            {
-                last = ex;
-                if (attempt < CommitRetryDelays.Length)
-                {
-                    _logger.LogWarning(
-                        ex,
-                        "Committing the {Outcome} of job {JobId} failed (attempt {Attempt}). Retrying in {Delay}ms.",
-                        outcome,
-                        job.Id,
-                        attempt + 1,
-                        CommitRetryDelays[attempt].TotalMilliseconds);
-                    await Task.Delay(CommitRetryDelays[attempt], CancellationToken.None).ConfigureAwait(false);
-                }
-            }
-        }
-
-        return last;
-    }
+    private Task<Exception?> TryCommitAsync(JobRecord job, JobExecutionResult result, string outcome) =>
+        StorageRetry.TryAsync(
+            () => _storage.CommitJobResultAsync(job.Id, result, CancellationToken.None),
+            CommitRetryDelays,
+            (ex, attempt, delay) => _logger.LogWarning(
+                ex,
+                "Committing the {Outcome} of job {JobId} failed (attempt {Attempt}). Retrying in {Delay}ms.",
+                outcome,
+                job.Id,
+                attempt,
+                delay.TotalMilliseconds));
 
     private async Task CommitSuccessAsync(JobRecord job, JobExecutionResult result, bool useBatchAck)
     {
