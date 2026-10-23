@@ -20,7 +20,8 @@ Rules for any reviewer (human, `/code-review`, Gemini). Project context lives in
 
 ## Where findings go
 
-- Deep and Standard PRs: findings are posted on the PR as one comment starting with `[review]` (`/code-review --comment` also works). The release retro counts the `[review]` comments.
+- Deep and Standard PRs: each finding is an inline comment on its line, starting with `[review]` and its severity (`/code-review --comment` does this). A finding with no line goes in one PR comment. The release retro counts the `[review]` comments.
+- The author answers **in the thread of each comment**, saying `Fixed` (with the commit), `Disputed` (with evidence) or `No change needed` (with why). A reply elsewhere leaves the comment open and vague.
 - Quick PRs: no automatic review.
 - Whoever authors the PR runs the review step themselves (Claude, Gemini or the owner). No agent depends on another: a second-reviewer audit happens only when the owner asks for it, and the owner may approve or point out issues directly. Any `[review]` comment, from any source, uses the same severity tags.
 
