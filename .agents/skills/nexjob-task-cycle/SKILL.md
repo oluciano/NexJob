@@ -269,6 +269,7 @@ Follow this strict step order:
      > *"Act as NexJob Reviewer following `.agents/method/modes/03-validation-mode.md`. Inspect `git diff develop`, verify StyleCop rules, XML documentation, CancellationToken propagation, .ConfigureAwait(false) usage, and ensure the 3N testing matrix has no weakened assertions. Return a structured PASS or FAIL verdict with specific file and line citations."*
    - **Claude Code:** Invoke a background task/agent (e.g. `Task` tool) with the same prompt and mode instructions.
    - **Benefit:** The heavy diff inspection and standards checklist run in an isolated context, returning only the final verdict and necessary fixes to the primary session without token bloat.
+   - **Re-check a fix:** after fixing an **Important** finding on a Deep-depth PR, run the reviewer again on the fix commit only (`git diff <commit-before-fix>`), with the same `REVIEW.md`. Answer `Fixed` in the thread only when that pass has no new Important finding. Nits and Standard/Quick PRs skip it. Stop after 3 rounds and question the approach.
 
 4. **Step 4: Remediate Findings (Zero Toleration Gate):**
    - If the subagent or tests report any finding (`FAIL`), fix the production code or tests immediately.
