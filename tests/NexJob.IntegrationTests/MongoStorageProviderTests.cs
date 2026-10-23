@@ -317,6 +317,43 @@ public sealed class MongoStorageProviderTests : StorageProviderTestsBase, IClass
     }
 
     [Fact]
+    public async Task CommitJobResultAsync_LateRetryOfAnOlderRun_DoesNotOverwriteTheNewerRunsRecurringStatus()
+    {
+        var (provider, raw) = NewProviderWithRawAccess();
+        await provider.UpsertRecurringJobAsync(NewRecurring("nightly", DateTimeOffset.UtcNow.AddHours(1)));
+        var older = NewRecurringRun("nightly", DateTimeOffset.UtcNow.AddMinutes(-10));
+        var newer = NewRecurringRun("nightly", DateTimeOffset.UtcNow.AddMinutes(-1));
+        await provider.EnqueueAsync(older);
+        await provider.EnqueueAsync(newer);
+        await MarkRawAsync(raw, older.Id, "Succeeded");
+        await MarkRawAsync(raw, newer.Id, "Failed");
+        await provider.CommitJobResultAsync(newer.Id, new JobExecutionResult
+        {
+            Succeeded = false,
+            Logs = [],
+            RecurringJobId = "nightly",
+            Exception = new InvalidOperationException("boom"),
+        });
+
+        await provider.CommitJobResultAsync(older.Id, Success("nightly")); // the late retry of the older run
+
+        (await provider.GetRecurringJobByIdAsync("nightly"))!.LastExecutionStatus.Should().Be(JobStatus.Failed);
+    }
+
+    private static JobRecord NewRecurringRun(string recurringJobId, DateTimeOffset createdAt) => new()
+    {
+        Id = new JobId(Guid.NewGuid()),
+        JobType = "T",
+        InputType = "I",
+        InputJson = "{}",
+        Queue = "default",
+        MaxAttempts = 3,
+        CreatedAt = createdAt,
+        Status = JobStatus.Processing,
+        RecurringJobId = recurringJobId,
+    };
+
+    [Fact]
     public async Task CommitJobResultAsync_SuccessOnAJobThatAlreadyFailed_DoesNotReleaseTheChildren()
     {
         var (provider, raw, parent, child) = await ParentWithAwaitingChildAsync();
