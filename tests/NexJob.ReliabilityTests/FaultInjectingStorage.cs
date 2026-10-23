@@ -87,12 +87,13 @@ public class FaultInjectingStorage<T> : DispatchProxy
 public sealed class FaultPlan(string method, int failures)
 {
     private int _remaining = failures;
+    private int _injected;
 
     /// <summary>Gets the name of the storage method to fail.</summary>
     public string Method { get; } = method;
 
     /// <summary>Gets how many calls failed so far.</summary>
-    public int Injected { get; private set; }
+    public int Injected => Volatile.Read(ref _injected);
 
     /// <summary>Takes one failure, when any is left.</summary>
     /// <returns>True when this call has to fail.</returns>
@@ -103,7 +104,7 @@ public sealed class FaultPlan(string method, int failures)
             return false;
         }
 
-        Injected++;
+        Interlocked.Increment(ref _injected);
         return true;
     }
 }
