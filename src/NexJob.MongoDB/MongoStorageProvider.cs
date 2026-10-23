@@ -725,7 +725,7 @@ public sealed class MongoStorageProvider : IStorageProvider, IOrphanedJobReporte
         {
             // The job write of an earlier attempt landed, but the writes after it may not have. They are
             // idempotent, so finish them when this attempt carries the same outcome the job already has.
-            await FinishInterruptedCommitAsync(jobId, result, currentJob?.Status, cancellationToken).ConfigureAwait(false);
+            await FinishInterruptedCommitAsync(jobId, result, currentJob, cancellationToken).ConfigureAwait(false);
             return;
         }
 
@@ -1093,19 +1093,39 @@ public sealed class MongoStorageProvider : IStorageProvider, IOrphanedJobReporte
     }
 
     private async Task FinishInterruptedCommitAsync(
-        JobId jobId, JobExecutionResult result, JobStatus? storedStatus, CancellationToken ct)
+        JobId jobId, JobExecutionResult result, JobDocument? storedJob, CancellationToken ct)
     {
+        var storedStatus = storedJob?.Status;
+
+        // The recurring status belongs to the latest run: a retry that arrives after a newer run of the same
+        // recurring job must not put the older run's status back. A purged job has no CreatedAt to compare.
+        var recurringJobId = await HasNewerRunAsync(storedJob, result.RecurringJobId, ct).ConfigureAwait(false)
+            ? null
+            : result.RecurringJobId;
+
         // A purged success leaves no document, so a missing job counts as Succeeded.
-        // Known window: a retry that arrives after a newer run of the same recurring job has finished can put
-        // back the older run's LastExecutionStatus. The retry follows the failed write within seconds, so it is rare.
         if (result.Succeeded && (storedStatus is null or JobStatus.Succeeded))
         {
-            await ApplySuccessTailAsync(jobId, result.RecurringJobId, ct).ConfigureAwait(false);
+            await ApplySuccessTailAsync(jobId, recurringJobId, ct).ConfigureAwait(false);
         }
         else if (!result.Succeeded && !result.RetryAt.HasValue && storedStatus is JobStatus.Failed)
         {
-            await ApplyFailureTailAsync(result, ct).ConfigureAwait(false);
+            await ApplyFailureTailAsync(result, recurringJobId, ct).ConfigureAwait(false);
         }
+    }
+
+    private async Task<bool> HasNewerRunAsync(JobDocument? storedJob, string? recurringJobId, CancellationToken ct)
+    {
+        if (storedJob is null || recurringJobId is null)
+        {
+            return false;
+        }
+
+        var newer = Builders<JobDocument>.Filter.And(
+            Builders<JobDocument>.Filter.Eq(d => d.RecurringJobId, recurringJobId),
+            Builders<JobDocument>.Filter.Gt(d => d.CreatedAt, storedJob.CreatedAt));
+
+        return await _jobs.Find(newer).Limit(1).AnyAsync(ct).ConfigureAwait(false);
     }
 
     private async Task ApplyRetryAsync(
@@ -1144,14 +1164,14 @@ public sealed class MongoStorageProvider : IStorageProvider, IOrphanedJobReporte
 
         await _jobs.UpdateOneAsync(ById(jobId), jobUpdate, cancellationToken: ct).ConfigureAwait(false);
 
-        await ApplyFailureTailAsync(result, ct).ConfigureAwait(false);
+        await ApplyFailureTailAsync(result, result.RecurringJobId, ct).ConfigureAwait(false);
     }
 
-    private async Task ApplyFailureTailAsync(JobExecutionResult result, CancellationToken ct)
+    private async Task ApplyFailureTailAsync(JobExecutionResult result, string? recurringJobId, CancellationToken ct)
     {
-        if (result.RecurringJobId is not null)
+        if (recurringJobId is not null)
         {
-            var recurFilter = Builders<RecurringJobDocument>.Filter.Eq(d => d.RecurringJobId, result.RecurringJobId);
+            var recurFilter = Builders<RecurringJobDocument>.Filter.Eq(d => d.RecurringJobId, recurringJobId);
             var recurUpdate = Builders<RecurringJobDocument>.Update
                 .Set(d => d.LastExecutionStatus, JobStatus.Failed)
                 .Set(d => d.LastExecutionError, result.Exception?.Message);
