@@ -20,7 +20,8 @@ Rules for any reviewer (human, `/code-review`, Gemini). Project context lives in
 
 ## Where findings go
 
-- Deep and Standard PRs: findings are posted on the PR as one comment starting with `[review]` (`/code-review --comment` also works). The release retro counts the `[review]` comments.
+- Deep and Standard PRs: each finding is an inline comment on its line, starting with `[review]` and its severity (`/code-review --comment` does this). A finding with no line goes in one PR comment. The release retro counts the `[review]` comments.
+- The author answers each comment in its own thread (see `nexjob-task-cycle`, Phase 5).
 - Quick PRs: no automatic review.
 - Whoever authors the PR runs the review step themselves (Claude, Gemini or the owner). No agent depends on another: a second-reviewer audit happens only when the owner asks for it, and the owner may approve or point out issues directly. Any `[review]` comment, from any source, uses the same severity tags.
 
@@ -32,6 +33,7 @@ Rules for any reviewer (human, `/code-review`, Gemini). Project context lives in
 - Skip: `site/`, `coverage/`, `TestResults/`, `BenchmarkDotNet.Artifacts/`, generated code.
 - Start the summary with a count ("2 findings: 1 Important, 1 Pre-existing"). If nothing needs fixing, say "No issues found."
 - Do not repeat findings already posted. After 3 rounds, question the approach instead of adding more comments.
+- An **Important** finding is fixed, or disputed with evidence (file and line showing it is false). "Needs a bigger change" is not a dispute until the cost was checked in the code.
 - Review the claimed intent too: for a bug fix, check the root cause is fixed, not the symptom.
 
 ## Recurring findings

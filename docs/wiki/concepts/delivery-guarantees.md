@@ -37,6 +37,8 @@ The columns are the same in all three tables: what happens to the job, whether t
 
 The failed save, whether it records a success or a failure, is retried three times, about 2.6 seconds in all (four calls). Run on PostgreSQL, SQL Server, Redis and MongoDB with the save failing on purpose: up to three failures the job ran once and ended `Succeeded`; with four, the job stayed `Processing`, was run a second time by the orphan watcher and then ended `Succeeded`. Keep `HeartbeatTimeout` above those 2.6 seconds, or the orphan watcher can give the job back while the executor is still retrying. This is the at-least-once guarantee at work: a job that succeeded can run twice, so make it [idempotent](idempotency.md).
 
+On PostgreSQL, SQL Server and Redis the save is one transaction (or one script), so it lands whole or not at all. MongoDB writes the job, its continuations and the recurring job's last status as separate writes; if the connection drops between them, the retried save finds the job already finished and, if it carries the same outcome, completes the remaining writes, so the continuations are released and the recurring status updated. A save that is never retried successfully is the case above: the job stays `Processing` and the orphan watcher decides. The recurring job's last status is only written when no newer run of that job exists, so a late retry never puts an older run's status back. A job removed by `PurgeOnSuccess` leaves nothing to compare, so that one case is not guarded.
+
 ### When the job waits or is skipped
 
 | Event | The job | Attempt | Dead-letter handler and forwarders |
