@@ -239,9 +239,18 @@ public sealed class SalesforceStreamingTriggerHandler : BackgroundService
         }
         catch (Exception ex)
         {
-            await TryRouteToDeadLetterAsync(jobType, inputType, inputJson, idempotencyKey, cancellationToken).ConfigureAwait(false);
+            var deadLettered = await TryRouteToDeadLetterAsync(jobType, inputType, inputJson, idempotencyKey, cancellationToken).ConfigureAwait(false);
+            if (deadLettered)
+            {
+                if (eventInput.ReplayId > 0)
+                {
+                    await _replayIdStore.SaveReplayIdAsync(_options.Channel, eventInput.ReplayId, cancellationToken).ConfigureAwait(false);
+                }
 
-            // GUARANTEE 5: Do NOT commit Replay ID if enqueue failed.
+                return;
+            }
+
+            // GUARANTEE 5: Do NOT commit Replay ID if enqueue failed and could not be dead-lettered.
             // Throw with contextual information so the subscription loop aborts the batch, does not process subsequent events,
             // and reconnects from the last saved Replay ID.
             throw new InvalidOperationException($"Failed to enqueue Salesforce Streaming event '{idempotencyKey}' on queue '{_options.TargetQueue}'.", ex);
@@ -259,7 +268,7 @@ public sealed class SalesforceStreamingTriggerHandler : BackgroundService
         }
     }
 
-    private async Task TryRouteToDeadLetterAsync(
+    private async Task<bool> TryRouteToDeadLetterAsync(
         string jobType,
         string inputType,
         string inputJson,
@@ -268,7 +277,7 @@ public sealed class SalesforceStreamingTriggerHandler : BackgroundService
     {
         if (string.IsNullOrWhiteSpace(_options.DeadLetterQueue))
         {
-            return;
+            return false;
         }
 
         try
@@ -289,6 +298,7 @@ public sealed class SalesforceStreamingTriggerHandler : BackgroundService
                 "Moved failed Salesforce Streaming event '{IdempotencyKey}' to DeadLetterQueue '{DLQ}'",
                 idempotencyKey,
                 _options.DeadLetterQueue);
+            return true;
         }
         catch (Exception dlqEx)
         {
@@ -297,6 +307,7 @@ public sealed class SalesforceStreamingTriggerHandler : BackgroundService
                 "Failed to route Salesforce Streaming event '{IdempotencyKey}' to DeadLetterQueue '{DLQ}'",
                 idempotencyKey,
                 _options.DeadLetterQueue);
+            return false;
         }
     }
 }

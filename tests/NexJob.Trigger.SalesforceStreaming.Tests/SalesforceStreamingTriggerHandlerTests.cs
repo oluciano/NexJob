@@ -285,8 +285,19 @@ public sealed class SalesforceStreamingTriggerHandlerTests
             .Callback(() => event2Enqueued = true)
             .ReturnsAsync(JobId.New());
 
+        var connectCount1 = 0;
         _mockBayeuxClient.Setup(b => b.ConnectAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new[] { event1, event2, });
+            .Returns(() =>
+            {
+                connectCount1++;
+                if (connectCount1 == 1)
+                {
+                    return Task.FromResult<IReadOnlyList<SalesforceStreamingEventInput>>(new[] { event1, event2, });
+                }
+
+                cts.Cancel();
+                return Task.FromResult<IReadOnlyList<SalesforceStreamingEventInput>>([]);
+            });
 
         var handler = new SalesforceStreamingTriggerHandler(
             _mockScheduler.Object,
@@ -306,6 +317,98 @@ public sealed class SalesforceStreamingTriggerHandlerTests
         event2Enqueued.Should().BeFalse("Event 2 must not be enqueued while event 1 failed and was not dead-lettered");
         var storedId = await _store.GetReplayIdAsync("/data/Order__ChangeEvent");
         storedId.Should().BeNull("Event 2 must not commit replay ID if event 1 was dropped, to prevent skipping event 1");
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_FirstEventFailsWithDlq_SecondEventProcessesAndCommitsReplayId()
+    {
+        // Arrange
+        var options = new SalesforceStreamingTriggerOptions
+        {
+            Channel = "/data/Order__ChangeEvent",
+            TargetQueue = "salesforce-queue",
+            DeadLetterQueue = "salesforce-dlq",
+            Authentication = new SalesforceStreamingAuthOptions
+            {
+                AuthType = SalesforceStreamingAuthType.SessionId,
+                InstanceUrl = "https://test.salesforce.com",
+                AccessToken = "tok123",
+            },
+        };
+
+        _mockAuthService.Setup(a => a.GetTokenAsync(It.IsAny<SalesforceStreamingAuthOptions>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SalesforceStreamingTokenResult("tok123", "https://test.salesforce.com"));
+
+        _mockBayeuxClient.Setup(b => b.HandshakeAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync("client-123");
+
+        using var doc1 = JsonDocument.Parse("{}");
+        var event1 = new SalesforceStreamingEventInput(
+            ReplayId: 1001,
+            Channel: "/data/Order__ChangeEvent",
+            Payload: doc1.RootElement.Clone(),
+            CreatedDate: DateTimeOffset.UtcNow);
+
+        using var doc2 = JsonDocument.Parse("{}");
+        var event2 = new SalesforceStreamingEventInput(
+            ReplayId: 1002,
+            Channel: "/data/Order__ChangeEvent",
+            Payload: doc2.RootElement.Clone(),
+            CreatedDate: DateTimeOffset.UtcNow);
+
+        using var cts = new CancellationTokenSource();
+
+        var event2Enqueued = new TaskCompletionSource<bool>();
+        _mockScheduler.Setup(s => s.EnqueueAsync(
+                It.Is<JobRecord>(j => j.Queue == "salesforce-queue" && j.IdempotencyKey == "/data/Order__ChangeEvent:1001"),
+                It.IsAny<DuplicatePolicy>(),
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("Storage unavailable on event 1 primary"));
+
+        _mockScheduler.Setup(s => s.EnqueueAsync(
+                It.Is<JobRecord>(j => j.Queue == "salesforce-dlq"),
+                DuplicatePolicy.AllowAfterFailed,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(JobId.New());
+
+        _mockScheduler.Setup(s => s.EnqueueAsync(
+                It.Is<JobRecord>(j => j.Queue == "salesforce-queue" && j.IdempotencyKey == "/data/Order__ChangeEvent:1002"),
+                It.IsAny<DuplicatePolicy>(),
+                It.IsAny<CancellationToken>()))
+            .Callback(() => event2Enqueued.TrySetResult(true))
+            .ReturnsAsync(JobId.New());
+
+        var connectCount1 = 0;
+        _mockBayeuxClient.Setup(b => b.ConnectAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns(() =>
+            {
+                connectCount1++;
+                if (connectCount1 == 1)
+                {
+                    return Task.FromResult<IReadOnlyList<SalesforceStreamingEventInput>>(new[] { event1, event2, });
+                }
+
+                cts.Cancel();
+                return Task.FromResult<IReadOnlyList<SalesforceStreamingEventInput>>([]);
+            });
+
+        var handler = new SalesforceStreamingTriggerHandler(
+            _mockScheduler.Object,
+            _mockAuthService.Object,
+            _mockBayeuxClient.Object,
+            Microsoft.Extensions.Options.Options.Create(options),
+            _nexJobOptions,
+            NullLogger<SalesforceStreamingTriggerHandler>.Instance,
+            _store);
+
+        // Act
+        await handler.StartAsync(cts.Token);
+        await event2Enqueued.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        await handler.StopAsync(CancellationToken.None);
+
+        // Assert: Replay ID must be 1002 because event 1 was DLQ'd and event 2 enqueued!
+        var storedId = await _store.GetReplayIdAsync("/data/Order__ChangeEvent");
+        storedId.Should().Be(1002);
     }
 
     [Fact]

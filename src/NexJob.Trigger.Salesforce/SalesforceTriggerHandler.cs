@@ -161,7 +161,19 @@ public sealed class SalesforceTriggerHandler : BackgroundService
             {
                 _listenerRegistry?.UpdateStatus(_listenerId, ListenerStatus.Reconnecting, ex.Message);
                 _logger.LogWarning(ex, "Salesforce Pub/Sub stream error on topic {Topic}. Reconnecting in {Delay}s...", _options.Topic, backoffSeconds);
-                currentReplayId = await _replayIdStore.GetLastReplayIdAsync(_options.Topic, stoppingToken).ConfigureAwait(false);
+
+                try
+                {
+                    currentReplayId = await _replayIdStore.GetLastReplayIdAsync(_options.Topic, stoppingToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    break;
+                }
+                catch (Exception storeEx)
+                {
+                    _logger.LogWarning(storeEx, "Failed to read stored Replay ID for topic {Topic} on reconnect. Falling back to in-memory offset.", _options.Topic);
+                }
 
                 try
                 {
@@ -257,9 +269,15 @@ public sealed class SalesforceTriggerHandler : BackgroundService
         }
         catch (Exception ex)
         {
-            await TryRouteToDeadLetterAsync(jobType, jsonPayload, idempotencyKey, ct).ConfigureAwait(false);
+            var deadLettered = await TryRouteToDeadLetterAsync(jobType, jsonPayload, idempotencyKey, ct).ConfigureAwait(false);
+            if (deadLettered)
+            {
+                // GUARANTEE 1 & 5: Safely preserved in DLQ; commit Replay ID so the stream can advance past this event.
+                await _replayIdStore.SaveReplayIdAsync(_options.Topic, replayBytes, CancellationToken.None).ConfigureAwait(false);
+                return;
+            }
 
-            // GUARANTEE 5: Do NOT commit Replay ID if enqueue failed.
+            // GUARANTEE 5: Do NOT commit Replay ID if enqueue failed and could not be dead-lettered.
             // Throw with contextual information so the stream loop stops immediately and reconnects from the last saved replay ID,
             // preventing later events in the same stream from advancing the replay ID past this failed event.
             throw new InvalidOperationException($"Failed to enqueue Salesforce event '{idempotencyKey}' on queue '{_options.TargetQueue}'.", ex);
@@ -271,7 +289,7 @@ public sealed class SalesforceTriggerHandler : BackgroundService
         _logger.LogInformation("Salesforce event {IdempotencyKey} enqueued on queue {Queue} and Replay ID committed.", idempotencyKey, _options.TargetQueue);
     }
 
-    private async Task TryRouteToDeadLetterAsync(
+    private async Task<bool> TryRouteToDeadLetterAsync(
         string jobType,
         string jsonPayload,
         string idempotencyKey,
@@ -279,7 +297,7 @@ public sealed class SalesforceTriggerHandler : BackgroundService
     {
         if (string.IsNullOrWhiteSpace(_options.DeadLetterQueue))
         {
-            return;
+            return false;
         }
 
         try
@@ -297,10 +315,12 @@ public sealed class SalesforceTriggerHandler : BackgroundService
 
             await _scheduler.EnqueueAsync(dlqJob, DuplicatePolicy.AllowAfterFailed, ct).ConfigureAwait(false);
             _logger.LogInformation("Moved failed Salesforce event {IdempotencyKey} to DeadLetterQueue {DLQ}.", idempotencyKey, _options.DeadLetterQueue);
+            return true;
         }
         catch (Exception dlqEx)
         {
             _logger.LogError(dlqEx, "Failed to route Salesforce event {IdempotencyKey} to DeadLetterQueue {DLQ}.", idempotencyKey, _options.DeadLetterQueue);
+            return false;
         }
     }
 
