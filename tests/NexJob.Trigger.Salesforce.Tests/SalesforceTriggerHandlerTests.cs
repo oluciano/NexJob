@@ -287,6 +287,79 @@ public sealed class SalesforceTriggerHandlerTests
     }
 
     [Fact]
+    public async Task ProcessEvent_FirstEventFailsWithoutDlq_SecondEventMustNotCommitReplayIdAndSkipFirst()
+    {
+        // Arrange: Stream sends event 1 (fails, no DLQ) followed by event 2 (succeeds).
+        // Under T06 defect, event 2 would commit replay ID [0x02], permanently skipping event 1.
+        byte[] replay1 = [0x01];
+        byte[] replay2 = [0x02];
+
+        var event1 = new ConsumerEvent
+        {
+            ReplayId = ByteString.CopyFrom(replay1),
+            Event = new ProducerEvent
+            {
+                Id = "evt-1-fail",
+                SchemaId = "schema-1",
+                Payload = ByteString.CopyFrom([0x01]),
+            },
+        };
+
+        var event2 = new ConsumerEvent
+        {
+            ReplayId = ByteString.CopyFrom(replay2),
+            Event = new ProducerEvent
+            {
+                Id = "evt-2-succ",
+                SchemaId = "schema-1",
+                Payload = ByteString.CopyFrom([0x02]),
+            },
+        };
+
+        _replayStoreMock.Setup(s => s.GetLastReplayIdAsync(_options.Topic, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((byte[]?)null);
+
+        _pubSubClientMock.Setup(c => c.SubscribeAsync(
+                _options.Topic,
+                null,
+                SalesforceReplayPreset.Latest,
+                _options.BatchSize,
+                It.IsAny<CancellationToken>()))
+            .Returns(ToAsyncEnumerable([event1, event2]));
+
+        _schemaServiceMock.Setup(s => s.DecodePayloadToJsonAsync("schema-1", It.IsAny<byte[]>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync("{}");
+
+        // Event 1 fails
+        _schedulerMock.Setup(s => s.EnqueueAsync(
+                It.Is<JobRecord>(j => j.IdempotencyKey == "evt-1-fail"),
+                DuplicatePolicy.AllowAfterFailed,
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("Storage outage on event 1"));
+
+        // Event 2 would succeed
+        _schedulerMock.Setup(s => s.EnqueueAsync(
+                It.Is<JobRecord>(j => j.IdempotencyKey == "evt-2-succ"),
+                DuplicatePolicy.AllowAfterFailed,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(JobId.New());
+
+        var handler = CreateHandler();
+
+        // Act
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        await handler.StartAsync(cts.Token);
+        await WaitForCallAsync(_schedulerMock, nameof(IScheduler.EnqueueAsync));
+        await handler.StopAsync(CancellationToken.None);
+
+        // Assert: Replay ID for event 2 must NEVER be committed while event 1 was dropped!
+        _replayStoreMock.Verify(
+            s => s.SaveReplayIdAsync(_options.Topic, replay2, It.IsAny<CancellationToken>()),
+            Times.Never,
+            "Event 2 must not commit replay ID if event 1 was dropped, to prevent skipping event 1");
+    }
+
+    [Fact]
     public async Task ExpiredReplayId_FallbackPolicyFailFast_ThrowsException()
     {
         // Arrange

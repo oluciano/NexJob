@@ -107,7 +107,15 @@ public sealed class SalesforceTriggerHandler : BackgroundService
                         "Salesforce Pub/Sub stream ended for topic {Topic}. Reconnecting in {Delay}s...",
                         _options.Topic,
                         backoffSeconds);
-                    await Task.Delay(TimeSpan.FromSeconds(backoffSeconds), stoppingToken).ConfigureAwait(false);
+                    try
+                    {
+                        await Task.Delay(TimeSpan.FromSeconds(backoffSeconds), stoppingToken).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                    {
+                        break;
+                    }
+
                     backoffSeconds = Math.Min(backoffSeconds * 2, 30);
                 }
             }
@@ -153,7 +161,16 @@ public sealed class SalesforceTriggerHandler : BackgroundService
             {
                 _listenerRegistry?.UpdateStatus(_listenerId, ListenerStatus.Reconnecting, ex.Message);
                 _logger.LogWarning(ex, "Salesforce Pub/Sub stream error on topic {Topic}. Reconnecting in {Delay}s...", _options.Topic, backoffSeconds);
-                await Task.Delay(TimeSpan.FromSeconds(backoffSeconds), stoppingToken).ConfigureAwait(false);
+                currentReplayId = await _replayIdStore.GetLastReplayIdAsync(_options.Topic, stoppingToken).ConfigureAwait(false);
+
+                try
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(backoffSeconds), stoppingToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    break;
+                }
 
                 // Exponential backoff up to 30s
                 backoffSeconds = Math.Min(backoffSeconds * 2, 30);
@@ -240,41 +257,51 @@ public sealed class SalesforceTriggerHandler : BackgroundService
         }
         catch (Exception ex)
         {
-            // GUARANTEE 1: Never silently drop — log warning and route to dead letter if configured
-            _logger.LogWarning(ex, "Failed to enqueue Salesforce event {IdempotencyKey} on queue {Queue}.", idempotencyKey, _options.TargetQueue);
+            await TryRouteToDeadLetterAsync(jobType, jsonPayload, idempotencyKey, ct).ConfigureAwait(false);
 
-            if (!string.IsNullOrWhiteSpace(_options.DeadLetterQueue))
-            {
-                try
-                {
-                    var dlqJob = JobRecordFactory.Build(
-                        jobType: jobType,
-                        inputType: typeof(string).AssemblyQualifiedName!,
-                        inputJson: jsonPayload,
-                        options: _nexJobOptions,
-                        queue: _options.DeadLetterQueue,
-                        priority: JobPriority.Low,
-                        idempotencyKey: $"dlq:{idempotencyKey}",
-                        status: JobStatus.Enqueued,
-                        tags: ["trigger:salesforce", "dead-letter", $"topic:{_options.Topic}"]);
-
-                    await _scheduler.EnqueueAsync(dlqJob, DuplicatePolicy.AllowAfterFailed, ct).ConfigureAwait(false);
-                    _logger.LogInformation("Moved failed Salesforce event {IdempotencyKey} to DeadLetterQueue {DLQ}.", idempotencyKey, _options.DeadLetterQueue);
-                }
-                catch (Exception dlqEx)
-                {
-                    _logger.LogError(dlqEx, "Failed to route Salesforce event {IdempotencyKey} to DeadLetterQueue {DLQ}.", idempotencyKey, _options.DeadLetterQueue);
-                }
-            }
-
-            // GUARANTEE 5: Do NOT commit Replay ID if enqueue failed
-            return;
+            // GUARANTEE 5: Do NOT commit Replay ID if enqueue failed.
+            // Throw with contextual information so the stream loop stops immediately and reconnects from the last saved replay ID,
+            // preventing later events in the same stream from advancing the replay ID past this failed event.
+            throw new InvalidOperationException($"Failed to enqueue Salesforce event '{idempotencyKey}' on queue '{_options.TargetQueue}'.", ex);
         }
 
         // GUARANTEE 5: Commit Replay ID strictly after enqueue succeeds. The event is already a job at this point, so
         // a stop requested now must not skip the commit (the event would be delivered again after the restart).
         await _replayIdStore.SaveReplayIdAsync(_options.Topic, replayBytes, CancellationToken.None).ConfigureAwait(false);
         _logger.LogInformation("Salesforce event {IdempotencyKey} enqueued on queue {Queue} and Replay ID committed.", idempotencyKey, _options.TargetQueue);
+    }
+
+    private async Task TryRouteToDeadLetterAsync(
+        string jobType,
+        string jsonPayload,
+        string idempotencyKey,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(_options.DeadLetterQueue))
+        {
+            return;
+        }
+
+        try
+        {
+            var dlqJob = JobRecordFactory.Build(
+                jobType: jobType,
+                inputType: typeof(string).AssemblyQualifiedName!,
+                inputJson: jsonPayload,
+                options: _nexJobOptions,
+                queue: _options.DeadLetterQueue,
+                priority: JobPriority.Low,
+                idempotencyKey: $"dlq:{idempotencyKey}",
+                status: JobStatus.Enqueued,
+                tags: ["trigger:salesforce", "dead-letter", $"topic:{_options.Topic}"]);
+
+            await _scheduler.EnqueueAsync(dlqJob, DuplicatePolicy.AllowAfterFailed, ct).ConfigureAwait(false);
+            _logger.LogInformation("Moved failed Salesforce event {IdempotencyKey} to DeadLetterQueue {DLQ}.", idempotencyKey, _options.DeadLetterQueue);
+        }
+        catch (Exception dlqEx)
+        {
+            _logger.LogError(dlqEx, "Failed to route Salesforce event {IdempotencyKey} to DeadLetterQueue {DLQ}.", idempotencyKey, _options.DeadLetterQueue);
+        }
     }
 
     // A payload that can never decode would fail again on every redelivery and block the events behind it, so it is

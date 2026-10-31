@@ -159,7 +159,15 @@ public sealed class SalesforceStreamingTriggerHandler : BackgroundService
                     _options.Channel,
                     currentDelay.TotalSeconds);
 
-                await Task.Delay(currentDelay, stoppingToken).ConfigureAwait(false);
+                try
+                {
+                    await Task.Delay(currentDelay, stoppingToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    break;
+                }
+
                 currentDelay = TimeSpan.FromTicks(Math.Min(currentDelay.Ticks * 2, _options.MaxReconnectDelay.Ticks));
             }
             finally
@@ -231,46 +239,12 @@ public sealed class SalesforceStreamingTriggerHandler : BackgroundService
         }
         catch (Exception ex)
         {
-            // GUARANTEE 1: Never silently drop — log and route to dead letter if configured
-            _logger.LogWarning(
-                ex,
-                "Failed to enqueue Salesforce Streaming event '{IdempotencyKey}' on queue '{Queue}'",
-                idempotencyKey,
-                _options.TargetQueue);
+            await TryRouteToDeadLetterAsync(jobType, inputType, inputJson, idempotencyKey, cancellationToken).ConfigureAwait(false);
 
-            if (!string.IsNullOrWhiteSpace(_options.DeadLetterQueue))
-            {
-                try
-                {
-                    var dlqJob = JobRecordFactory.Build(
-                        jobType: jobType,
-                        inputType: inputType,
-                        inputJson: inputJson,
-                        options: _nexJobOptions,
-                        queue: _options.DeadLetterQueue,
-                        priority: JobPriority.Low,
-                        idempotencyKey: $"dlq:{idempotencyKey}",
-                        status: JobStatus.Enqueued,
-                        tags: ["trigger:salesforce-streaming", "dead-letter", $"channel:{_options.Channel}",]);
-
-                    await _scheduler.EnqueueAsync(dlqJob, DuplicatePolicy.AllowAfterFailed, cancellationToken).ConfigureAwait(false);
-                    _logger.LogInformation(
-                        "Moved failed Salesforce Streaming event '{IdempotencyKey}' to DeadLetterQueue '{DLQ}'",
-                        idempotencyKey,
-                        _options.DeadLetterQueue);
-                }
-                catch (Exception dlqEx)
-                {
-                    _logger.LogError(
-                        dlqEx,
-                        "Failed to route Salesforce Streaming event '{IdempotencyKey}' to DeadLetterQueue '{DLQ}'",
-                        idempotencyKey,
-                        _options.DeadLetterQueue);
-                }
-            }
-
-            // GUARANTEE 5: Do NOT commit Replay ID if enqueue failed
-            return;
+            // GUARANTEE 5: Do NOT commit Replay ID if enqueue failed.
+            // Throw with contextual information so the subscription loop aborts the batch, does not process subsequent events,
+            // and reconnects from the last saved Replay ID.
+            throw new InvalidOperationException($"Failed to enqueue Salesforce Streaming event '{idempotencyKey}' on queue '{_options.TargetQueue}'.", ex);
         }
 
         // GUARANTEE 5: Commit Replay ID strictly after enqueue succeeds
@@ -282,6 +256,47 @@ public sealed class SalesforceStreamingTriggerHandler : BackgroundService
                 idempotencyKey,
                 _options.TargetQueue,
                 eventInput.ReplayId);
+        }
+    }
+
+    private async Task TryRouteToDeadLetterAsync(
+        string jobType,
+        string inputType,
+        string inputJson,
+        string idempotencyKey,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(_options.DeadLetterQueue))
+        {
+            return;
+        }
+
+        try
+        {
+            var dlqJob = JobRecordFactory.Build(
+                jobType: jobType,
+                inputType: inputType,
+                inputJson: inputJson,
+                options: _nexJobOptions,
+                queue: _options.DeadLetterQueue,
+                priority: JobPriority.Low,
+                idempotencyKey: $"dlq:{idempotencyKey}",
+                status: JobStatus.Enqueued,
+                tags: ["trigger:salesforce-streaming", "dead-letter", $"channel:{_options.Channel}",]);
+
+            await _scheduler.EnqueueAsync(dlqJob, DuplicatePolicy.AllowAfterFailed, cancellationToken).ConfigureAwait(false);
+            _logger.LogInformation(
+                "Moved failed Salesforce Streaming event '{IdempotencyKey}' to DeadLetterQueue '{DLQ}'",
+                idempotencyKey,
+                _options.DeadLetterQueue);
+        }
+        catch (Exception dlqEx)
+        {
+            _logger.LogError(
+                dlqEx,
+                "Failed to route Salesforce Streaming event '{IdempotencyKey}' to DeadLetterQueue '{DLQ}'",
+                idempotencyKey,
+                _options.DeadLetterQueue);
         }
     }
 }
