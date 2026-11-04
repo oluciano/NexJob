@@ -126,6 +126,7 @@ builder.Services.AddNexJob(options =>
 | `TargetQueue` | `string` | Target NexJob queue name | `"default"` |
 | `JobPriority` | `JobPriority` | Job priority for enqueued events | `JobPriority.Normal` |
 | `DeadLetterQueue` | `string?` | Queue for events that failed to enqueue | `null` |
+| `MaxEnqueueAttempts` | `int` | Consecutive failures of the same event before it is skipped and its Replay ID committed | `5` |
 | `CometdVersion` | `string` | Salesforce CometD API version | `"60.0"` |
 | `ConnectTimeout` | `TimeSpan` | Timeout for CometD long-polling connect requests. Must be greater than zero. The Bayeux `HttpClient` timeout is this value plus a 30-second margin | `120 seconds` |
 | `ReconnectDelay` | `TimeSpan` | Initial delay before reconnecting after connection drops | `5 seconds` |

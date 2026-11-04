@@ -109,6 +109,7 @@ builder.Services.AddNexJob(options =>
 | `BatchSize` | `int` | Flow control batch size requested per stream roundtrip | `100` |
 | `ReplayStoreDirectory` | `string` | Disk directory for `FileReplayIdStore` checkpoints | `./.nexjob/salesforce` |
 | `DeadLetterQueue` | `string?` | Queue to route events when initial enqueue fails | `null` |
+| `MaxEnqueueAttempts` | `int` | Consecutive failures of the same event before it is skipped and its Replay ID committed | `5` |
 
 ---
 

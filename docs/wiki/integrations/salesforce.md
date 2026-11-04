@@ -55,6 +55,7 @@ The trigger uses the OAuth 2.0 **client credentials** flow of a Connected App (a
 | `FallbackPolicy` | `FailFast` | What to do when Salesforce rejects the saved replay id. See below. |
 | `ReplayStoreDirectory` | `./.nexjob/salesforce` | Where the default store keeps the replay id. |
 | `DeadLetterQueue` | `null` | A queue that receives a copy of an event that could not be enqueued. |
+| `MaxEnqueueAttempts` | `5` | How many times in a row the same event may fail to enqueue before it is skipped and its replay id committed (1 to 100). |
 
 The options are validated when the host starts: a wrong `Topic`, a missing credential, an unsafe `AuthEndpoint` or a `Custom` preset without an id fail the start.
 
@@ -93,7 +94,7 @@ When Salesforce rejects the saved replay id (an expired one, an invalid argument
 | What happened | What the trigger does |
 |---|---|
 | The event was enqueued | The replay id is saved, even if the host is stopping at that moment. |
-| The enqueue failed | A warning is logged and the replay id is **not** saved, and with `DeadLetterQueue` set, a copy of the job is enqueued there (low priority, key `dlq:{key}`). The trigger then goes on to the next event, so the failed one is not tried again while the process runs. |
+| The enqueue failed | With `DeadLetterQueue` set, a copy of the job is enqueued there (low priority, key `dlq:{key}`) and the replay id is saved. Otherwise the replay id is **not** saved, the stream reconnects with backoff and the event is delivered again. With no replay id saved yet, the reconnect starts from `Earliest` instead of `Latest`, so the event is not lost. After `MaxEnqueueAttempts` failures in a row the event is skipped: a critical log is written and its replay id is saved, so one bad event does not block the stream. |
 | The event can never be decoded (corrupted Avro, or no schema id) | An error is logged and, with `DeadLetterQueue` set, the raw payload is enqueued there as a Base64 string (low priority, key `dlq:{key}`, tags `dead-letter` and `decode-failed`). The replay id is then saved, so the event is not delivered again and the events behind it advance. If the copy in `DeadLetterQueue` cannot be enqueued, the replay id is not saved. |
 | The schema cannot be fetched (a network or registry failure) | The stream is dropped and the trigger reconnects from the previous replay id, which delivers the same event again, with a pause that doubles up to 30 seconds. The events behind it wait until the schema can be fetched. |
 | The stream ends or errors | The trigger reconnects, waiting 1 second, doubling up to 30 seconds. A received event resets the wait. |
