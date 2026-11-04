@@ -80,6 +80,14 @@ public sealed class SalesforceStreamingTriggerOptions : IValidatableObject
     public string? DeadLetterQueue { get; set; }
 
     /// <summary>
+    /// Gets or sets how many consecutive times the same event may fail to enqueue (and fail to reach the dead-letter
+    /// queue) before it is skipped and its Replay ID committed, so one poisoned event cannot block the channel forever.
+    /// Defaults to 5.
+    /// </summary>
+    [Range(1, 100)]
+    public int MaxEnqueueAttempts { get; set; } = 5;
+
+    /// <summary>
     /// Gets or sets the Salesforce CometD API version (e.g., "60.0").
     /// Defaults to "60.0".
     /// </summary>

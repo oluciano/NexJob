@@ -5,6 +5,7 @@ using Eventbus.V1;
 using FluentAssertions;
 using Google.Protobuf;
 using Grpc.Core;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Moq;
@@ -284,6 +285,163 @@ public sealed class SalesforceTriggerHandlerTests
 
         // Assert - ReplayId should NOT be committed
         _replayStoreMock.Verify(s => s.SaveReplayIdAsync(It.IsAny<string>(), It.IsAny<byte[]>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ProcessEvent_FirstEventFailsWithoutDlq_SecondEventMustNotCommitReplayIdAndSkipFirst()
+    {
+        // Arrange: Stream sends event 1 (fails, no DLQ) followed by event 2 (succeeds).
+        // Under T06 defect, event 2 would commit replay ID [0x02], permanently skipping event 1.
+        byte[] replay1 = [0x01];
+        byte[] replay2 = [0x02];
+
+        var event1 = new ConsumerEvent
+        {
+            ReplayId = ByteString.CopyFrom(replay1),
+            Event = new ProducerEvent
+            {
+                Id = "evt-1-fail",
+                SchemaId = "schema-1",
+                Payload = ByteString.CopyFrom([0x01]),
+            },
+        };
+
+        var event2 = new ConsumerEvent
+        {
+            ReplayId = ByteString.CopyFrom(replay2),
+            Event = new ProducerEvent
+            {
+                Id = "evt-2-succ",
+                SchemaId = "schema-1",
+                Payload = ByteString.CopyFrom([0x02]),
+            },
+        };
+
+        _replayStoreMock.Setup(s => s.GetLastReplayIdAsync(_options.Topic, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((byte[]?)null);
+
+        _pubSubClientMock.Setup(c => c.SubscribeAsync(
+                _options.Topic,
+                null,
+                SalesforceReplayPreset.Latest,
+                _options.BatchSize,
+                It.IsAny<CancellationToken>()))
+            .Returns(() => ToAsyncEnumerable([event1, event2]));
+
+        _schemaServiceMock.Setup(s => s.DecodePayloadToJsonAsync("schema-1", It.IsAny<byte[]>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync("{}");
+
+        // Event 1 fails
+        _schedulerMock.Setup(s => s.EnqueueAsync(
+                It.Is<JobRecord>(j => j.IdempotencyKey == "evt-1-fail"),
+                DuplicatePolicy.AllowAfterFailed,
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("Storage outage on event 1"));
+
+        // Event 2 would succeed
+        _schedulerMock.Setup(s => s.EnqueueAsync(
+                It.Is<JobRecord>(j => j.IdempotencyKey == "evt-2-succ"),
+                DuplicatePolicy.AllowAfterFailed,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(JobId.New());
+
+        var handler = CreateHandler();
+
+        // Act
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        await handler.StartAsync(cts.Token);
+        // Wait for the reconnect: the stream was torn down after event 1 and delivered again from the committed offset.
+        await WaitForCallAsync(_pubSubClientMock, nameof(ISalesforcePubSubClient.SubscribeAsync), atLeast: 2);
+        await handler.StopAsync(CancellationToken.None);
+
+        // Assert: event 2 is never reached, and its Replay ID must NEVER be committed while event 1 was dropped!
+        _replayStoreMock.Verify(
+            s => s.SaveReplayIdAsync(_options.Topic, replay2, It.IsAny<CancellationToken>()),
+            Times.Never,
+            "Event 2 must not commit replay ID if event 1 was dropped, to prevent skipping event 1");
+
+        _schedulerMock.Verify(
+            s => s.EnqueueAsync(It.Is<JobRecord>(j => j.IdempotencyKey == "evt-2-succ"), It.IsAny<DuplicatePolicy>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ProcessEvent_FirstEventFailsWithDlq_SecondEventProcessesAndCommitsReplayId()
+    {
+        // Arrange: Stream sends event 1 (fails primary, routes to DLQ successfully) followed by event 2 (succeeds).
+        // Since event 1 was preserved in DLQ, replay ID [0x01] is committed and event 2 can proceed and commit [0x02].
+        _options.DeadLetterQueue = "salesforce-dlq";
+        byte[] replay1 = [0x01];
+        byte[] replay2 = [0x02];
+
+        var event1 = new ConsumerEvent
+        {
+            ReplayId = ByteString.CopyFrom(replay1),
+            Event = new ProducerEvent
+            {
+                Id = "evt-1-dlq",
+                SchemaId = "schema-1",
+                Payload = ByteString.CopyFrom([0x01]),
+            },
+        };
+
+        var event2 = new ConsumerEvent
+        {
+            ReplayId = ByteString.CopyFrom(replay2),
+            Event = new ProducerEvent
+            {
+                Id = "evt-2-succ",
+                SchemaId = "schema-1",
+                Payload = ByteString.CopyFrom([0x02]),
+            },
+        };
+
+        _replayStoreMock.Setup(s => s.GetLastReplayIdAsync(_options.Topic, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((byte[]?)null);
+
+        _pubSubClientMock.Setup(c => c.SubscribeAsync(
+                _options.Topic,
+                null,
+                SalesforceReplayPreset.Latest,
+                _options.BatchSize,
+                It.IsAny<CancellationToken>()))
+            .Returns(ToAsyncEnumerable([event1, event2]));
+
+        _schemaServiceMock.Setup(s => s.DecodePayloadToJsonAsync("schema-1", It.IsAny<byte[]>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync("{}");
+
+        // Event 1 primary fails
+        _schedulerMock.Setup(s => s.EnqueueAsync(
+                It.Is<JobRecord>(j => j.Queue == _options.TargetQueue && j.IdempotencyKey == "evt-1-dlq"),
+                DuplicatePolicy.AllowAfterFailed,
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("First enqueue failed"));
+
+        // Event 1 DLQ succeeds
+        _schedulerMock.Setup(s => s.EnqueueAsync(
+                It.Is<JobRecord>(j => j.Queue == _options.DeadLetterQueue),
+                DuplicatePolicy.AllowAfterFailed,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(JobId.New());
+
+        // Event 2 succeeds
+        _schedulerMock.Setup(s => s.EnqueueAsync(
+                It.Is<JobRecord>(j => j.Queue == _options.TargetQueue && j.IdempotencyKey == "evt-2-succ"),
+                DuplicatePolicy.AllowAfterFailed,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(JobId.New());
+
+        var handler = CreateHandler();
+
+        // Act
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        await handler.StartAsync(cts.Token);
+        await WaitForCallAsync(_schedulerMock, nameof(IScheduler.EnqueueAsync), atLeast: 3);
+        await handler.StopAsync(CancellationToken.None);
+
+        // Assert: Replay ID for event 1 and event 2 must both be committed!
+        _replayStoreMock.Verify(s => s.SaveReplayIdAsync(_options.Topic, replay1, It.IsAny<CancellationToken>()), Times.Once);
+        _replayStoreMock.Verify(s => s.SaveReplayIdAsync(_options.Topic, replay2, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -588,13 +746,227 @@ public sealed class SalesforceTriggerHandlerTests
             },
         };
 
+    [Fact]
+    public async Task EnqueueFailure_WithNoStoredReplayId_ResubscribesFromEarliestSoTheEventIsRedelivered()
+    {
+        // Arrange: nothing was ever committed and the preset is Latest, so reconnecting with Latest would drop the failed event.
+        var failing = BuildEvent("evt-first-fail", [0x01]);
+        _replayStoreMock.Setup(s => s.GetLastReplayIdAsync(_options.Topic, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((byte[]?)null);
+        _pubSubClientMock.Setup(c => c.SubscribeAsync(_options.Topic, null, SalesforceReplayPreset.Latest, _options.BatchSize, It.IsAny<CancellationToken>()))
+            .Returns(() => ToAsyncEnumerable([failing]));
+        _pubSubClientMock.Setup(c => c.SubscribeAsync(_options.Topic, null, SalesforceReplayPreset.Earliest, _options.BatchSize, It.IsAny<CancellationToken>()))
+            .Returns(() => ToAsyncEnumerable<ConsumerEvent>([]));
+        SetupDecodeAndFailingEnqueue();
+
+        var handler = CreateHandler();
+
+        // Act
+        await handler.StartAsync(CancellationToken.None);
+        await WaitForCallAsync(_pubSubClientMock, nameof(ISalesforcePubSubClient.SubscribeAsync), atLeast: 2);
+        await handler.StopAsync(CancellationToken.None);
+
+        // Assert
+        _pubSubClientMock.Verify(
+            c => c.SubscribeAsync(_options.Topic, null, SalesforceReplayPreset.Earliest, _options.BatchSize, It.IsAny<CancellationToken>()),
+            Times.AtLeastOnce);
+    }
+
+    [Fact]
+    public async Task TransientErrorAfterResetToLatest_DoesNotReinstateTheExpiredStoredReplayId()
+    {
+        // Arrange: the stored ID is expired. ResetToLatest drops it in memory, but the store keeps it until a new event commits.
+        _options.FallbackPolicy = ReplayFallbackPolicy.ResetToLatest;
+        byte[] expired = [0x09];
+        _replayStoreMock.Setup(s => s.GetLastReplayIdAsync(_options.Topic, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(expired);
+        _pubSubClientMock.Setup(c => c.SubscribeAsync(_options.Topic, It.Is<byte[]?>(b => b != null && b.SequenceEqual(expired)), It.IsAny<SalesforceReplayPreset>(), _options.BatchSize, It.IsAny<CancellationToken>()))
+            .Throws(new RpcException(new Status(StatusCode.InvalidArgument, "replayId too old")));
+
+        var nullOffsetCalls = 0;
+        _pubSubClientMock.Setup(c => c.SubscribeAsync(_options.Topic, null, SalesforceReplayPreset.Latest, _options.BatchSize, It.IsAny<CancellationToken>()))
+            .Returns(() => ++nullOffsetCalls == 1
+                ? throw new InvalidOperationException("transient blip")
+                : ToAsyncEnumerable<ConsumerEvent>([]));
+
+        var handler = CreateHandler();
+
+        // Act
+        await handler.StartAsync(CancellationToken.None);
+        await WaitForCallAsync(_pubSubClientMock, nameof(ISalesforcePubSubClient.SubscribeAsync), atLeast: 3);
+        await handler.StopAsync(CancellationToken.None);
+
+        // Assert: the expired ID was used once (the call that failed), never again after the reset.
+        _pubSubClientMock.Verify(
+            c => c.SubscribeAsync(_options.Topic, It.Is<byte[]?>(b => b != null && b.SequenceEqual(expired)), It.IsAny<SalesforceReplayPreset>(), _options.BatchSize, It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task EnqueueFailsRepeatedlyWithoutDlq_SkipsTheEventAfterMaxAttemptsAndCommitsItsReplayId()
+    {
+        // Arrange: a poisoned event fails on every delivery; without a limit it would block the stream forever.
+        _options.MaxEnqueueAttempts = 2;
+        byte[] replay1 = [0x01];
+        var failing = BuildEvent("evt-poisoned", replay1);
+        _replayStoreMock.Setup(s => s.GetLastReplayIdAsync(_options.Topic, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((byte[]?)null);
+        _pubSubClientMock.Setup(c => c.SubscribeAsync(_options.Topic, null, It.IsAny<SalesforceReplayPreset>(), _options.BatchSize, It.IsAny<CancellationToken>()))
+            .Returns(() => ToAsyncEnumerable([failing]));
+        _pubSubClientMock.Setup(c => c.SubscribeAsync(_options.Topic, It.Is<byte[]?>(b => b != null && b.SequenceEqual(replay1)), It.IsAny<SalesforceReplayPreset>(), _options.BatchSize, It.IsAny<CancellationToken>()))
+            .Returns(() => ToAsyncEnumerable<ConsumerEvent>([]));
+        SetupDecodeAndFailingEnqueue();
+
+        var handler = CreateHandler();
+
+        // Act
+        await handler.StartAsync(CancellationToken.None);
+        await WaitForCallAsync(_pubSubClientMock, nameof(ISalesforcePubSubClient.SubscribeAsync), atLeast: 3);
+        await handler.StopAsync(CancellationToken.None);
+
+        // Assert
+        _replayStoreMock.Verify(s => s.SaveReplayIdAsync(_options.Topic, It.Is<byte[]>(b => b.SequenceEqual(replay1)), It.IsAny<CancellationToken>()), Times.Once);
+        _schedulerMock.Verify(s => s.EnqueueAsync(It.IsAny<JobRecord>(), DuplicatePolicy.AllowAfterFailed, It.IsAny<CancellationToken>()), Times.Exactly(2));
+    }
+
+    [Fact]
+    public async Task EnqueueFailure_RoutedToDeadLetter_LogsTheOriginalEnqueueException()
+    {
+        // Arrange
+        _options.DeadLetterQueue = "salesforce-dlq";
+        var logger = new ListLogger<SalesforceTriggerHandler>();
+        var dlqEnqueued = new TaskCompletionSource();
+        SetupSingleEventStream(BuildEvent("evt-dlq", [0x01]));
+        SetupDecodeAndFailingEnqueue();
+        _schedulerMock.Setup(s => s.EnqueueAsync(It.Is<JobRecord>(j => j.Queue == "salesforce-dlq"), DuplicatePolicy.AllowAfterFailed, It.IsAny<CancellationToken>()))
+            .Callback(() => dlqEnqueued.TrySetResult())
+            .ReturnsAsync(JobId.New());
+
+        var handler = CreateHandler(logger);
+
+        // Act
+        await handler.StartAsync(CancellationToken.None);
+        await dlqEnqueued.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await handler.StopAsync(CancellationToken.None);
+
+        // Assert: without the cause in the log an operator cannot tell why events land in the DLQ.
+        logger.Entries.Should().Contain(e => e.Exception != null && e.Exception.Message == "Storage unavailable");
+    }
+
+    [Fact]
+    public async Task DeadLetterEnqueue_CanceledByShutdown_IsNotLoggedAsAnError()
+    {
+        // Arrange
+        _options.DeadLetterQueue = "salesforce-dlq";
+        var logger = new ListLogger<SalesforceTriggerHandler>();
+        var dlqStarted = new TaskCompletionSource();
+        SetupSingleEventStream(BuildEvent("evt-dlq", [0x01]));
+        SetupDecodeAndFailingEnqueue();
+        _schedulerMock.Setup(s => s.EnqueueAsync(It.Is<JobRecord>(j => j.Queue == "salesforce-dlq"), DuplicatePolicy.AllowAfterFailed, It.IsAny<CancellationToken>()))
+            .Returns(async (JobRecord _, DuplicatePolicy _, CancellationToken ct) =>
+            {
+                dlqStarted.TrySetResult();
+                await Task.Delay(Timeout.Infinite, ct);
+                return JobId.New();
+            });
+
+        var handler = CreateHandler(logger);
+
+        // Act
+        await handler.StartAsync(CancellationToken.None);
+        await dlqStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await handler.StopAsync(CancellationToken.None);
+
+        // Assert: a shutdown overlapping the DLQ write is not a DLQ failure.
+        logger.Entries.Should().NotContain(e => e.Level >= LogLevel.Error);
+    }
+
+    [Fact]
+    public async Task ExpiredReplayId_ShutdownDuringTheRetryDelay_StillMarksTheListenerStopped()
+    {
+        // Arrange
+        _options.FallbackPolicy = ReplayFallbackPolicy.ResetToLatest;
+        var registry = new DefaultListenerRegistry();
+        _replayStoreMock.Setup(s => s.GetLastReplayIdAsync(_options.Topic, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([0x09]);
+        _pubSubClientMock.Setup(c => c.SubscribeAsync(_options.Topic, It.IsAny<byte[]?>(), It.IsAny<SalesforceReplayPreset>(), _options.BatchSize, It.IsAny<CancellationToken>()))
+            .Throws(new RpcException(new Status(StatusCode.InvalidArgument, "replayId too old")));
+
+        var handler = CreateHandler(registry: registry);
+
+        // Act
+        await handler.StartAsync(CancellationToken.None);
+        await WaitForCallAsync(_pubSubClientMock, nameof(ISalesforcePubSubClient.SubscribeAsync));
+        await handler.StopAsync(CancellationToken.None);
+
+        // Assert
+        registry.Get($"salesforce:{_options.Topic}")!.Status.Should().Be(ListenerStatus.Stopped);
+    }
+
+    [Fact]
+    public async Task DeadLetterEnqueueTimeout_CountsAsAnEnqueueFailure_AndTheEventIsSkippedAfterMaxAttempts()
+    {
+        // Arrange: a timeout in the DLQ write is a TaskCanceledException while the host is not stopping.
+        _options.DeadLetterQueue = "salesforce-dlq";
+        _options.MaxEnqueueAttempts = 2;
+        byte[] replay1 = [0x01];
+        var failing = BuildEvent("evt-dlq-timeout", replay1);
+        _replayStoreMock.Setup(s => s.GetLastReplayIdAsync(_options.Topic, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((byte[]?)null);
+        _pubSubClientMock.Setup(c => c.SubscribeAsync(_options.Topic, null, It.IsAny<SalesforceReplayPreset>(), _options.BatchSize, It.IsAny<CancellationToken>()))
+            .Returns(() => ToAsyncEnumerable([failing]));
+        _pubSubClientMock.Setup(c => c.SubscribeAsync(_options.Topic, It.Is<byte[]?>(b => b != null && b.SequenceEqual(replay1)), It.IsAny<SalesforceReplayPreset>(), _options.BatchSize, It.IsAny<CancellationToken>()))
+            .Returns(() => ToAsyncEnumerable<ConsumerEvent>([]));
+        SetupDecodeAndFailingEnqueue();
+        _schedulerMock.Setup(s => s.EnqueueAsync(It.Is<JobRecord>(j => j.Queue == "salesforce-dlq"), DuplicatePolicy.AllowAfterFailed, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new TaskCanceledException("DLQ storage timeout"));
+
+        var handler = CreateHandler();
+
+        // Act
+        await handler.StartAsync(CancellationToken.None);
+        await WaitForCallAsync(_pubSubClientMock, nameof(ISalesforcePubSubClient.SubscribeAsync), atLeast: 3);
+        await handler.StopAsync(CancellationToken.None);
+
+        // Assert: without the count the same event would be redelivered forever.
+        _replayStoreMock.Verify(s => s.SaveReplayIdAsync(_options.Topic, It.Is<byte[]>(b => b.SequenceEqual(replay1)), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    private void SetupSingleEventStream(ConsumerEvent consumerEvent)
+    {
+        _replayStoreMock.Setup(s => s.GetLastReplayIdAsync(_options.Topic, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((byte[]?)null);
+        _pubSubClientMock.Setup(c => c.SubscribeAsync(_options.Topic, null, It.IsAny<SalesforceReplayPreset>(), _options.BatchSize, It.IsAny<CancellationToken>()))
+            .Returns(() => ToAsyncEnumerable([consumerEvent]));
+    }
+
+    private void SetupDecodeAndFailingEnqueue()
+    {
+        _schemaServiceMock.Setup(s => s.DecodePayloadToJsonAsync("schema-1", It.IsAny<byte[]>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync("{}");
+        _schedulerMock.Setup(s => s.EnqueueAsync(It.IsAny<JobRecord>(), DuplicatePolicy.AllowAfterFailed, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("Storage unavailable"));
+    }
+
+    private static ConsumerEvent BuildEvent(string id, byte[] replayId) =>
+        new()
+        {
+            ReplayId = ByteString.CopyFrom(replayId),
+            Event = new ProducerEvent
+            {
+                Id = id,
+                SchemaId = "schema-1",
+                Payload = ByteString.CopyFrom([0x01]),
+            },
+        };
+
     private static Task WaitForCallAsync<T>(Mock<T> mock, string method, int atLeast = 1)
         where T : class =>
         TestWait.UntilAsync(
             () => Task.FromResult(mock.Invocations.Count(i => string.Equals(i.Method.Name, method, StringComparison.Ordinal)) >= atLeast),
             because: $"{method} to be called {atLeast} time(s)");
 
-    private SalesforceTriggerHandler CreateHandler()
+    private SalesforceTriggerHandler CreateHandler(ILogger<SalesforceTriggerHandler>? logger = null, IListenerRegistry? registry = null)
     {
         return new SalesforceTriggerHandler(
             Options.Create(_options),
@@ -603,7 +975,8 @@ public sealed class SalesforceTriggerHandlerTests
             _pubSubClientMock.Object,
             _schemaServiceMock.Object,
             _nexJobOptions,
-            NullLogger<SalesforceTriggerHandler>.Instance);
+            logger ?? NullLogger<SalesforceTriggerHandler>.Instance,
+            registry);
     }
 
     private static async IAsyncEnumerable<T> ToAsyncEnumerable<T>(

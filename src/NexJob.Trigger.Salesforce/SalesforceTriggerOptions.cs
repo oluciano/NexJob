@@ -95,6 +95,14 @@ public sealed class SalesforceTriggerOptions : IValidatableObject
     /// </summary>
     public string? DeadLetterQueue { get; set; }
 
+    /// <summary>
+    /// Gets or sets how many consecutive times the same event may fail to enqueue (and fail to reach the dead-letter
+    /// queue) before it is skipped and its Replay ID committed, so one poisoned event cannot block the stream forever.
+    /// Defaults to 5.
+    /// </summary>
+    [Range(1, 100)]
+    public int MaxEnqueueAttempts { get; set; } = 5;
+
     /// <inheritdoc/>
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {

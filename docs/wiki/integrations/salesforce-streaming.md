@@ -116,6 +116,7 @@ Replace `ISalesforceBayeuxClient` itself only when the protocol behaviour or the
 | `ConnectTimeout` | 120 seconds | How long one long-polling request stays open. The HTTP client timeout is this plus 30 seconds. |
 | `CometdVersion` | `"60.0"` | The API version used in the CometD URL. |
 | `DeadLetterQueue` | `null` | A queue that receives a copy of an event that could not be enqueued. |
+| `MaxEnqueueAttempts` | `5` | How many times in a row the same event may fail to enqueue before it is skipped and its replay id committed (1 to 100). |
 | `JobType` | `null` (uses `SalesforceStreamingEventJob`) | The job class, an `IJob<SalesforceStreamingEventInput>`. Unlike the other triggers, where `JobType` is a `string?` (assembly-qualified name), here it is a `Type?`: `options.JobType = typeof(MyEventJob);`. |
 | `MaxRetries` | `5` | **Has no effect.** It is validated (1 to 100) but nothing reads it. |
 
@@ -141,7 +142,7 @@ Unlike the Pub/Sub API trigger, there is no `FallbackPolicy`: a saved replay id 
 | What happened | What the trigger does |
 |---|---|
 | The event was enqueued | The replay id is saved. |
-| The enqueue failed | A warning is logged and the replay id is **not** saved; with `DeadLetterQueue` set, a copy of the job is enqueued there (low priority, key `dlq:{key}`). The trigger goes on to the next event, so the failed one is not tried again while the process runs. |
+| The enqueue failed | With `DeadLetterQueue` set, a copy of the job is enqueued there (low priority, key `dlq:{key}`) and the replay id is saved. Otherwise the replay id is **not** saved, the batch is dropped, and the trigger reconnects with backoff so the event is delivered again. With no replay id saved yet, the reconnect starts from `Earliest` instead of `Latest`, so the event is not lost. After `MaxEnqueueAttempts` failures in a row the event is skipped: a critical log is written and its replay id is saved, so one bad event does not block the channel. |
 | The session expired or was refused (`401::`, `402::`, `403::`, `Unknown client`) | The token is discarded and the trigger authenticates and subscribes again after `ReconnectDelay`. |
 | Any other error (network, a failed handshake, a timeout) | A warning is logged and the trigger reconnects after `ReconnectDelay`, doubling up to `MaxReconnectDelay`. A received event resets the wait. |
 | The host is stopping | The trigger leaves the channel and stops. |

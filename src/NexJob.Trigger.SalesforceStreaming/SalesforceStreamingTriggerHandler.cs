@@ -78,6 +78,9 @@ public sealed class SalesforceStreamingTriggerHandler : BackgroundService
             _options.TargetQueue);
 
         var currentDelay = _options.ReconnectDelay;
+        string? failedKey = null;
+        var failedAttempts = 0;
+        var resubscribeFromEarliest = false;
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -100,7 +103,7 @@ public sealed class SalesforceStreamingTriggerHandler : BackgroundService
                     stoppingToken).ConfigureAwait(false);
 
                 // 3. Resolve starting Replay ID
-                var startingReplayId = await ResolveStartingReplayIdAsync(stoppingToken).ConfigureAwait(false);
+                var startingReplayId = await ResolveStartingReplayIdAsync(resubscribeFromEarliest, stoppingToken).ConfigureAwait(false);
 
                 // 4. Subscribe to the channel
                 await _bayeuxClient.SubscribeAsync(
@@ -148,7 +151,10 @@ public sealed class SalesforceStreamingTriggerHandler : BackgroundService
                     _options.Channel);
 
                 _authService.InvalidateToken();
-                await Task.Delay(_options.ReconnectDelay, stoppingToken).ConfigureAwait(false);
+                if (!await TryDelayAsync(_options.ReconnectDelay, stoppingToken).ConfigureAwait(false))
+                {
+                    break;
+                }
             }
             catch (Exception ex)
             {
@@ -159,7 +165,40 @@ public sealed class SalesforceStreamingTriggerHandler : BackgroundService
                     _options.Channel,
                     currentDelay.TotalSeconds);
 
-                await Task.Delay(currentDelay, stoppingToken).ConfigureAwait(false);
+                if (ex is SalesforceStreamingEnqueueFailedException failed)
+                {
+                    failedAttempts = string.Equals(failed.IdempotencyKey, failedKey, StringComparison.Ordinal) ? failedAttempts + 1 : 1;
+                    failedKey = failed.IdempotencyKey;
+                    resubscribeFromEarliest = true;
+
+                    if (failedAttempts >= _options.MaxEnqueueAttempts && failed.ReplayId > 0)
+                    {
+                        // A poisoned event would otherwise be redelivered first on every reconnect and block the channel forever.
+                        _logger.LogCritical(
+                            ex,
+                            "Salesforce Streaming event '{IdempotencyKey}' failed to enqueue {Attempts} times on channel '{Channel}'. Skipping it and committing its Replay ID.",
+                            failed.IdempotencyKey,
+                            failedAttempts,
+                            _options.Channel);
+                        try
+                        {
+                            await _replayIdStore.SaveReplayIdAsync(_options.Channel, failed.ReplayId, CancellationToken.None).ConfigureAwait(false);
+                            failedKey = null;
+                            failedAttempts = 0;
+                            resubscribeFromEarliest = false;
+                        }
+                        catch (Exception storeEx)
+                        {
+                            _logger.LogWarning(storeEx, "Failed to commit the Replay ID of skipped event '{IdempotencyKey}' on channel '{Channel}'.", failed.IdempotencyKey, _options.Channel);
+                        }
+                    }
+                }
+
+                if (!await TryDelayAsync(currentDelay, stoppingToken).ConfigureAwait(false))
+                {
+                    break;
+                }
+
                 currentDelay = TimeSpan.FromTicks(Math.Min(currentDelay.Ticks * 2, _options.MaxReconnectDelay.Ticks));
             }
             finally
@@ -175,7 +214,20 @@ public sealed class SalesforceStreamingTriggerHandler : BackgroundService
         _logger.LogInformation("Salesforce Streaming trigger stopped for channel '{Channel}'", _options.Channel);
     }
 
-    private async Task<long> ResolveStartingReplayIdAsync(CancellationToken cancellationToken)
+    private static async Task<bool> TryDelayAsync(TimeSpan delay, CancellationToken stoppingToken)
+    {
+        try
+        {
+            await Task.Delay(delay, stoppingToken).ConfigureAwait(false);
+            return true;
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            return false;
+        }
+    }
+
+    private async Task<long> ResolveStartingReplayIdAsync(bool resubscribeFromEarliest, CancellationToken cancellationToken)
     {
         var storedReplayId = await _replayIdStore.GetReplayIdAsync(_options.Channel, cancellationToken).ConfigureAwait(false);
         if (storedReplayId.HasValue)
@@ -186,6 +238,12 @@ public sealed class SalesforceStreamingTriggerHandler : BackgroundService
                 storedReplayId.Value);
 
             return storedReplayId.Value;
+        }
+
+        // Nothing is committed and an event failed to enqueue: Latest would drop it, Earliest redelivers it.
+        if (resubscribeFromEarliest && _options.ReplayPreset == SalesforceStreamingReplayPreset.Latest)
+        {
+            return (long)SalesforceStreamingReplayPreset.Earliest;
         }
 
         if (_options.ReplayPreset == SalesforceStreamingReplayPreset.Custom)
@@ -231,46 +289,22 @@ public sealed class SalesforceStreamingTriggerHandler : BackgroundService
         }
         catch (Exception ex)
         {
-            // GUARANTEE 1: Never silently drop — log and route to dead letter if configured
-            _logger.LogWarning(
-                ex,
-                "Failed to enqueue Salesforce Streaming event '{IdempotencyKey}' on queue '{Queue}'",
-                idempotencyKey,
-                _options.TargetQueue);
-
-            if (!string.IsNullOrWhiteSpace(_options.DeadLetterQueue))
+            var deadLettered = await TryRouteToDeadLetterAsync(jobType, inputType, inputJson, idempotencyKey, ex, cancellationToken).ConfigureAwait(false);
+            if (deadLettered)
             {
-                try
+                if (eventInput.ReplayId > 0)
                 {
-                    var dlqJob = JobRecordFactory.Build(
-                        jobType: jobType,
-                        inputType: inputType,
-                        inputJson: inputJson,
-                        options: _nexJobOptions,
-                        queue: _options.DeadLetterQueue,
-                        priority: JobPriority.Low,
-                        idempotencyKey: $"dlq:{idempotencyKey}",
-                        status: JobStatus.Enqueued,
-                        tags: ["trigger:salesforce-streaming", "dead-letter", $"channel:{_options.Channel}",]);
+                    // The event is already in the DLQ: a shutdown must not cancel the commit of its Replay ID.
+                    await _replayIdStore.SaveReplayIdAsync(_options.Channel, eventInput.ReplayId, CancellationToken.None).ConfigureAwait(false);
+                }
 
-                    await _scheduler.EnqueueAsync(dlqJob, DuplicatePolicy.AllowAfterFailed, cancellationToken).ConfigureAwait(false);
-                    _logger.LogInformation(
-                        "Moved failed Salesforce Streaming event '{IdempotencyKey}' to DeadLetterQueue '{DLQ}'",
-                        idempotencyKey,
-                        _options.DeadLetterQueue);
-                }
-                catch (Exception dlqEx)
-                {
-                    _logger.LogError(
-                        dlqEx,
-                        "Failed to route Salesforce Streaming event '{IdempotencyKey}' to DeadLetterQueue '{DLQ}'",
-                        idempotencyKey,
-                        _options.DeadLetterQueue);
-                }
+                return;
             }
 
-            // GUARANTEE 5: Do NOT commit Replay ID if enqueue failed
-            return;
+            // GUARANTEE 5: Do NOT commit Replay ID if enqueue failed and could not be dead-lettered.
+            // Throw with contextual information so the subscription loop aborts the batch, does not process subsequent events,
+            // and reconnects from the last saved Replay ID.
+            throw new SalesforceStreamingEnqueueFailedException(idempotencyKey, eventInput.ReplayId, $"Failed to enqueue Salesforce Streaming event '{idempotencyKey}' on queue '{_options.TargetQueue}'.", ex);
         }
 
         // GUARANTEE 5: Commit Replay ID strictly after enqueue succeeds
@@ -282,6 +316,61 @@ public sealed class SalesforceStreamingTriggerHandler : BackgroundService
                 idempotencyKey,
                 _options.TargetQueue,
                 eventInput.ReplayId);
+        }
+    }
+
+    private async Task<bool> TryRouteToDeadLetterAsync(
+        string jobType,
+        string inputType,
+        string inputJson,
+        string idempotencyKey,
+        Exception enqueueFailure,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(_options.DeadLetterQueue))
+        {
+            return false;
+        }
+
+        _logger.LogWarning(
+            enqueueFailure,
+            "Failed to enqueue Salesforce Streaming event '{IdempotencyKey}' on queue '{Queue}'. Routing it to DeadLetterQueue '{DLQ}'",
+            idempotencyKey,
+            _options.TargetQueue,
+            _options.DeadLetterQueue);
+
+        try
+        {
+            var dlqJob = JobRecordFactory.Build(
+                jobType: jobType,
+                inputType: inputType,
+                inputJson: inputJson,
+                options: _nexJobOptions,
+                queue: _options.DeadLetterQueue,
+                priority: JobPriority.Low,
+                idempotencyKey: $"dlq:{idempotencyKey}",
+                status: JobStatus.Enqueued,
+                tags: ["trigger:salesforce-streaming", "dead-letter", $"channel:{_options.Channel}",]);
+
+            await _scheduler.EnqueueAsync(dlqJob, DuplicatePolicy.AllowAfterFailed, cancellationToken).ConfigureAwait(false);
+            _logger.LogInformation(
+                "Moved failed Salesforce Streaming event '{IdempotencyKey}' to DeadLetterQueue '{DLQ}'",
+                idempotencyKey,
+                _options.DeadLetterQueue);
+            return true;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception dlqEx)
+        {
+            _logger.LogError(
+                dlqEx,
+                "Failed to route Salesforce Streaming event '{IdempotencyKey}' to DeadLetterQueue '{DLQ}'",
+                idempotencyKey,
+                _options.DeadLetterQueue);
+            return false;
         }
     }
 }

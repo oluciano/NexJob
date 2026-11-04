@@ -6,6 +6,28 @@ namespace NexJob.Trigger.SalesforceStreaming.Tests;
 
 public sealed class SalesforceStreamingOptionsTests
 {
+    [Theory]
+    [InlineData(5, true)]
+    [InlineData(1, true)]
+    [InlineData(100, true)]
+    [InlineData(0, false)]
+    [InlineData(-1, false)]
+    [InlineData(101, false)]
+    public void MaxEnqueueAttempts_IsValidatedAgainstItsRange(int attempts, bool valid)
+    {
+        // Arrange
+        var options = new SalesforceStreamingTriggerOptions { MaxEnqueueAttempts = attempts };
+
+        // Act
+        var ok = Validator.TryValidateProperty(
+            attempts,
+            new ValidationContext(options) { MemberName = nameof(SalesforceStreamingTriggerOptions.MaxEnqueueAttempts) },
+            new List<ValidationResult>());
+
+        // Assert
+        ok.Should().Be(valid);
+    }
+
     [Fact]
     public void Defaults_AreProperlyInitialized()
     {
