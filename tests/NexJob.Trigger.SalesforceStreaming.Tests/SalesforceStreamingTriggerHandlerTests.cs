@@ -1,5 +1,6 @@
 using System.Text.Json;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Moq;
@@ -662,7 +663,11 @@ public sealed class SalesforceStreamingTriggerHandlerTests
         int maxAttempts,
         List<long> subscribed,
         Action onSubscribe,
-        Func<long, bool> redeliverWhile)
+        Func<long, bool> redeliverWhile,
+        Action<SalesforceStreamingTriggerOptions>? configure = null,
+        ILogger<SalesforceStreamingTriggerHandler>? logger = null,
+        IStreamingReplayIdStore? store = null,
+        IListenerRegistry? registry = null)
     {
         var options = new SalesforceStreamingTriggerOptions
         {
@@ -679,6 +684,7 @@ public sealed class SalesforceStreamingTriggerHandlerTests
             },
         };
 
+        configure?.Invoke(options);
         _mockAuthService.Setup(a => a.GetTokenAsync(It.IsAny<SalesforceStreamingAuthOptions>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new SalesforceStreamingTokenResult("tok123", "https://test.salesforce.com"));
         _mockBayeuxClient.Setup(b => b.HandshakeAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
@@ -713,7 +719,111 @@ public sealed class SalesforceStreamingTriggerHandlerTests
             _mockBayeuxClient.Object,
             Microsoft.Extensions.Options.Options.Create(options),
             _nexJobOptions,
-            NullLogger<SalesforceStreamingTriggerHandler>.Instance,
-            _store);
+            logger ?? NullLogger<SalesforceStreamingTriggerHandler>.Instance,
+            store ?? _store,
+            registry);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_EnqueueFailureRoutedToDeadLetter_LogsTheOriginalEnqueueException()
+    {
+        // Arrange
+        var logger = new ListLogger<SalesforceStreamingTriggerHandler>();
+        var delivered = 0;
+        var handler = CreatePoisonedEventHandler(5, [], () => { }, _ => ++delivered == 1, o => o.DeadLetterQueue = "salesforce-dlq", logger);
+        var dlqEnqueued = new TaskCompletionSource();
+        _mockScheduler.Setup(s => s.EnqueueAsync(It.Is<JobRecord>(j => j.Queue == "salesforce-dlq"), It.IsAny<DuplicatePolicy>(), It.IsAny<CancellationToken>()))
+            .Callback(() => dlqEnqueued.TrySetResult())
+            .ReturnsAsync(JobId.New());
+
+        // Act
+        await handler.StartAsync(CancellationToken.None);
+        await dlqEnqueued.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await handler.StopAsync(CancellationToken.None);
+
+        // Assert: without the cause in the log an operator cannot tell why events land in the DLQ.
+        logger.Entries.Should().Contain(e => e.Exception != null && e.Exception.Message == "Storage unavailable");
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_DeadLetterEnqueueCanceledByShutdown_IsNotLoggedAsAnError()
+    {
+        // Arrange
+        var logger = new ListLogger<SalesforceStreamingTriggerHandler>();
+        var delivered = 0;
+        var handler = CreatePoisonedEventHandler(5, [], () => { }, _ => ++delivered == 1, o => o.DeadLetterQueue = "salesforce-dlq", logger);
+        var dlqStarted = new TaskCompletionSource();
+        _mockScheduler.Setup(s => s.EnqueueAsync(It.Is<JobRecord>(j => j.Queue == "salesforce-dlq"), It.IsAny<DuplicatePolicy>(), It.IsAny<CancellationToken>()))
+            .Returns(async (JobRecord _, DuplicatePolicy _, CancellationToken ct) =>
+            {
+                dlqStarted.TrySetResult();
+                await Task.Delay(Timeout.Infinite, ct);
+                return JobId.New();
+            });
+
+        // Act
+        await handler.StartAsync(CancellationToken.None);
+        await dlqStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await handler.StopAsync(CancellationToken.None);
+
+        // Assert: a shutdown overlapping the DLQ write is not a DLQ failure.
+        logger.Entries.Should().NotContain(e => e.Level >= LogLevel.Error);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ReplayIdCommittedAfterDeadLetter_IsNotTiedToTheShutdownToken()
+    {
+        // Arrange: the event is already in the DLQ, so a shutdown must not cancel the commit of its Replay ID.
+        var store = new Mock<IStreamingReplayIdStore>();
+        store.Setup(s => s.GetReplayIdAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync((long?)null);
+        CancellationToken saveToken = new(true);
+        store.Setup(s => s.SaveReplayIdAsync(PoisonedChannel, PoisonedReplayId, It.IsAny<CancellationToken>()))
+            .Callback((string _, long _, CancellationToken ct) => saveToken = ct)
+            .Returns(Task.CompletedTask);
+        var delivered = 0;
+        var handler = CreatePoisonedEventHandler(5, [], () => { }, _ => ++delivered == 1, o => o.DeadLetterQueue = "salesforce-dlq", store: store.Object);
+        var dlqStarted = new TaskCompletionSource();
+        var releaseDlq = new TaskCompletionSource();
+        _mockScheduler.Setup(s => s.EnqueueAsync(It.Is<JobRecord>(j => j.Queue == "salesforce-dlq"), It.IsAny<DuplicatePolicy>(), It.IsAny<CancellationToken>()))
+            .Returns(async () =>
+            {
+                dlqStarted.TrySetResult();
+                await releaseDlq.Task;
+                return JobId.New();
+            });
+
+        // Act
+        await handler.StartAsync(CancellationToken.None);
+        await dlqStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var stopping = handler.StopAsync(CancellationToken.None);
+        releaseDlq.SetResult();
+        await stopping;
+
+        // Assert
+        store.Verify(s => s.SaveReplayIdAsync(PoisonedChannel, PoisonedReplayId, It.IsAny<CancellationToken>()), Times.Once);
+        saveToken.CanBeCanceled.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ShutdownDuringTheRehandshakeDelay_StillMarksTheListenerStopped()
+    {
+        // Arrange
+        var registry = new DefaultListenerRegistry();
+        var connected = new TaskCompletionSource();
+        var handler = CreatePoisonedEventHandler(5, [], () => { }, _ => false, o => o.ReconnectDelay = TimeSpan.FromMinutes(1), registry: registry);
+        _mockBayeuxClient.Setup(b => b.ConnectAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns(() =>
+            {
+                connected.TrySetResult();
+                throw new SalesforceBayeuxException("session expired", shouldRehandshake: true);
+            });
+
+        // Act
+        await handler.StartAsync(CancellationToken.None);
+        await connected.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await handler.StopAsync(CancellationToken.None);
+
+        // Assert
+        registry.Get($"salesforce-streaming:{PoisonedChannel}")!.Status.Should().Be(ListenerStatus.Stopped);
     }
 }

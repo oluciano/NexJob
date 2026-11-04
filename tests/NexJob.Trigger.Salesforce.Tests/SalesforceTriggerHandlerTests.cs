@@ -5,6 +5,7 @@ using Eventbus.V1;
 using FluentAssertions;
 using Google.Protobuf;
 using Grpc.Core;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Moq;
@@ -823,6 +824,88 @@ public sealed class SalesforceTriggerHandlerTests
         _schedulerMock.Verify(s => s.EnqueueAsync(It.IsAny<JobRecord>(), DuplicatePolicy.AllowAfterFailed, It.IsAny<CancellationToken>()), Times.Exactly(2));
     }
 
+    [Fact]
+    public async Task EnqueueFailure_RoutedToDeadLetter_LogsTheOriginalEnqueueException()
+    {
+        // Arrange
+        _options.DeadLetterQueue = "salesforce-dlq";
+        var logger = new ListLogger<SalesforceTriggerHandler>();
+        var dlqEnqueued = new TaskCompletionSource();
+        SetupSingleEventStream(BuildEvent("evt-dlq", [0x01]));
+        SetupDecodeAndFailingEnqueue();
+        _schedulerMock.Setup(s => s.EnqueueAsync(It.Is<JobRecord>(j => j.Queue == "salesforce-dlq"), DuplicatePolicy.AllowAfterFailed, It.IsAny<CancellationToken>()))
+            .Callback(() => dlqEnqueued.TrySetResult())
+            .ReturnsAsync(JobId.New());
+
+        var handler = CreateHandler(logger);
+
+        // Act
+        await handler.StartAsync(CancellationToken.None);
+        await dlqEnqueued.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await handler.StopAsync(CancellationToken.None);
+
+        // Assert: without the cause in the log an operator cannot tell why events land in the DLQ.
+        logger.Entries.Should().Contain(e => e.Exception != null && e.Exception.Message == "Storage unavailable");
+    }
+
+    [Fact]
+    public async Task DeadLetterEnqueue_CanceledByShutdown_IsNotLoggedAsAnError()
+    {
+        // Arrange
+        _options.DeadLetterQueue = "salesforce-dlq";
+        var logger = new ListLogger<SalesforceTriggerHandler>();
+        var dlqStarted = new TaskCompletionSource();
+        SetupSingleEventStream(BuildEvent("evt-dlq", [0x01]));
+        SetupDecodeAndFailingEnqueue();
+        _schedulerMock.Setup(s => s.EnqueueAsync(It.Is<JobRecord>(j => j.Queue == "salesforce-dlq"), DuplicatePolicy.AllowAfterFailed, It.IsAny<CancellationToken>()))
+            .Returns(async (JobRecord _, DuplicatePolicy _, CancellationToken ct) =>
+            {
+                dlqStarted.TrySetResult();
+                await Task.Delay(Timeout.Infinite, ct);
+                return JobId.New();
+            });
+
+        var handler = CreateHandler(logger);
+
+        // Act
+        await handler.StartAsync(CancellationToken.None);
+        await dlqStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await handler.StopAsync(CancellationToken.None);
+
+        // Assert: a shutdown overlapping the DLQ write is not a DLQ failure.
+        logger.Entries.Should().NotContain(e => e.Level >= LogLevel.Error);
+    }
+
+    [Fact]
+    public async Task ExpiredReplayId_ShutdownDuringTheRetryDelay_StillMarksTheListenerStopped()
+    {
+        // Arrange
+        _options.FallbackPolicy = ReplayFallbackPolicy.ResetToLatest;
+        var registry = new DefaultListenerRegistry();
+        _replayStoreMock.Setup(s => s.GetLastReplayIdAsync(_options.Topic, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([0x09]);
+        _pubSubClientMock.Setup(c => c.SubscribeAsync(_options.Topic, It.IsAny<byte[]?>(), It.IsAny<SalesforceReplayPreset>(), _options.BatchSize, It.IsAny<CancellationToken>()))
+            .Throws(new RpcException(new Status(StatusCode.InvalidArgument, "replayId too old")));
+
+        var handler = CreateHandler(registry: registry);
+
+        // Act
+        await handler.StartAsync(CancellationToken.None);
+        await WaitForCallAsync(_pubSubClientMock, nameof(ISalesforcePubSubClient.SubscribeAsync));
+        await handler.StopAsync(CancellationToken.None);
+
+        // Assert
+        registry.Get($"salesforce:{_options.Topic}")!.Status.Should().Be(ListenerStatus.Stopped);
+    }
+
+    private void SetupSingleEventStream(ConsumerEvent consumerEvent)
+    {
+        _replayStoreMock.Setup(s => s.GetLastReplayIdAsync(_options.Topic, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((byte[]?)null);
+        _pubSubClientMock.Setup(c => c.SubscribeAsync(_options.Topic, null, It.IsAny<SalesforceReplayPreset>(), _options.BatchSize, It.IsAny<CancellationToken>()))
+            .Returns(() => ToAsyncEnumerable([consumerEvent]));
+    }
+
     private void SetupDecodeAndFailingEnqueue()
     {
         _schemaServiceMock.Setup(s => s.DecodePayloadToJsonAsync("schema-1", It.IsAny<byte[]>(), It.IsAny<CancellationToken>()))
@@ -849,7 +932,7 @@ public sealed class SalesforceTriggerHandlerTests
             () => Task.FromResult(mock.Invocations.Count(i => string.Equals(i.Method.Name, method, StringComparison.Ordinal)) >= atLeast),
             because: $"{method} to be called {atLeast} time(s)");
 
-    private SalesforceTriggerHandler CreateHandler()
+    private SalesforceTriggerHandler CreateHandler(ILogger<SalesforceTriggerHandler>? logger = null, IListenerRegistry? registry = null)
     {
         return new SalesforceTriggerHandler(
             Options.Create(_options),
@@ -858,7 +941,8 @@ public sealed class SalesforceTriggerHandlerTests
             _pubSubClientMock.Object,
             _schemaServiceMock.Object,
             _nexJobOptions,
-            NullLogger<SalesforceTriggerHandler>.Instance);
+            logger ?? NullLogger<SalesforceTriggerHandler>.Instance,
+            registry);
     }
 
     private static async IAsyncEnumerable<T> ToAsyncEnumerable<T>(
