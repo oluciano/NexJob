@@ -165,7 +165,7 @@ public sealed class SalesforceStreamingTriggerHandlerTests
     }
 
     [Fact]
-    public async Task ExecuteAsync_EnqueueFails_RoutesToDeadLetterAndDoesNotCommitReplayId()
+    public async Task ExecuteAsync_EnqueueFails_RoutesToDeadLetterAndCommitsReplayId()
     {
         // Arrange
         var options = new SalesforceStreamingTriggerOptions
@@ -229,9 +229,9 @@ public sealed class SalesforceStreamingTriggerHandlerTests
                 It.IsAny<CancellationToken>()),
             Times.Once);
 
-        // Replay ID must NOT be saved!
+        // Behavior changed in v6.8: a shutdown no longer cancels the Replay ID commit of an event already in the DLQ (#655).
         var storedId = await _store.GetReplayIdAsync("/data/Order__ChangeEvent");
-        storedId.Should().BeNull();
+        storedId.Should().Be(443322);
     }
 
     [Fact]
@@ -243,6 +243,7 @@ public sealed class SalesforceStreamingTriggerHandlerTests
             Channel = "/data/Order__ChangeEvent",
             TargetQueue = "salesforce-queue",
             DeadLetterQueue = null, // No DLQ
+            ReconnectDelay = TimeSpan.FromMilliseconds(10),
             Authentication = new SalesforceStreamingAuthOptions
             {
                 AuthType = SalesforceStreamingAuthType.SessionId,
@@ -289,6 +290,7 @@ public sealed class SalesforceStreamingTriggerHandlerTests
             .Callback(() => event2Enqueued = true)
             .ReturnsAsync(JobId.New());
 
+        var reconnected = new TaskCompletionSource<bool>();
         var connectCount1 = 0;
         _mockBayeuxClient.Setup(b => b.ConnectAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .Returns(() =>
@@ -299,6 +301,7 @@ public sealed class SalesforceStreamingTriggerHandlerTests
                     return Task.FromResult<IReadOnlyList<SalesforceStreamingEventInput>>(new[] { event1, event2, });
                 }
 
+                reconnected.TrySetResult(true);
                 cts.Cancel();
                 return Task.FromResult<IReadOnlyList<SalesforceStreamingEventInput>>([]);
             });
@@ -315,6 +318,8 @@ public sealed class SalesforceStreamingTriggerHandlerTests
         // Act
         await handler.StartAsync(cts.Token);
         await event1Attempted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        // Wait for the reconnect: the batch was aborted after event 1 and the session started again.
+        await reconnected.Task.WaitAsync(TimeSpan.FromSeconds(5));
         await handler.StopAsync(CancellationToken.None);
 
         // Assert: Event 2 must NOT be processed or commit its replay ID!

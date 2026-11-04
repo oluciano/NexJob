@@ -326,7 +326,7 @@ public sealed class SalesforceTriggerHandlerTests
                 SalesforceReplayPreset.Latest,
                 _options.BatchSize,
                 It.IsAny<CancellationToken>()))
-            .Returns(ToAsyncEnumerable([event1, event2]));
+            .Returns(() => ToAsyncEnumerable([event1, event2]));
 
         _schemaServiceMock.Setup(s => s.DecodePayloadToJsonAsync("schema-1", It.IsAny<byte[]>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync("{}");
@@ -350,14 +350,19 @@ public sealed class SalesforceTriggerHandlerTests
         // Act
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
         await handler.StartAsync(cts.Token);
-        await WaitForCallAsync(_schedulerMock, nameof(IScheduler.EnqueueAsync));
+        // Wait for the reconnect: the stream was torn down after event 1 and delivered again from the committed offset.
+        await WaitForCallAsync(_pubSubClientMock, nameof(ISalesforcePubSubClient.SubscribeAsync), atLeast: 2);
         await handler.StopAsync(CancellationToken.None);
 
-        // Assert: Replay ID for event 2 must NEVER be committed while event 1 was dropped!
+        // Assert: event 2 is never reached, and its Replay ID must NEVER be committed while event 1 was dropped!
         _replayStoreMock.Verify(
             s => s.SaveReplayIdAsync(_options.Topic, replay2, It.IsAny<CancellationToken>()),
             Times.Never,
             "Event 2 must not commit replay ID if event 1 was dropped, to prevent skipping event 1");
+
+        _schedulerMock.Verify(
+            s => s.EnqueueAsync(It.Is<JobRecord>(j => j.IdempotencyKey == "evt-2-succ"), It.IsAny<DuplicatePolicy>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     [Fact]

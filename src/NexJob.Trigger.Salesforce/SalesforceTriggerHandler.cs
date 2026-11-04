@@ -109,11 +109,7 @@ public sealed class SalesforceTriggerHandler : BackgroundService
                         "Salesforce Pub/Sub stream ended for topic {Topic}. Reconnecting in {Delay}s...",
                         _options.Topic,
                         backoffSeconds);
-                    try
-                    {
-                        await Task.Delay(TimeSpan.FromSeconds(backoffSeconds), stoppingToken).ConfigureAwait(false);
-                    }
-                    catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                    if (!await TryDelayAsync(TimeSpan.FromSeconds(backoffSeconds), stoppingToken).ConfigureAwait(false))
                     {
                         break;
                     }
@@ -157,7 +153,10 @@ public sealed class SalesforceTriggerHandler : BackgroundService
                     currentPreset = SalesforceReplayPreset.Earliest;
                 }
 
-                await Task.Delay(TimeSpan.FromSeconds(1), stoppingToken).ConfigureAwait(false);
+                if (!await TryDelayAsync(TimeSpan.FromSeconds(1), stoppingToken).ConfigureAwait(false))
+                {
+                    break;
+                }
             }
             catch (Exception ex)
             {
@@ -197,11 +196,7 @@ public sealed class SalesforceTriggerHandler : BackgroundService
                     }
                 }
 
-                try
-                {
-                    await Task.Delay(TimeSpan.FromSeconds(backoffSeconds), stoppingToken).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                if (!await TryDelayAsync(TimeSpan.FromSeconds(backoffSeconds), stoppingToken).ConfigureAwait(false))
                 {
                     break;
                 }
@@ -213,6 +208,19 @@ public sealed class SalesforceTriggerHandler : BackgroundService
 
         _listenerRegistry?.UpdateStatus(_listenerId, ListenerStatus.Stopped);
         _logger.LogInformation("Salesforce trigger stopped for topic {Topic}.", _options.Topic);
+    }
+
+    private static async Task<bool> TryDelayAsync(TimeSpan delay, CancellationToken stoppingToken)
+    {
+        try
+        {
+            await Task.Delay(delay, stoppingToken).ConfigureAwait(false);
+            return true;
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            return false;
+        }
     }
 
     private static bool IsExpiredOrInvalidReplayId(RpcException ex, byte[]? currentReplayId)
@@ -291,7 +299,7 @@ public sealed class SalesforceTriggerHandler : BackgroundService
         }
         catch (Exception ex)
         {
-            var deadLettered = await TryRouteToDeadLetterAsync(jobType, jsonPayload, idempotencyKey, ct).ConfigureAwait(false);
+            var deadLettered = await TryRouteToDeadLetterAsync(jobType, jsonPayload, idempotencyKey, ex, ct).ConfigureAwait(false);
             if (deadLettered)
             {
                 // GUARANTEE 1 & 5: Safely preserved in DLQ; commit Replay ID so the stream can advance past this event.
@@ -315,12 +323,15 @@ public sealed class SalesforceTriggerHandler : BackgroundService
         string jobType,
         string jsonPayload,
         string idempotencyKey,
+        Exception enqueueFailure,
         CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(_options.DeadLetterQueue))
         {
             return false;
         }
+
+        _logger.LogWarning(enqueueFailure, "Failed to enqueue Salesforce event {IdempotencyKey} on queue {Queue}. Routing it to DeadLetterQueue {DLQ}.", idempotencyKey, _options.TargetQueue, _options.DeadLetterQueue);
 
         try
         {
@@ -338,6 +349,10 @@ public sealed class SalesforceTriggerHandler : BackgroundService
             await _scheduler.EnqueueAsync(dlqJob, DuplicatePolicy.AllowAfterFailed, ct).ConfigureAwait(false);
             _logger.LogInformation("Moved failed Salesforce event {IdempotencyKey} to DeadLetterQueue {DLQ}.", idempotencyKey, _options.DeadLetterQueue);
             return true;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception dlqEx)
         {

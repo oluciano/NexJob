@@ -151,7 +151,10 @@ public sealed class SalesforceStreamingTriggerHandler : BackgroundService
                     _options.Channel);
 
                 _authService.InvalidateToken();
-                await Task.Delay(_options.ReconnectDelay, stoppingToken).ConfigureAwait(false);
+                if (!await TryDelayAsync(_options.ReconnectDelay, stoppingToken).ConfigureAwait(false))
+                {
+                    break;
+                }
             }
             catch (Exception ex)
             {
@@ -191,11 +194,7 @@ public sealed class SalesforceStreamingTriggerHandler : BackgroundService
                     }
                 }
 
-                try
-                {
-                    await Task.Delay(currentDelay, stoppingToken).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                if (!await TryDelayAsync(currentDelay, stoppingToken).ConfigureAwait(false))
                 {
                     break;
                 }
@@ -213,6 +212,19 @@ public sealed class SalesforceStreamingTriggerHandler : BackgroundService
 
         _listenerRegistry?.UpdateStatus(_listenerId, ListenerStatus.Stopped);
         _logger.LogInformation("Salesforce Streaming trigger stopped for channel '{Channel}'", _options.Channel);
+    }
+
+    private static async Task<bool> TryDelayAsync(TimeSpan delay, CancellationToken stoppingToken)
+    {
+        try
+        {
+            await Task.Delay(delay, stoppingToken).ConfigureAwait(false);
+            return true;
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            return false;
+        }
     }
 
     private async Task<long> ResolveStartingReplayIdAsync(bool resubscribeFromEarliest, CancellationToken cancellationToken)
@@ -277,12 +289,13 @@ public sealed class SalesforceStreamingTriggerHandler : BackgroundService
         }
         catch (Exception ex)
         {
-            var deadLettered = await TryRouteToDeadLetterAsync(jobType, inputType, inputJson, idempotencyKey, cancellationToken).ConfigureAwait(false);
+            var deadLettered = await TryRouteToDeadLetterAsync(jobType, inputType, inputJson, idempotencyKey, ex, cancellationToken).ConfigureAwait(false);
             if (deadLettered)
             {
                 if (eventInput.ReplayId > 0)
                 {
-                    await _replayIdStore.SaveReplayIdAsync(_options.Channel, eventInput.ReplayId, cancellationToken).ConfigureAwait(false);
+                    // The event is already in the DLQ: a shutdown must not cancel the commit of its Replay ID.
+                    await _replayIdStore.SaveReplayIdAsync(_options.Channel, eventInput.ReplayId, CancellationToken.None).ConfigureAwait(false);
                 }
 
                 return;
@@ -311,12 +324,20 @@ public sealed class SalesforceStreamingTriggerHandler : BackgroundService
         string inputType,
         string inputJson,
         string idempotencyKey,
+        Exception enqueueFailure,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(_options.DeadLetterQueue))
         {
             return false;
         }
+
+        _logger.LogWarning(
+            enqueueFailure,
+            "Failed to enqueue Salesforce Streaming event '{IdempotencyKey}' on queue '{Queue}'. Routing it to DeadLetterQueue '{DLQ}'",
+            idempotencyKey,
+            _options.TargetQueue,
+            _options.DeadLetterQueue);
 
         try
         {
@@ -337,6 +358,10 @@ public sealed class SalesforceStreamingTriggerHandler : BackgroundService
                 idempotencyKey,
                 _options.DeadLetterQueue);
             return true;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception dlqEx)
         {
