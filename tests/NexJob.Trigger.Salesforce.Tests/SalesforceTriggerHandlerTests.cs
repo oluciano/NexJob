@@ -903,6 +903,35 @@ public sealed class SalesforceTriggerHandlerTests
         registry.Get($"salesforce:{_options.Topic}")!.Status.Should().Be(ListenerStatus.Stopped);
     }
 
+    [Fact]
+    public async Task DeadLetterEnqueueTimeout_CountsAsAnEnqueueFailure_AndTheEventIsSkippedAfterMaxAttempts()
+    {
+        // Arrange: a timeout in the DLQ write is a TaskCanceledException while the host is not stopping.
+        _options.DeadLetterQueue = "salesforce-dlq";
+        _options.MaxEnqueueAttempts = 2;
+        byte[] replay1 = [0x01];
+        var failing = BuildEvent("evt-dlq-timeout", replay1);
+        _replayStoreMock.Setup(s => s.GetLastReplayIdAsync(_options.Topic, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((byte[]?)null);
+        _pubSubClientMock.Setup(c => c.SubscribeAsync(_options.Topic, null, It.IsAny<SalesforceReplayPreset>(), _options.BatchSize, It.IsAny<CancellationToken>()))
+            .Returns(() => ToAsyncEnumerable([failing]));
+        _pubSubClientMock.Setup(c => c.SubscribeAsync(_options.Topic, It.Is<byte[]?>(b => b != null && b.SequenceEqual(replay1)), It.IsAny<SalesforceReplayPreset>(), _options.BatchSize, It.IsAny<CancellationToken>()))
+            .Returns(() => ToAsyncEnumerable<ConsumerEvent>([]));
+        SetupDecodeAndFailingEnqueue();
+        _schedulerMock.Setup(s => s.EnqueueAsync(It.Is<JobRecord>(j => j.Queue == "salesforce-dlq"), DuplicatePolicy.AllowAfterFailed, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new TaskCanceledException("DLQ storage timeout"));
+
+        var handler = CreateHandler();
+
+        // Act
+        await handler.StartAsync(CancellationToken.None);
+        await WaitForCallAsync(_pubSubClientMock, nameof(ISalesforcePubSubClient.SubscribeAsync), atLeast: 3);
+        await handler.StopAsync(CancellationToken.None);
+
+        // Assert: without the count the same event would be redelivered forever.
+        _replayStoreMock.Verify(s => s.SaveReplayIdAsync(_options.Topic, It.Is<byte[]>(b => b.SequenceEqual(replay1)), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
     private void SetupSingleEventStream(ConsumerEvent consumerEvent)
     {
         _replayStoreMock.Setup(s => s.GetLastReplayIdAsync(_options.Topic, It.IsAny<CancellationToken>()))

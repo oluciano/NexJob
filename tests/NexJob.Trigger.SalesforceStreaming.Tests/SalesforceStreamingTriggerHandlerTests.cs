@@ -751,6 +751,30 @@ public sealed class SalesforceStreamingTriggerHandlerTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_DeadLetterEnqueueTimeout_CountsAsAnEnqueueFailure_AndTheEventIsSkippedAfterMaxAttempts()
+    {
+        // Arrange: a timeout in the DLQ write is a TaskCanceledException while the host is not stopping.
+        var subscribed = new List<long>();
+        var resumedPastEvent = new TaskCompletionSource();
+        var handler = CreatePoisonedEventHandler(
+            maxAttempts: 2,
+            subscribed,
+            onSubscribe: () => { if (subscribed[^1] == PoisonedReplayId) { resumedPastEvent.TrySetResult(); } },
+            redeliverWhile: last => last < PoisonedReplayId,
+            configure: o => o.DeadLetterQueue = "salesforce-dlq");
+        _mockScheduler.Setup(s => s.EnqueueAsync(It.Is<JobRecord>(j => j.Queue == "salesforce-dlq"), It.IsAny<DuplicatePolicy>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new TaskCanceledException("DLQ storage timeout"));
+
+        // Act
+        await handler.StartAsync(CancellationToken.None);
+        await resumedPastEvent.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await handler.StopAsync(CancellationToken.None);
+
+        // Assert: without the count the same event would be redelivered forever.
+        (await _store.GetReplayIdAsync(PoisonedChannel)).Should().Be(PoisonedReplayId);
+    }
+
+    [Fact]
     public async Task ExecuteAsync_DeadLetterEnqueueCanceledByShutdown_IsNotLoggedAsAnError()
     {
         // Arrange
