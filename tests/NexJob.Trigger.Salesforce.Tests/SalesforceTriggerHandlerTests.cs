@@ -740,6 +740,109 @@ public sealed class SalesforceTriggerHandlerTests
             },
         };
 
+    [Fact]
+    public async Task EnqueueFailure_WithNoStoredReplayId_ResubscribesFromEarliestSoTheEventIsRedelivered()
+    {
+        // Arrange: nothing was ever committed and the preset is Latest, so reconnecting with Latest would drop the failed event.
+        var failing = BuildEvent("evt-first-fail", [0x01]);
+        _replayStoreMock.Setup(s => s.GetLastReplayIdAsync(_options.Topic, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((byte[]?)null);
+        _pubSubClientMock.Setup(c => c.SubscribeAsync(_options.Topic, null, SalesforceReplayPreset.Latest, _options.BatchSize, It.IsAny<CancellationToken>()))
+            .Returns(() => ToAsyncEnumerable([failing]));
+        _pubSubClientMock.Setup(c => c.SubscribeAsync(_options.Topic, null, SalesforceReplayPreset.Earliest, _options.BatchSize, It.IsAny<CancellationToken>()))
+            .Returns(() => ToAsyncEnumerable<ConsumerEvent>([]));
+        SetupDecodeAndFailingEnqueue();
+
+        var handler = CreateHandler();
+
+        // Act
+        await handler.StartAsync(CancellationToken.None);
+        await WaitForCallAsync(_pubSubClientMock, nameof(ISalesforcePubSubClient.SubscribeAsync), atLeast: 2);
+        await handler.StopAsync(CancellationToken.None);
+
+        // Assert
+        _pubSubClientMock.Verify(
+            c => c.SubscribeAsync(_options.Topic, null, SalesforceReplayPreset.Earliest, _options.BatchSize, It.IsAny<CancellationToken>()),
+            Times.AtLeastOnce);
+    }
+
+    [Fact]
+    public async Task TransientErrorAfterResetToLatest_DoesNotReinstateTheExpiredStoredReplayId()
+    {
+        // Arrange: the stored ID is expired. ResetToLatest drops it in memory, but the store keeps it until a new event commits.
+        _options.FallbackPolicy = ReplayFallbackPolicy.ResetToLatest;
+        byte[] expired = [0x09];
+        _replayStoreMock.Setup(s => s.GetLastReplayIdAsync(_options.Topic, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(expired);
+        _pubSubClientMock.Setup(c => c.SubscribeAsync(_options.Topic, It.Is<byte[]?>(b => b != null && b.SequenceEqual(expired)), It.IsAny<SalesforceReplayPreset>(), _options.BatchSize, It.IsAny<CancellationToken>()))
+            .Throws(new RpcException(new Status(StatusCode.InvalidArgument, "replayId too old")));
+
+        var nullOffsetCalls = 0;
+        _pubSubClientMock.Setup(c => c.SubscribeAsync(_options.Topic, null, SalesforceReplayPreset.Latest, _options.BatchSize, It.IsAny<CancellationToken>()))
+            .Returns(() => ++nullOffsetCalls == 1
+                ? throw new InvalidOperationException("transient blip")
+                : ToAsyncEnumerable<ConsumerEvent>([]));
+
+        var handler = CreateHandler();
+
+        // Act
+        await handler.StartAsync(CancellationToken.None);
+        await WaitForCallAsync(_pubSubClientMock, nameof(ISalesforcePubSubClient.SubscribeAsync), atLeast: 3);
+        await handler.StopAsync(CancellationToken.None);
+
+        // Assert: the expired ID was used once (the call that failed), never again after the reset.
+        _pubSubClientMock.Verify(
+            c => c.SubscribeAsync(_options.Topic, It.Is<byte[]?>(b => b != null && b.SequenceEqual(expired)), It.IsAny<SalesforceReplayPreset>(), _options.BatchSize, It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task EnqueueFailsRepeatedlyWithoutDlq_SkipsTheEventAfterMaxAttemptsAndCommitsItsReplayId()
+    {
+        // Arrange: a poisoned event fails on every delivery; without a limit it would block the stream forever.
+        _options.MaxEnqueueAttempts = 2;
+        byte[] replay1 = [0x01];
+        var failing = BuildEvent("evt-poisoned", replay1);
+        _replayStoreMock.Setup(s => s.GetLastReplayIdAsync(_options.Topic, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((byte[]?)null);
+        _pubSubClientMock.Setup(c => c.SubscribeAsync(_options.Topic, null, It.IsAny<SalesforceReplayPreset>(), _options.BatchSize, It.IsAny<CancellationToken>()))
+            .Returns(() => ToAsyncEnumerable([failing]));
+        _pubSubClientMock.Setup(c => c.SubscribeAsync(_options.Topic, It.Is<byte[]?>(b => b != null && b.SequenceEqual(replay1)), It.IsAny<SalesforceReplayPreset>(), _options.BatchSize, It.IsAny<CancellationToken>()))
+            .Returns(() => ToAsyncEnumerable<ConsumerEvent>([]));
+        SetupDecodeAndFailingEnqueue();
+
+        var handler = CreateHandler();
+
+        // Act
+        await handler.StartAsync(CancellationToken.None);
+        await WaitForCallAsync(_pubSubClientMock, nameof(ISalesforcePubSubClient.SubscribeAsync), atLeast: 3);
+        await handler.StopAsync(CancellationToken.None);
+
+        // Assert
+        _replayStoreMock.Verify(s => s.SaveReplayIdAsync(_options.Topic, It.Is<byte[]>(b => b.SequenceEqual(replay1)), It.IsAny<CancellationToken>()), Times.Once);
+        _schedulerMock.Verify(s => s.EnqueueAsync(It.IsAny<JobRecord>(), DuplicatePolicy.AllowAfterFailed, It.IsAny<CancellationToken>()), Times.Exactly(2));
+    }
+
+    private void SetupDecodeAndFailingEnqueue()
+    {
+        _schemaServiceMock.Setup(s => s.DecodePayloadToJsonAsync("schema-1", It.IsAny<byte[]>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync("{}");
+        _schedulerMock.Setup(s => s.EnqueueAsync(It.IsAny<JobRecord>(), DuplicatePolicy.AllowAfterFailed, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("Storage unavailable"));
+    }
+
+    private static ConsumerEvent BuildEvent(string id, byte[] replayId) =>
+        new()
+        {
+            ReplayId = ByteString.CopyFrom(replayId),
+            Event = new ProducerEvent
+            {
+                Id = id,
+                SchemaId = "schema-1",
+                Payload = ByteString.CopyFrom([0x01]),
+            },
+        };
+
     private static Task WaitForCallAsync<T>(Mock<T> mock, string method, int atLeast = 1)
         where T : class =>
         TestWait.UntilAsync(

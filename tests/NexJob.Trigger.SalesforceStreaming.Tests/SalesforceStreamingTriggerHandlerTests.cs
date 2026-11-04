@@ -9,6 +9,9 @@ namespace NexJob.Trigger.SalesforceStreaming.Tests;
 
 public sealed class SalesforceStreamingTriggerHandlerTests
 {
+    private const string PoisonedChannel = "/data/Order__ChangeEvent";
+    private const long PoisonedReplayId = 1001;
+
     private readonly Mock<IScheduler> _mockScheduler = new();
     private readonly Mock<ISalesforceStreamingAuthService> _mockAuthService = new();
     private readonly Mock<ISalesforceBayeuxClient> _mockBayeuxClient = new();
@@ -609,5 +612,108 @@ public sealed class SalesforceStreamingTriggerHandlerTests
             listenerRegistry: null);
 
         act.Should().NotThrow();
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_EnqueueFailsWithNoStoredReplayId_ResubscribesFromEarliestSoTheEventIsRedelivered()
+    {
+        // Arrange: nothing was ever committed and the preset is Latest, so resubscribing with Latest would drop the failed event.
+        var subscribed = new List<long>();
+        var resubscribed = new TaskCompletionSource();
+        var handler = CreatePoisonedEventHandler(
+            maxAttempts: 5,
+            subscribed,
+            onSubscribe: () => { if (subscribed.Count >= 2) { resubscribed.TrySetResult(); } },
+            redeliverWhile: _ => true);
+
+        // Act
+        await handler.StartAsync(CancellationToken.None);
+        await resubscribed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await handler.StopAsync(CancellationToken.None);
+
+        // Assert
+        subscribed[0].Should().Be((long)SalesforceStreamingReplayPreset.Latest);
+        subscribed[1].Should().Be((long)SalesforceStreamingReplayPreset.Earliest);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_EnqueueFailsRepeatedlyWithoutDlq_SkipsTheEventAfterMaxAttemptsAndCommitsItsReplayId()
+    {
+        // Arrange: a poisoned event fails on every delivery; without a limit it would block the channel forever.
+        var subscribed = new List<long>();
+        var resumedPastEvent = new TaskCompletionSource();
+        var handler = CreatePoisonedEventHandler(
+            maxAttempts: 2,
+            subscribed,
+            onSubscribe: () => { if (subscribed[^1] == PoisonedReplayId) { resumedPastEvent.TrySetResult(); } },
+            redeliverWhile: last => last < PoisonedReplayId);
+
+        // Act
+        await handler.StartAsync(CancellationToken.None);
+        await resumedPastEvent.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await handler.StopAsync(CancellationToken.None);
+
+        // Assert
+        (await _store.GetReplayIdAsync(PoisonedChannel)).Should().Be(PoisonedReplayId);
+        _mockScheduler.Verify(s => s.EnqueueAsync(It.IsAny<JobRecord>(), It.IsAny<DuplicatePolicy>(), It.IsAny<CancellationToken>()), Times.Exactly(2));
+    }
+
+    private SalesforceStreamingTriggerHandler CreatePoisonedEventHandler(
+        int maxAttempts,
+        List<long> subscribed,
+        Action onSubscribe,
+        Func<long, bool> redeliverWhile)
+    {
+        var options = new SalesforceStreamingTriggerOptions
+        {
+            Channel = PoisonedChannel,
+            TargetQueue = "salesforce-queue",
+            MaxEnqueueAttempts = maxAttempts,
+            ReconnectDelay = TimeSpan.FromMilliseconds(10),
+            MaxReconnectDelay = TimeSpan.FromMilliseconds(50),
+            Authentication = new SalesforceStreamingAuthOptions
+            {
+                AuthType = SalesforceStreamingAuthType.SessionId,
+                InstanceUrl = "https://test.salesforce.com",
+                AccessToken = "tok123",
+            },
+        };
+
+        _mockAuthService.Setup(a => a.GetTokenAsync(It.IsAny<SalesforceStreamingAuthOptions>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SalesforceStreamingTokenResult("tok123", "https://test.salesforce.com"));
+        _mockBayeuxClient.Setup(b => b.HandshakeAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync("client-123");
+        _mockBayeuxClient.Setup(b => b.SubscribeAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<long>(), It.IsAny<CancellationToken>()))
+            .Returns((string _, string _, string _, string _, string _, long replayId, CancellationToken _) =>
+            {
+                subscribed.Add(replayId);
+                onSubscribe();
+                return Task.FromResult(true);
+            });
+
+        using var doc = JsonDocument.Parse("{}");
+        var poisoned = new SalesforceStreamingEventInput(PoisonedReplayId, PoisonedChannel, doc.RootElement.Clone(), DateTimeOffset.UtcNow);
+        _mockBayeuxClient.Setup(b => b.ConnectAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns(async (string _, string _, string _, string _, CancellationToken ct) =>
+            {
+                if (redeliverWhile(subscribed[^1]))
+                {
+                    return (IReadOnlyList<SalesforceStreamingEventInput>)new[] { poisoned };
+                }
+
+                await Task.Delay(Timeout.Infinite, ct);
+                return [];
+            });
+        _mockScheduler.Setup(s => s.EnqueueAsync(It.IsAny<JobRecord>(), It.IsAny<DuplicatePolicy>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("Storage unavailable"));
+
+        return new SalesforceStreamingTriggerHandler(
+            _mockScheduler.Object,
+            _mockAuthService.Object,
+            _mockBayeuxClient.Object,
+            Microsoft.Extensions.Options.Options.Create(options),
+            _nexJobOptions,
+            NullLogger<SalesforceStreamingTriggerHandler>.Instance,
+            _store);
     }
 }
