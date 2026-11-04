@@ -350,7 +350,7 @@ public sealed class SalesforceTriggerHandler : BackgroundService
             _logger.LogInformation("Moved failed Salesforce event {IdempotencyKey} to DeadLetterQueue {DLQ}.", idempotencyKey, _options.DeadLetterQueue);
             return true;
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
             throw;
         }

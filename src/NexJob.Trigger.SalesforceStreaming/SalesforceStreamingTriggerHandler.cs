@@ -359,7 +359,7 @@ public sealed class SalesforceStreamingTriggerHandler : BackgroundService
                 _options.DeadLetterQueue);
             return true;
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             throw;
         }
